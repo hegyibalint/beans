@@ -1,0 +1,2553 @@
+# Chapter 9. Interfaces
+
+
+## Contents
+
+[9.1. Interface Declarations](ch09-interfaces.md#jls-9.1)
+
+[9.1.1. Interface Modifiers](ch09-interfaces.md#jls-9.1.1)
+
+[9.1.1.1. `abstract` Interfaces](ch09-interfaces.md#jls-9.1.1.1)
+
+[9.1.1.2. `strictfp` Interfaces](ch09-interfaces.md#jls-9.1.1.2)
+
+[9.1.1.3. `static` Interfaces](ch09-interfaces.md#jls-9.1.1.3)
+
+[9.1.1.4. `sealed` and `non-sealed` Interfaces](ch09-interfaces.md#jls-9.1.1.4)
+
+[9.1.2. Generic Interfaces and Type Parameters](ch09-interfaces.md#jls-9.1.2)
+
+[9.1.3. Superinterfaces and Subinterfaces](ch09-interfaces.md#jls-9.1.3)
+
+[9.1.4. Permitted Direct Subclasses and Subinterfaces](ch09-interfaces.md#jls-9.1.4)
+
+[9.1.5. Interface Body and Member Declarations](ch09-interfaces.md#jls-9.1.5)
+
+[9.2. Interface Members](ch09-interfaces.md#jls-9.2)
+
+[9.3. Field (Constant) Declarations](ch09-interfaces.md#jls-9.3)
+
+[9.3.1. Initialization of Fields in Interfaces](ch09-interfaces.md#jls-9.3.1)
+
+[9.4. Method Declarations](ch09-interfaces.md#jls-9.4)
+
+[9.4.1. Inheritance and Overriding](ch09-interfaces.md#jls-9.4.1)
+
+[9.4.1.1. Overriding (by Instance Methods)](ch09-interfaces.md#jls-9.4.1.1)
+
+[9.4.1.2. Requirements in Overriding](ch09-interfaces.md#jls-9.4.1.2)
+
+[9.4.1.3. Inheriting Methods with Override-Equivalent Signatures](ch09-interfaces.md#jls-9.4.1.3)
+
+[9.4.2. Overloading](ch09-interfaces.md#jls-9.4.2)
+
+[9.4.3. Interface Method Body](ch09-interfaces.md#jls-9.4.3)
+
+[9.5. Member Class and Interface Declarations](ch09-interfaces.md#jls-9.5)
+
+[9.6. Annotation Interfaces](ch09-interfaces.md#jls-9.6)
+
+[9.6.1. Annotation Interface Elements](ch09-interfaces.md#jls-9.6.1)
+
+[9.6.2. Defaults for Annotation Interface Elements](ch09-interfaces.md#jls-9.6.2)
+
+[9.6.3. Repeatable Annotation Interfaces](ch09-interfaces.md#jls-9.6.3)
+
+[9.6.4. Predefined Annotation Interfaces](ch09-interfaces.md#jls-9.6.4)
+
+[9.6.4.1. `@Target`](ch09-interfaces.md#jls-9.6.4.1)
+
+[9.6.4.2. `@Retention`](ch09-interfaces.md#jls-9.6.4.2)
+
+[9.6.4.3. `@Inherited`](ch09-interfaces.md#jls-9.6.4.3)
+
+[9.6.4.4. `@Override`](ch09-interfaces.md#jls-9.6.4.4)
+
+[9.6.4.5. `@SuppressWarnings`](ch09-interfaces.md#jls-9.6.4.5)
+
+[9.6.4.6. `@Deprecated`](ch09-interfaces.md#jls-9.6.4.6)
+
+[9.6.4.7. `@SafeVarargs`](ch09-interfaces.md#jls-9.6.4.7)
+
+[9.6.4.8. `@Repeatable`](ch09-interfaces.md#jls-9.6.4.8)
+
+[9.6.4.9. `@FunctionalInterface`](ch09-interfaces.md#jls-9.6.4.9)
+
+[9.7. Annotations](ch09-interfaces.md#jls-9.7)
+
+[9.7.1. Normal Annotations](ch09-interfaces.md#jls-9.7.1)
+
+[9.7.2. Marker Annotations](ch09-interfaces.md#jls-9.7.2)
+
+[9.7.3. Single-Element Annotations](ch09-interfaces.md#jls-9.7.3)
+
+[9.7.4. Where Annotations May Appear](ch09-interfaces.md#jls-9.7.4)
+
+[9.7.5. Multiple Annotations of the Same Interface](ch09-interfaces.md#jls-9.7.5)
+
+[9.8. Functional Interfaces](ch09-interfaces.md#jls-9.8)
+
+[9.9. Function Types](ch09-interfaces.md#jls-9.9)
+
+
+An interface declaration defines a new interface that can be implemented by one or more classes. Programs can use interfaces to provide a common supertype for otherwise unrelated classes, and to make it unnecessary for related classes to share a common `abstract` superclass.
+
+Interfaces have no instance variables, and typically declare one or more `abstract` methods; otherwise unrelated classes can implement an interface by providing implementations for its `abstract` methods. Interfaces may not be directly instantiated.
+
+A *top level interface* ([§7.6](ch07-packages-modules.md#jls-7.6)) is an interface declared directly in a compilation unit.
+
+A *nested interface* is any interface whose declaration occurs within the body of another class or interface declaration. A nested interface may be a member interface ([§8.5](ch08-classes.md#jls-8.5), [§9.5](ch09-interfaces.md#jls-9.5)) or a local interface ([§14.3](ch14-blocks-statements-patterns.md#jls-14.3)).
+
+An *annotation interface* ([§9.6](ch09-interfaces.md#jls-9.6)) is an interface declared with distinct syntax, intended to be implemented by reflective representations of *annotations* ([§9.7](ch09-interfaces.md#jls-9.7)).
+
+This chapter discusses the common semantics of all interfaces. Details that are specific to particular kinds of interfaces are discussed in the sections dedicated to these constructs.
+
+An interface may be declared to be a *direct extension* of one or more other interfaces, meaning that it inherits all the member classes and interfaces, instance methods, and `static` fields of the interfaces it extends, except for any members that it may override or hide.
+
+A class may be declared to *directly implement* one or more interfaces ([§8.1.5](ch08-classes.md#jls-8.1.5)), meaning that any instance of the class implements all the `abstract` methods specified by the interface or interfaces. A class necessarily implements all the interfaces that its direct superclasses and direct superinterfaces do. This (multiple) interface inheritance allows objects to support (multiple) common behaviors without sharing a superclass.
+
+Unlike a class, an interface cannot be declared `final`. However, an interface may be declared `sealed` ([§9.1.1.4](ch09-interfaces.md#jls-9.1.1.4)) to limit its subclasses and subinterfaces.
+
+A variable whose declared type is an interface type may have as its value a reference to any instance of a class which implements the specified interface. It is not sufficient that the class happen to implement all the `abstract` methods of the interface; the class or one of its superclasses must actually be declared to implement the interface, or else the class is not considered to implement the interface.
+
+
+## 9.1. Interface Declarations
+
+
+An *interface declaration* specifies an interface.
+
+There are two kinds of interface declarations: *normal interface declarations* and *annotation interface declarations* ([§9.6](ch09-interfaces.md#jls-9.6)).
+
+
+InterfaceDeclaration:
+
+
+[NormalInterfaceDeclaration](ch09-interfaces.md#jls-NormalInterfaceDeclaration "NormalInterfaceDeclaration")  
+[AnnotationInterfaceDeclaration](ch09-interfaces.md#jls-AnnotationInterfaceDeclaration "AnnotationInterfaceDeclaration")
+
+
+NormalInterfaceDeclaration:
+
+
+{[InterfaceModifier](ch09-interfaces.md#jls-InterfaceModifier "InterfaceModifier")} `interface` [TypeIdentifier](ch03-lexical-structure.md#jls-TypeIdentifier "TypeIdentifier") \[[TypeParameters](ch08-classes.md#jls-TypeParameters "TypeParameters")\] \[[InterfaceExtends](ch09-interfaces.md#jls-InterfaceExtends "InterfaceExtends")\] \[[InterfacePermits](ch09-interfaces.md#jls-InterfacePermits "InterfacePermits")\] [InterfaceBody](ch09-interfaces.md#jls-InterfaceBody "InterfaceBody")
+
+
+The *TypeIdentifier* in an interface declaration specifies the name of the interface.
+
+It is a compile-time error if an interface has the same simple name as any of its enclosing classes or interfaces.
+
+The scope and shadowing of an interface declaration is specified in [§6.3](ch06-names.md#jls-6.3) and [§6.4.1](ch06-names.md#jls-6.4.1).
+
+
+### 9.1.1. Interface Modifiers
+
+
+An interface declaration may include *interface modifiers*.
+
+
+InterfaceModifier:
+
+
+(one of)  
+[Annotation](ch09-interfaces.md#jls-Annotation "Annotation") `public` `protected` `private`  
+`abstract` `static` `sealed` `non-sealed` `strictfp`
+
+
+The rules concerning annotation modifiers for an interface declaration are specified in [§9.7.4](ch09-interfaces.md#jls-9.7.4) and [§9.7.5](ch09-interfaces.md#jls-9.7.5).
+
+The access modifier `public` ([§6.6](ch06-names.md#jls-6.6)) pertains only to top level interfaces ([§7.6](ch07-packages-modules.md#jls-7.6)) and member interfaces ([§8.5](ch08-classes.md#jls-8.5), [§9.5](ch09-interfaces.md#jls-9.5)), not to local interfaces ([§14.3](ch14-blocks-statements-patterns.md#jls-14.3)).
+
+The access modifiers `protected` and `private` pertain only to member interfaces.
+
+The modifier `static` pertains only to member interfaces and local interfaces.
+
+It is a compile-time error if the same keyword appears more than once as a modifier for an interface declaration, or if a interface declaration has more than one of the access modifiers `public`, `protected`, and `private`.
+
+It is a compile-time error if an interface declaration has more than one of the modifiers `sealed` and `non-sealed`.
+
+If two or more (distinct) interface modifiers appear in an interface declaration, then it is customary, though not required, that they appear in the order consistent with that shown above in the production for *InterfaceModifier*.
+
+
+#### 9.1.1.1. `abstract` Interfaces
+
+
+Every interface is implicitly `abstract`.
+
+This modifier is obsolete and should not be used in new code.
+
+
+#### 9.1.1.2. `strictfp` Interfaces
+
+
+The `strictfp` modifier on an interface declaration is obsolete and should not be used in new code. Its presence or absence has no effect at compile time or run time.
+
+
+#### 9.1.1.3. `static` Interfaces
+
+
+A nested interface is implicitly `static`. That is, every member interface and local interface is `static`. It is permitted for the declaration of a member interface to redundantly specify the `static` modifier ([§9.5](ch09-interfaces.md#jls-9.5)), but it is not permitted for the declaration of a local interface ([§14.3](ch14-blocks-statements-patterns.md#jls-14.3)).
+
+Because a nested interface is `static`, it has no immediately enclosing instance ([§8.1.3](ch08-classes.md#jls-8.1.3)). References from a nested interface to type parameters, instance variables, local variables, formal parameters, exception parameters, or instance methods in lexically enclosing class, interface, or method declarations are disallowed ([§6.5.5.1](ch06-names.md#jls-6.5.5.1), [§6.5.6.1](ch06-names.md#jls-6.5.6.1), [§15.12.3](ch15-expressions.md#jls-15.12.3)).
+
+
+#### 9.1.1.4. `sealed` and `non-sealed` Interfaces
+
+
+An interface can be declared `sealed` if all its direct subclasses and direct subinterfaces are known when the interface is declared ([§9.1.4](ch09-interfaces.md#jls-9.1.4)), and no other direct subclasses or direct subinterfaces are desired or required.
+
+It is useful to recall that a class is said to be a *direct subclass* of its direct superinterfaces ([§8.1.5](ch08-classes.md#jls-8.1.5)).
+
+An interface is *freely extensible* if none of its direct superinterfaces are `sealed` ([§9.1.3](ch09-interfaces.md#jls-9.1.3)), and it is not `sealed` itself.
+
+An interface that has a `sealed` direct superinterface is freely extensible if and only if it is declared `non-sealed`.
+
+It is a compile-time error if an interface has a `sealed` direct superinterface and is not declared `sealed` or `non-sealed`.
+
+It is a compile-time error if an interface is declared `non-sealed` but has no `sealed` direct superinterface.
+
+
+### 9.1.2. Generic Interfaces and Type Parameters
+
+
+An interface is *generic* if the interface declaration declares one or more type variables ([§4.4](ch04-types-values-variables.md#jls-4.4)).
+
+These type variables are known as the *type parameters* of the interface. The type parameter section follows the interface name and is delimited by angle brackets.
+
+The following productions from [§8.1.2](ch08-classes.md#jls-8.1.2) and [§4.4](ch04-types-values-variables.md#jls-4.4) are shown here for convenience:
+
+
+TypeParameters:
+
+
+`<` [TypeParameterList](ch08-classes.md#jls-TypeParameterList "TypeParameterList") `>`
+
+
+TypeParameterList:
+
+
+[TypeParameter](ch04-types-values-variables.md#jls-TypeParameter "TypeParameter") {`,` [TypeParameter](ch04-types-values-variables.md#jls-TypeParameter "TypeParameter")}
+
+
+TypeParameter:
+
+
+{[TypeParameterModifier](ch04-types-values-variables.md#jls-TypeParameterModifier "TypeParameterModifier")} [TypeIdentifier](ch03-lexical-structure.md#jls-TypeIdentifier "TypeIdentifier") \[[TypeBound](ch04-types-values-variables.md#jls-TypeBound "TypeBound")\]
+
+
+TypeParameterModifier:
+
+
+[Annotation](ch09-interfaces.md#jls-Annotation "Annotation")
+
+
+TypeBound:
+
+
+`extends` [TypeVariable](ch04-types-values-variables.md#jls-TypeVariable "TypeVariable")  
+`extends` [ClassOrInterfaceType](ch04-types-values-variables.md#jls-ClassOrInterfaceType "ClassOrInterfaceType") {[AdditionalBound](ch04-types-values-variables.md#jls-AdditionalBound "AdditionalBound")}
+
+
+AdditionalBound:
+
+
+`&` [InterfaceType](ch04-types-values-variables.md#jls-InterfaceType "InterfaceType")
+
+
+The rules concerning annotation modifiers for a type parameter declaration are specified in [§9.7.4](ch09-interfaces.md#jls-9.7.4) and [§9.7.5](ch09-interfaces.md#jls-9.7.5).
+
+In an interface's type parameter section, a type variable T *directly depends* on a type variable S if S is the bound of T, while T *depends* on S if either T directly depends on S or T directly depends on a type variable U that depends on S (using this definition recursively). It is a compile-time error if a type variable in a interface's type parameter section depends on itself.
+
+The scope and shadowing of an interface's type parameter is specified in [§6.3](ch06-names.md#jls-6.3) and [§6.4.1](ch06-names.md#jls-6.4.1).
+
+References to an interface's type parameter from a static context or a nested class or interface are restricted, as specified in [§6.5.5.1](ch06-names.md#jls-6.5.5.1).
+
+A generic interface declaration defines a set of parameterized types ([§4.5](ch04-types-values-variables.md#jls-4.5)), one for each possible parameterization of the type parameter section by type arguments. All of these parameterized types share the same interface at run time.
+
+
+### 9.1.3. Superinterfaces and Subinterfaces
+
+
+If an `extends` clause is provided, then the interface being declared extends each of the specified interface types and therefore inherits the member classes, member interfaces, instance methods, and `static` fields of each of those interface types.
+
+The specified interface types are the *direct superinterface types* of the interface being declared.
+
+Any class that `implements` the declared interface is also considered to implement all the interfaces that this interface `extends`.
+
+
+InterfaceExtends:
+
+
+`extends` [InterfaceTypeList](ch08-classes.md#jls-InterfaceTypeList "InterfaceTypeList")
+
+
+The following production from [§8.1.5](ch08-classes.md#jls-8.1.5) is shown here for convenience:
+
+
+InterfaceTypeList:
+
+
+[InterfaceType](ch04-types-values-variables.md#jls-InterfaceType "InterfaceType") {`,` [InterfaceType](ch04-types-values-variables.md#jls-InterfaceType "InterfaceType")}
+
+
+Each *InterfaceType* in the `extends` clause of an interface declaration must name an accessible interface ([§6.6](ch06-names.md#jls-6.6)), or a compile-time error occurs.
+
+It is a compile-time error if any *InterfaceType* names a interface that is `sealed` ([§9.1.1.4](ch09-interfaces.md#jls-9.1.1.4)) and the interface being declared is not a permitted direct subinterface of the named interface ([§9.1.4](ch09-interfaces.md#jls-9.1.4)).
+
+If an *InterfaceType* has type arguments, it must denote a well-formed parameterized type ([§4.5](ch04-types-values-variables.md#jls-4.5)), and none of the type arguments may be wildcard type arguments, or a compile-time error occurs.
+
+One interface is a *direct superinterface* of another interface if the first interface is named by one of the direct superinterface types of the second interface.
+
+The *superinterface* relationship is the transitive closure of the direct superinterface relationship. An interface I is a superinterface of interface K if either of the following is true:
+
+
+- I is a direct superinterface of K.
+
+- Where J is a direct superinterface of K, I is a superinterface of J, applying this definition recursively.
+
+
+An interface is said to be a *direct subinterface* of its direct superinterface, and a *subinterface* of each of its superinterfaces.
+
+While every class is an extension of class `Object`, there is no single interface of which all interfaces are extensions.
+
+An interface I *directly depends* on a class or interface A if A is mentioned in the `extends` clause of I either as a superinterface or as a qualifier in the fully qualified form of a superinterface name.
+
+An interface I *depends* on a class or interface A if any of the following is true:
+
+
+- I directly depends on A.
+
+- I directly depends on a class C that depends on A ([§8.1.5](ch08-classes.md#jls-8.1.5)).
+
+- I directly depends on an interface J that depends on A, applying this definition recursively.
+
+
+It is a compile-time error if an interface depends on itself.
+
+If circularly declared interfaces are detected at run time, as interfaces are loaded, then a `ClassCircularityError` is thrown ([§12.2.1](ch12-execution.md#jls-12.2.1)).
+
+
+### 9.1.4. Permitted Direct Subclasses and Subinterfaces
+
+
+The optional `permits` clause in a normal interface declaration specifies all the classes and interfaces intended as direct subclasses and direct subinterfaces of the interface being declared ([§9.1.1.4](ch09-interfaces.md#jls-9.1.1.4)).
+
+
+InterfacePermits:
+
+
+`permits` [TypeName](ch06-names.md#jls-TypeName "TypeName") {`,` [TypeName](ch06-names.md#jls-TypeName "TypeName")}
+
+
+It is a compile-time error if an interface declaration has a `permits` clause but no `sealed` modifier.
+
+Every *TypeName* must name an accessible class or interface ([§6.6](ch06-names.md#jls-6.6)), or a compile-time error occurs.
+
+It is a compile-time error if the same class or interface is specified more than once in a `permits` clause. This is true even if the class or interface is named in different ways.
+
+
+The canonical name of a class or interface does not need to be used in a `permits` clause, but a `permits` clause can only specify a class or interface once. For example, the following program fails to compile:
+
+``` programlisting
+
+package p;
+
+sealed interface I permits C, D, p.C {}  // error
+
+non-sealed class C implements I {}
+non-sealed class D implements I {}
+```
+
+
+If a `sealed` interface I is associated with a named module ([§7.3](ch07-packages-modules.md#jls-7.3)), then every class or interface specified in the `permits` clause of I's declaration must be associated with the same module as I, or a compile-time error occurs.
+
+If a `sealed` interface I is associated with an unnamed module ([§7.7.5](ch07-packages-modules.md#jls-7.7.5)), then every class or interface specified in the `permits` clause of I's declaration must belong to the same package as I, or a compile-time error occurs.
+
+A `sealed` interface and its direct subclasses and direct subinterfaces need to refer to each other in a circular fashion, in `permits`, `implements`, and `extends` clauses, respectively. Therefore, in a modular codebase, they must be co-located in the same module, as classes and interfaces in different modules cannot refer to each other in a circular fashion. Co-location is desirable in any case because a sealed interface hierarchy should always be declared within a single maintenance domain, where the same developer or group of developers is responsible for maintaining the hierarchy. A named module typically represents a maintenance domain in a modular codebase.
+
+If the declaration of a `sealed` interface I has a `permits` clause, then the *permitted direct subclasses and subinterfaces* of I are the classes and interfaces specified by the `permits` clause.
+
+Every permitted direct subclass and subinterface specified by the `permits` clause must be a direct subclass of I ([§8.1.5](ch08-classes.md#jls-8.1.5)) or a direct subinterface of I ([§9.1.3](ch09-interfaces.md#jls-9.1.3)), or a compile-time error occurs.
+
+If the declaration of a `sealed` interface I lacks a `permits` clause, then the permitted direct subclasses and subinterfaces of I are those classes and interfaces declared in the same compilation unit as I ([§7.3](ch07-packages-modules.md#jls-7.3)) which have a canonical name ([§6.7](ch06-names.md#jls-6.7)) and whose direct superinterfaces include I.
+
+That is, the permitted direct subclasses and subinterfaces are inferred as the classes and interfaces in the same compilation unit that specify I as a direct superinterface. The requirement for a canonical name means that no local classes, local interfaces, or anonymous classes will be considered.
+
+It is a compile-time error if the declaration of a `sealed` interface I lacks a `permits` clause and I has no permitted direct subclasses or subinterfaces.
+
+
+### 9.1.5. Interface Body and Member Declarations
+
+
+An *interface body* may contain declarations of members of the interface, that is, fields ([§9.3](ch09-interfaces.md#jls-9.3)), methods ([§9.4](ch09-interfaces.md#jls-9.4)), classes, and interfaces ([§9.5](ch09-interfaces.md#jls-9.5)).
+
+
+InterfaceBody:
+
+
+`{` {[InterfaceMemberDeclaration](ch09-interfaces.md#jls-InterfaceMemberDeclaration "InterfaceMemberDeclaration")} `}`
+
+
+InterfaceMemberDeclaration:
+
+
+[ConstantDeclaration](ch09-interfaces.md#jls-ConstantDeclaration "ConstantDeclaration")  
+[InterfaceMethodDeclaration](ch09-interfaces.md#jls-InterfaceMethodDeclaration "InterfaceMethodDeclaration")  
+[ClassDeclaration](ch08-classes.md#jls-ClassDeclaration "ClassDeclaration")  
+[InterfaceDeclaration](ch09-interfaces.md#jls-InterfaceDeclaration "InterfaceDeclaration")  
+`;`
+
+
+The scope of a declaration of a member `m` declared in or inherited by an interface I is specified in [§6.3](ch06-names.md#jls-6.3).
+
+
+## 9.2. Interface Members
+
+
+The members of an interface are:
+
+
+- Members declared in the body of the interface declaration ([§9.1.5](ch09-interfaces.md#jls-9.1.5)).
+
+- Members inherited from any direct superinterface types ([§9.1.3](ch09-interfaces.md#jls-9.1.3)).
+
+- If an interface has no direct superinterface types, then the interface implicitly declares a `public` `abstract` member method `m` with signature s, return type r, and `throws` clause t corresponding to each `public` instance method `m` with signature s, return type r, and `throws` clause t declared in `Object` ([§4.3.2](ch04-types-values-variables.md#jls-4.3.2)), unless an `abstract` method with the same signature, same return type, and a compatible `throws` clause is explicitly declared by the interface.
+
+  It is a compile-time error if the interface explicitly declares such a method `m` in the case where `m` is declared to be `final` in `Object`.
+
+  It is a compile-time error if the interface explicitly declares a method with a signature that is override-equivalent ([§8.4.2](ch08-classes.md#jls-8.4.2)) to a `public` method of `Object`, but which has a different return type, or an incompatible `throws` clause, or is not `abstract`.
+
+
+The interface inherits, from the interfaces it extends, all members of those interfaces, except for (i) fields, classes, and interfaces that it hides, (ii) `abstract` methods and default methods that it overrides ([§9.4.1](ch09-interfaces.md#jls-9.4.1)), (iii) `private` methods, and (iv) `static` methods.
+
+Fields, methods, member classes, and member interfaces of an interface may have the same name, since they are used in different contexts and are disambiguated by different lookup procedures ([§6.5](ch06-names.md#jls-6.5)). However, this is discouraged as a matter of style.
+
+
+## 9.3. Field (Constant) Declarations
+
+
+ConstantDeclaration:
+
+
+{[ConstantModifier](ch09-interfaces.md#jls-ConstantModifier "ConstantModifier")} [UnannType](ch08-classes.md#jls-UnannType "UnannType") [VariableDeclaratorList](ch08-classes.md#jls-VariableDeclaratorList "VariableDeclaratorList") `;`
+
+
+ConstantModifier:
+
+
+(one of)  
+[Annotation](ch09-interfaces.md#jls-Annotation "Annotation") `public`  
+`static` `final`
+
+
+See [§8.3](ch08-classes.md#jls-8.3) for *UnannType*. The following productions from [§4.3](ch04-types-values-variables.md#jls-4.3) and [§8.3](ch08-classes.md#jls-8.3) are shown here for convenience:
+
+
+VariableDeclaratorList:
+
+
+[VariableDeclarator](ch08-classes.md#jls-VariableDeclarator "VariableDeclarator") {`,` [VariableDeclarator](ch08-classes.md#jls-VariableDeclarator "VariableDeclarator")}
+
+
+VariableDeclarator:
+
+
+[VariableDeclaratorId](ch08-classes.md#jls-VariableDeclaratorId "VariableDeclaratorId") \[`=` [VariableInitializer](ch08-classes.md#jls-VariableInitializer "VariableInitializer")\]
+
+
+VariableDeclaratorId:
+
+
+[Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier") \[[Dims](ch04-types-values-variables.md#jls-Dims "Dims")\]  
+`_`
+
+
+Dims:
+
+
+{[Annotation](ch09-interfaces.md#jls-Annotation "Annotation")} `[` `]` {{[Annotation](ch09-interfaces.md#jls-Annotation "Annotation")} `[` `]`}
+
+
+VariableInitializer:
+
+
+[Expression](ch15-expressions.md#jls-Expression "Expression")  
+[ArrayInitializer](ch10-arrays.md#jls-ArrayInitializer "ArrayInitializer")
+
+
+The rules concerning annotation modifiers for an interface field declaration are specified in [§9.7.4](ch09-interfaces.md#jls-9.7.4) and [§9.7.5](ch09-interfaces.md#jls-9.7.5).
+
+Every field declaration in the body of an interface declaration is implicitly `public`, `static`, and `final`. It is permitted to redundantly specify any or all of these modifiers for such fields.
+
+It is a compile-time error if the same keyword appears more than once as a modifier for a field declaration.
+
+If two or more (distinct) field modifiers appear in a field declaration, it is customary, though not required, that they appear in the order consistent with that shown above in the production for *ConstantModifier*.
+
+The declared type of a field is denoted by *UnannType* if no bracket pairs appear in *UnannType* and *VariableDeclaratorId*, and is specified by [§10.2](ch10-arrays.md#jls-10.2) otherwise.
+
+Every declaration of an interface field must include an *Identifier*, or a compile-time error occurs.
+
+The scope and shadowing of an interface field declaration is specified in [§6.3](ch06-names.md#jls-6.3) and [§6.4.1](ch06-names.md#jls-6.4.1).
+
+Because an interface field is `static`, its declaration introduces a static context ([§8.1.3](ch08-classes.md#jls-8.1.3)), which limits the use of constructs that refer to the current object. Notably, the keywords `this` and `super` are prohibited in a static context ([§15.8.3](ch15-expressions.md#jls-15.8.3), [§15.11.2](ch15-expressions.md#jls-15.11.2)), as are unqualified references to instance variables, instance methods, and type parameters of lexically enclosing declarations ([§6.5.5.1](ch06-names.md#jls-6.5.5.1), [§6.5.6.1](ch06-names.md#jls-6.5.6.1), [§15.12.3](ch15-expressions.md#jls-15.12.3)).
+
+It is a compile-time error for the body of an interface declaration to declare two fields with the same name.
+
+If the interface declares a field with a certain name, then the declaration of that field is said to *hide* any and all accessible declarations of fields with the same name in superinterfaces of the interface.
+
+It is possible for an interface to inherit more than one field with the same name. Such a situation does not in itself cause a compile-time error. However, any attempt within the body of the interface declaration to refer to any such field by its simple name will result in a compile-time error, because the reference is ambiguous.
+
+There might be several paths by which the same field declaration is inherited from an interface. In such a situation, the field is considered to be inherited only once, and it may be referred to by its simple name without ambiguity.
+
+
+**Example 9.3-1. Ambiguous Inherited Fields**
+
+
+If two fields with the same name are inherited by an interface because, for example, two of its direct superinterfaces declare fields with that name, then a single ambiguous member results. Any use of this ambiguous member will result in a compile-time error. In the program:
+
+``` programlisting
+
+interface BaseColors {
+    int RED = 1, GREEN = 2, BLUE = 4;
+}
+interface RainbowColors extends BaseColors {
+    int YELLOW = 3, ORANGE = 5, INDIGO = 6, VIOLET = 7;
+}
+interface PrintColors extends BaseColors {
+    int YELLOW = 8, CYAN = 16, MAGENTA = 32;
+}
+interface LotsOfColors extends RainbowColors, PrintColors {
+    int FUCHSIA = 17, VERMILION = 43, CHARTREUSE = RED+90;
+}
+```
+
+the interface `LotsOfColors` inherits two fields named `YELLOW`. This is all right as long as the interface does not contain any reference by simple name to the field `YELLOW`. (Such a reference could occur within a variable initializer for a field.)
+
+Even if interface `PrintColors` were to give the value `3` to `YELLOW` rather than the value `8`, a reference to field `YELLOW` within interface `LotsOfColors` would still be considered ambiguous.
+
+
+  
+
+
+**Example 9.3-2. Multiply Inherited Fields**
+
+
+If a single field is inherited multiple times from the same interface because, for example, both this interface and one of this interface's direct superinterfaces extend the interface that declares the field, then only a single member results. This situation does not in itself cause a compile-time error.
+
+In the previous example, the fields `RED`, `GREEN`, and `BLUE` are inherited by interface `LotsOfColors` in more than one way, through interface `RainbowColors` and also through interface `PrintColors`, but the reference to field `RED` in interface `LotsOfColors` is not considered ambiguous because only one actual declaration of the field `RED` is involved.
+
+
+  
+
+
+### 9.3.1. Initialization of Fields in Interfaces
+
+
+Every declarator in a field declaration of an interface must have a variable initializer, or a compile-time error occurs.
+
+The initializer need not be a constant expression ([§15.29](ch15-expressions.md#jls-15.29)).
+
+It is a compile-time error if the initializer of an interface field uses the simple name of the same field or another field whose declaration occurs to the right of the initializer ([§3.5](ch03-lexical-structure.md#jls-3.5)) in the same interface.
+
+The initializer of an interface field may not refer to the current object using the keyword `this` or the keyword `super`, as specified in [§15.8.3](ch15-expressions.md#jls-15.8.3), [§15.11.2](ch15-expressions.md#jls-15.11.2), and [§15.12.3](ch15-expressions.md#jls-15.12.3).
+
+At run time, the initializer is evaluated and the field assignment performed exactly once, when the interface is initialized ([§12.4.2](ch12-execution.md#jls-12.4.2)).
+
+Note that interface fields that are constant variables ([§4.12.4](ch04-types-values-variables.md#jls-4.12.4)) are initialized before other interface fields. This also applies to `static` fields that are constant variables in classes ([§8.3.2](ch08-classes.md#jls-8.3.2)). Such fields will never be observed to have their default initial values ([§4.12.5](ch04-types-values-variables.md#jls-4.12.5)), even by devious programs.
+
+
+**Example 9.3.1-1. Forward Reference to a Field**
+
+
+``` programlisting
+
+interface Test {
+    float f = j;
+    int   j = 1;
+    int   k = k + 1;
+}
+```
+
+This program causes two compile-time errors, because `j` is referred to in the initialization of `f` before `j` is declared, and because the initialization of `k` refers to `k` itself.
+
+
+  
+
+
+## 9.4. Method Declarations
+
+
+InterfaceMethodDeclaration:
+
+
+{[InterfaceMethodModifier](ch09-interfaces.md#jls-InterfaceMethodModifier "InterfaceMethodModifier")} [MethodHeader](ch08-classes.md#jls-MethodHeader "MethodHeader") [MethodBody](ch08-classes.md#jls-MethodBody "MethodBody")
+
+
+InterfaceMethodModifier:
+
+
+(one of)  
+[Annotation](ch09-interfaces.md#jls-Annotation "Annotation") `public` `private`  
+`abstract` `default` `static` `strictfp`
+
+
+The following productions from [§8.4](ch08-classes.md#jls-8.4), [§8.4.5](ch08-classes.md#jls-8.4.5), and [§8.4.7](ch08-classes.md#jls-8.4.7) are shown here for convenience:
+
+
+MethodHeader:
+
+
+[Result](ch08-classes.md#jls-Result "Result") [MethodDeclarator](ch08-classes.md#jls-MethodDeclarator "MethodDeclarator") \[[Throws](ch08-classes.md#jls-Throws "Throws")\]  
+[TypeParameters](ch08-classes.md#jls-TypeParameters "TypeParameters") {[Annotation](ch09-interfaces.md#jls-Annotation "Annotation")} [Result](ch08-classes.md#jls-Result "Result") [MethodDeclarator](ch08-classes.md#jls-MethodDeclarator "MethodDeclarator") \[[Throws](ch08-classes.md#jls-Throws "Throws")\]
+
+
+Result:
+
+
+[UnannType](ch08-classes.md#jls-UnannType "UnannType")  
+`void`
+
+
+MethodDeclarator:
+
+
+[Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier") `(` \[[ReceiverParameter](ch08-classes.md#jls-ReceiverParameter "ReceiverParameter") `,`\] \[[FormalParameterList](ch08-classes.md#jls-FormalParameterList "FormalParameterList")\] `)` \[[Dims](ch04-types-values-variables.md#jls-Dims "Dims")\]
+
+
+MethodBody:
+
+
+[Block](ch14-blocks-statements-patterns.md#jls-Block "Block")  
+`;`
+
+
+The rules concerning annotation modifiers for an interface method declaration are specified in [§9.7.4](ch09-interfaces.md#jls-9.7.4) and [§9.7.5](ch09-interfaces.md#jls-9.7.5).
+
+A method in the body of an interface declaration may be declared `public` or `private` ([§6.6](ch06-names.md#jls-6.6)). If no access modifier is given, the method is implicitly `public`. It is permitted, but discouraged as a matter of style, to redundantly specify the `public` modifier for a method declaration in an interface declaration.
+
+A *default method* is an instance method declared in an interface with the `default` modifier. Its body is always represented by a block, which provides a default implementation for any class that implements the interface without overriding the method. Default methods are distinct from concrete methods ([§8.4.3.1](ch08-classes.md#jls-8.4.3.1)), which are declared in classes, and from `private` interface methods, which are neither inherited nor overridden.
+
+An interface can declare `static` methods, which are invoked without reference to a particular object. `static` interface methods are distinct from default methods, `abstract` interface methods, and non-`static` `private` interface methods, all of which are instance methods.
+
+The declaration of a `static` interface method introduces a static context ([§8.1.3](ch08-classes.md#jls-8.1.3)), which limits the use of constructs that refer to the current object. Notably, the keywords `this` and `super` are prohibited in a static context ([§15.8.3](ch15-expressions.md#jls-15.8.3), [§15.11.2](ch15-expressions.md#jls-15.11.2)), as are unqualified references to instance variables, instance methods, and type parameters of lexically enclosing declarations ([§6.5.5.1](ch06-names.md#jls-6.5.5.1), [§6.5.6.1](ch06-names.md#jls-6.5.6.1), [§15.12.3](ch15-expressions.md#jls-15.12.3)).
+
+References to an instance method from a static context or a nested class or interface are restricted ([§15.12.3](ch15-expressions.md#jls-15.12.3)).
+
+The `strictfp` modifier on an interface method declaration is obsolete and should not be used in new code. Its presence or absence has no effect at run time.
+
+An interface method lacking a `private`, `default`, or `static` modifier is implicitly `abstract`. Its body is represented by a semicolon, not a block. It is permitted, but discouraged as a matter of style, to redundantly specify the `abstract` modifier for such a method declaration.
+
+Note that an interface method may not be declared with `protected` or package access, or with the modifiers `final`, `synchronized`, or `native`.
+
+It is a compile-time error if the same keyword appears more than once as a modifier for an interface method declaration, or if an interface method declaration has more than one of the access modifiers `public` and `private` ([§6.6](ch06-names.md#jls-6.6)).
+
+It is a compile-time error if an interface method declaration has more than one of the keywords `abstract`, `default`, or `static`.
+
+It is a compile-time error if an interface method declaration that contains the keyword `private` also contains the keyword `abstract` or `default`. It is permitted for an interface method declaration to contain both `private` and `static`.
+
+It is a compile-time error if an interface method declaration that contains the keyword `abstract` also contains the keyword `strictfp`.
+
+It is a compile-time error for the body of an interface declaration to declare, explicitly or implicitly, two methods with override-equivalent signatures ([§8.4.2](ch08-classes.md#jls-8.4.2)). However, an interface may inherit several `abstract` methods with such signatures ([§9.4.1](ch09-interfaces.md#jls-9.4.1)).
+
+A method declared in an interface may be generic. The rules for type parameters of a generic method in an interface are the same as for a generic method in a class ([§8.4.4](ch08-classes.md#jls-8.4.4)).
+
+
+### 9.4.1. Inheritance and Overriding
+
+
+An interface I *inherits* from its direct superinterface types all `abstract` and default methods `m` for which all of the following are true:
+
+
+- `m` is a member of a direct superinterface type of I, J.
+
+- No method declared in I has a signature that is a subsignature ([§8.4.2](ch08-classes.md#jls-8.4.2)) of the signature of `m` as a member of J.
+
+- There exists no method `m'` that is a member of a direct superinterface of I, J' (`m` distinct from `m'`, J distinct from J'), such that `m'` overrides from the interface of J' the declaration of the method `m` ([§9.4.1.1](ch09-interfaces.md#jls-9.4.1.1)).
+
+
+Note that methods are overridden on a signature-by-signature basis. If, for example, an interface declares two `public` methods with the same name ([§9.4.2](ch09-interfaces.md#jls-9.4.2)), and a subinterface overrides one of them, the subinterface still inherits the other method.
+
+The third clause above prevents a subinterface from re-inheriting a method that has already been overridden by another of its superinterfaces. For example, in this program:
+
+``` screen
+
+interface Top {
+    default String name() { return "unnamed"; }
+}
+interface Left extends Top {
+    default String name() { return getClass().getName(); }
+}
+interface Right extends Top {}
+
+interface Bottom extends Left, Right {}
+```
+
+`Right` inherits `name()` from `Top`, but `Bottom` inherits `name()` from `Left`, not `Right`. This is because `name()` from `Left` overrides the declaration of `name()` in `Top`.
+
+An interface does not inherit `private` or `static` methods from its superinterfaces.
+
+If an interface I declares a `private` or `static` method `m`, and the signature of `m` is a subsignature of a `public` instance method `m'` in a superinterface type of I, and `m'` would otherwise be accessible to code in I, then a compile-time error occurs.
+
+In essence, a `static` method in an interface cannot hide an instance method in a superinterface type. This is similar to the rule in [§8.4.8.2](ch08-classes.md#jls-8.4.8.2) whereby a `static` method in a class cannot hide an instance method in a superclass type or superinterface type. Note that the rule in [§8.4.8.2](ch08-classes.md#jls-8.4.8.2) speaks of a class that "declares or inherits a `static` method", whereas the rule above speaks only of an interface that "declares a `static` method", since an interface cannot inherit a `static` method. Also note that the rule in [§8.4.8.2](ch08-classes.md#jls-8.4.8.2) allows hiding of both instance and `static` methods in superclasses/superinterfaces, whereas the rule above considers only `public` instance methods in superinterface types.
+
+Along the same lines, a `private` method in an interface cannot override an instance method - whether `public` or `private` - in a superinterface type. This is similar to the rules in [§8.4.8.1](ch08-classes.md#jls-8.4.8.1) and [§8.4.8.3](ch08-classes.md#jls-8.4.8.3) whereby a `private` method in a class cannot override any instance method in a superclass type or superinterface type, because [§8.4.8.1](ch08-classes.md#jls-8.4.8.1) requires the overridden method to be non-`private` and [§8.4.8.3](ch08-classes.md#jls-8.4.8.3) requires the overriding method to provide at least as much access as the overridden method. In summary, only `public` methods in interfaces can be overridden, and only by `public` methods in subinterfaces or in implementing classes.
+
+
+#### 9.4.1.1. Overriding (by Instance Methods)
+
+
+An instance method `m`<sub>`I`</sub> declared in or inherited by interface I, *overrides from I* another instance method `m`<sub>`J`</sub> declared in interface J, iff all of the following are true:
+
+
+- I is a subinterface of J.
+
+- I does not inherit `m`<sub>`J`</sub>.
+
+- The signature of `m`<sub>`I`</sub> is a subsignature ([§8.4.2](ch08-classes.md#jls-8.4.2)) of the signature of `m`<sub>`J`</sub> as a member of the supertype of I that names J.
+
+- `m`<sub>`J`</sub> is `public`.
+
+
+The presence or absence of the `strictfp` modifier has absolutely no effect on the rules for overriding methods. For example, it is permitted for a method that is not `strictfp` to override a `strictfp` method, and it is permitted for a `strictfp` method to override a method that is not `strictfp`.
+
+An overridden default method can be accessed by using a method invocation expression ([§15.12](ch15-expressions.md#jls-15.12)) that contains the keyword `super` qualified by a superinterface name.
+
+
+#### 9.4.1.2. Requirements in Overriding
+
+
+The relationship between the return type of an interface method and the return types of any overridden interface methods is specified in [§8.4.8.3](ch08-classes.md#jls-8.4.8.3).
+
+The relationship between the `throws` clause of an interface method and the `throws` clauses of any overridden interface methods is specified in [§8.4.8.3](ch08-classes.md#jls-8.4.8.3).
+
+The relationship between the signature of an interface method and the signatures of any overridden interface methods is specified in [§8.4.8.3](ch08-classes.md#jls-8.4.8.3).
+
+The relationship between the accessibility of an interface method and the accessibility of any overridden interface methods is specified in [§8.4.8.3](ch08-classes.md#jls-8.4.8.3).
+
+It is a compile-time error if a default method is override-equivalent ([§8.4.2](ch08-classes.md#jls-8.4.2)) with a non-`private` method of the class `Object`, because any class implementing the interface will inherit its own implementation of the method.
+
+The prohibition against declaring one of the `Object` methods as a default method may be surprising. There are, after all, cases like `java.util.List` in which the behavior of `toString` and `equals` are precisely defined. The motivation becomes clearer, however, when some broader design decisions are understood:
+
+
+- First, methods inherited from a superclass are allowed to override methods inherited from superinterfaces ([§8.4.8.1](ch08-classes.md#jls-8.4.8.1)). So, every implementing class would automatically override an interface's `toString` default. This is longstanding behavior in the Java programming language. It is not something we wish to change with the design of default methods, because that would conflict with the goal of allowing interfaces to unobtrusively evolve, only providing default behavior when a class doesn't already have it through the class hierarchy.
+
+- Second, interfaces do *not* inherit from `Object`, but rather implicitly declare many of the same methods as `Object` ([§9.2](ch09-interfaces.md#jls-9.2)). So, there is no common ancestor for the `toString` declared in `Object` and the `toString` declared in an interface. At best, if both were candidates for inheritance by a class, they would conflict. Working around this problem would require awkward commingling of the class and interface inheritance trees.
+
+- Third, use cases for declaring `Object` methods in interfaces typically assume a linear interface hierarchy; the feature does not generalize very well to multiple inheritance scenarios.
+
+- Fourth, the `Object` methods are so fundamental that it seems dangerous to allow an arbitrary superinterface to silently add a default method that changes their behavior.
+
+
+An interface is free, however, to define another method that provides behavior useful for classes that override the `Object` methods. For example, the `java.util.List` interface could declare an `elementString` method that produces the string described by the contract of `toString`; implementors of `toString` in classes could then delegate to this method.
+
+
+#### 9.4.1.3. Inheriting Methods with Override-Equivalent Signatures
+
+
+It is possible for an interface to inherit several methods with override-equivalent signatures ([§8.4.2](ch08-classes.md#jls-8.4.2)).
+
+If an interface I inherits a default method whose signature is override-equivalent with another method inherited by I, then a compile-time error occurs. (This is the case whether the other method is `abstract` or `default`.)
+
+Otherwise, all the inherited methods are `abstract`, and the interface is considered to inherit all the methods.
+
+One of the inherited methods must be return-type-substitutable for every other inherited method, or else a compile-time error occurs. (The `throws` clauses do not cause errors in this case.)
+
+There might be several paths by which the same method declaration is inherited from an interface. This fact causes no difficulty and never, of itself, results in a compile-time error.
+
+Naturally, when two different default methods with matching signatures are inherited by a subinterface, there is a behavioral conflict. We actively detect this conflict and notify the programmer with an error, rather than waiting for the problem to arise when a concrete class is compiled. The error can be avoided by declaring a new method that overrides, and thus prevents the inheritance of, all conflicting methods.
+
+Similarly, when an `abstract` method and a `default` method with matching signatures are inherited by a subinterface, we produce an error. In this case, it would be possible to give priority to one or the other - perhaps we would assume that the default method provides a reasonable implementation for the `abstract` method. But this is risky, since other than the coincidental name and signature, we have no reason to believe that the default method behaves consistently with the `abstract` method's contract - the default method may not have even existed when the subinterface was originally developed. It is safer in this situation to ask the user to actively assert that the default implementation is appropriate (via an overriding declaration).
+
+In contrast, the longstanding behavior for inherited concrete methods in classes is that they override `abstract` methods declared in interfaces (see [§8.4.8](ch08-classes.md#jls-8.4.8)). The same argument about potential contract violation applies here, but in this case there is an inherent imbalance between classes and interfaces. We prefer, in order to preserve the independent nature of class hierarchies, to minimize class-interface clashes by simply giving priority to concrete methods.
+
+
+### 9.4.2. Overloading
+
+
+If two methods of an interface (whether both declared in the same interface, or both inherited by an interface, or one declared and one inherited) have the same name but different signatures that are not override-equivalent ([§8.4.2](ch08-classes.md#jls-8.4.2)), then the method name is said to be *overloaded*.
+
+This fact causes no difficulty and never of itself results in a compile-time error. There is no required relationship between the return types or between the `throws` clauses of two methods with the same name but different signatures that are not override-equivalent.
+
+
+**Example 9.4.2-1. Overloading an `abstract` Method Declaration**
+
+
+``` programlisting
+
+interface PointInterface {
+    void move(int dx, int dy);
+}
+interface RealPointInterface extends PointInterface {
+    void move(float dx, float dy);
+    void move(double dx, double dy);
+}
+```
+
+Here, the method named `move` is overloaded in interface `RealPointInterface` with three different signatures, two of them declared and one inherited. Any non-`abstract` class that implements interface `RealPointInterface` must provide implementations of all three method signatures.
+
+
+  
+
+
+### 9.4.3. Interface Method Body
+
+
+A default method has a block body. This block of code provides an implementation of the method in the event that a class implements the interface but does not provide its own implementation of the method.
+
+A `private` or `static` interface method also has a block body, which provides the implementation of the method.
+
+It is a compile-time error if an interface method declaration is `abstract` (explicitly or implicitly) and has a block for its body.
+
+It is a compile-time error if an interface method declaration is `default`, `private`, or `static`, and has a semicolon for its body.
+
+The rules for `return` statements in a method body are specified in [§14.17](ch14-blocks-statements-patterns.md#jls-14.17).
+
+If a method is declared to have a return type ([§8.4.5](ch08-classes.md#jls-8.4.5)), then a compile-time error occurs if the body of the method can complete normally ([§14.1](ch14-blocks-statements-patterns.md#jls-14.1)).
+
+
+## 9.5. Member Class and Interface Declarations
+
+
+An interface body ([§9.1.5](ch09-interfaces.md#jls-9.1.5)) may contain declarations of member classes and member interfaces ([§8.5](ch08-classes.md#jls-8.5)).
+
+Every member class or interface declaration in the body of an interface declaration is implicitly `public` and `static` ([§9.1.1.3](ch09-interfaces.md#jls-9.1.1.3)). It is permitted to redundantly specify either or both of these modifiers.
+
+It is a compile-time error if a member class or interface declaration in an interface has the modifier `protected` or `private`.
+
+The rules for modifiers of a member class declaration in the body of an interface declaration are specified in [§8.1.1](ch08-classes.md#jls-8.1.1).
+
+The rules for modifiers of a member interface declaration in the body of an interface declaration are specified in [§9.1.1](ch09-interfaces.md#jls-9.1.1).
+
+If an interface declares a member class or interface with a certain name, then the declaration of the member class or interface is said to *hide* any and all accessible declarations of member classes and interface with the same name in superinterfaces of the interface.
+
+An interface inherits from its direct superinterfaces all the member classes and interfaces of the direct superinterfaces that are not hidden by a declaration in the interface.
+
+It is possible for an interface to inherit more than one member class or interface with the same name. Such a situation does not in itself cause a compile-time error. However, any attempt within the body of the interface to refer to any such member class or interface by its simple name will result in a compile-time error, because the reference is ambiguous.
+
+There might be several paths by which the same member class or interface declaration is inherited from an interface. In such a situation, the member class or interface is considered to be inherited only once, and it may be referred to by its simple name without ambiguity.
+
+
+## 9.6. Annotation Interfaces
+
+
+An *annotation interface declaration* specifies an *annotation interface*, a specialized kind of interface. To distinguish an annotation interface declaration from a normal interface declaration, the keyword `interface` is preceded by an at sign (`@`).
+
+
+AnnotationInterfaceDeclaration:
+
+
+{[InterfaceModifier](ch09-interfaces.md#jls-InterfaceModifier "InterfaceModifier")} `@` `interface` [TypeIdentifier](ch03-lexical-structure.md#jls-TypeIdentifier "TypeIdentifier") [AnnotationInterfaceBody](ch09-interfaces.md#jls-AnnotationInterfaceBody "AnnotationInterfaceBody")
+
+
+Note that the at sign (`@`) and the keyword `interface` are distinct tokens. It is possible to separate them with whitespace, but this is discouraged as a matter of style.
+
+Unless explicitly modified in this section and its subsections, all of the rules that apply to normal interface declarations ([§9.1](ch09-interfaces.md#jls-9.1)) apply to annotation interface declarations.
+
+For example, annotation interface declarations have the same rules for scope as normal interface declarations.
+
+It is a compile-time error if an annotation interface declaration has the modifier `sealed` or `non-sealed` ([§9.1.1.4](ch09-interfaces.md#jls-9.1.1.4)).
+
+An annotation interface declaration may specify a top level interface or a member interface, but not a local interface ([§14.3](ch14-blocks-statements-patterns.md#jls-14.3)).
+
+An annotation interface declaration is not permitted syntactically to appear within a block, by virtue of the *LocalClassOrInterfaceDeclaration* production in [§14.3](ch14-blocks-statements-patterns.md#jls-14.3).
+
+It is a compile-time error if an annotation interface declaration appears directly or indirectly in the body of a local class, local interface, or anonymous class declaration ([§14.3](ch14-blocks-statements-patterns.md#jls-14.3), [§15.9.5](ch15-expressions.md#jls-15.9.5)).
+
+This rule, together with the syntactic restriction on annotation interface declarations noted above, ensures that an annotation interface always has a canonical name ([§6.7](ch06-names.md#jls-6.7)). Having such a name is important because the purpose of an annotation interface is to be used by annotations in other compilation units. Since a local class or interface does not have a canonical name, an annotation interface declared anywhere within its syntactic body (if that were allowed) would not have a canonical name either.
+
+The following code shows the effect of this rule and the related syntactic restriction:
+
+``` programlisting
+
+class C {
+    @interface A1 {}  /* Legal: an annotation interface can be a
+                         member interface */
+
+    void m() {
+        @interface A2 {}  /* Illegal: an annotation interface cannot
+                             be a local interface */
+
+        class D {
+            @interface A3 {}  /* Illegal: an annotation interface
+                                 cannot be specified anywhere within
+                                 the body of local class D */
+
+            class E {
+                @interface A4 {}
+                  /* Illegal: an annotation interface cannot be
+                     specified anywhere within the body of local class
+                     D, even as a member of a class E nested in D */
+            }
+        }
+    }
+}
+```
+
+An annotation interface is never generic ([§9.1.2](ch09-interfaces.md#jls-9.1.2)).
+
+Unlike a normal interface declaration, an annotation interface declaration cannot declare any type variables, by virtue of the *AnnotationTypeDeclaration* production.
+
+The direct superinterface type of an annotation interface is always `java.lang.annotation.Annotation` ([§9.1.3](ch09-interfaces.md#jls-9.1.3)).
+
+Unlike a normal interface declaration, an annotation interface declaration cannot choose the direct superinterface type via an `extends` clause, by virtue of the *AnnotationTypeDeclaration* production.
+
+A consequence of the fact that an annotation interface declaration does not explicitly specify a superinterface type via `extends` is that a subinterface of an annotation interface is never itself an annotation interface, since the subinterface's declaration necessarily uses an `extends` clause. Similarly, `java.lang.annotation.Annotation` is not itself an annotation interface.
+
+An annotation interface inherits several methods from `java.lang.annotation.Annotation`, including the implicitly declared methods corresponding to the instance methods of `Object` ([§9.2](ch09-interfaces.md#jls-9.2)), yet these methods do not define elements of the annotation interface ([§9.6.1](ch09-interfaces.md#jls-9.6.1)).
+
+Because these methods do not define elements of the annotation interface, it is illegal to use them in annotations conforming to the annotation interface ([§9.7](ch09-interfaces.md#jls-9.7)). Without this rule, we could not ensure that elements were of the types representable in annotations, or that accessor methods for them would be available.
+
+
+### 9.6.1. Annotation Interface Elements
+
+
+The body of an annotation interface declaration may contain method declarations, each of which defines an *element* of the annotation interface. An annotation interface has no elements other than those defined by the methods declared explicitly in the annotation interface declaration.
+
+
+AnnotationInterfaceBody:
+
+
+`{` {[AnnotationInterfaceMemberDeclaration](ch09-interfaces.md#jls-AnnotationInterfaceMemberDeclaration "AnnotationInterfaceMemberDeclaration")} `}`
+
+
+AnnotationInterfaceMemberDeclaration:
+
+
+[AnnotationInterfaceElementDeclaration](ch09-interfaces.md#jls-AnnotationInterfaceElementDeclaration "AnnotationInterfaceElementDeclaration")  
+[ConstantDeclaration](ch09-interfaces.md#jls-ConstantDeclaration "ConstantDeclaration")  
+[ClassDeclaration](ch08-classes.md#jls-ClassDeclaration "ClassDeclaration")  
+[InterfaceDeclaration](ch09-interfaces.md#jls-InterfaceDeclaration "InterfaceDeclaration")  
+`;`
+
+
+AnnotationInterfaceElementDeclaration:
+
+
+{[AnnotationInterfaceElementModifier](ch09-interfaces.md#jls-AnnotationInterfaceElementModifier "AnnotationInterfaceElementModifier")} [UnannType](ch08-classes.md#jls-UnannType "UnannType") [Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier") `(` `)` \[[Dims](ch04-types-values-variables.md#jls-Dims "Dims")\] \[[DefaultValue](ch09-interfaces.md#jls-DefaultValue "DefaultValue")\] `;`
+
+
+AnnotationInterfaceElementModifier:
+
+
+(one of)  
+[Annotation](ch09-interfaces.md#jls-Annotation "Annotation") `public`  
+`abstract`
+
+
+The following production from [§4.3](ch04-types-values-variables.md#jls-4.3) is shown here for convenience:
+
+
+Dims:
+
+
+{[Annotation](ch09-interfaces.md#jls-Annotation "Annotation")} `[` `]` {{[Annotation](ch09-interfaces.md#jls-Annotation "Annotation")} `[` `]`}
+
+
+By virtue of the grammar above, a method declaration in an annotation interface declaration cannot have formal parameters, type parameters, or a `throws` clause; and cannot be `private`, `default`, or `static`. Thus, an annotation interface cannot have the same variety of methods as a normal interface. Note that it is still possible for an annotation interface to inherit a default method from its implicit superinterface, `java.lang.annotation.Annotation`, though no such default method exists as of Java SE 26.
+
+By convention, the only modifiers that should be present on the declaration of an annotation interface element are annotations.
+
+The return type of a method declared in the body of annotation interface must be one of the following, or a compile-time error occurs:
+
+
+- A primitive type
+
+- `String`
+
+- `Class` or an invocation of `Class` ([§4.5](ch04-types-values-variables.md#jls-4.5))
+
+- An enum class type
+
+- An annotation interface type
+
+- An array type whose component type is one of the preceding types ([§10.1](ch10-arrays.md#jls-10.1)).
+
+
+This rule precludes elements with nested array types, such as:
+
+``` programlisting
+
+@interface Verboten {
+    String[][] value();
+}
+```
+
+
+The declaration of a method that returns an array is allowed to place the bracket pair that denotes the array type after the empty formal parameter list. This syntax is supported for compatibility with early versions of the Java programming language. It is very strongly recommended that this syntax is not used in new code.
+
+It is a compile-time error if any method declared in an annotation interface has a signature that is override-equivalent ([§8.4.2](ch08-classes.md#jls-8.4.2)) to that of any `public` or `protected` method declared in class `Object` or in interface `java.lang.annotation.Annotation`.
+
+It is a compile-time error if the declaration of an annotation interface T contains an element of type T, either directly or indirectly.
+
+
+For example, this is illegal:
+
+``` programlisting
+
+@interface SelfRef { SelfRef value(); }
+```
+
+and so is this:
+
+``` programlisting
+
+@interface Ping { Pong value(); }
+@interface Pong { Ping value(); }
+```
+
+
+An annotation interface with no elements is called a *marker annotation interface*.
+
+An annotation interface with one element is called a *single-element annotation interface*.
+
+By convention, the name of the sole element in a single-element annotation interface is `value`. Linguistic support for this convention is provided by single-element annotations ([§9.7.3](ch09-interfaces.md#jls-9.7.3)).
+
+
+**Example 9.6.1-1. Annotation Interface Declaration**
+
+
+The following annotation interface declaration defines an annotation interface with several elements:
+
+``` programlisting
+
+/**
+ * Describes the "request-for-enhancement" (RFE)
+ * that led to the presence of the annotated API element.
+ */
+@interface RequestForEnhancement {
+    int    id();        // Unique ID number associated with RFE
+    String synopsis();  // Synopsis of RFE
+    String engineer();  // Name of engineer who implemented RFE
+    String date();      // Date RFE was implemented
+}
+```
+
+
+  
+
+
+**Example 9.6.1-2. Marker Annotation Interface Declaration**
+
+
+The following annotation interface declaration defines a marker annotation interface:
+
+``` programlisting
+
+/**
+ * An annotation with this type indicates that the
+ * specification of the annotated API element is
+ * preliminary and subject to change.
+ */
+@interface Preliminary {}
+```
+
+
+  
+
+
+**Example 9.6.1-3. Single-Element Annotation Interface Declarations**
+
+
+The convention that a single-element annotation interface defines an element called `value` is illustrated in the following annotation interface declaration:
+
+``` programlisting
+
+/**
+ * Associates a copyright notice with the annotated API element.
+ */
+@interface Copyright {
+    String value();
+}
+```
+
+The following annotation interface declaration defines a single-element annotation interface whose sole element has an array type:
+
+``` programlisting
+
+/**
+ * Associates a list of endorsers with the annotated class.
+ */
+@interface Endorsers {
+    String[] value();
+}
+```
+
+The following annotation interface declaration shows a `Class`-typed element whose value is constrained by a bounded wildcard:
+
+``` programlisting
+
+interface Formatter {}
+
+// Designates a formatter to pretty-print the annotated class
+@interface PrettyPrinter {
+    Class<? extends Formatter> value();
+}
+```
+
+The following annotation interface declaration contains an element whose type is an annotation interface type:
+
+``` programlisting
+
+/**
+ * Indicates the author of the annotated program element.
+ */
+@interface Author {
+    Name value();
+}
+/**
+ * A person's name.  This annotation interface is not
+ * designed to be used directly to annotate program elements,
+ * but to define elements of other annotation interfaces.
+ */
+@interface Name {
+    String first();
+    String last();
+}
+```
+
+The grammar for annotation interface declarations permits other member declarations besides method declarations. For example, one might choose to declare a nested enum class for use by an element of the annotation interface:
+
+``` programlisting
+
+@interface Quality {
+    enum Level { BAD, INDIFFERENT, GOOD }
+    Level value();
+}
+```
+
+
+  
+
+
+### 9.6.2. Defaults for Annotation Interface Elements
+
+
+An annotation interface element may have a *default value*, specified by attaching the keyword `default` and a value to the method declaration which defines the element.
+
+
+DefaultValue:
+
+
+`default` [ElementValue](ch09-interfaces.md#jls-ElementValue "ElementValue")
+
+
+The following productions from [§9.7.1](ch09-interfaces.md#jls-9.7.1) are shown here for convenience:
+
+
+ElementValue:
+
+
+[ConditionalExpression](ch15-expressions.md#jls-ConditionalExpression "ConditionalExpression")  
+[ElementValueArrayInitializer](ch09-interfaces.md#jls-ElementValueArrayInitializer "ElementValueArrayInitializer")  
+[Annotation](ch09-interfaces.md#jls-Annotation "Annotation")
+
+
+ElementValueArrayInitializer:
+
+
+`{` \[[ElementValueList](ch09-interfaces.md#jls-ElementValueList "ElementValueList")\] \[`,`\] `}`
+
+
+ElementValueList:
+
+
+[ElementValue](ch09-interfaces.md#jls-ElementValue "ElementValue") {`,` [ElementValue](ch09-interfaces.md#jls-ElementValue "ElementValue")}
+
+
+Note that an annotation interface element which is specified to have a default value is not a default method ([§9.4](ch09-interfaces.md#jls-9.4)). The declaration of an annotation interface cannot declare default methods ([§9.6.1](ch09-interfaces.md#jls-9.6.1)).
+
+It is a compile-time error if the type of the element is not commensurate ([§9.7](ch09-interfaces.md#jls-9.7)) with the default value specified.
+
+Default values are not compiled into annotations, but rather applied dynamically at the time annotations are read. Thus, changing a default value affects annotations even in classes that were compiled before the change was made (presuming these annotations lack an explicit value for the defaulted element).
+
+
+**Example 9.6.2-1. Annotation Interface Declaration With Default Values**
+
+
+Here is a refinement of the `RequestForEnhancement` annotation interface from [§9.6.1](ch09-interfaces.md#jls-9.6.1):
+
+``` programlisting
+
+@interface RequestForEnhancement {
+    int    id();       // No default - must be specified in
+                       // each annotation
+    String synopsis(); // No default - must be specified in
+                       // each annotation
+    String engineer()  default "[unassigned]";
+    String date()      default "[unimplemented]";
+}
+```
+
+
+  
+
+
+### 9.6.3. Repeatable Annotation Interfaces
+
+
+An annotation interface A is *repeatable* if its declaration is (meta-)annotated with an `@Repeatable` annotation ([§9.6.4.8](ch09-interfaces.md#jls-9.6.4.8)) whose `value` element indicates a *containing annotation interface of A*.
+
+An annotation interface AC is a *containing annotation interface of A* if all of the following are true:
+
+
+1.  AC declares a `value()` method whose return type is A`[]`.
+
+2.  Any methods declared by AC other than `value()` have a default value.
+
+3.  AC is retained for at least as long as A, where retention is expressed explicitly or implicitly with the `@Retention` annotation ([§9.6.4.2](ch09-interfaces.md#jls-9.6.4.2)). Specifically:
+
+
+    - If the retention of AC is `java.lang.annotation.RetentionPolicy.SOURCE`, then the retention of A is `java.lang.annotation.RetentionPolicy.SOURCE`.
+
+    - If the retention of AC is `java.lang.annotation.RetentionPolicy.CLASS`, then the retention of A is either `java.lang.annotation.RetentionPolicy.CLASS` or `java.lang.annotation.RetentionPolicy.SOURCE`.
+
+    - If the retention of AC is `java.lang.annotation.RetentionPolicy.RUNTIME`, then the retention of A is `java.lang.annotation.RetentionPolicy.SOURCE`, `java.lang.annotation.RetentionPolicy.CLASS`, or `java.lang.annotation.RetentionPolicy.RUNTIME`.
+
+    
+
+4.  A is applicable to at least the same kinds of program element as AC ([§9.6.4.1](ch09-interfaces.md#jls-9.6.4.1)). Specifically, if the kinds of program element where A is applicable are denoted by the set `m`<sub>`1`</sub>, and the kinds of program element where AC is applicable are denoted by the set `m`<sub>`2`</sub>, then each kind in `m`<sub>`2`</sub> must occur in `m`<sub>`1`</sub>, except that:
+
+
+    - If the kind in `m`<sub>`2`</sub> is `java.lang.annotation.ElementType.ANNOTATION_TYPE`, then at least one of `java.lang.annotation.ElementType.ANNOTATION_TYPE` or `java.lang.annotation.ElementType.TYPE` or `java.lang.annotation.ElementType.TYPE_USE` must occur in `m`<sub>`1`</sub>.
+
+    - If the kind in `m`<sub>`2`</sub> is `java.lang.annotation.ElementType.TYPE`, then at least one of `java.lang.annotation.ElementType.TYPE` or `java.lang.annotation.ElementType.TYPE_USE` must occur in `m`<sub>`1`</sub>.
+
+    - If the kind in `m`<sub>`2`</sub> is `java.lang.annotation.ElementType.TYPE_PARAMETER`, then at least one of `java.lang.annotation.ElementType.TYPE_PARAMETER` or `java.lang.annotation.ElementType.TYPE_USE` must occur in `m`<sub>`1`</sub>.
+
+    
+
+    This clause implements the policy that an annotation interface may be *repeatable* on only some of the kinds of program element where it is *applicable*.
+
+5.  If the declaration of A has a (meta-)annotation that corresponds to `java.lang.annotation.Documented`, then the declaration of AC must have a (meta-)annotation that corresponds to `java.lang.annotation.Documented`.
+
+    Note that it is permissible for AC to be `@Documented` while A is not `@Documented`.
+
+6.  If the declaration of A has a (meta-)annotation that corresponds to `java.lang.annotation.Inherited`, then the declaration of AC must have a (meta)-annotation that corresponds to `java.lang.annotation.Inherited`.
+
+    Note that it is permissible for AC to be `@Inherited` while A is not `@Inherited`.
+
+
+It is a compile-time error if an annotation interface A is (meta-)annotated with an `@Repeatable` annotation whose `value` element indicates a type which is not a containing annotation interface of A.
+
+
+**Example 9.6.3-1. Ill-formed Containing Annotation Interface**
+
+
+Consider the following declarations:
+
+``` programlisting
+
+import java.lang.annotation.Repeatable;
+
+@Repeatable(FooContainer.class)
+@interface Foo {}
+
+@interface FooContainer { Object[] value(); }
+```
+
+Compiling the `Foo` declaration produces a compile-time error because `Foo` uses `@Repeatable` to attempt to specify `FooContainer` as its containing annotation interface, but `FooContainer` is not in fact a containing annotation interface of `Foo`. (The return type of `FooContainer.value()` is not `Foo``[]`.)
+
+
+  
+
+The `@Repeatable` annotation cannot be repeated, so only one containing annotation interface can be specified by a repeatable annotation interface.
+
+Allowing more than one containing annotation interface to be specified would cause an undesirable choice at compile time, when multiple annotations of the repeatable annotation interface are logically replaced with a container annotation ([§9.7.5](ch09-interfaces.md#jls-9.7.5)).
+
+An annotation interface can be the containing annotation interface of at most one annotation interface.
+
+This is implied by the requirement that if the declaration of an annotation interface A specifies a containing annotation interface of AC, then the `value()` method of AC has a return type involving A, specifically A`[]`.
+
+An annotation interface cannot specify itself as its containing annotation interface.
+
+This is implied by the requirement on the `value()` method of the containing annotation interface. Specifically, if an annotation interface A specified itself (via `@Repeatable`) as its containing annotation interface, then the return type of A's `value()` method would have to be A`[]`; but this would cause a compile-time error since an annotation interface cannot refer to itself in its elements ([§9.6.1](ch09-interfaces.md#jls-9.6.1)). More generally, two annotation interfaces cannot specify each other as their containing annotation interface, because cyclic annotation interface declarations are illegal.
+
+An annotation interface AC may be the containing annotation interface of some annotation interface A while also having its own containing annotation interface SC. That is, a containing annotation interface may itself be a repeatable annotation interface.
+
+
+**Example 9.6.3-2. Restricting Where Annotations May Repeat**
+
+
+An annotation whose interface declaration indicates a target of `java.lang.annotation.ElementType.TYPE` can appear in at least as many locations as an annotation whose interface declaration indicates a target of `java.lang.annotation.ElementType.ANNOTATION_TYPE`. For example, given the following declarations of repeatable and containing annotation interfaces:
+
+``` programlisting
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
+import java.lang.annotation.Target;
+
+@Target(ElementType.TYPE)
+@Repeatable(FooContainer.class)
+@interface Foo {}
+
+@Target(ElementType.ANNOTATION_TYPE)
+@interface FooContainer {
+    Foo[] value();
+}
+```
+
+`@Foo` can appear on any class or interface declaration while `@FooContainer` can appear on only annotation interface declarations. Therefore, the following annotation interface declaration is legal:
+
+``` programlisting
+
+@Foo @Foo
+@interface Anno {}
+```
+
+while the following interface declaration is illegal:
+
+``` programlisting
+
+@Foo @Foo
+interface Intf {}
+```
+
+More broadly, if `Foo` is a repeatable annotation interface and `FooContainer` is its containing annotation interface, then:
+
+
+- If `Foo` has no `@Target` meta-annotation and `FooContainer` has no `@Target` meta-annotation, then `@Foo` may be repeated on any program element which supports annotations.
+
+- If `Foo` has no `@Target` meta-annotation but `FooContainer` has an `@Target` meta-annotation, then `@Foo` may only be repeated on program elements where `@FooContainer` may appear.
+
+- If `Foo` has an `@Target` meta-annotation, then in the judgment of the designers of the Java programming language, `FooContainer` must be declared with knowledge of the `Foo`'s applicability. Specifically, the kinds of program element where `FooContainer` may appear must logically be the same as, or a subset of, `Foo`'s kinds.
+
+  For example, if `Foo` is applicable to field and method declarations, then `FooContainer` may legitimately serve as `Foo`'s containing annotation interface if `FooContainer` is applicable to just field declarations (preventing `@Foo` from being repeated on method declarations). But if `FooContainer` is applicable only to formal parameter declarations, then `FooContainer` was a poor choice of containing annotation interface by `Foo` because `@FooContainer` cannot be implicitly declared on some program elements where `@Foo` is repeated.
+
+  Similarly, if `Foo` is applicable to field and method declarations, then `FooContainer` cannot legitimately serve as `Foo`'s containing annotation interface if `FooContainer` is applicable to field and parameter declarations. While it would be possible to take the intersection of the program elements and make `Foo` repeatable on field declarations only, the presence of additional program elements for `FooContainer` indicates that `FooContainer` was not designed as a containing annotation interface for `Foo`. It would therefore be dangerous for `Foo` to rely on it.
+
+
+  
+
+
+**Example 9.6.3-3. A Repeatable Containing Annotation Interface**
+
+
+The following declarations are legal:
+
+``` programlisting
+
+import java.lang.annotation.Repeatable;
+
+// Foo: Repeatable annotation interface
+@Repeatable(FooContainer.class)
+@interface Foo { int value(); }
+
+// FooContainer: Containing annotation interface of Foo
+// Also a repeatable annotation interface itself
+@Repeatable(FooContainerContainer.class)
+@interface FooContainer { Foo[] value(); }
+
+// FooContainerContainer: Containing annotation interface
+// of FooContainer
+@interface FooContainerContainer { FooContainer[] value(); }
+```
+
+Thus, an annotation whose interface is a containing annotation interface may itself be repeated:
+
+``` programlisting
+
+@FooContainer({@Foo(1)}) @FooContainer({@Foo(2)})
+class Test {}
+```
+
+An annotation interface which is both repeatable and containing is subject to the rules on mixing annotations of repeatable annotation interface with annotations of containing annotation interface ([§9.7.5](ch09-interfaces.md#jls-9.7.5)). For example, it is not possible to write multiple `@Foo` annotations alongside multiple `@FooContainer` annotations, nor is it possible to write multiple `@FooContainer` annotations alongside multiple `@FooContainerContainer` annotations. However, if the annotation interface `FooContainerContainer` was itself repeatable, then it would be possible to write multiple `@Foo` annotations alongside multiple `@FooContainerContainer` annotations.
+
+
+  
+
+
+### 9.6.4. Predefined Annotation Interfaces
+
+
+Several annotation interfaces are predefined in the Java SE Platform API. Some of the predefined annotation interfaces have special semantics in the Java programming language and require special behavior on the part of a Java compiler, as specified in this section. This section does not provide a complete specification for the predefined annotation interfaces, for which the reader is referred to the Java SE Platform API documentation ([§1.4](ch01-introduction.md#jls-1.4)).
+
+
+#### 9.6.4.1. `@Target`
+
+
+An annotation of type `java.lang.annotation.Target` is used on the declaration of an annotation interface A to specify the contexts in which A is *applicable*. `java.lang.annotation.Target` has a single element, `value`, of type `java.lang.annotation.ElementType``[]`, to specify contexts.
+
+Annotation interfaces may be applicable in *declaration contexts*, where annotations apply to declarations, or in *type contexts*, where annotations apply to types used in declarations and expressions.
+
+There are ten declaration contexts, each corresponding to an enum constant of `java.lang.annotation.ElementType`:
+
+
+1.  Module declarations ([§7.7](ch07-packages-modules.md#jls-7.7))
+
+    Corresponds to `java.lang.annotation.ElementType.MODULE`
+
+2.  Package declarations ([§7.4.1](ch07-packages-modules.md#jls-7.4.1))
+
+    Corresponds to `java.lang.annotation.ElementType.PACKAGE`
+
+3.  Class declarations (including enum declarations and record declarations) and interface declarations (including annotation interface declarations) ([§8.1.1](ch08-classes.md#jls-8.1.1), [§8.5](ch08-classes.md#jls-8.5), [§8.9](ch08-classes.md#jls-8.9), [§8.10](ch08-classes.md#jls-8.10), [§9.1.1](ch09-interfaces.md#jls-9.1.1), [§9.5](ch09-interfaces.md#jls-9.5), [§9.6](ch09-interfaces.md#jls-9.6))
+
+    Corresponds to `java.lang.annotation.ElementType.TYPE`
+
+    Additionally, annotation interface declarations correspond to `java.lang.annotation.ElementType.ANNOTATION_TYPE`
+
+4.  Method declarations (including elements of annotation interfaces) ([§8.4.3](ch08-classes.md#jls-8.4.3), [§9.4](ch09-interfaces.md#jls-9.4), [§9.6.1](ch09-interfaces.md#jls-9.6.1))
+
+    Corresponds to `java.lang.annotation.ElementType.METHOD`
+
+5.  Constructor declarations ([§8.8.3](ch08-classes.md#jls-8.8.3))
+
+    Corresponds to `java.lang.annotation.ElementType.CONSTRUCTOR`
+
+6.  Type parameter declarations of generic classes, interfaces, methods, and constructors ([§8.1.2](ch08-classes.md#jls-8.1.2), [§9.1.2](ch09-interfaces.md#jls-9.1.2), [§8.4.4](ch08-classes.md#jls-8.4.4), [§8.8.4](ch08-classes.md#jls-8.8.4))
+
+    Corresponds to `java.lang.annotation.ElementType.TYPE_PARAMETER`
+
+7.  Field declarations (including enum constants) ([§8.3.1](ch08-classes.md#jls-8.3.1), [§9.3](ch09-interfaces.md#jls-9.3), [§8.9.1](ch08-classes.md#jls-8.9.1))
+
+    Corresponds to `java.lang.annotation.ElementType.FIELD`
+
+8.  Formal and exception parameter declarations ([§8.4.1](ch08-classes.md#jls-8.4.1), [§9.4](ch09-interfaces.md#jls-9.4), [§14.20](ch14-blocks-statements-patterns.md#jls-14.20))
+
+    Corresponds to `java.lang.annotation.ElementType.PARAMETER`
+
+9.  Local variable declarations in statements ([§14.4.2](ch14-blocks-statements-patterns.md#jls-14.4.2), [§14.14.1](ch14-blocks-statements-patterns.md#jls-14.14.1), [§14.14.2](ch14-blocks-statements-patterns.md#jls-14.14.2), [§14.20.3](ch14-blocks-statements-patterns.md#jls-14.20.3)) and in patterns ([§14.30.1](ch14-blocks-statements-patterns.md#jls-14.30.1))
+
+    Corresponds to `java.lang.annotation.ElementType.LOCAL_VARIABLE`
+
+10. Record component declarations ([§8.10.1](ch08-classes.md#jls-8.10.1))
+
+    Corresponds to `java.lang.annotation.ElementType.RECORD_COMPONENT`
+
+
+There are 17 type contexts ([§4.11](ch04-types-values-variables.md#jls-4.11)), all represented by the enum constant `TYPE_USE` of `java.lang.annotation.ElementType`.
+
+It is a compile-time error if the same enum constant appears more than once in the `value` element of an annotation of type `java.lang.annotation.Target`.
+
+If an annotation of type `java.lang.annotation.Target` is not present on the declaration of an annotation interface A, then A is applicable in all declaration contexts and in no type contexts.
+
+
+#### 9.6.4.2. `@Retention`
+
+
+Annotations may be present only in source code, or they may be present in the binary form of a class or interface. An annotation that is present in the binary form may or may not be available at run time via the reflection libraries of the Java SE Platform. The annotation interface `java.lang.annotation.Retention` is used to choose among these possibilities.
+
+If an annotation `a` corresponds to an annotation interface A, and A has a (meta-)annotation `m` that corresponds to `java.lang.annotation.Retention`, then:
+
+
+- If `m` has an element whose value is `java.lang.annotation.RetentionPolicy.SOURCE`, then a Java compiler must ensure that `a` is not present in the binary representation of the class or interface in which `a` appears.
+
+- If `m` has an element whose value is `java.lang.annotation.RetentionPolicy.CLASS` or `java.lang.annotation.RetentionPolicy.RUNTIME`, then a Java compiler must ensure that `a` is represented in the binary representation of the class or interface in which `a` appears, unless `a` annotates a local variable declaration or `a` annotates a formal parameter declaration of a lambda expression.
+
+  An annotation on the declaration of a local variable, or on the declaration of a formal parameter of a lambda expression, is never retained in the binary representation. In contrast, an annotation on the type of a local variable, or on the type of a formal parameter of a lambda expression, is retained in the binary representation if the annotation interface specifies a suitable retention policy.
+
+  Note that it is not illegal for an annotation interface to be meta-annotated with `@Target``(``java.lang.annotation.ElementType.LOCAL_VARIABLE``)` *and* `@Retention``(``java.lang.annotation.RetentionPolicy.CLASS``)` or `@Retention``(``java.lang.annotation.RetentionPolicy.RUNTIME``)`.
+
+  If `m` has an element whose value is `java.lang.annotation.RetentionPolicy.RUNTIME`, the reflection libraries of the Java SE Platform must make `a` available at run time.
+
+
+If A does not have a (meta-)annotation that corresponds to `java.lang.annotation.Retention`, then a Java compiler must treat A as if it has a (meta-)annotation that corresponds to `java.lang.annotation.Retention` with an element whose value is `java.lang.annotation.RetentionPolicy.CLASS`.
+
+
+#### 9.6.4.3. `@Inherited`
+
+
+The annotation interface `java.lang.annotation.Inherited` is used to indicate that annotations on a class C corresponding to a given annotation interface are inherited by subclasses of C.
+
+
+#### 9.6.4.4. `@Override`
+
+
+Programmers occasionally overload a method declaration when they mean to override it, leading to subtle problems. The annotation interface `Override` supports early detection of such problems.
+
+
+The classic example concerns the `equals` method. Programmers write the following in class `Foo`:
+
+``` screen
+
+public boolean equals(Foo that) { ... }
+```
+
+when they mean to write:
+
+``` screen
+
+public boolean equals(Object that) { ... }
+```
+
+This is perfectly legal, but class `Foo` inherits the `equals` implementation from `Object`, which can cause some subtle bugs.
+
+
+If a method declaration in class or interface Q is annotated with `@Override`, then one of the following three conditions must be true, or a compile-time error occurs:
+
+
+- the method overrides from Q a method declared in a supertype of Q ([§8.4.8.1](ch08-classes.md#jls-8.4.8.1), [§9.4.1.1](ch09-interfaces.md#jls-9.4.1.1))
+
+- the method is override-equivalent to a `public` method of `Object` ([§4.3.2](ch04-types-values-variables.md#jls-4.3.2), [§8.4.2](ch08-classes.md#jls-8.4.2))
+
+- Q is a record class ([§8.10](ch08-classes.md#jls-8.10)), and the method is an accessor method for a record component of Q ([§8.10.3](ch08-classes.md#jls-8.10.3))
+
+
+This behavior differs from Java SE 5.0, where `@Override` only caused a compile-time error if applied to a method that implemented a method from a superinterface that was not also present in a superclass.
+
+
+The clause about overriding a `public` method of `Object` is motivated by use of `@Override` in an interface. Consider the following declarations:
+
+``` screen
+
+class Foo     { @Override public int hashCode() {..} }
+interface Bar { @Override int hashCode(); }
+```
+
+The use of `@Override` in the class declaration is legal by the first clause, because `Foo.hashCode` overrides from `Foo` the method `Object.hashCode`.
+
+For the interface declaration, consider that an interface has `public` `abstract` members which correspond to the `public` members of `Object` ([§9.2](ch09-interfaces.md#jls-9.2)). If an interface chooses to declare them explicitly (that is, to declare members that are override-equivalent to `public` methods of `Object`), then the interface is deemed to override them, and use of `@Override` is allowed.
+
+However, consider an interface that attempts to use `@Override` on a `clone` method: (`finalize` could also be used in this example)
+
+``` screen
+
+interface Quux { @Override Object clone(); }
+```
+
+Because `Object.clone` is not `public`, there is no member called `clone` implicitly declared in `Quux`. Therefore, the explicit declaration of `clone` in `Quux` is not deemed to "implement" any other method, and it is erroneous to use `@Override`. (The fact that `Quux.clone` is `public` is not relevant.)
+
+In contrast, a class declaration that declares `clone` is simply overriding `Object.clone`, so is able to use `@Override`:
+
+``` screen
+
+class Beep { @Override protected Object clone() {..} }
+```
+
+
+The clause about a record class is due to the special meaning of `@Override` in a record declaration. Namely, it can be used to specify that a method declaration is an accessor method for a record component. Consider the following record declaration:
+
+``` programlisting
+
+record Roo(int x) {
+    @Override
+    public int x() {
+        return Math.abs(x);
+    }
+}
+```
+
+The use of `@Override` on the accessor method `int x()` ensures that if the record component `x` is modified or removed, then the corresponding accessor method must be modified or removed too.
+
+
+#### 9.6.4.5. `@SuppressWarnings`
+
+
+Java compilers are increasingly capable of issuing helpful "lint-like" warnings. To encourage the use of such warnings, there should be some way to disable a warning in a part of the program when the programmer knows that the warning is inappropriate.
+
+The annotation interface `SuppressWarnings` supports programmer control over warnings otherwise issued by a Java compiler. It defines a single element that is an array of `String`.
+
+If a declaration is annotated with `@SuppressWarnings``(value = {``S`<sub>`1`</sub>`, ..., ``S`<sub>`k`</sub>`})`, then a Java compiler must suppress (that is, not report) any warning specified by one of S<sub>1</sub> ... S<sub>k</sub> if that warning would have been generated as a result of the annotated declaration or any of its parts.
+
+The Java programming language defines four kinds of warnings that can be specified by `@SuppressWarnings`:
+
+
+- Unchecked warnings ([§4.8](ch04-types-values-variables.md#jls-4.8), [§5.1.6](ch05-conversions-contexts.md#jls-5.1.6), [§5.1.9](ch05-conversions-contexts.md#jls-5.1.9), [§8.4.1](ch08-classes.md#jls-8.4.1), [§8.4.8.3](ch08-classes.md#jls-8.4.8.3), [§15.12.4.2](ch15-expressions.md#jls-15.12.4.2), [§15.13.2](ch15-expressions.md#jls-15.13.2), [§15.27.3](ch15-expressions.md#jls-15.27.3)) are specified by the string "`unchecked`".
+
+- Deprecation warnings ([§9.6.4.6](ch09-interfaces.md#jls-9.6.4.6)) are specified by the string "`deprecation`".
+
+- Removal warnings ([§9.6.4.6](ch09-interfaces.md#jls-9.6.4.6)) are specified by the string "`removal`".
+
+- Preview warnings ([§1.5](ch01-introduction.md#jls-1.5)) are specified by the string "`preview`".
+
+
+Any other string specifies a non-standard warning. A Java compiler must ignore any such string that it does not recognize.
+
+Compiler vendors are encouraged to document the strings they support for `@SuppressWarnings`, and to cooperate to ensure that the same strings are recognized across multiple compilers.
+
+
+#### 9.6.4.6. `@Deprecated`
+
+
+Programmers are sometimes discouraged from using certain program elements (modules, classes, interfaces, fields, methods, and constructors) because they are considered dangerous or because a better alternative exists. The annotation interface `Deprecated` allows a compiler to warn about uses of these program elements.
+
+A *deprecated* program element is a module, class, interface, field, method, or constructor whose declaration is annotated with `@Deprecated`. The manner in which a program element is deprecated depends on the value of the `forRemoval` element of the annotation:
+
+
+- If `forRemoval=false` (the default), then the program element is *ordinarily deprecated*.
+
+  An ordinarily deprecated program element is not intended to be removed in a future release, but programmers should nevertheless migrate away from using it.
+
+- If `forRemoval=true`, then the program element is *terminally deprecated*.
+
+  A terminally deprecated program element is intended to be removed in a future release. Programmers should stop using it or risk source and binary incompatibilities ([§13.2](ch13-binary-compatibility.md#jls-13.2)) when upgrading to a newer release.
+
+
+A Java compiler must produce a *deprecation warning* when an ordinarily deprecated program element is used (overridden, invoked, or referenced by name) in the declaration of a program element (whether explicitly or implicitly declared), unless:
+
+
+- The use is within a declaration that is itself deprecated, either ordinarily or terminally; or
+
+- The use is within a declaration that is annotated to suppress deprecation warnings ([§9.6.4.5](ch09-interfaces.md#jls-9.6.4.5)); or
+
+- The declaration where the use appears and the declaration of the ordinarily deprecated program element are both within the same outermost class; or
+
+- The use is within an `import` declaration that imports the ordinarily deprecated class, interface, or member; or
+
+- The use is within an `exports` or `opens` directive ([§7.7.2](ch07-packages-modules.md#jls-7.7.2)).
+
+
+A Java compiler must produce a *removal warning* when a terminally deprecated program element is used (overridden, invoked, or referenced by name) in the declaration of a program element (whether explicitly or implicitly declared), unless:
+
+
+- The use is within a declaration that is annotated to suppress removal warnings ([§9.6.4.5](ch09-interfaces.md#jls-9.6.4.5)); or
+
+- The declaration where the use appears and the declaration of the terminally deprecated program element are both within the same outermost class; or
+
+- The use is within an `import` declaration that imports the terminally deprecated class, interface, or member; or
+
+- The use is within an `exports` or `opens` directive.
+
+
+Terminal deprecation is sufficiently urgent that the use of a terminally deprecated element will cause a removal warning *even if the using element is itself deprecated*, since there is no guarantee that both elements will be removed at the same time. To dismiss the warning but continue using the element, the programmer must manually acknowledge the risk via an `@SuppressWarnings` annotation.
+
+No deprecation warning or removal warning is produced when:
+
+
+- a local variable or formal parameter is used (referenced by name), even if the declaration of the local variable or formal parameter is annotated with `@Deprecated`.
+
+- the name of a package is used (referenced by a qualified type name, or an `import` declaration, or an `exports` or `opens` directive), even if the declaration of the package is annotated with `@Deprecated`.
+
+- the name of a module is used by a qualified `exports` or `opens` directive, even if the declaration of the friend module is annotated with `@Deprecated`.
+
+
+A module declaration that exports or opens a package is usually controlled by the same programmer or team that controls the package's declaration. As such, there is little benefit in warning that the package declaration is annotated with `@Deprecated` when the package is exported or opened by the module declaration. In contrast, a module declaration that exports or opens a package *to a friend module* is usually not controlled by the same programmer or team that controls the friend module. Simply exporting or opening the package does not make the module declaration rely on the friend module, so there is little value in warning if the friend module is deprecated; the programmer of the module declaration would almost always wish to suppress such a warning.
+
+The only implicit declaration that can cause a deprecation warning or removal warning is a container annotation ([§9.7.5](ch09-interfaces.md#jls-9.7.5)). Namely, if T is a repeatable annotation interface and TC is its containing annotation interface, and TC is deprecated, then repeating the `@T` annotation will cause a warning. The warning is due to the implicit `@TC` container annotation. It is strongly discouraged to deprecate a containing annotation interface without deprecating the corresponding repeatable annotation interface.
+
+
+#### 9.6.4.7. `@SafeVarargs`
+
+
+A variable arity parameter with a non-reifiable element type ([§4.7](ch04-types-values-variables.md#jls-4.7)) can cause heap pollution ([§4.12.2](ch04-types-values-variables.md#jls-4.12.2)) and give rise to compile-time unchecked warnings ([§5.1.9](ch05-conversions-contexts.md#jls-5.1.9)). However, such warnings are uninformative if the body of the variable arity method is well-behaved with respect to the variable arity parameter.
+
+The annotation interface `SafeVarargs`, when used to annotate a method or constructor declaration, makes a programmer assertion that prevents a Java compiler from reporting unchecked warnings for the declaration or invocation of a variable arity method or constructor where the compiler would otherwise do so due to the variable arity parameter having a non-reifiable element type.
+
+The annotation `@SafeVarargs` has non-local effects because it suppresses unchecked warnings at method invocation expressions, in addition to an unchecked warning pertaining to the declaration of the variable arity method itself ([§8.4.1](ch08-classes.md#jls-8.4.1)). In contrast, the annotation `@SuppressWarnings``("unchecked")` has local effects because it only suppresses unchecked warnings pertaining to the declaration of a method.
+
+
+The canonical target for `@SafeVarargs` is a method like `java.util.Collections.addAll`, whose declaration starts with:
+
+``` screen
+
+public static <T> boolean
+  addAll(Collection<? super T> c, T... elements)
+```
+
+The variable arity parameter has declared type `T``[]`, which is non-reifiable. However, the method fundamentally just reads from the input array and adds the elements to a collection, both of which are safe operations with respect to the array. Therefore, any compile-time unchecked warnings at method invocation expressions for `java.util.Collections.addAll` are arguably spurious and uninformative. Applying `@SafeVarargs` to the method declaration prevents generation of these unchecked warnings at the method invocation expressions.
+
+
+It is a compile-time error if a fixed arity method or constructor declaration is annotated with the annotation `@SafeVarargs`.
+
+It is a compile-time error if a variable arity method declaration that is neither `static` nor `final` nor `private` is annotated with the annotation `@SafeVarargs`.
+
+Since `@SafeVarargs` is only applicable to `static` methods, `final` and/or `private` instance methods, and constructors, the annotation is not usable where method overriding occurs. Annotation inheritance only works for annotations on classes (not on methods, interfaces, or constructors), so an `@SafeVarargs`-style annotation cannot be passed through instance methods in classes or through interfaces.
+
+
+#### 9.6.4.8. `@Repeatable`
+
+
+The annotation interface `java.lang.annotation.Repeatable` is used on the declaration of a *repeatable annotation interface* to indicate its containing annotation interface ([§9.6.3](ch09-interfaces.md#jls-9.6.3)).
+
+Note that an `@Repeatable` meta-annotation on the declaration of A, indicating AC, is *not* sufficient to make AC the containing annotation interface of A. There are numerous well-formedness rules for AC to be considered the containing annotation interface of A.
+
+
+#### 9.6.4.9. `@FunctionalInterface`
+
+
+The annotation interface `FunctionalInterface` is used to indicate that an interface is meant to be a functional interface ([§9.8](ch09-interfaces.md#jls-9.8)). It facilitates early detection of inappropriate method declarations appearing in or inherited by an interface that is meant to be functional.
+
+It is a compile-time error if an interface declaration is annotated with `@FunctionalInterface` but is not, in fact, a functional interface.
+
+Because some interfaces are functional incidentally, it is not necessary or desirable that all declarations of functional interfaces be annotated with `@FunctionalInterface`.
+
+
+## 9.7. Annotations
+
+
+An *annotation* is a marker which associates information with a program element, but has no effect at run time. An annotation denotes a specific instance of an annotation interface ([§9.6](ch09-interfaces.md#jls-9.6)) and usually provides values for the elements of that interface.
+
+There are three kinds of annotations. The first kind is the most general, while the other kinds are merely shorthands for the first kind.
+
+
+Annotation:
+
+
+[NormalAnnotation](ch09-interfaces.md#jls-NormalAnnotation "NormalAnnotation")  
+[MarkerAnnotation](ch09-interfaces.md#jls-MarkerAnnotation "MarkerAnnotation")  
+[SingleElementAnnotation](ch09-interfaces.md#jls-SingleElementAnnotation "SingleElementAnnotation")
+
+
+Normal annotations are described in [§9.7.1](ch09-interfaces.md#jls-9.7.1), marker annotations in [§9.7.2](ch09-interfaces.md#jls-9.7.2), and single element annotations in [§9.7.3](ch09-interfaces.md#jls-9.7.3). Annotations may appear at various syntactic locations in a program, as described in [§9.7.4](ch09-interfaces.md#jls-9.7.4). The number of annotations of the same interface that may appear at a location is determined by the interface declaration, as described in [§9.7.5](ch09-interfaces.md#jls-9.7.5).
+
+
+### 9.7.1. Normal Annotations
+
+
+A *normal annotation* specifies the name of an annotation interface and optionally a list of comma-separated *element-value pairs*. Each pair contains an *element value* that is associated with an element of the annotation interface ([§9.6.1](ch09-interfaces.md#jls-9.6.1)).
+
+
+NormalAnnotation:
+
+
+`@` [TypeName](ch06-names.md#jls-TypeName "TypeName") `(` \[[ElementValuePairList](ch09-interfaces.md#jls-ElementValuePairList "ElementValuePairList")\] `)`
+
+
+ElementValuePairList:
+
+
+[ElementValuePair](ch09-interfaces.md#jls-ElementValuePair "ElementValuePair") {`,` [ElementValuePair](ch09-interfaces.md#jls-ElementValuePair "ElementValuePair")}
+
+
+ElementValuePair:
+
+
+[Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier") `=` [ElementValue](ch09-interfaces.md#jls-ElementValue "ElementValue")
+
+
+ElementValue:
+
+
+[ConditionalExpression](ch15-expressions.md#jls-ConditionalExpression "ConditionalExpression")  
+[ElementValueArrayInitializer](ch09-interfaces.md#jls-ElementValueArrayInitializer "ElementValueArrayInitializer")  
+[Annotation](ch09-interfaces.md#jls-Annotation "Annotation")
+
+
+ElementValueArrayInitializer:
+
+
+`{` \[[ElementValueList](ch09-interfaces.md#jls-ElementValueList "ElementValueList")\] \[`,`\] `}`
+
+
+ElementValueList:
+
+
+[ElementValue](ch09-interfaces.md#jls-ElementValue "ElementValue") {`,` [ElementValue](ch09-interfaces.md#jls-ElementValue "ElementValue")}
+
+
+Note that the at sign (`@`) is a token unto itself ([§3.11](ch03-lexical-structure.md#jls-3.11)). It is possible to put whitespace between it and the *TypeName*, but this is discouraged as a matter of style.
+
+The *TypeName* specifies the annotation interface corresponding to the annotation. The annotation is said to be "of" that interface.
+
+The *TypeName* must name an accessible annotation interface ([§6.6](ch06-names.md#jls-6.6)), or a compile-time error occurs.
+
+The *Identifier* in an element-value pair must be the simple name of one of the elements (that is, methods) of the annotation interface, or a compile-time error occurs.
+
+The return type of this method defines the *element type* of the element-value pair.
+
+If the element type is an array type, then it is not required to use curly braces to specify the element value of the element-value pair. If the element value is not an *ElementValueArrayInitializer*, then an array value whose sole element is the element value is associated with the element. If the element value is an *ElementValueArrayInitializer*, then the array value represented by the *ElementValueArrayInitializer* is associated with the element.
+
+It is a compile-time error if the element type is not *commensurate* with the element value. An element type T is commensurate with an element value `v` if and only if one of the following is true:
+
+
+- T is an array type E`[]`, and either:
+
+
+  - If `v` is a *ConditionalExpression* or an *Annotation*, then `v` is commensurate with E; or
+
+  - If `v` is an *ElementValueArrayInitializer*, then each element value that `v` contains is commensurate with E.
+
+    An *ElementValueArrayInitializer* is similar to a normal array initializer ([§10.6](ch10-arrays.md#jls-10.6)), except that an *ElementValueArrayInitializer* may syntactically contain annotations as well as expressions and nested initializers. However, nested initializers are not semantically legal in an *ElementValueArrayInitializer* because they are never commensurate with array-typed elements in annotation interface declarations (nested array types not permitted).
+
+  
+
+- T is not an array type, and the type of `v` is assignment compatible ([§5.2](ch05-conversions-contexts.md#jls-5.2)) with T, and:
+
+
+  - If T is a primitive type or `String`, then `v` is a constant expression ([§15.29](ch15-expressions.md#jls-15.29)).
+
+  - If T is `Class` or an invocation of `Class` ([§4.5](ch04-types-values-variables.md#jls-4.5)), then `v` is a class literal ([§15.8.2](ch15-expressions.md#jls-15.8.2)).
+
+  - If T is an enum class type ([§8.9](ch08-classes.md#jls-8.9)), then `v` is an enum constant ([§8.9.1](ch08-classes.md#jls-8.9.1)).
+
+  - `v` is not `null`.
+
+  
+
+
+Note that if T is not an array type or an annotation interface, the element value must be a *ConditionalExpression* ([§15.25](ch15-expressions.md#jls-15.25)). The use of *ConditionalExpression* rather than a more general production like *Expression* is a syntactic trick to prevent assignment expressions as element values. Since an assignment expression is not a constant expression, it cannot be a commensurate element value for a primitive or `String`-typed element.
+
+A normal annotation must contain an element-value pair for every element of the corresponding annotation interface, except for those elements with default values, or a compile-time error occurs.
+
+A normal annotation may, but is not required to, contain element-value pairs for elements with default values.
+
+It is customary, though not required, that element-value pairs in an annotation are presented in the same order as the corresponding elements in the annotation interface declaration.
+
+An annotation on an annotation interface declaration is known as a *meta-annotation*.
+
+An annotation of interface A may appear as a meta-annotation on the declaration of the interface A itself. More generally, circularities in the transitive closure of the "annotates" relation are permitted.
+
+For example, it is legal to annotate the declaration of an annotation interface S with a meta-annotation of interface T, and to annotate T's own declaration with a meta-annotation of interface S. The predefined annotation interfaces ([§9.6.4](ch09-interfaces.md#jls-9.6.4)) contain several such circularities.
+
+
+**Example 9.7.1-1. Normal Annotations**
+
+
+Here is an example of a normal annotation using the annotation interface from [§9.6.1](ch09-interfaces.md#jls-9.6.1):
+
+``` programlisting
+
+
+@RequestForEnhancement(
+    id       = 2868724,
+    synopsis = "Provide time-travel functionality",
+    engineer = "Mr. Peabody",
+    date     = "4/1/2004"
+)
+public static void travelThroughTime(Date destination) { ... }
+```
+
+Here is an example of a normal annotation that takes advantage of default values, using the annotation interface from [§9.6.2](ch09-interfaces.md#jls-9.6.2):
+
+``` programlisting
+
+
+@RequestForEnhancement(
+    id       = 4561414,
+    synopsis = "Balance the federal budget"
+)
+public static void balanceFederalBudget() {
+    throw new UnsupportedOperationException("Not implemented");
+}
+```
+
+
+  
+
+
+### 9.7.2. Marker Annotations
+
+
+A *marker annotation* is a shorthand designed for use with marker annotation interfaces ([§9.6.1](ch09-interfaces.md#jls-9.6.1)).
+
+
+MarkerAnnotation:
+
+
+`@` [TypeName](ch06-names.md#jls-TypeName "TypeName")
+
+
+It is shorthand for the normal annotation:
+
+``` screen
+
+@TypeName()
+```
+
+It is legal to use marker annotations for annotation interfaces with elements, so long as all the elements have default values ([§9.6.2](ch09-interfaces.md#jls-9.6.2)).
+
+
+**Example 9.7.2-1. Marker Annotations**
+
+
+Here is an example using the `Preliminary` marker annotation interface from [§9.6.1](ch09-interfaces.md#jls-9.6.1):
+
+``` screen
+
+@Preliminary public class TimeTravel { ... }
+```
+
+
+  
+
+
+### 9.7.3. Single-Element Annotations
+
+
+A *single-element annotation* is a shorthand designed for use with single-element annotation interfaces ([§9.6.1](ch09-interfaces.md#jls-9.6.1)).
+
+
+SingleElementAnnotation:
+
+
+`@` [TypeName](ch06-names.md#jls-TypeName "TypeName") `(` [ElementValue](ch09-interfaces.md#jls-ElementValue "ElementValue") `)`
+
+
+It is shorthand for the normal annotation:
+
+``` screen
+
+@TypeName(value = ElementValue)
+```
+
+It is legal to use single-element annotations for annotation interfaces with multiple elements, so long as one element is named `value` and all other elements have default values ([§9.6.2](ch09-interfaces.md#jls-9.6.2)).
+
+
+**Example 9.7.3-1. Single-Element Annotations**
+
+
+The following annotations all use the single-element annotation interfaces from [§9.6.1](ch09-interfaces.md#jls-9.6.1).
+
+Here is an example of a single-element annotation:
+
+``` programlisting
+
+
+@Copyright("2002 Yoyodyne Propulsion Systems, Inc.")
+public class OscillationOverthruster { ... }
+```
+
+Here is an example of an array-valued single-element annotation:
+
+``` programlisting
+
+
+@Endorsers({"Children", "Unscrupulous dentists"})
+public class Lollipop { ... }
+```
+
+Here is an example of a single-element array-valued single-element annotation: (note that the curly braces are omitted)
+
+``` programlisting
+
+
+@Endorsers("Epicurus")
+public class Pleasure { ... }
+```
+
+Here is an example of a single-element annotation with a `Class`-typed element whose value is constrained by a bounded wildcard.
+
+``` programlisting
+
+
+class GorgeousFormatter implements Formatter { ... }
+
+@PrettyPrinter(GorgeousFormatter.class)
+public class Petunia { ... }
+
+// Illegal; String is not a subtype of Formatter
+@PrettyPrinter(String.class)
+public class Begonia { ... }
+```
+
+Here is an example of a single-element annotation that contains a normal annotation:
+
+``` programlisting
+
+
+@Author(@Name(first = "Joe", last = "Hacker"))
+public class BitTwiddle { ... }
+```
+
+Here is an example of a single-element annotation that uses an enum class defined inside the annotation interface declaration:
+
+``` programlisting
+
+
+@Quality(Quality.Level.GOOD)
+public class Karma { ... }
+```
+
+
+  
+
+
+### 9.7.4. Where Annotations May Appear
+
+
+A *declaration annotation* is an annotation that applies to a declaration, and whose annotation interface is applicable in the declaration context ([§9.6.4.1](ch09-interfaces.md#jls-9.6.4.1)) represented by that declaration; or an annotation that applies to a class, interface, or type parameter declaration, and whose annotation interface is applicable in type contexts ([§4.11](ch04-types-values-variables.md#jls-4.11)).
+
+A *type annotation* is an annotation that applies to a type (or any part of a type), and whose annotation interface is applicable in type contexts.
+
+
+For example, given the field declaration:
+
+``` screen
+@Foo int f;
+```
+
+`@Foo` is a declaration annotation on `f` if `Foo` is meta-annotated by `@Target(ElementType.FIELD)`, and a type annotation on `int` if `Foo` is meta-annotated by `@Target(ElementType.TYPE_USE)`. It is possible for `@Foo` to be both a declaration annotation and a type annotation simultaneously.
+
+Type annotations can apply to an array type or any component type thereof ([§10.1](ch10-arrays.md#jls-10.1)). For example, assuming that `A`, `B`, and `C` are annotation interfaces meta-annotated with `@Target(ElementType.TYPE_USE)`, then given the field declaration:
+
+``` screen
+@C int @A [] @B [] f;
+```
+
+`@A` applies to the array type `int``[]``[]`, `@B` applies to its component type `int``[]`, and `@C` applies to the element type `int`. For more examples, see [§10.2](ch10-arrays.md#jls-10.2).
+
+An important property of this syntax is that, in two declarations that differ only in the number of array levels, the annotations to the left of the type refer to the same type. For example, `@C` applies to the type `int` in all of the following declarations:
+
+``` screen
+
+@C int f;
+@C int[] f;
+@C int[][] f;
+```
+
+
+It is customary, though not required, to write declaration annotations before all other modifiers, and type annotations immediately before the type to which they apply.
+
+It is possible for an annotation to appear at a syntactic location in a program where it could plausibly apply to a declaration, or a type, or both. This can happen in any of the six declaration contexts where modifiers immediately precede the type of the declared entity:
+
+
+- Method declarations (including elements of annotation interfaces)
+
+- Constructor declarations
+
+- Field declarations (including enum constants)
+
+- Formal and exception parameter declarations
+
+- Local variable declarations
+
+- Record component declarations
+
+
+The grammar of the Java programming language unambiguously treats annotations at these locations as modifiers for a declaration ([§8.3](ch08-classes.md#jls-8.3)), but that is purely a syntactic matter. Whether an annotation applies to the declaration or to the type of the declared entity - and thus, whether the annotation is a *declaration annotation* or a *type annotation* - depends on the applicability of the annotation's interface:
+
+
+- If the annotation's interface is applicable in the declaration context corresponding to the declaration, and not in type contexts, then the annotation is deemed to apply only to the declaration.
+
+- If the annotation's interface is applicable in type contexts, and not in the declaration context corresponding to the declaration, then the annotation is deemed to apply only to the type which is closest to the annotation.
+
+- If the annotation's interface is applicable in the declaration context corresponding to the declaration *and* in type contexts, then the annotation is deemed to apply to both the declaration *and* the type which is closest to the annotation.
+
+
+In the second and third cases above, the type which is *closest* to the annotation is determined as follows:
+
+
+- If the annotation appears before a `void` method declaration or a variable declaration that uses `var` ([§14.4](ch14-blocks-statements-patterns.md#jls-14.4), [§15.27.1](ch15-expressions.md#jls-15.27.1)), then there is no closest type. If the annotation's interface is deemed to apply only to the type which is closest to the annotation, a compile-time error occurs.
+
+- If the annotation appears before a constructor declaration, then the closest type is the type of the newly constructed object. The type of the newly constructed object is the fully qualified name of the type immediately enclosing the constructor declaration. Within that fully qualified name, the annotation applies to the simple type name indicated by the constructor declaration.
+
+- In all other cases, the closest type is the type written in source code for the declared entity; if that type is an array type, then the element type is deemed to be closest to the annotation.
+
+  For example, in the field declaration `@Foo public static String f;`, the type which is closest to `@Foo` is `String`. (If the type of the field declaration had been written as `java.lang.String`, then `java.lang.String` would be the type closest to `@Foo`, and later rules would prohibit a type annotation from applying to the package name `java`.) In the generic method declaration `@Foo <T> int[] m() {...}`, the type written for the declared entity is `int``[]`, so `@Foo` applies to the element type `int`.
+
+  Local variable declarations which do not use `var` are similar to formal parameter declarations of lambda expressions, in that both allow declaration annotations and type annotations in source code, but only the type annotations can be stored in the `class` file.
+
+
+It is a compile-time error if an annotation of interface A is syntactically a modifier for:
+
+
+- a module declaration, but A is not applicable to module declarations.
+
+- a package declaration, but A is not applicable to package declarations.
+
+- a class or interface declaration, but A is not applicable to type declarations or in type contexts; or
+
+  an annotation interface declaration, but A is not applicable to annotation interface declarations or type declarations or in type contexts.
+
+- a method declaration (including an element of an annotation interface), but A is not applicable to method declarations or in type contexts.
+
+- a constructor declaration, but A is not applicable to constructor declarations or in type contexts.
+
+- a type parameter declaration of a generic class, interface, method, or constructor, but A is not applicable to type parameter declarations or in type contexts.
+
+- a field declaration (or an enum constant), but A is not applicable to field declarations or in type contexts.
+
+- a formal or exception parameter declaration, but A is not applicable to formal and exception parameter declarations or in type contexts.
+
+- a receiver parameter, but A is not applicable in type contexts.
+
+- a local variable declaration in either a statement or a pattern, but A is not applicable to local variable declarations or in type contexts.
+
+- a record component, but A is not applicable to record component declarations, field declarations, method declarations, or formal and exception parameter declarations, or in type contexts.
+
+
+Six of these eleven clauses mention "... or in type contexts" because they characterize the six syntactic locations, mentioned earlier in this section, where an annotation could plausibly apply to a declaration or a type. Furthermore, two of the eleven clauses - for class and interface declarations, and for type parameter declarations - mention "... or in type contexts" because it is sometimes convenient to be able to apply an annotation whose interface is meta-annotated with `@Target(ElementType.TYPE_USE)` (thus, applicable in type contexts) to the declaration of a class, interface, or type parameter.
+
+A type annotation is *admissible* if both of the following are true:
+
+
+- The simple name to which the annotation is closest is classified as a *TypeName*, not a *PackageName*.
+
+- If the simple name to which the annotation is closest is followed by "`.`" and another *TypeName* - that is, the annotation appears as `@Foo T.U` - then `U` denotes an inner class of `T`.
+
+
+The intuition behind the second clause is that if `Outer.this` is legal in a nested class enclosed by `Outer`, then `Outer` may be annotated because it represents the type of some object at run time. On the other hand, if `Outer.this` is not legal - because the class where it appears has no enclosing instance of `Outer` at run time - then `Outer` may not be annotated because it is logically just a name, akin to components of a package name in a fully qualified type name.
+
+
+For example, in the following program, it is not possible to write `A.this` in the body of `B`, as `B` has no lexically enclosing instances. Therefore, it is not possible to apply `@Foo` to `A` in the type `A.B`, because `A` is logically just a name, not a type.
+
+``` programlisting
+
+
+@Target(ElementType.TYPE_USE)
+@interface Foo {}
+
+class A {
+    static class B {}
+}
+
+@Foo A.B x;  // Illegal
+```
+
+On the other hand, in the following program, it is possible to write `C.this` in the body of `D`. Therefore, it is possible to apply `@Foo` to `C` in the type `C.D`, because `C` represents the type of some object at run time.
+
+``` programlisting
+
+
+@Target(ElementType.TYPE_USE)
+@interface Foo {}
+
+class Test {
+    static class C {
+        class D {}
+    }
+
+    @Foo C.D x;  // Legal
+}
+```
+
+
+It is a compile-time error if an annotation of interface A applies to the outermost level of a type in a type context, and A is not applicable in type contexts or the declaration context (if any) which occupies the same syntactic location.
+
+It is a compile-time error if an annotation of interface A applies to a part of a type (that is, not the outermost level) in a type context, and A is not applicable in type contexts.
+
+It is a compile-time error if an annotation of interface A applies to a type (or any part of a type) in a type context, and A is applicable in type contexts, but the annotation is not admissible.
+
+For example, assume an annotation interface `TA` which is meta-annotated with just `@Target(ElementType.TYPE_USE)`. The terms `@TA java.lang.Object` and `java.@TA lang.Object` are illegal because the simple name to which `@TA` is closest is classified as a package name. On the other hand, `java.lang.@TA Object` is legal.
+
+Note that the illegal terms are illegal "everywhere". The ban on annotating package names applies broadly: to locations which are solely type contexts, such as `class ... extends @TA java.lang.Object {...}`, and to locations which are both declaration and type contexts, such as `@TA java.lang.Object f;`. (There are no locations which are solely declaration contexts where a package name could be annotated, as package, class, interface, and type parameter declarations introduce only simple names.)
+
+If `TA` is additionally meta-annotated with `@Target(ElementType.FIELD)`, then the term `@TA java.lang.Object` is legal in locations which are both declaration and type contexts, such as a field declaration `@TA java.lang.Object f;`. Here, `@TA` is deemed to apply to the declaration of `f` (and not to the type `java.lang.Object`) because `TA` is applicable in the field declaration context.
+
+
+### 9.7.5. Multiple Annotations of the Same Interface
+
+
+It is a compile-time error if multiple annotations of the same interface A appear in a declaration context or type context, unless A is repeatable ([§9.6.3](ch09-interfaces.md#jls-9.6.3)) and both A and the containing annotation interface of A are applicable in the declaration context or type context ([§9.6.4.1](ch09-interfaces.md#jls-9.6.4.1)).
+
+It is customary, though not required, for multiple annotations of the same interface to appear consecutively.
+
+If a declaration context or type context has multiple annotations of a repeatable annotation interface A, then it is as if the context has no explicitly declared annotations of interface A and one implicitly declared annotation of the containing annotation interface of A.
+
+The implicitly declared annotation is called the *container annotation*, and the multiple annotations of interface A which appeared in the context are called the *base annotations*. The elements of the (array-typed) `value` element of the container annotation are all the base annotations in the left-to-right order in which they appeared in the context.
+
+It is a compile-time error if, in a declaration context or type context, there are multiple annotations of a repeatable annotation interface A and any annotations of the containing annotation interface of A.
+
+In other words, it is not possible to repeat annotations where an annotation of the same interface as their container also appears. This prohibits obtuse code like:
+
+``` programlisting
+
+
+@Foo(0) @Foo(1) @FooContainer({@Foo(2)})
+class A {}
+```
+
+If this code was legal, then multiple levels of containment would be needed: first the base annotations of interface `Foo` would be contained by an implicitly declared container annotation of interface `FooContainer`, then that annotation and the explicitly declared annotation of interface `FooContainer` would be contained in yet another implicitly declared annotation. This complexity is undesirable in the judgment of the designers of the Java programming language. Another approach, treating the base annotations of interface `Foo` as if they had occurred alongside `@Foo(2)` in the explicit `@FooContainer` annotation, is undesirable because it could change how reflective programs interpret the `@FooContainer` annotation.
+
+It is a compile-time error if, in a declaration context or type context, there is one annotation of a repeatable annotation interface A and multiple annotations of the containing annotation interface of A.
+
+This rule is designed to allow the following code:
+
+``` programlisting
+
+
+@Foo(1) @FooContainer({@Foo(2)})
+class A {}
+```
+
+With only one base annotation of the repeatable annotation interface `Foo`, no container annotation is implicitly declared, even if `FooContainer` is the containing annotation interface of `Foo`. However, repeating the annotation of interface `FooContainer`, as in:
+
+``` programlisting
+
+
+@Foo(1) @FooContainer({@Foo(2)}) @FooContainer({@Foo(3)})
+class A {}
+```
+
+is prohibited, even if `FooContainer` is repeatable with a containing annotation interface of its own. It is obtuse to repeat annotations which are themselves containers when an annotation of the underlying repeatable interface is present.
+
+
+## 9.8. Functional Interfaces
+
+
+A *functional interface* is an interface that is not declared `sealed` and has just one `abstract` method (aside from the methods of `Object`), and thus represents a single function contract. This "single" method may take the form of multiple `abstract` methods with override-equivalent signatures inherited from superinterfaces; in this case, the inherited methods logically represent a single method.
+
+For an interface I that is not declared `sealed`, let `M` be the set of `abstract` methods that are members of I that do not have the same signature as any `public` instance method of the class `Object` ([§4.3.2](ch04-types-values-variables.md#jls-4.3.2)). Then, I is a *functional interface* if there exists a method `m` in `M` for which both of the following are true:
+
+
+- The signature of `m` is a subsignature ([§8.4.2](ch08-classes.md#jls-8.4.2)) of every method's signature in `M`.
+
+- `m` is return-type-substitutable ([§8.4.5](ch08-classes.md#jls-8.4.5)) for every method in `M`.
+
+
+In addition to the usual process of creating an interface instance by declaring and instantiating a class ([§15.9](ch15-expressions.md#jls-15.9)), instances of functional interfaces can be created with method reference expressions and lambda expressions ([§15.13](ch15-expressions.md#jls-15.13), [§15.27](ch15-expressions.md#jls-15.27)).
+
+The definition of *functional interface* excludes methods in an interface that are also `public` methods in `Object`. This is to allow functional treatment of an interface like `java.util.Comparator<T>` that declares multiple `abstract` methods of which only one is really "new" - `int compare(T,T)`. The other - `boolean equals(Object)` - is an explicit declaration of an `abstract` method that would otherwise be implicitly declared in the interface ([§9.2](ch09-interfaces.md#jls-9.2)) and automatically implemented by every class that `implements` the interface.
+
+Note that if non-`public` methods of `Object`, such as `clone()`, are explicitly declared in an interface as `public`, they are *not* automatically implemented by every class that `implements` the interface. The implementation inherited from `Object` is `protected` while the interface method is `public`, so the only way to implement the interface would be for a class to override the non-`public` `Object` method with a `public` method.
+
+
+**Example 9.8-1. Functional Interfaces**
+
+
+A simple example of a functional interface is:
+
+``` screen
+
+interface Runnable {
+    void run();
+}
+```
+
+The following interface is not functional because it declares nothing which is not already a member of `Object`:
+
+``` screen
+
+interface NonFunc {
+    boolean equals(Object obj);
+}
+```
+
+However, its subinterface can be functional by declaring an `abstract` method which is not a member of `Object`:
+
+``` screen
+
+interface Func extends NonFunc {
+    int compare(String o1, String o2);
+}
+```
+
+Similarly, the well known interface `java.util.Comparator<T>` is functional because it has one `abstract` non-`Object` method:
+
+``` screen
+
+interface Comparator<T> {
+    boolean equals(Object obj);
+    int compare(T o1, T o2);
+}
+```
+
+The following interface is not functional because while it only declares one `abstract` method which is not a member of `Object`, it declares *two* `abstract` methods which are not `public` members of `Object`:
+
+``` screen
+
+interface Foo {
+    int m();
+    Object clone();
+}
+```
+
+
+  
+
+
+**Example 9.8-2. Functional Interfaces and Erasure**
+
+
+In the following interface hierarchy, `Z` is a functional interface because while it inherits two `abstract` methods which are not members of `Object`, they have the same signature, so the inherited methods logically represent a single method:
+
+``` screen
+
+interface X { int m(Iterable<String> arg); }
+interface Y { int m(Iterable<String> arg); }
+interface Z extends X, Y {}
+```
+
+Similarly, `Z` is a functional interface in the following interface hierarchy because `Y.m` is a subsignature of `X.m` and is return-type-substitutable for `X.m`:
+
+``` screen
+
+interface X { Iterable m(Iterable<String> arg); }
+interface Y { Iterable<String> m(Iterable arg); }
+interface Z extends X, Y {}
+```
+
+The definition of *functional interface* respects the fact that an interface cannot have two members which are not subsignatures of each other, yet have the same erasure ([§9.4.1.2](ch09-interfaces.md#jls-9.4.1.2)). Thus, in the following three interface hierarchies where `Z` causes a compile-time error, `Z` is not a functional interface: (because none of its `abstract` members are subsignatures of all other `abstract` members)
+
+``` screen
+
+interface X { int m(Iterable<String> arg); }
+interface Y { int m(Iterable<Integer> arg); }
+interface Z extends X, Y {}
+
+interface X { int m(Iterable<String> arg, Class c); }
+interface Y { int m(Iterable arg, Class<?> c); }
+interface Z extends X, Y {}
+
+interface X<T> { void m(T arg); }
+interface Y<T> { void m(T arg); }
+interface Z<A, B> extends X<A>, Y<B> {}
+```
+
+Similarly, the definition of "functional interface" respects the fact that an interface may only have methods with override-equivalent signatures if one is return-type-substitutable for all the others. Thus, in the following interface hierarchy where `Z` causes a compile-time error, `Z` is not a functional interface: (because none of its `abstract` members are return-type-substitutable for all other `abstract` members)
+
+``` screen
+
+interface X { long m(); }
+interface Y { int  m(); }
+interface Z extends X, Y {}
+```
+
+In the following example, the declarations of `Foo<T,N>` and `Bar` are legal: in each, the methods called `m` are not subsignatures of each other, but do have different erasures. Still, the fact that the methods in each are not subsignatures means `Foo<T,N>` and `Bar` are not functional interfaces. However, `Baz` is a functional interface because the methods it inherits from `Foo<Integer,Integer>` have the same signature and so logically represent a single method.
+
+``` screen
+
+interface Foo<T, N extends Number> {
+    void m(T arg);
+    void m(N arg);
+}
+interface Bar extends Foo<String, Integer> {}
+interface Baz extends Foo<Integer, Integer> {}
+```
+
+Finally, the following examples demonstrate the same rules as above, but with generic methods:
+
+``` screen
+
+interface Exec { <T> T execute(Action<T> a); }
+  // Functional
+
+interface X { <T> T execute(Action<T> a); }
+interface Y { <S> S execute(Action<S> a); }
+interface Exec extends X, Y {}
+  // Functional: signatures are logically "the same"
+
+interface X { <T>   T execute(Action<T> a); }
+interface Y { <S,T> S execute(Action<S> a); }
+interface Exec extends X, Y {}
+  // Error: different signatures, same erasure
+```
+
+
+  
+
+
+**Example 9.8-3. Generic Functional Interfaces**
+
+
+Functional interfaces can be generic, such as `java.util.function.Predicate<T>`. Such a functional interface may be parameterized in a way that produces distinct `abstract` methods - that is, multiple methods that cannot be legally overridden with a single declaration. For example:
+
+``` screen
+
+interface I    { Object m(Class c); }
+interface J<S> { S m(Class<?> c); }
+interface K<T> { T m(Class<?> c); }
+interface Functional<S,T> extends I, J<S>, K<T> {}
+```
+
+`Functional<S,T>` is a functional interface - `I.m` is return-type-substitutable for `J.m` and `K.m` - but the functional interface type `Functional<String,Integer>` clearly cannot be implemented with a single method. However, other parameterizations of `Functional<S,T>` which are functional interface types are possible.
+
+
+  
+
+The declaration of a functional interface allows a *functional interface type* to be used in a program. There are four kinds of functional interface type:
+
+
+- The type of a non-generic ([§6.1](ch06-names.md#jls-6.1)) functional interface
+
+- A parameterized type that is a parameterization ([§4.5](ch04-types-values-variables.md#jls-4.5)) of a generic functional interface
+
+- The raw type ([§4.8](ch04-types-values-variables.md#jls-4.8)) of a generic functional interface
+
+- An intersection type ([§4.9](ch04-types-values-variables.md#jls-4.9)) that induces a notional functional interface
+
+
+In special circumstances, it is useful to treat an intersection type as a functional interface type. Typically, this will look like an intersection of a functional interface type with one or more marker interface types, such as `Runnable & ``java.io.Serializable`. Such an intersection can be used in casts ([§15.16](ch15-expressions.md#jls-15.16)) that force a lambda expression to conform to a certain type. If one of the interface types in the intersection is `java.io.Serializable`, special run-time support for serialization is triggered ([§15.27.4](ch15-expressions.md#jls-15.27.4)).
+
+
+## 9.9. Function Types
+
+
+The *function type* of a functional interface I is a method type ([§8.2](ch08-classes.md#jls-8.2)) that can be used to override ([§8.4.8](ch08-classes.md#jls-8.4.8)) the `abstract` method(s) of I.
+
+Let `M` be the set of `abstract` methods defined for I. The function type of I consists of the following:
+
+
+- Type parameters, formal parameter types, and return type:
+
+  Let `m` be a method in `M` with:
+
+
+  1.  a signature that is a subsignature of every method's signature in `M`; and
+
+  2.  a return type R (possibly `void`), where either R is the same as every method's return type in `M`, or R is a reference type and is a subtype of every method's return type in `M` (after adapting for any type parameters ([§8.4.4](ch08-classes.md#jls-8.4.4)) if the two methods have the same signature).
+
+  
+
+  If no such method exists, then let `m` be a method in `M` with:
+
+
+  1.  a signature that is a subsignature of every method's signature in `M`; and
+
+  2.  a return type such that `m` is return-type-substitutable ([§8.4.5](ch08-classes.md#jls-8.4.5)) for every method in `M`.
+
+  
+
+  The function type's type parameters, formal parameter types, and return type are as given by `m`.
+
+- `throws` clause:
+
+  The function type's `throws` clause is derived from the `throws` clauses of the methods in `M`, as follows:
+
+
+  1.  If the function type is generic, the `throws` clauses are first adapted to the type parameters of the function type ([§8.4.4](ch08-classes.md#jls-8.4.4)).
+
+      If the function type is not generic but at least one method in `M` is generic, the `throws` clauses are first erased.
+
+  2.  Then, the function type's `throws` clause includes every type E which satisfies the following constraints:
+
+
+      - E is mentioned in one of the `throws` clauses.
+
+      - For each `throws` clause, E is a subtype of some type named in that clause.
+
+      
+
+  
+
+
+When some return types in `M` are raw and others are not, the definition of a function type tries to choose the most specific type, if possible. For example, if the return types are `LinkedList` and `LinkedList<String>`, then the latter is immediately chosen as the function type's return type. When there is no most specific type, the definition compensates by finding the most substitutable return type. For example, if there is a third return type, `List<?>`, then it is not the case that one of the return types is a subtype of every other (as raw `LinkedList` is not a subtype of `List<?>`); instead, `LinkedList<String>` is chosen as the function type's return type because it is return-type-substitutable for both `LinkedList` and `List<?>`.
+
+The goal driving the definition of a function type's thrown exception types is to support the invariant that a method with the resulting `throws` clause could override each `abstract` method of the functional interface. Per [§8.4.6](ch08-classes.md#jls-8.4.6), this means the function type cannot throw "more" exceptions than any single method in the set `M`, so we look for as many exception types as possible that are "covered" by every method's `throws` clause.
+
+The function type of a functional interface type is specified as follows:
+
+
+- The function type of the type of a non-generic functional interface I is simply the function type of the functional interface I, as defined above.
+
+- The function type of a parameterized functional interface type I`<`A<sub>1</sub>...A<sub>n</sub>`>`, where A<sub>1</sub>...A<sub>n</sub> are types and the corresponding type parameters of I are P<sub>1</sub>...P<sub>n</sub>, is derived by applying the substitution `[`P<sub>1</sub>:=A<sub>1</sub>, ..., P<sub>n</sub>:=A<sub>n</sub>`]` to the function type of the generic functional interface I`<`P<sub>1</sub>...P<sub>n</sub>`>`.
+
+- The function type of a parameterized functional interface type I`<`A<sub>1</sub>...A<sub>n</sub>`>`, where one or more of A<sub>1</sub>...A<sub>n</sub> is a wildcard, is the function type of the *non-wildcard parameterization* of I, I`<`T<sub>1</sub>...T<sub>n</sub>`>`. The non-wildcard parameterization is determined as follows.
+
+  Let P<sub>1</sub>...P<sub>n</sub> be the type parameters of I with corresponding bounds B<sub>1</sub>...B<sub>n</sub>. For all *i* (1 ≤ *i* ≤ *n*), T<sub>i</sub> is derived according to the form of A<sub>i</sub>:
+
+
+  - If A<sub>i</sub> is a type, then T<sub>i</sub> = A<sub>i</sub>.
+
+  - If A<sub>i</sub> is a wildcard, and the corresponding type parameter's bound, B<sub>i</sub>, mentions one of P<sub>1</sub>...P<sub>n</sub>, then T<sub>i</sub> is undefined and there is no function type.
+
+  - Otherwise:
+
+
+    - If A<sub>i</sub> is an unbound wildcard `?`, then T<sub>i</sub> = B<sub>i</sub>.
+
+    - If A<sub>i</sub> is a upper-bounded wildcard `?` `extends` U<sub>i</sub>, then T<sub>i</sub> = glb(U<sub>i</sub>, B<sub>i</sub>) ([§5.1.10](ch05-conversions-contexts.md#jls-5.1.10)).
+
+    - If A<sub>i</sub> is a lower-bounded wildcard `?` `super` `L`<sub>`i`</sub>, then T<sub>i</sub> = `L`<sub>`i`</sub>.
+
+    
+
+  
+
+- The function type of the raw type of a generic functional interface I`<`...`>` is the erasure of the function type of the generic functional interface I`<`...`>`.
+
+- The function type of an intersection type that induces a notional functional interface is the function type of the notional functional interface.
+
+
+**Example 9.9-1. Function Types**
+
+
+Given the following interfaces:
+
+``` screen
+
+interface X { void m() throws IOException; }
+interface Y { void m() throws EOFException; }
+interface Z { void m() throws ClassNotFoundException; }
+```
+
+the function type of:
+
+``` screen
+
+interface XY extends X, Y {}
+```
+
+is:
+
+``` screen
+
+()->void throws EOFException
+```
+
+while the function type of:
+
+``` screen
+
+interface XYZ extends X, Y, Z {}
+```
+
+is:
+
+``` screen
+
+()->void (throws nothing)
+```
+
+Given the following interfaces:
+
+``` screen
+
+interface A {
+    List<String> foo(List<String> arg)
+      throws IOException, SQLTransientException;
+}
+interface B {
+    List foo(List<String> arg)
+      throws EOFException, SQLException, TimeoutException;
+}
+interface C {
+    List foo(List arg) throws Exception;
+}
+```
+
+the function type of:
+
+``` screen
+
+interface D extends A, B {}
+```
+
+is:
+
+``` screen
+
+(List<String>)->List<String>
+  throws EOFException, SQLTransientException
+```
+
+while the function type of:
+
+``` screen
+
+interface E extends A, B, C {}
+```
+
+is:
+
+``` screen
+
+(List)->List throws EOFException, SQLTransientException
+```
+
+
+  
+
+The function type of a functional interface is defined nondeterministically: while the signatures in `M` are "the same", they may be syntactically different (`HashMap.Entry` and `Map.Entry`, for example); the return type may be a subtype of every other return type, but there may be other return types that are *also* subtypes (`List<?>` and `List<? extends Object>`, for example); and the order of thrown types is unspecified. These distinctions are subtle, but they can sometimes be important. However, function types are not used in the Java programming language in such a way that the nondeterminism matters. Note that the return type and `throws` clause of a "most specific method" are also defined nondeterministically when there are multiple `abstract` methods ([§15.12.2.5](ch15-expressions.md#jls-15.12.2.5)).
+
+When a generic functional interface is parameterized by wildcards, there are many different instantiations that could satisfy the wildcard and produce different function types. For example, each of `Predicate<Integer>` (function type `Integer ``->`` boolean`), `Predicate<Number>` (function type `Number ``->`` boolean`), and `Predicate<Object>` (function type `Object ``->`` boolean`) is a `Predicate<? super Integer>`. Sometimes, it is possible to know from the context, such as the parameter types of a lambda expression, which function type is intended ([§15.27.3](ch15-expressions.md#jls-15.27.3)). Other times, it is necessary to pick one; in these circumstances, the bounds are used. (This simple strategy cannot guarantee that the resulting type will satisfy certain complex bounds, so not all complex cases are supported.)
+
+
+**Example 9.9-2. Generic Function Types**
+
+
+A function type may be generic, as a functional interface's `abstract` method may be generic. For example, in the following interface hierarchy:
+
+``` screen
+
+interface G1 {
+    <E extends Exception> Object m() throws E;
+}
+interface G2 {
+    <F extends Exception> String m() throws Exception;
+}
+interface G extends G1, G2 {}
+```
+
+the function type of `G` is:
+
+``` screen
+
+<F extends Exception> ()->String throws F
+```
+
+A generic function type for a functional interface may be implemented by a method reference expression ([§15.13](ch15-expressions.md#jls-15.13)), but not by a lambda expression ([§15.27](ch15-expressions.md#jls-15.27)) as there is no syntax for generic lambda expressions.
+
+
+  
+
+

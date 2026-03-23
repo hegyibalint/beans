@@ -1,0 +1,1233 @@
+# Chapter 16. Definite Assignment
+
+
+## Contents
+
+[16.1. Definite Assignment and Expressions](ch16-definite-assignment.md#jls-16.1)
+
+[16.1.1. Boolean Constant Expressions](ch16-definite-assignment.md#jls-16.1.1)
+
+[16.1.2. Conditional-And Operator `&&`](ch16-definite-assignment.md#jls-16.1.2)
+
+[16.1.3. Conditional-Or Operator `||`](ch16-definite-assignment.md#jls-16.1.3)
+
+[16.1.4. Logical Complement Operator `!`](ch16-definite-assignment.md#jls-16.1.4)
+
+[16.1.5. Conditional Operator `? :`](ch16-definite-assignment.md#jls-16.1.5)
+
+[16.1.6. `switch` Expressions](ch16-definite-assignment.md#jls-16.1.6)
+
+[16.1.7. Other Expressions of Type `boolean`](ch16-definite-assignment.md#jls-16.1.7)
+
+[16.1.8. Assignment Expressions](ch16-definite-assignment.md#jls-16.1.8)
+
+[16.1.9. Operators `++` and `--`](ch16-definite-assignment.md#jls-16.1.9)
+
+[16.1.10. Other Expressions](ch16-definite-assignment.md#jls-16.1.10)
+
+[16.2. Definite Assignment and Statements](ch16-definite-assignment.md#jls-16.2)
+
+[16.2.1. Empty Statements](ch16-definite-assignment.md#jls-16.2.1)
+
+[16.2.2. Blocks](ch16-definite-assignment.md#jls-16.2.2)
+
+[16.2.3. Local Class and Interface Declarations](ch16-definite-assignment.md#jls-16.2.3)
+
+[16.2.4. Local Variable Declaration Statements](ch16-definite-assignment.md#jls-16.2.4)
+
+[16.2.5. Labeled Statements](ch16-definite-assignment.md#jls-16.2.5)
+
+[16.2.6. Expression Statements](ch16-definite-assignment.md#jls-16.2.6)
+
+[16.2.7. `if` Statements](ch16-definite-assignment.md#jls-16.2.7)
+
+[16.2.8. `assert` Statements](ch16-definite-assignment.md#jls-16.2.8)
+
+[16.2.9. `switch` Statements](ch16-definite-assignment.md#jls-16.2.9)
+
+[16.2.10. `while` Statements](ch16-definite-assignment.md#jls-16.2.10)
+
+[16.2.11. `do` Statements](ch16-definite-assignment.md#jls-16.2.11)
+
+[16.2.12. `for` Statements](ch16-definite-assignment.md#jls-16.2.12)
+
+[16.2.12.1. Initialization Part of `for` Statement](ch16-definite-assignment.md#jls-16.2.12.1)
+
+[16.2.12.2. Incrementation Part of `for` Statement](ch16-definite-assignment.md#jls-16.2.12.2)
+
+[16.2.13. `break`, `yield`, `continue`, `return`, and `throw` Statements](ch16-definite-assignment.md#jls-16.2.13)
+
+[16.2.14. `synchronized` Statements](ch16-definite-assignment.md#jls-16.2.14)
+
+[16.2.15. `try` Statements](ch16-definite-assignment.md#jls-16.2.15)
+
+[16.3. Definite Assignment and Parameters](ch16-definite-assignment.md#jls-16.3)
+
+[16.4. Definite Assignment and Array Initializers](ch16-definite-assignment.md#jls-16.4)
+
+[16.5. Definite Assignment and Enum Constants](ch16-definite-assignment.md#jls-16.5)
+
+[16.6. Definite Assignment and Anonymous Classes](ch16-definite-assignment.md#jls-16.6)
+
+[16.7. Definite Assignment and Member Classes and Interfaces](ch16-definite-assignment.md#jls-16.7)
+
+[16.8. Definite Assignment and Static Initializers](ch16-definite-assignment.md#jls-16.8)
+
+[16.9. Definite Assignment, Constructors, and Instance Initializers](ch16-definite-assignment.md#jls-16.9)
+
+
+Every local variable declared by a statement ([§14.4.2](ch14-blocks-statements-patterns.md#jls-14.4.2), [§14.14.1](ch14-blocks-statements-patterns.md#jls-14.14.1), [§14.14.2](ch14-blocks-statements-patterns.md#jls-14.14.2), [§14.20.3](ch14-blocks-statements-patterns.md#jls-14.20.3)) and every blank `final` field ([§4.12.4](ch04-types-values-variables.md#jls-4.12.4), [§8.3.1.2](ch08-classes.md#jls-8.3.1.2)) must have a *definitely assigned* value when any access of its value occurs.
+
+An access to its value consists of the simple name of the variable (or, for a field, the simple name of the field qualified by `this`) occurring anywhere in an expression except as the left-hand operand of the simple assignment operator `=` ([§15.26.1](ch15-expressions.md#jls-15.26.1)).
+
+For every access of a local variable declared by a statement `x`, or blank `final` field `x`, `x` must be definitely assigned before the access, or a compile-time error occurs.
+
+Similarly, every blank `final` variable must be assigned at most once; it must be *definitely unassigned* when an assignment to it occurs.
+
+Such an assignment is defined to occur if and only if either the simple name of the variable (or, for a field, its simple name qualified by `this`) occurs on the left hand side of an assignment operator.
+
+For every assignment to a blank `final` variable, the variable must be definitely unassigned before the assignment, or a compile-time error occurs.
+
+Similarly, for every alternate constructor invocation ([§8.8.7.1](ch08-classes.md#jls-8.8.7.1)) occurring in a constructor of a class C, every blank `final` instance variable of C declared in C must be definitely unassigned after the argument list of the alternate constructor invocation, or a compile-time error occurs.
+
+Note that local variables declared by a pattern ([§14.30](ch14-blocks-statements-patterns.md#jls-14.30)) are not subject to the rules of definite assignment. Every local variable declared by a pattern is initialized by the process of pattern matching and so always has a value when accessed.
+
+The remainder of this chapter is devoted to a precise explanation of the words "definitely assigned before" and "definitely unassigned before".
+
+The idea behind definite assignment is that an assignment to the local variable declared by a statement or blank `final` field must occur on every possible execution path to the access. Similarly, the idea behind definite unassignment is that no other assignment to the blank `final` variable is permitted to occur on any possible execution path to an assignment.
+
+The analysis takes into account the structure of statements and expressions; it also provides a special treatment of the expression operators `&&`, `||`, `!`, and `? :`, and of boolean-valued constant expressions.
+
+Except for the special treatment of the conditional boolean operators `&&`, `||`, and `? :` and of boolean-valued constant expressions, the values of expressions are not taken into account in the flow analysis.
+
+
+**Example 16-1. Definite Assignment Considers Structure of Statements and Expressions**
+
+
+A Java compiler recognizes that `k` is definitely assigned before its access (as an argument of a method invocation) in the code:
+
+``` programlisting
+
+
+{
+    int k;
+    if (v > 0 && (k = System.in.read()) >= 0)
+        System.out.println(k);
+}
+```
+
+because the access occurs only if the value of the expression:
+
+``` programlisting
+
+
+v > 0 && (k = System.in.read()) >= 0
+```
+
+is `true`, and the value can be `true` only if the assignment to `k` is executed (more properly, evaluated).
+
+Similarly, a Java compiler will recognize that in the code:
+
+``` programlisting
+
+
+{
+    int k;
+    while (true) {
+        k = n;
+        if (k >= 5) break;
+        n = 6;
+    }
+    System.out.println(k);
+}
+```
+
+the variable `k` is definitely assigned by the `while` statement because the condition expression `true` never has the value `false`, so only the `break` statement can cause the `while` statement to complete normally, and `k` is definitely assigned before the `break` statement.
+
+On the other hand, the code:
+
+``` programlisting
+
+
+{
+    int k;
+    while (n < 4) {
+        k = n;
+        if (k >= 5) break;
+        n = 6;
+    }
+    System.out.println(k);  /* k is not "definitely assigned"
+                               before this statement */
+}
+```
+
+must be rejected by a Java compiler, because in this case the `while` statement is not guaranteed to execute its body as far as the rules of definite assignment are concerned.
+
+
+  
+
+
+**Example 16-2. Definite Assignment Does Not Consider Values of Expressions**
+
+
+A Java compiler must produce a compile-time error for the code:
+
+``` programlisting
+
+
+{
+    int k;
+    int n = 5;
+    if (n > 2)
+        k = 3;
+    System.out.println(k);  /* k is not "definitely assigned"
+                               before this statement */
+}
+```
+
+even though the value of `n` is known at compile time, and in principle it can be known at compile time that the assignment to `k` will always be executed (more properly, evaluated). A Java compiler must operate according to the rules laid out in this section. The rules recognize only constant expressions; in this example, the expression `n > 2` is not a constant expression as defined in [§15.29](ch15-expressions.md#jls-15.29).
+
+As another example, a Java compiler will accept the code:
+
+``` programlisting
+
+
+void flow(boolean flag) {
+    int k;
+    if (flag)
+        k = 3;
+    else
+        k = 4;
+    System.out.println(k);
+}
+```
+
+as far as definite assignment of `k` is concerned, because the rules outlined in this section allow it to tell that `k` is assigned no matter whether the `flag` is `true` or `false`. But the rules do not accept the variation:
+
+``` programlisting
+
+
+void flow(boolean flag) {
+    int k;
+    if (flag)
+        k = 3;
+    if (!flag)
+        k = 4;
+    System.out.println(k);  /* k is not "definitely assigned"
+                               before this statement */
+}
+```
+
+and so compiling this program must cause a compile-time error to occur.
+
+
+  
+
+
+**Example 16-3. Definite Unassignment**
+
+
+A Java compiler will accept the code:
+
+``` programlisting
+
+
+void unflow(boolean flag) {
+    final int k;
+    if (flag) {
+        k = 3;
+        System.out.println(k);
+    }
+    else {
+        k = 4;
+        System.out.println(k);
+    }
+}
+```
+
+as far as definite unassignment of `k` is concerned, because the rules outlined in this section allow it to tell that `k` is assigned at most once (indeed, exactly once) no matter whether the `flag` is `true` or `false`. But the rules do not accept the variation:
+
+``` programlisting
+
+
+void unflow(boolean flag) {
+    final int k;
+    if (flag) {
+        k = 3;
+        System.out.println(k);
+    }
+    if (!flag) {
+        k = 4;
+        System.out.println(k);  /* k is not "definitely unassigned"
+                                   before this statement */
+    }
+}
+```
+
+and so compiling this program must cause a compile-time error to occur.
+
+
+  
+
+In order to precisely specify all the cases of definite assignment, the rules in this section define several technical terms:
+
+
+- whether a variable is *definitely assigned before* a statement or expression
+
+- whether a variable is *definitely unassigned before* a statement or expression
+
+- whether a variable is *definitely assigned after* a statement or expression
+
+- whether a variable is *definitely unassigned after* a statement or expression
+
+
+For boolean-valued expressions, the last two are refined into four cases:
+
+
+- whether a variable is *definitely assigned after* the expression *when true*
+
+- whether a variable is *definitely unassigned after* the expression *when true*
+
+- whether a variable is *definitely assigned after* the expression *when false*
+
+- whether a variable is *definitely unassigned* after the expression *when false*
+
+
+Here, *when true* and *when false* refer to the value of the expression.
+
+
+For example, the local variable `k` is definitely assigned a value after evaluation of the expression:
+
+``` programlisting
+
+
+a && ((k=m) > 5)
+```
+
+when the expression is `true` but not when the expression is `false` (because if `a` is false, then the assignment to `k` is not necessarily executed (more properly, evaluated)).
+
+
+The phrase "V is definitely assigned after X" (where V is a local variable and X is a statement or expression) means "V is definitely assigned after X if X completes normally". If X completes abruptly, the assignment need not have occurred, and the rules stated here take this into account.
+
+A peculiar consequence of this definition is that "V is definitely assigned after `break;`" is always true! Because a `break` statement never completes normally, it is vacuously true that V has been assigned a value if the `break` statement completes normally.
+
+The statement "V is definitely unassigned after X" (where V is a variable and X is a statement or expression) means "V is definitely unassigned after X if X completes normally".
+
+An even more peculiar consequence of this definition is that "V is definitely unassigned after `break;`" is always true! Because a `break` statement never completes normally, it is vacuously true that V has not been assigned a value if the `break` statement completes normally. (For that matter, it is also vacuously true that the moon is made of green cheese if the `break` statement completes normally.)
+
+In all, there are four possibilities for a variable V after a statement or expression has been executed:
+
+
+- V is definitely assigned and is not definitely unassigned.
+
+  (The flow analysis rules prove that an assignment to V has occurred.)
+
+- V is definitely unassigned and is not definitely assigned.
+
+  (The flow analysis rules prove that an assignment to V has not occurred.)
+
+- V is not definitely assigned and is not definitely unassigned.
+
+  (The rules cannot prove whether or not an assignment to V has occurred.)
+
+- V is definitely assigned and is definitely unassigned.
+
+  (It is impossible for the statement or expression to complete normally.)
+
+
+To shorten the rules, the customary abbreviation "iff" is used to mean "if and only if". We also use an abbreviation convention: if a rule contains one or more occurrences of "\[un\]assigned" then it stands for two rules, one with every occurrence of "\[un\]assigned" replaced by "definitely assigned" and one with every occurrence of "\[un\]assigned" replaced by "definitely unassigned".
+
+
+For example:
+
+
+- V is \[un\]assigned after an empty statement iff it is \[un\]assigned before the empty statement.
+
+
+should be understood to stand for two rules:
+
+
+- V is definitely assigned after an empty statement iff it is definitely assigned before the empty statement.
+
+- V is definitely unassigned after an empty statement iff it is definitely unassigned before the empty statement.
+
+
+Throughout the rest of this chapter, we will, unless explicitly stated otherwise, write V to represent a local variable declared by a statement or blank `final` field which is in scope ([§6.3](ch06-names.md#jls-6.3)). Likewise, we will use `a`, `b`, `c`, and `e` to represent expressions, and S and T to represent statements. We will use the phrase "`a` is V" to mean that `a` is either the simple name of the variable V, or V's simple name qualified by `this` (ignoring parentheses). We will use the phrase "`a` is not V" to mean the negation of "`a` is V".
+
+The definite unassignment analysis of loop statements raises a special problem. Consider the statement `while (``e``) ``S`. In order to determine whether V is definitely unassigned within some subexpression of `e`, we need to determine whether V is definitely unassigned before `e`. One might argue, by analogy with the rule for definite assignment ([§16.2.10](ch16-definite-assignment.md#jls-16.2.10)), that V is definitely unassigned before `e` iff it is definitely unassigned before the `while` statement. However, such a rule is inadequate for our purposes. If `e` evaluates to `true`, the statement S will be executed. Later, if V is assigned by S, then in the following iteration(s) V will have already been assigned when `e` is evaluated. Under the rule suggested above, it would be possible to assign V multiple times, which is exactly what we have sought to avoid by introducing these rules.
+
+A revised rule would be: "V is definitely unassigned before `e` iff it is definitely unassigned before the `while` statement and definitely unassigned after S". However, when we formulate the rule for S, we find: "V is definitely unassigned before S iff it is definitely unassigned after `e` when true". This leads to a circularity. In effect, V is definitely unassigned *before* the loop condition `e` only if it is unassigned *after* the loop as a whole!
+
+We break this vicious circle using a hypothetical analysis of the loop condition and body. For example, if we assume that V is definitely unassigned before `e` (regardless of whether V really is definitely unassigned before `e`), and can then prove that V was definitely unassigned after `e` then we know that `e` does not assign V. This is stated more formally as:
+
+Assuming V is definitely unassigned before `e`, V is definitely unassigned after `e`.
+
+Variations on the above analysis are used to define well founded definite unassignment rules for all loop statements in the Java programming language.
+
+
+## 16.1. Definite Assignment and Expressions
+
+
+### 16.1.1. Boolean Constant Expressions
+
+
+- V is \[un\]assigned after any constant expression ([§15.29](ch15-expressions.md#jls-15.29)) whose value is `true` when false.
+
+- V is \[un\]assigned after any constant expression whose value is `false` when true.
+
+- V is \[un\]assigned after any constant expression whose value is `true` when true iff V is \[un\]assigned before the constant expression.
+
+- V is \[un\]assigned after any constant expression whose value is `false` when false iff V is \[un\]assigned before the constant expression.
+
+- V is \[un\]assigned after a boolean-valued constant expression `e` iff V is \[un\]assigned after `e` when true and V is \[un\]assigned after `e` when false.
+
+  This is equivalent to saying that V is \[un\]assigned after `e` iff V is \[un\]assigned before `e`.
+
+
+Because a constant expression whose value is `true` never has the value `false`, and a constant expression whose value is `false` never has the value `true`, the first two rules are vacuously satisfied. They are helpful in analyzing expressions involving the operators `&&` ([§16.1.2](ch16-definite-assignment.md#jls-16.1.2)), `||` ([§16.1.3](ch16-definite-assignment.md#jls-16.1.3)), `!` ([§16.1.4](ch16-definite-assignment.md#jls-16.1.4)), and `? :` ([§16.1.5](ch16-definite-assignment.md#jls-16.1.5)).
+
+
+### 16.1.2. Conditional-And Operator `&&`
+
+
+- V is \[un\]assigned after `a` `&&` `b` ([§15.23](ch15-expressions.md#jls-15.23)) when true iff V is \[un\]assigned after `b` when true.
+
+- V is \[un\]assigned after `a` `&&` `b` when false iff V is \[un\]assigned after `a` when false and V is \[un\]assigned after `b` when false.
+
+- V is \[un\]assigned before `a` iff V is \[un\]assigned before `a` `&&` `b`.
+
+- V is \[un\]assigned before `b` iff V is \[un\]assigned after `a` when true.
+
+- V is \[un\]assigned after `a` `&&` `b` iff V is \[un\]assigned after `a` `&&` `b` when true and V is \[un\]assigned after `a` `&&` `b` when false.
+
+
+### 16.1.3. Conditional-Or Operator `||`
+
+
+- V is \[un\]assigned after `a` `||` `b` ([§15.24](ch15-expressions.md#jls-15.24)) when true iff V is \[un\]assigned after `a` when true and V is \[un\]assigned after `b` when true.
+
+- V is \[un\]assigned after `a` `||` `b` when false iff V is \[un\]assigned after `b` when false.
+
+- V is \[un\]assigned before `a` iff V is \[un\]assigned before `a` `||` `b`.
+
+- V is \[un\]assigned before `b` iff V is \[un\]assigned after `a` when false.
+
+- V is \[un\]assigned after `a` `||` `b` iff V is \[un\]assigned after `a` `||` `b` when true and V is \[un\]assigned after `a` `||` `b` when false.
+
+
+### 16.1.4. Logical Complement Operator `!`
+
+
+- V is \[un\]assigned after `!``a` ([§15.15.6](ch15-expressions.md#jls-15.15.6)) when true iff V is \[un\]assigned after `a` when false.
+
+- V is \[un\]assigned after `!``a` when false iff V is \[un\]assigned after `a` when true.
+
+- V is \[un\]assigned before `a` iff V is \[un\]assigned before `!``a`.
+
+- V is \[un\]assigned after `!``a` iff V is \[un\]assigned after `!``a` when true and V is \[un\]assigned after `!``a` when false.
+
+  This is equivalent to saying that V is \[un\]assigned after `!``a` iff V is \[un\]assigned after `a`.
+
+
+### 16.1.5. Conditional Operator `? :`
+
+
+Suppose that `b` and `c` are boolean-valued expressions.
+
+
+- V is \[un\]assigned after `a` `?` `b` `:` `c` ([§15.25](ch15-expressions.md#jls-15.25)) when true iff V is \[un\]assigned after `b` when true and V is \[un\]assigned after `c` when true.
+
+- V is \[un\]assigned after `a` `?` `b` `:` `c` when false iff V is \[un\]assigned after `b` when false and V is \[un\]assigned after `c` when false.
+
+- V is \[un\]assigned before `a` iff V is \[un\]assigned before `a` `?` `b` `:` `c`.
+
+- V is \[un\]assigned before `b` iff V is \[un\]assigned after `a` when true.
+
+- V is \[un\]assigned before `c` iff V is \[un\]assigned after `a` when false.
+
+- V is \[un\]assigned after `a` `?` `b` `:` `c` iff V is \[un\]assigned after `a` `?` `b` `:` `c` when true and V is \[un\]assigned after `a` `?` `b` `:` `c` when false.
+
+
+Suppose that `b` and `c` are expressions that are not boolean-valued.
+
+
+- V is \[un\]assigned after `a` `?` `b` `:` `c` iff V is \[un\]assigned after `b` and V is \[un\]assigned after `c`.
+
+- V is \[un\]assigned before `a` iff V is \[un\]assigned before `a` `?` `b` `:` `c`.
+
+- V is \[un\]assigned before `b` iff V is \[un\]assigned after `a` when true.
+
+- V is \[un\]assigned before `c` iff V is \[un\]assigned after `a` when false.
+
+
+### 16.1.6. `switch` Expressions
+
+
+Suppose that a `switch` expression ([§15.28](ch15-expressions.md#jls-15.28)) has result expressions `e`<sub>`1`</sub>, ..., `e`<sub>`n`</sub>, all of which are boolean-valued.
+
+The following rules apply only if the switch block of the `switch` expression consists of switch labeled statement groups ([§14.11.1](ch14-blocks-statements-patterns.md#jls-14.11.1)):
+
+
+- V is definitely assigned after a `switch` expression when true iff for every `yield` statement with expression `e` ([§14.21](ch14-blocks-statements-patterns.md#jls-14.21)) in the switch block that may exit the `switch` expression, V is definitely assigned after `e` when true.
+
+- V is definitely assigned after a `switch` expression when false iff for every `yield` statement with expression `e` in the switch block that may exit the `switch` expression, V is definitely assigned after `e` when false.
+
+- V is definitely unassigned after a `switch` expression when true iff for every `yield` statement with expression `e` in the switch block that may exit the `switch` expression, V is definitely unassigned before the `yield` statement and V is definitely unassigned after `e` when true.
+
+- V is definitely unassigned after a `switch` expression when false iff for every `yield` statement with expression `e` in the switch block that may exit the `switch` expression, V is definitely unassigned before the `yield` statement and V is definitely unassigned after `e` when false.
+
+- V is \[un\]assigned before the selector expression iff V is \[un\]assigned before the `switch` expression.
+
+- V is \[un\]assigned before the first statement of the first switch labeled statement group in the switch block iff V is \[un\]assigned after the selector expression.
+
+- V is \[un\]assigned before the first statement of any switch labeled statement group other than the first iff V is \[un\]assigned after the selector expression and V is \[un\]assigned after the preceding statement.
+
+
+The following rules apply only if the switch block of the `switch` expression consists of switch rules ([§14.11.1](ch14-blocks-statements-patterns.md#jls-14.11.1)):
+
+
+- V is definitely assigned after a `switch` expression when true iff for every switch rule, one of the following is true:
+
+
+  - It introduces a switch rule expression `e` and V is definitely assigned after `e` when true.
+
+  - It introduces a switch rule block B and for every `yield` statement with expression `e` contained in B that may exit the `switch` expression, V is definitely assigned after `e` when true.
+
+  - It introduces a switch rule `throw` statement.
+
+  
+
+- V is definitely assigned after a `switch` expression when false iff for every switch rule, one of the following is true:
+
+
+  - It introduces a switch rule expression `e` and V is definitely assigned after `e` when false.
+
+  - It introduces a switch rule block B and for every `yield` statement with expression `e` contained in B that may exit the `switch` expression, V is definitely assigned after `e` when false.
+
+  - It introduces a switch rule `throw` statement.
+
+  
+
+- V is definitely unassigned after a `switch` expression when true iff for every switch rule, one of the following is true:
+
+
+  - It introduces a switch rule expression `e` and V is definitely unassigned after `e` when true.
+
+  - It introduces a switch rule block B and for every `yield` statement with expression `e` contained in B that may exit the `switch` expression, V is definitely unassigned before the `yield` statement and V is definitely unassigned after `e` when true.
+
+  - It introduces a switch rule `throw` statement.
+
+  
+
+- V is definitely unassigned after a `switch` expression when false iff for every switch rule, one of the following is true:
+
+
+  - It introduces a switch rule expression `e` and V is definitely unassigned after `e` when false.
+
+  - It introduces a switch rule block B and for every `yield` statement with expression `e` contained in B that may exit the `switch` expression, V is definitely unassigned before the `yield` statement and V is definitely unassigned after `e` when false.
+
+  - It introduces a switch rule `throw` statement.
+
+  
+
+- V is \[un\]assigned before any switch rule expression or switch rule statement in the switch block iff V is \[un\]assigned after the selector expression.
+
+
+Suppose that a `switch` expression has result expressions `e`<sub>`1`</sub>, ..., `e`<sub>`n`</sub>, not all of which are boolean-valued.
+
+
+- V is \[un\]assigned after a `switch` expression iff all of the following are true:
+
+
+  - V is \[un\]assigned before every `yield` statement that may exit the `switch` expression.
+
+  - For each switch rule in the switch block, V is \[un\]assigned after the switch rule expression, switch rule block, or switch rule `throw` statement introduced by the switch rule.
+
+  
+
+- V is \[un\]assigned before the selector expression of a `switch` expression iff V is \[un\]assigned before the `switch` expression.
+
+- V is \[un\]assigned before the switch rule expression, switch rule block, or switch rule `throw` statement introduced by a switch rule in the switch block iff V is \[un\]assigned after the selector expression of the `switch` expression.
+
+- V is \[un\]assigned before the first block statement of a switch labeled statement group in the switch block iff both of the following are true:
+
+
+  - V is \[un\]assigned after the selector expression of the `switch` expression.
+
+  - If the switch labeled statement group is not the first in the switch block, V is \[un\]assigned after the last block statement of the preceding switch labeled statement group.
+
+  
+
+- V is \[un\]assigned before a block statement that is not the first of a switch labeled statement group in the switch block iff V is \[un\]assigned after the preceding block statement.
+
+
+The following rule applies to all `switch` expressions:
+
+
+- V is \[un\]assigned before any guard associated with the switch block of a `switch` expression iff V is \[un\]assigned after the selector expression.
+
+
+### 16.1.7. Other Expressions of Type `boolean`
+
+
+Suppose that `e` is an expression of type `boolean` and is not a boolean constant expression, logical complement expression `!``a`, conditional-and expression `a` `&&` `b`, conditional-or expression `a` `||` `b`, or conditional expression `a` `?` `b` `:` `c`.
+
+
+- V is \[un\]assigned after `e` when true iff V is \[un\]assigned after `e`.
+
+- V is \[un\]assigned after `e` when false iff V is \[un\]assigned after `e`.
+
+
+### 16.1.8. Assignment Expressions
+
+
+Consider an assignment expression `a` `=` `b`, `a` `+=` `b`, `a` `-=` `b`, `a` `*=` `b`, `a` `/=` `b`, `a` `%=` `b`, `a` `<<=` `b`, `a` `>>=` `b`, `a` `>>>=` `b`, `a` `&=` `b`, `a` `|=` `b`, or `a` `^=` `b` ([§15.26](ch15-expressions.md#jls-15.26)).
+
+
+- V is definitely assigned after the assignment expression iff either:
+
+
+  - `a` is V, or
+
+  - V is definitely assigned after `b`.
+
+  
+
+- V is definitely unassigned after the assignment expression iff `a` is not V and V is definitely unassigned after `b`.
+
+- V is \[un\]assigned before `a` iff V is \[un\]assigned before the assignment expression.
+
+- V is \[un\]assigned before `b` iff V is \[un\]assigned after `a`.
+
+
+Note that if `a` is V and V is not definitely assigned before a compound assignment such as `a` `&=` `b`, then a compile-time error will necessarily occur. The first rule for definite assignment stated above includes the disjunct "`a` is V" even for compound assignment expressions, not just simple assignments, so that V will be considered to have been definitely assigned at later points in the code. Including the disjunct "`a` is V" does not affect the binary decision as to whether a program is acceptable or will result in a compile-time error, but it affects how many different points in the code may be regarded as erroneous, and so in practice it can improve the quality of error reporting. A similar remark applies to the inclusion of the conjunct "`a` is not V" in the first rule for definite unassignment stated above.
+
+
+### 16.1.9. Operators `++` and `--`
+
+
+- V is definitely assigned after `++``a` ([§15.15.1](ch15-expressions.md#jls-15.15.1)), `--``a` ([§15.15.2](ch15-expressions.md#jls-15.15.2)), `a``++` ([§15.14.2](ch15-expressions.md#jls-15.14.2)), or `a``--` ([§15.14.3](ch15-expressions.md#jls-15.14.3)) iff either `a` is V or V is definitely assigned after the operand expression.
+
+- V is definitely unassigned after `++``a`, `--``a`, `a``++`, or `a``--` iff `a` is not V and V is definitely unassigned after the operand expression.
+
+- V is \[un\]assigned before `a` iff V is \[un\]assigned before `++``a`, `--``a`, `a``++`, or `a``--`.
+
+
+### 16.1.10. Other Expressions
+
+
+If an expression is not a boolean constant expression, and is not a preincrement expression `++``a`, predecrement expression `--``a`, postincrement expression `a``++`, postdecrement expression `a``--`, logical complement expression `!``a`, conditional-and expression `a` `&&` `b`, conditional-or expression `a` `||` `b`, conditional expression `a` `?` `b` `:` `c`, assignment expression, or lambda expression, then the following rules apply:
+
+
+- If the expression has no subexpressions, V is \[un\]assigned after the expression iff V is \[un\]assigned before the expression.
+
+  This case applies to literals, names, `this` (both qualified and unqualified), unqualified class instance creation expressions with no arguments, array creation expressions with initializers that contain no expressions, superclass field access expressions, unqualified and type-qualified method invocation expressions with no arguments, superclass method invocation expressions with no arguments, and superclass and type-qualified method reference expressions.
+
+- If the expression has subexpressions, V is \[un\]assigned after the expression iff V is \[un\]assigned after its rightmost immediate subexpression.
+
+
+There is a piece of subtle reasoning behind the assertion that a variable V can be known to be definitely unassigned after a method invocation expression. Taken by itself, at face value and without qualification, such an assertion is not always true, because an invoked method can perform assignments. But it must be remembered that, for the purposes of the Java programming language, the concept of definite unassignment is applied only to blank `final` variables. If V is a blank `final` local variable, then only the method to which its declaration belongs can perform assignments to V. If V is a blank `final` field, then only a constructor or an initializer for the class containing the declaration for V can perform assignments to V; no method can perform assignments to V. Finally, explicit constructor invocations ([§8.8.7.1](ch08-classes.md#jls-8.8.7.1)) are handled specially ([§16.9](ch16-definite-assignment.md#jls-16.9)); although they are syntactically similar to expression statements containing method invocations, they are not expression statements and therefore the rules of this section do not apply to explicit constructor invocations.
+
+If an expression is a lambda expression, then the following rules apply:
+
+
+- V is \[un\]assigned after the expression iff V is \[un\]assigned before the expression.
+
+- V is definitely assigned before the expression or block that is the lambda body ([§15.27.2](ch15-expressions.md#jls-15.27.2)) iff V is definitely assigned before the lambda expression.
+
+  No rule allows V to be definitely unassigned before a lambda body. This is by design: a variable that was definitely unassigned before the lambda body may end up being assigned to later on, so we cannot conclude that the variable will be unassigned when the body is executed.
+
+
+For any immediate subexpression `y` of an expression `x`, where `x` is not a lambda expression, V is \[un\]assigned before `y` iff one of the following is true:
+
+
+- `y` is the leftmost immediate subexpression of `x` and V is \[un\]assigned before `x`.
+
+- `y` is the right-hand operand of a binary operator and V is \[un\]assigned after the left-hand operand.
+
+- `x` is an array access, `y` is the subexpression within the brackets, and V is \[un\]assigned after the subexpression before the brackets.
+
+- `x` is a primary method invocation expression, `y` is the first argument expression in the method invocation expression, and V is \[un\]assigned after the primary expression that computes the target object.
+
+- `x` is a method invocation expression or a class instance creation expression; `y` is an argument expression, but not the first; and V is \[un\]assigned after the argument expression to the left of `y`.
+
+- `x` is a qualified class instance creation expression, `y` is the first argument expression in the class instance creation expression, and V is \[un\]assigned after the primary expression that computes the qualifying object.
+
+- `x` is an array creation expression; `y` is a dimension expression, but not the first; and V is \[un\]assigned after the dimension expression to the left of `y`.
+
+- `x` is an array creation expression initialized via an array initializer; `y` is the array initializer in `x`; and V is \[un\]assigned after the dimension expression to the left of `y`.
+
+
+## 16.2. Definite Assignment and Statements
+
+
+### 16.2.1. Empty Statements
+
+
+- V is \[un\]assigned after an empty statement ([§14.6](ch14-blocks-statements-patterns.md#jls-14.6)) iff it is \[un\]assigned before the empty statement.
+
+
+### 16.2.2. Blocks
+
+
+- A blank `final` member field V is definitely assigned (and moreover is not definitely unassigned) before the block ([§14.2](ch14-blocks-statements-patterns.md#jls-14.2)) that is the body of any method in the scope of V and before the declaration of any class declared within the scope of V.
+
+- A local variable V declared by a statement S is definitely unassigned (and moreover is not definitely assigned) before the block that is the body of the method, instance initializer or static initializer which contains S.
+
+- Let C be a class declared within the scope of V. Then V is definitely assigned before the block that is the body of any method, instance initializer, or static initializer declared in C iff V is definitely assigned before the declaration of C.
+
+  Note that there are no rules that would allow us to conclude that V is definitely unassigned before the block that is the body of any method, instance initializer, or static initializer declared in C. We can informally conclude that V is not definitely unassigned before the block that is the body of any method, instance initializer, or static initializer declared in C, but there is no need for such a rule to be stated explicitly.
+
+- V is \[un\]assigned after an empty block iff V is \[un\]assigned before the empty block.
+
+- V is \[un\]assigned after a non-empty block iff V is \[un\]assigned after the last statement in the block.
+
+- V is \[un\]assigned before the first statement of the block iff V is \[un\]assigned before the block.
+
+- V is \[un\]assigned before any other statement S of the block iff V is \[un\]assigned after the statement immediately preceding S in the block.
+
+
+We say that V is definitely unassigned everywhere in a block B iff:
+
+
+- V is definitely unassigned before B.
+
+- V is definitely assigned after `e` in every assignment expression V `=` `e`, V `+=` `e`, V `-=` `e`, V `*=` `e`, V `/=` `e`, V `%=` `e`, V `<<=` `e`, V `>>=` `e`, V `>>>=` `e`, V `&=` `e`, V `|=` `e`, or V `^=` `e` that occurs in B.
+
+- V is definitely assigned before every expression `++`V, `--`V, V`++`, or V`--` that occurs in B.
+
+
+These conditions are counterintuitive and require some explanation. Consider a simple assignment V `=` `e`. If V is definitely assigned after `e`, then either:
+
+
+- The assignment occurs in dead code, and V is vacuously definitely assigned. In this case, the assignment will not actually take place, and we can assume that V is not being assigned by the assignment expression. Or:
+
+- V was already assigned by an earlier expression prior to `e`. In this case the current assignment will cause a compile-time error.
+
+
+So, we can conclude that if the conditions are met by a program that causes no compile time error, then any assignments to V in B will not actually take place at run time.
+
+
+### 16.2.3. Local Class and Interface Declarations
+
+
+- V is \[un\]assigned after a local class or interface declaration ([§14.3](ch14-blocks-statements-patterns.md#jls-14.3)) iff V is \[un\]assigned before the local class or interface declaration.
+
+
+### 16.2.4. Local Variable Declaration Statements
+
+
+- V is \[un\]assigned after a local variable declaration statement ([§14.4.2](ch14-blocks-statements-patterns.md#jls-14.4.2)) that contains no variable initializers iff V is \[un\]assigned before the local variable declaration statement.
+
+- V is definitely assigned after a local variable declaration statement that contains at least one variable initializer iff either V is definitely assigned after the last variable initializer in the local variable declaration statement or the last variable initializer in the declaration is in the declarator that declares V.
+
+- V is definitely unassigned after a local variable declaration statement that contains at least one variable initializer iff V is definitely unassigned after the last variable initializer in the local variable declaration statement and the last variable initializer in the declaration is not in the declarator that declares V.
+
+- V is \[un\]assigned before the first variable initializer in a local variable declaration statement iff V is \[un\]assigned before the local variable declaration statement.
+
+- V is definitely assigned before any variable initializer `e` other than the first one in the local variable declaration statement iff either V is definitely assigned after the variable initializer to the left of `e` or the initializer expression to the left of `e` is in the declarator that declares V.
+
+- V is definitely unassigned before any variable initializer `e` other than the first one in the local variable declaration statement iff V is definitely unassigned after the variable initializer to the left of `e` and the initializer expression to the left of `e` is not in the declarator that declares V.
+
+
+### 16.2.5. Labeled Statements
+
+
+- V is \[un\]assigned after a labeled statement `L` `:` S (where `L` is a label) ([§14.7](ch14-blocks-statements-patterns.md#jls-14.7)) iff V is \[un\]assigned after S and V is \[un\]assigned before every `break` statement that may exit the labeled statement `L` `:` S.
+
+- V is \[un\]assigned before S iff V is \[un\]assigned before `L` `:` S.
+
+
+### 16.2.6. Expression Statements
+
+
+- V is \[un\]assigned after an expression statement `e``;` ([§14.8](ch14-blocks-statements-patterns.md#jls-14.8)) iff it is \[un\]assigned after `e`.
+
+- V is \[un\]assigned before `e` iff it is \[un\]assigned before `e``;`.
+
+
+### 16.2.7. `if` Statements
+
+
+The following rules apply to a statement `if (``e``) ``S` ([§14.9.1](ch14-blocks-statements-patterns.md#jls-14.9.1)):
+
+
+- V is \[un\]assigned after `if (``e``) ``S` iff V is \[un\]assigned after S and V is \[un\]assigned after `e` when false.
+
+- V is \[un\]assigned before `e` iff V is \[un\]assigned before `if (``e``) ``S`.
+
+- V is \[un\]assigned before S iff V is \[un\]assigned after `e` when true.
+
+
+The following rules apply to a statement `if (e) ``S`` else ``T` ([§14.9.2](ch14-blocks-statements-patterns.md#jls-14.9.2)):
+
+
+- V is \[un\]assigned after `if (``e``) ``S`` else ``T` iff V is \[un\]assigned after S and V is \[un\]assigned after T.
+
+- V is \[un\]assigned before `e` iff V is \[un\]assigned before `if (``e``) ``S`` else ``T`.
+
+- V is \[un\]assigned before S iff V is \[un\]assigned after `e` when true.
+
+- V is \[un\]assigned before T iff V is \[un\]assigned after `e` when false.
+
+
+### 16.2.8. `assert` Statements
+
+
+The following rules apply both to a statement `assert ``e`<sub>`1`</sub> and to a statement `assert ``e`<sub>`1`</sub>` : ``e`<sub>`2`</sub> ([§14.10](ch14-blocks-statements-patterns.md#jls-14.10)):
+
+
+- V is \[un\]assigned before `e`<sub>`1`</sub> iff V is \[un\]assigned before the `assert` statement.
+
+- V is definitely assigned after the `assert` statement iff V is definitely assigned before the `assert` statement.
+
+- V is definitely unassigned after the `assert` statement iff V is definitely unassigned before the `assert` statement and V is definitely unassigned after `e`<sub>`1`</sub> when true.
+
+
+The following rule applies to a statement `assert ``e`<sub>`1`</sub>` : ``e`<sub>`2`</sub>:
+
+
+- V is \[un\]assigned before `e`<sub>`2`</sub> iff V is \[un\]assigned after `e`<sub>`1`</sub> when false.
+
+
+### 16.2.9. `switch` Statements
+
+
+- V is \[un\]assigned after a `switch` statement ([§14.11](ch14-blocks-statements-patterns.md#jls-14.11)) iff all of the following are true:
+
+
+  - V is \[un\]assigned before every `break` statement ([§14.15](ch14-blocks-statements-patterns.md#jls-14.15)) that may exit the `switch` statement.
+
+  - For each switch rule ([§14.11.1](ch14-blocks-statements-patterns.md#jls-14.11.1)) in the switch block, V is \[un\]assigned after the switch rule expression, switch rule block, or switch rule `throw` statement introduced by the switch rule.
+
+  - If there is a switch labeled statement group in the switch block, then V is \[un\]assigned after the last block statement of the last switch labeled statement group.
+
+  - If the `switch` statement is not exhaustive ([§14.11.1.1](ch14-blocks-statements-patterns.md#jls-14.11.1.1)), or if the switch block ends with a switch label followed by the `}` separator, then V is \[un\]assigned after the selector expression.
+
+  
+
+- V is \[un\]assigned before the selector expression of a `switch` statement iff V is \[un\]assigned before the `switch` statement.
+
+- V is \[un\]assigned before any guard associated with the switch block of a `switch` statement iff V is \[un\]assigned after the selector expression.
+
+- V is \[un\]assigned before the switch rule expression, switch rule block, or switch rule `throw` statement introduced by a switch rule in the switch block iff V is \[un\]assigned after the selector expression of the `switch` statement.
+
+- V is \[un\]assigned before the first block statement of a switch labeled statement group in the switch block iff both of the following are true:
+
+
+  - V is \[un\]assigned after the selector expression of the `switch` statement.
+
+  - If the switch labeled statement group is not the first in the switch block, V is \[un\]assigned after the last block statement of the preceding switch labeled statement group.
+
+  
+
+- V is \[un\]assigned before a block statement that is not the first of a switch labeled statement group in the switch block iff V is \[un\]assigned after the preceding block statement.
+
+
+### 16.2.10. `while` Statements
+
+
+- V is \[un\]assigned after `while (``e``) ``S` ([§14.12](ch14-blocks-statements-patterns.md#jls-14.12)) iff V is \[un\]assigned after `e` when false and V is \[un\]assigned before every `break` statement for which the `while` statement is the break target.
+
+- V is definitely assigned before `e` iff V is definitely assigned before the `while` statement.
+
+- V is definitely unassigned before `e` iff all of the following are true:
+
+
+  - V is definitely unassigned before the `while` statement.
+
+  - Assuming V is definitely unassigned before `e`, V is definitely unassigned after S.
+
+  - Assuming V is definitely unassigned before `e`, V is definitely unassigned before every `continue` statement for which the `while` statement is the continue target.
+
+  
+
+- V is \[un\]assigned before S iff V is \[un\]assigned after `e` when true.
+
+
+### 16.2.11. `do` Statements
+
+
+- V is \[un\]assigned after `do ``S`` while (``e``);` ([§14.13](ch14-blocks-statements-patterns.md#jls-14.13)) iff V is \[un\]assigned after `e` when false and V is \[un\]assigned before every `break` statement for which the `do` statement is the break target.
+
+- V is definitely assigned before S iff V is definitely assigned before the `do` statement.
+
+- V is definitely unassigned before S iff all of the following are true:
+
+
+  - V is definitely unassigned before the `do` statement.
+
+  - Assuming V is definitely unassigned before S, V is definitely unassigned after `e` when true.
+
+  
+
+- V is \[un\]assigned before `e` iff V is \[un\]assigned after S and V is \[un\]assigned before every `continue` statement for which the `do` statement is the continue target.
+
+
+### 16.2.12. `for` Statements
+
+
+The rules herein cover the basic `for` statement ([§14.14.1](ch14-blocks-statements-patterns.md#jls-14.14.1)). Since the enhanced `for` statement ([§14.14.2](ch14-blocks-statements-patterns.md#jls-14.14.2)) is defined by translation to a basic `for` statement, no special rules need to be provided for it.
+
+
+- V is \[un\]assigned after a `for` statement iff both of the following are true:
+
+
+  - Either a condition expression is not present or V is \[un\]assigned after the condition expression when false.
+
+  - V is \[un\]assigned before every `break` statement for which the `for` statement is the break target.
+
+  
+
+- V is \[un\]assigned before the initialization part of the `for` statement iff V is \[un\]assigned before the `for` statement.
+
+- V is definitely assigned before the condition part of the `for` statement iff V is definitely assigned after the initialization part of the `for` statement.
+
+- V is definitely unassigned before the condition part of the `for` statement iff both of the following are true:
+
+
+  - V is definitely unassigned after the initialization part of the `for` statement.
+
+  - Assuming V is definitely unassigned before the condition part of the `for` statement, V is definitely unassigned after the incrementation part of the `for` statement.
+
+  
+
+- V is \[un\]assigned before the contained statement iff either of the following is true:
+
+
+  - A condition expression is present and V is \[un\]assigned after the condition expression when true.
+
+  - No condition expression is present and V is \[un\]assigned before the condition part of the `for` statement.
+
+  
+
+- V is \[un\]assigned before the incrementation part of the `for` statement iff V is \[un\]assigned after the contained statement and V is \[un\]assigned before every `continue` statement for which the `for` statement is the continue target.
+
+
+#### 16.2.12.1. Initialization Part of `for` Statement
+
+
+- If the initialization part of the `for` statement is a local variable declaration statement, the rules of [§16.2.4](ch16-definite-assignment.md#jls-16.2.4) apply.
+
+- Otherwise, if the initialization part is empty, then V is \[un\]assigned after the initialization part iff V is \[un\]assigned before the initialization part.
+
+- Otherwise, three rules apply:
+
+
+  - V is \[un\]assigned after the initialization part iff V is \[un\]assigned after the last expression statement in the initialization part.
+
+  - V is \[un\]assigned before the first expression statement in the initialization part iff V is \[un\]assigned before the initialization part.
+
+  - V is \[un\]assigned before an expression statement S other than the first in the initialization part iff V is \[un\]assigned after the expression statement immediately preceding S.
+
+  
+
+
+#### 16.2.12.2. Incrementation Part of `for` Statement
+
+
+- If the incrementation part of the `for` statement is empty, then V is \[un\]assigned after the incrementation part iff V is \[un\]assigned before the incrementation part.
+
+- Otherwise, three rules apply:
+
+
+  - V is \[un\]assigned after the incrementation part iff V is \[un\]assigned after the last expression statement in the incrementation part.
+
+  - V is \[un\]assigned before the first expression statement in the incrementation part iff V is \[un\]assigned before the incrementation part.
+
+  - V is \[un\]assigned before an expression statement S other than the first in the incrementation part iff V is \[un\]assigned after the expression statement immediately preceding S.
+
+  
+
+
+### 16.2.13. `break`, `yield`, `continue`, `return`, and `throw` Statements
+
+
+- By convention, we say that V is \[un\]assigned after any `break`, `yield`, `continue`, `return`, or `throw` statement ([§14.15](ch14-blocks-statements-patterns.md#jls-14.15), [§14.21](ch14-blocks-statements-patterns.md#jls-14.21), [§14.16](ch14-blocks-statements-patterns.md#jls-14.16), [§14.17](ch14-blocks-statements-patterns.md#jls-14.17), [§14.18](ch14-blocks-statements-patterns.md#jls-14.18)).
+
+  The notion that a variable is "\[un\]assigned after" a statement or expression really means "is \[un\]assigned after the statement or expression completes normally". Because a `break`, `yield`, `continue`, `return`, or `throw` statement never completes normally, it vacuously satisfies this notion.
+
+- In a `yield` statement with expression `e`, or a `return` statement with expression `e`, or a `throw` statement with expression `e`, V is \[un\]assigned before `e` iff V is \[un\]assigned before the `yield`, `return`, or `throw` statement.
+
+
+### 16.2.14. `synchronized` Statements
+
+
+- V is \[un\]assigned after `synchronized (``e``) ``S` ([§14.19](ch14-blocks-statements-patterns.md#jls-14.19)) iff V is \[un\]assigned after S.
+
+- V is \[un\]assigned before `e` iff V is \[un\]assigned before the statement `synchronized (``e``) ``S`.
+
+- V is \[un\]assigned before S iff V is \[un\]assigned after `e`.
+
+
+### 16.2.15. `try` Statements
+
+
+The rules herein cover the `try`-`catch` and `try`-`catch`-`finally` statements ([§14.20.1](ch14-blocks-statements-patterns.md#jls-14.20.1), [§14.20.2](ch14-blocks-statements-patterns.md#jls-14.20.2)). Since the `try`-with-resources statement ([§14.20.3](ch14-blocks-statements-patterns.md#jls-14.20.3)) is defined by translation to a `try`-`catch`-`finally` statement, no special rules need to be provided for it.
+
+These rules apply to every `try` statement ([§14.20](ch14-blocks-statements-patterns.md#jls-14.20)), whether or not it has a `finally` block:
+
+
+- V is \[un\]assigned before the `try` block iff V is \[un\]assigned before the `try` statement.
+
+- V is definitely assigned before a `catch` block iff V is definitely assigned before the `try` block.
+
+- V is definitely unassigned before a `catch` block iff all of the following are true:
+
+
+  - V is definitely unassigned after the `try` block.
+
+  - V is definitely unassigned before every `return` statement that belongs to the `try` block.
+
+  - V is definitely unassigned after `e` in every statement of the form `throw` `e` that belongs to the `try` block.
+
+  - V is definitely unassigned after every `assert` statement that occurs in the `try` block.
+
+  - V is definitely unassigned before every `break` statement that belongs to the `try` block and whose break target contains (or is) the `try` statement.
+
+  - V is definitely unassigned before every `continue` statement that belongs to the `try` block and whose continue target contains the `try` statement.
+
+  
+
+
+If a `try` statement does not have a `finally` block, then this rule also applies:
+
+
+- V is \[un\]assigned after the `try` statement iff V is \[un\]assigned after the `try` block and V is \[un\]assigned after every `catch` block in the `try` statement.
+
+
+If a `try` statement does have a `finally` block, then these rules also apply:
+
+
+- V is definitely assigned after the `try` statement iff at least one of the following is true:
+
+
+  - V is definitely assigned after the `try` block and V is definitely assigned after every `catch` block in the `try` statement.
+
+  - V is definitely assigned after the `finally` block.
+
+  
+
+- V is definitely unassigned after the `try` statement iff V is definitely unassigned after the `finally` block.
+
+- V is definitely assigned before the `finally` block iff V is definitely assigned before the `try` statement.
+
+- V is definitely unassigned before the `finally` block iff all of the following are true:
+
+
+  - V is definitely unassigned after the `try` block.
+
+  - V is definitely unassigned before every `return` statement that belongs to the `try` block.
+
+  - V is definitely unassigned after `e` in every statement of the form `throw` `e` that belongs to the `try` block.
+
+  - V is definitely unassigned after every `assert` statement that occurs in the `try` block.
+
+  - V is definitely unassigned before every `break` statement that belongs to the `try` block and whose break target contains (or is) the `try` statement.
+
+  - V is definitely unassigned before every `continue` statement that belongs to the `try` block and whose continue target contains the `try` statement.
+
+  - V is definitely unassigned after every `catch` block of the `try` statement.
+
+  
+
+
+## 16.3. Definite Assignment and Parameters
+
+
+- A formal parameter V of a method or constructor ([§8.4.1](ch08-classes.md#jls-8.4.1), [§8.8.1](ch08-classes.md#jls-8.8.1)) is definitely assigned (and moreover is not definitely unassigned) before the body of the method or constructor.
+
+- An exception parameter V of a `catch` clause ([§14.20](ch14-blocks-statements-patterns.md#jls-14.20)) is definitely assigned (and moreover is not definitely unassigned) before the body of the `catch` clause.
+
+
+## 16.4. Definite Assignment and Array Initializers
+
+
+- V is \[un\]assigned after an empty array initializer ([§10.6](ch10-arrays.md#jls-10.6)) iff V is \[un\]assigned before the empty array initializer.
+
+- V is \[un\]assigned after a non-empty array initializer iff V is \[un\]assigned after the last variable initializer in the array initializer.
+
+- V is \[un\]assigned before the first variable initializer of the array initializer iff V is \[un\]assigned before the array initializer.
+
+- V is \[un\]assigned before any other variable initializer `e` of the array initializer iff V is \[un\]assigned after the variable initializer to the left of `e` in the array initializer.
+
+
+## 16.5. Definite Assignment and Enum Constants
+
+
+The rules determining when a variable is definitely assigned or definitely unassigned before an enum constant ([§8.9.1](ch08-classes.md#jls-8.9.1)) are given in [§16.8](ch16-definite-assignment.md#jls-16.8).
+
+This is because an enum constant is essentially a `static` `final` field ([§8.3.1.1](ch08-classes.md#jls-8.3.1.1), [§8.3.1.2](ch08-classes.md#jls-8.3.1.2)) that is initialized with a class instance creation expression ([§15.9](ch15-expressions.md#jls-15.9)).
+
+
+- V is definitely assigned before the declaration of a class body of an enum constant with no arguments that is declared within the scope of V iff V is definitely assigned before the enum constant.
+
+- V is definitely assigned before the declaration of a class body of an enum constant with arguments that is declared within the scope of V iff V is definitely assigned after the last argument expression of the enum constant
+
+
+The definite assignment/unassignment status of any construct within the class body of an enum constant is governed by the usual rules for classes.
+
+
+- V is \[un\]assigned before the first argument to an enum constant iff it is \[un\]assigned before the enum constant.
+
+- V is \[un\]assigned before `y` (an argument of an enum constant, but not the first) iff V is \[un\]assigned after the argument to the left of `y`.
+
+
+## 16.6. Definite Assignment and Anonymous Classes
+
+
+- V is definitely assigned before an anonymous class declaration ([§15.9.5](ch15-expressions.md#jls-15.9.5)) that is declared within the scope of V iff V is definitely assigned after the class instance creation expression that declares the anonymous class.
+
+
+It should be clear that if an anonymous class is implicitly defined by an enum constant, the rules of [§16.5](ch16-definite-assignment.md#jls-16.5) apply.
+
+
+## 16.7. Definite Assignment and Member Classes and Interfaces
+
+
+Let C be a class, and let V be a blank `final` field of C. Then:
+
+
+- V is definitely assigned (and moreover, not definitely unassigned) before the declaration of any member class or interface ([§8.5](ch08-classes.md#jls-8.5), [§9.5](ch09-interfaces.md#jls-9.5)) of C.
+
+
+Let C be a class declared within the scope of V. Then:
+
+
+- V is definitely assigned before the declaration of a member class or interface of C iff V is definitely assigned before the declaration of C.
+
+
+## 16.8. Definite Assignment and Static Initializers
+
+
+Let C be a class declared within the scope of V. Then:
+
+
+- V is definitely assigned before an enum constant ([§8.9.1](ch08-classes.md#jls-8.9.1)) or static variable initializer ([§8.3.2](ch08-classes.md#jls-8.3.2)) of C iff V is definitely assigned before the declaration of C.
+
+  Note that there are no rules that would allow us to conclude that V is definitely unassigned before a static variable initializer or enum constant. We can informally conclude that V is not definitely unassigned before any static variable initializer of C, but there is no need for such a rule to be stated explicitly.
+
+
+Let C be a class, and let V be a blank `static` `final` member field of C, declared in C. Then:
+
+
+- V is definitely unassigned (and moreover is not definitely assigned) before the leftmost enum constant, static initializer ([§8.7](ch08-classes.md#jls-8.7)), or static variable initializer of C.
+
+- V is \[un\]assigned before an enum constant, static initializer, or static variable initializer of C other than the leftmost iff V is \[un\]assigned after the preceding enum constant, static initializer, or static variable initializer of C.
+
+
+Let C be a class, and let V be a blank `static` `final` member field of C, declared in a superclass of C. Then:
+
+
+- V is definitely assigned (and moreover is not definitely unassigned) before every enum constant of C.
+
+- V is definitely assigned (and moreover is not definitely unassigned) before the block that is the body of a static initializer of C.
+
+- V is definitely assigned (and moreover is not definitely unassigned) before every static variable initializer of C.
+
+
+## 16.9. Definite Assignment, Constructors, and Instance Initializers
+
+
+Let C be a class declared within the scope of V. Then:
+
+
+- V is definitely assigned before a constructor declaration ([§8.8.7](ch08-classes.md#jls-8.8.7)) or instance variable initializer ([§8.3.2](ch08-classes.md#jls-8.3.2)) of C iff V is definitely assigned before the declaration of C.
+
+  Note that there are no rules that would allow us to conclude that V is definitely unassigned before the constructor declaration or instance variable initializer. We can informally conclude that V is not definitely unassigned before any constructor declaration or instance variable initializer of C, but there is no need for such a rule to be stated explicitly.
+
+
+Let C be a class, and let V be a blank `final` non-`static` member field of C, declared in C. Then:
+
+
+- V is definitely unassigned (and moreover is not definitely assigned) before the declaration of any constructor in C.
+
+- V is definitely unassigned (and moreover is not definitely assigned) before the leftmost instance initializer ([§8.6](ch08-classes.md#jls-8.6)) or instance variable initializer of C iff V is definitely unassigned after every superclass constructor invocation ([§8.8.7.1](ch08-classes.md#jls-8.8.7.1)) in the constructors of C.
+
+- V is definitely assigned (and moreover is not definitely unassigned) before the leftmost instance initializer ([§8.6](ch08-classes.md#jls-8.6)) or instance variable initializer of C iff C declares at least one constructor, every constructor of C has an explicit constructor invocation, and V is definitely assigned after every superclass constructor invocation in these constructors.
+
+- V is \[un\]assigned before an instance initializer or instance variable initializer of C other than the leftmost iff V is \[un\]assigned after the preceding instance initializer or instance variable initializer of C.
+
+
+Let C be a class, and let V be a blank `final` non-`static` member field of C, declared in a superclass of C. Then:
+
+
+- V is definitely unassigned (and moreover is not definitely assigned) before the declaration of any constructor in C.
+
+- V is definitely assigned (and moreover is not definitely unassigned) before every instance initializer and instance variable initializer of C.
+
+
+Let C be a class, and let V be a blank `final` `static` member field of C. Then:
+
+
+- V is definitely assigned (and moreover is not definitely unassigned) before every constructor declaration, instance initializer, and instance variable initializer of C.
+
+
+Let C be a class, and let V be a local variable declared by a statement S contained by a constructor or instance variable initializer of C. Then:
+
+
+- V is definitely unassigned (and moreover is not definitely assigned) before the constructor declaration or instance variable initializer.
+
+
+The following rules hold within the constructors ([§8.8.7](ch08-classes.md#jls-8.8.7)) of class C:
+
+
+- V is \[un\]assigned before the prologue of the constructor body ([§8.8.7](ch08-classes.md#jls-8.8.7)) iff V is \[un\]assigned before the constructor declaration.
+
+- V is \[un\]assigned after an empty prologue iff V is \[un\]assigned before the prologue.
+
+- V is \[un\]assigned after a non-empty prologue iff V is \[un\]assigned after the last statement in the prologue.
+
+- V is \[un\]assigned before a constructor invocation ([§8.8.7.1](ch08-classes.md#jls-8.8.7.1)) iff V is \[un\]assigned after the prologue.
+
+- V is \[un\]assigned before the argument list of a qualified super constructor invocation iff V is \[un\]assigned after the qualifier expression.
+
+- V is \[un\]assigned before the argument list of any other constructor invocation iff V is \[un\]assigned before the invocation.
+
+- V is \[un\]assigned after the argument list of a constructor invocation iff either V is \[un\]assigned after the rightmost argument expression in the argument list, or the argument list is empty and V is \[un\]assigned before the argument list.
+
+- A blank `final` non-`static` member field of C, declared in a superclass of C, is definitely assigned (and moreover is not definitely unassigned) after a superclass constructor invocation.
+
+- Any other variable V is \[un\]assigned after a superclass constructor invocation iff V is \[un\]assigned after the argument list of the invocation.
+
+- A blank `final` non-`static` member field of C, declared in C or a superclass of C, is definitely assigned (and moreover is not definitely unassigned) after an alternate constructor invocation.
+
+- Any other variable V is \[un\]assigned after an alternate constructor invocation iff V is \[un\]assigned after the argument list of the invocation.
+
+- For the epilogue of a constructor body with no explicit constructor invocation:
+
+
+  - A blank `final` non-`static` member field V of C, declared in C, is \[un\]assigned before the epilogue iff either V is \[un\]assigned after the rightmost instance initialization or instance variable initializer of C, or C declares no instance initializer or instance variable initializer, and V is \[un\]assigned after the prologue of the constructor body.
+
+  - A blank `final` non-`static` member field of C, declared in a superclass of C, is definitely assigned (and moreover is not definitely unassigned) before the epilogue.
+
+  - Any other variable V is \[un\]assigned before the epilogue iff V is \[un\]assigned after the prologue of the constructor body.
+
+  
+
+- For the epilogue of a constructor body with a superclass constructor invocation:
+
+
+  - A blank `final` non-`static` member field V of C, declared in C, is \[un\]assigned before the epilogue iff either V is \[un\]assigned after the rightmost instance initialization or instance variable initializer of C, or C declares no instance initializer or instance variable initializer, and V is \[un\]assigned after the superclass constructor invocation.
+
+  - Any other variable V is \[un\]assigned before the epilogue iff V is \[un\]assigned after the superclass constructor invocation.
+
+  
+
+- For the epilogue of a constructor body with an alternate constructor invocation, V is \[un\]assigned before the epilogue iff V is \[un\]assigned after the alternate constructor invocation.
+
+- V is \[un\]assigned after an empty epilogue iff V is \[un\]assigned before the epilogue.
+
+- V is \[un\]assigned after a non-empty epilogue iff V is \[un\]assigned after the last statement in the epilogue.
+
+- V is \[un\]assigned before the first statement of the prologue or epilogue iff V is \[un\]assigned before the prologue or epilogue, respectively.
+
+- V is \[un\]assigned before any other statement S in the prologue or epilogue iff V is \[un\]assigned after the statement immediately preceding S in the prologue or epilogue.
+
+- V is \[un\]assigned before the qualifier expression of a super constructor invocation iff V is \[un\]assigned before the super constructor invocation.
+
+- V is \[un\]assigned before the leftmost argument expression of an explicit constructor invocation iff V is \[un\]assigned before the argument list.
+
+- V is \[un\]assigned before any other argument expression `x` of an explicit constructor invocation iff V is \[un\]assigned after the argument expression to the left of `x`.
+
+
