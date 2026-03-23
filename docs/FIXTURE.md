@@ -5,12 +5,13 @@ The fixture framework encodes expected LSP behavior as tests. Each test is a sma
 ## Quick start
 
 ```rust
+mod prelude;
+use prelude::fixture;
 use beans_core::SymbolKind;
-use beans_test_harness::fixture::Fixture;
 
 #[test]
 fn import_resolves_to_class() {
-    Fixture::new()
+    fixture()
         .file("com/example/model/User.java", r#"
             package com.example.model;
             public class User {}
@@ -29,7 +30,52 @@ fn import_resolves_to_class() {
 }
 ```
 
-Run with `cargo test -p beans-test-harness`.
+Run with `cargo test -p beans-test-java`.
+
+## Architecture
+
+The test infrastructure is split into layers:
+
+```
+beans-test-harness/     Framework library (language-agnostic)
+beans-test-java/        Java spec tests + Java prelude
+beans-test-kotlin/      Kotlin spec tests + Kotlin prelude (future)
+beans-test-interop/     Cross-language tests (future)
+```
+
+**`beans-test-harness`** provides `Fixture`, cursor marker stripping, and the assertion API. It has no language dependencies — it doesn't know about Java, Kotlin, or any other language.
+
+**Per-language test crates** each have a `prelude.rs` that creates a `Fixture` with the right language(s) registered:
+
+```rust
+// beans-test-java/tests/prelude.rs
+use beans_test_harness::fixture::Fixture;
+use beans_lang_java::JavaLanguage;
+
+pub fn fixture() -> Fixture {
+    Fixture::new()
+        .with_language(JavaLanguage)
+}
+```
+
+Test files import the prelude and call `fixture()` — no registration boilerplate:
+
+```rust
+mod prelude;
+use prelude::fixture;
+
+#[test]
+fn my_test() {
+    fixture()
+        .file("Foo.java", src)
+        .assert_at("x").kind(SymbolKind::Class)
+        .run();
+}
+```
+
+When a new language is added, it gets its own test crate with its own prelude. Existing tests don't change.
+
+**`beans-test-interop/`** (future) will depend on all language crates and test cross-language scenarios — e.g., Java code referencing a Kotlin class. Its prelude registers every language. This is the only crate that needs all language dependencies, which is appropriate since cross-language testing inherently requires them.
 
 ## Cursor markers
 
@@ -77,7 +123,7 @@ All assertions are optional and combinable. Use only what matters for the test.
 Add multiple files with `.file()`. Cursors can appear in any file:
 
 ```rust
-Fixture::new()
+fixture()
     .file("model/User.java", r#"
         package com.example.model;
         public class User { ... }
@@ -91,20 +137,6 @@ Fixture::new()
     "#)
     .assert_at("ref")
         .resolves_to("com.example.model.User")
-    .run();
-```
-
-## Multi-language tests
-
-The fixture dispatches parsing per file extension. Java is registered by default. For cross-language tests, register additional languages:
-
-```rust
-Fixture::new()
-    .with_language(KotlinLanguage)
-    .file("com/example/Helper.kt", KOTLIN_SOURCE)
-    .file("com/example/App.java", JAVA_SOURCE_WITH_CURSORS)
-    .assert_at("helper_ref")
-        .resolves_to("com.example.Helper")
     .run();
 ```
 
@@ -134,11 +166,12 @@ For features not yet implemented:
 
 ## File organization
 
-Tests live in `beans-test-harness/tests/spec.rs`. As the suite grows, split into modules:
+Each language has its own test crate. As the suite grows, split into modules:
 
 ```
-beans-test-harness/tests/
-    spec.rs          # or spec/mod.rs
+beans-test-java/tests/
+    prelude.rs           # fixture() with JavaLanguage
+    spec.rs              # or spec/mod.rs
     spec/imports.rs
     spec/generics.rs
     spec/resolution.rs
