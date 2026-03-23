@@ -8,10 +8,15 @@ beans-lang-java       # Java source → symbols (via tree-sitter-java), JavaLang
 beans-lang-kotlin     # Kotlin source → symbols (planned, via tree-sitter-kotlin)
 beans-jmod            # .class bytecode → symbols (planned, via cafebabe)
 beans-lsp             # LSP server, orchestrates everything
-beans-test-harness    # Fixture-driven test framework for encoding spec behavior
+beans-test-harness    # Fixture test framework (language-agnostic, no language deps)
+beans-test-java       # Java spec tests (depends on beans-lang-java + harness)
+beans-test-kotlin     # Kotlin spec tests (planned)
+beans-test-interop    # Cross-language tests (planned, depends on all language crates)
 ```
 
-Each `beans-lang-*` crate is a source parser that implements the `Language` trait from `beans-core`, producing `Symbol` entries. `beans-jmod` does the same from bytecode. `beans-lsp` consumes them all through a unified symbol table. `beans-test-harness` exercises the full pipeline with cursor-marked source files.
+**Production crates**: Each `beans-lang-*` crate implements the `Language` trait from `beans-core`, producing `Symbol` entries. `beans-jmod` does the same from bytecode. `beans-lsp` consumes them all through a unified symbol table.
+
+**Test crates**: `beans-test-harness` provides the fixture framework with no language opinion. Per-language test crates (`beans-test-java`, etc.) wire in their language via a prelude and contain the spec tests. `beans-test-interop` (future) depends on all language crates to test cross-language scenarios.
 
 ---
 
