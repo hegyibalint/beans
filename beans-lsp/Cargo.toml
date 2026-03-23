@@ -1,0 +1,20 @@
+[package]
+name = "beans-lsp"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "beans-lsp"
+path = "src/main.rs"
+
+[dependencies]
+beans-core = { path = "../beans-core" }
+beans-lang-java = { path = "../beans-lang-java" }
+tower-lsp = "0.20"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+walkdir = "2"

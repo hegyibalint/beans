@@ -1,0 +1,4 @@
+/target
+/.claude/
+beans-vscode/node_modules/
+beans-vscode/out/
