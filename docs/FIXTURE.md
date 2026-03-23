@@ -166,14 +166,42 @@ For features not yet implemented:
 
 ## File organization
 
-Each language has its own test crate. As the suite grows, split into modules:
+Each language has its own test crate. Tests are organized by JLS chapter, with nested modules per section:
 
 ```
 beans-test-java/tests/
-    prelude.rs           # fixture() with JavaLanguage
-    spec.rs              # or spec/mod.rs
-    spec/imports.rs
-    spec/generics.rs
-    spec/resolution.rs
-    ...
+    prelude.rs                      # fixture() with JavaLanguage
+    spec.rs                         # module root
+    spec/
+        jls04_types.rs              # Ch 4: Types, Values, and Variables
+        jls06_names.rs              # Ch 6: Names
+        jls07_packages.rs           # Ch 7: Packages and Modules (imports)
+        jls08_classes.rs            # Ch 8: Classes
+        jls09_interfaces.rs         # Ch 9: Interfaces
+        jls10_arrays.rs             # Ch 10: Arrays
+        jls14_statements.rs         # Ch 14: Blocks, Statements, Patterns
+        jls15_expressions.rs        # Ch 15: Expressions
 ```
+
+Within each file, nested `mod` blocks map to JLS sections:
+
+```rust
+// In jls07_packages.rs
+mod jls_7_5_1_single_type_import {
+    use super::*;
+
+    #[test]
+    fn basic() { ... }
+
+    /// Also exercises §8.5 (member class declarations)
+    #[test]
+    fn import_inner_class() { ... }
+}
+```
+
+Run subsets with `cargo test` filtering:
+- `cargo test -p beans-test-java jls_7` — all chapter 7 tests
+- `cargo test -p beans-test-java jls_7_5_1` — just §7.5.1 tests
+- `cargo test -p beans-test-java jls_8` — all chapter 8 tests
+
+Cross-chapter tests live in their primary chapter with a doc comment noting the cross-reference. Use `grep -r "§8.5" tests/spec/` to find all tests touching a given section.

@@ -1,0 +1,2672 @@
+# Chapter 6. Names
+
+
+## Contents
+
+[6.1. Declarations](ch06-names.md#jls-6.1)
+
+[6.2. Names and Identifiers](ch06-names.md#jls-6.2)
+
+[6.3. Scope of a Declaration](ch06-names.md#jls-6.3)
+
+[6.3.1. Scope for Pattern Variables in Expressions](ch06-names.md#jls-6.3.1)
+
+[6.3.1.1. Conditional-And Operator `&&`](ch06-names.md#jls-6.3.1.1)
+
+[6.3.1.2. Conditional-Or Operator `||`](ch06-names.md#jls-6.3.1.2)
+
+[6.3.1.3. Logical Complement Operator `!`](ch06-names.md#jls-6.3.1.3)
+
+[6.3.1.4. Conditional Operator `? :`](ch06-names.md#jls-6.3.1.4)
+
+[6.3.1.5. Pattern Match Operator `instanceof`](ch06-names.md#jls-6.3.1.5)
+
+[6.3.1.6. `switch` Expressions](ch06-names.md#jls-6.3.1.6)
+
+[6.3.1.7. Parenthesized Expressions](ch06-names.md#jls-6.3.1.7)
+
+[6.3.2. Scope for Pattern Variables in Statements](ch06-names.md#jls-6.3.2)
+
+[6.3.2.1. Blocks](ch06-names.md#jls-6.3.2.1)
+
+[6.3.2.2. `if` Statements](ch06-names.md#jls-6.3.2.2)
+
+[6.3.2.3. `while` Statements](ch06-names.md#jls-6.3.2.3)
+
+[6.3.2.4. `do` Statements](ch06-names.md#jls-6.3.2.4)
+
+[6.3.2.5. `for` Statements](ch06-names.md#jls-6.3.2.5)
+
+[6.3.2.6. `switch` Statements](ch06-names.md#jls-6.3.2.6)
+
+[6.3.2.7. Labeled Statements](ch06-names.md#jls-6.3.2.7)
+
+[6.3.3. Scope for Pattern Variables in `case` Labels](ch06-names.md#jls-6.3.3)
+
+[6.4. Shadowing and Obscuring](ch06-names.md#jls-6.4)
+
+[6.4.1. Shadowing](ch06-names.md#jls-6.4.1)
+
+[6.4.2. Obscuring](ch06-names.md#jls-6.4.2)
+
+[6.5. Determining the Meaning of a Name](ch06-names.md#jls-6.5)
+
+[6.5.1. Syntactic Classification of a Name According to Context](ch06-names.md#jls-6.5.1)
+
+[6.5.2. Reclassification of Contextually Ambiguous Names](ch06-names.md#jls-6.5.2)
+
+[6.5.3. Meaning of Module Names and Package Names](ch06-names.md#jls-6.5.3)
+
+[6.5.3.1. Simple Package Names](ch06-names.md#jls-6.5.3.1)
+
+[6.5.3.2. Qualified Package Names](ch06-names.md#jls-6.5.3.2)
+
+[6.5.4. Meaning of *PackageOrTypeNames*](ch06-names.md#jls-6.5.4)
+
+[6.5.4.1. Simple *PackageOrTypeNames*](ch06-names.md#jls-6.5.4.1)
+
+[6.5.4.2. Qualified *PackageOrTypeNames*](ch06-names.md#jls-6.5.4.2)
+
+[6.5.5. Meaning of Type Names](ch06-names.md#jls-6.5.5)
+
+[6.5.5.1. Simple Type Names](ch06-names.md#jls-6.5.5.1)
+
+[6.5.5.2. Qualified Type Names](ch06-names.md#jls-6.5.5.2)
+
+[6.5.6. Meaning of Expression Names](ch06-names.md#jls-6.5.6)
+
+[6.5.6.1. Simple Expression Names](ch06-names.md#jls-6.5.6.1)
+
+[6.5.6.2. Qualified Expression Names](ch06-names.md#jls-6.5.6.2)
+
+[6.5.7. Meaning of Method Names](ch06-names.md#jls-6.5.7)
+
+[6.5.7.1. Simple Method Names](ch06-names.md#jls-6.5.7.1)
+
+[6.6. Access Control](ch06-names.md#jls-6.6)
+
+[6.6.1. Determining Accessibility](ch06-names.md#jls-6.6.1)
+
+[6.6.2. Details on `protected` Access](ch06-names.md#jls-6.6.2)
+
+[6.6.2.1. Access to a `protected` Member](ch06-names.md#jls-6.6.2.1)
+
+[6.6.2.2. Access to a `protected` Constructor](ch06-names.md#jls-6.6.2.2)
+
+[6.7. Fully Qualified Names and Canonical Names](ch06-names.md#jls-6.7)
+
+
+Names are used to refer to entities declared in a program.
+
+A declared entity ([§6.1](ch06-names.md#jls-6.1)) is a package, a class, an interface, a member (class, interface, field, or method) of a reference type, a type parameter, a formal parameter, an exception parameter, or a local variable.
+
+Names in programs are either *simple*, consisting of a single identifier, or *qualified*, consisting of a sequence of identifiers separated by "`.`" tokens ([§6.2](ch06-names.md#jls-6.2)).
+
+Every declaration that introduces a name has a *scope* ([§6.3](ch06-names.md#jls-6.3)), which is the part of the program text within which the declared entity can be referred to by a simple name.
+
+A qualified name `N.x` may be used to refer to a *member* of a package or reference type, where `N` is a simple or qualified name and `x` is an identifier. If `N` names a package, then `x` is a member of that package, which is either a class, an interface, or a subpackage. If `N` names a reference type or a variable of a reference type, then `x` names a member of that type, which is either a class, an interface, a field, or a method.
+
+In determining the meaning of a name ([§6.5](ch06-names.md#jls-6.5)), the context of the occurrence is used to disambiguate among packages, types, variables, and methods with the same name.
+
+Access control ([§6.6](ch06-names.md#jls-6.6)) can be specified in a class, interface, method, or field declaration to control when *access* to a member is allowed. Access is a different concept from scope. Access specifies the part of the program text within which the declared entity can be referred to by a qualified name. Access to a declared entity is also relevant in a field access expression ([§15.11](ch15-expressions.md#jls-15.11)), a method invocation expression in which the method is not specified by a simple name ([§15.12](ch15-expressions.md#jls-15.12)), a method reference expression ([§15.13](ch15-expressions.md#jls-15.13)), or a qualified class instance creation expression ([§15.9](ch15-expressions.md#jls-15.9)). In the absence of an access modifier, most declarations have package access, allowing access anywhere within the package that contains its declaration; other possibilities are `public`, `protected`, and `private`.
+
+Fully qualified and canonical names ([§6.7](ch06-names.md#jls-6.7)) are also discussed in this chapter.
+
+
+## 6.1. Declarations
+
+
+A *declaration* introduces one of the following entities into a program:
+
+
+- A module, declared in a `module` declaration ([§7.7](ch07-packages-modules.md#jls-7.7))
+
+- A package, declared in a `package` declaration ([§7.4](ch07-packages-modules.md#jls-7.4))
+
+- An imported class or interface, declared in a single-type-import declaration, a type-import-on-demand declaration, or a single-module-import declaration ([§7.5.1](ch07-packages-modules.md#jls-7.5.1), [§7.5.2](ch07-packages-modules.md#jls-7.5.2), [§7.5.5](ch07-packages-modules.md#jls-7.5.5))
+
+- An imported `static` member, declared in a single-static-import declaration or a static-import-on-demand declaration ([§7.5.3](ch07-packages-modules.md#jls-7.5.3), [§7.5.4](ch07-packages-modules.md#jls-7.5.4))
+
+- A class, declared by a normal class declaration ([§8.1](ch08-classes.md#jls-8.1)), an enum declaration ([§8.9](ch08-classes.md#jls-8.9)), a record declaration ([§8.10](ch08-classes.md#jls-8.10)), or implicitly by a compact compilation unit ([§7.3](ch07-packages-modules.md#jls-7.3))
+
+- An interface, declared by a normal interface declaration ([§9.1](ch09-interfaces.md#jls-9.1)) or an annotation interface declaration ([§9.6](ch09-interfaces.md#jls-9.6)).
+
+- A type parameter, declared as part of the declaration of a generic class, interface, method, or constructor ([§8.1.2](ch08-classes.md#jls-8.1.2), [§9.1.2](ch09-interfaces.md#jls-9.1.2), [§8.4.4](ch08-classes.md#jls-8.4.4), [§8.8.4](ch08-classes.md#jls-8.8.4))
+
+- A member of a reference type ([§8.2](ch08-classes.md#jls-8.2), [§9.2](ch09-interfaces.md#jls-9.2), [§8.9.3](ch08-classes.md#jls-8.9.3), [§9.6](ch09-interfaces.md#jls-9.6), [§10.7](ch10-arrays.md#jls-10.7)), one of the following:
+
+
+  - A member class ([§8.5](ch08-classes.md#jls-8.5), [§9.5](ch09-interfaces.md#jls-9.5))
+
+  - A member interface ([§8.5](ch08-classes.md#jls-8.5), [§9.5](ch09-interfaces.md#jls-9.5))
+
+  - A field, one of the following:
+
+
+    - A field declared in a class ([§8.3](ch08-classes.md#jls-8.3))
+
+    - A field declared in an interface ([§9.3](ch09-interfaces.md#jls-9.3))
+
+    - An implicitly declared field of a class corresponding to an enum constant or a record component
+
+    - The field `length`, which is implicitly a member of every array type ([§10.7](ch10-arrays.md#jls-10.7))
+
+    
+
+  - A method, one of the following:
+
+
+    - A method (`abstract` or otherwise) declared in a class ([§8.4](ch08-classes.md#jls-8.4))
+
+    - A method (`abstract` or otherwise) declared in an interface ([§9.4](ch09-interfaces.md#jls-9.4))
+
+    - An implicitly declared accessor method corresponding to a record component
+
+    
+
+  
+
+- An enum constant ([§8.9.1](ch08-classes.md#jls-8.9.1))
+
+- A record component ([§8.10.3](ch08-classes.md#jls-8.10.3))
+
+- A formal parameter, one of the following:
+
+
+  - A formal parameter of a method of a class or interface ([§8.4.1](ch08-classes.md#jls-8.4.1))
+
+  - A formal parameter of a constructor of a class ([§8.8.1](ch08-classes.md#jls-8.8.1))
+
+  - A formal parameter of a lambda expression ([§15.27.1](ch15-expressions.md#jls-15.27.1))
+
+  
+
+- An exception parameter of an exception handler declared in a `catch` clause of a `try` statement ([§14.20](ch14-blocks-statements-patterns.md#jls-14.20))
+
+- A local variable, one of the following:
+
+
+  - A local variable declared by a local variable declaration statement in a block ([§14.4.2](ch14-blocks-statements-patterns.md#jls-14.4.2))
+
+  - A local variable declared by a `for` statement or a `try`-with-resources statement ([§14.14](ch14-blocks-statements-patterns.md#jls-14.14), [§14.20.3](ch14-blocks-statements-patterns.md#jls-14.20.3))
+
+  - A local variable declared by a pattern ([§14.30.1](ch14-blocks-statements-patterns.md#jls-14.30.1))
+
+  
+
+- A local class or interface ([§14.3](ch14-blocks-statements-patterns.md#jls-14.3)), one of the following:
+
+
+  - A local class declared by a normal class declaration
+
+  - A local class declared by an enum declaration
+
+  - A local class declared by an record declaration
+
+  - A local interface declared by a normal interface declaration
+
+  
+
+
+Constructors ([§8.8](ch08-classes.md#jls-8.8), [§8.10.4](ch08-classes.md#jls-8.10.4)) are also introduced by declarations, but use the name of the class in which they are declared rather than introducing a new name.
+
+A declaration commonly includes an identifier ([§3.8](ch03-lexical-structure.md#jls-3.8)) that can be used in a name to refer to the declared entity. The identifier is constrained to avoid certain contextual keywords when the entity being introduced is a class, interface, or type parameter.
+
+If a declaration does not include an identifier, but instead includes the keyword `_` (underscore), then the entity cannot be referred to by name. The following kinds of entity may be declared using an underscore:
+
+
+- A local variable, one of the following:
+
+
+  - A local variable declared by a local variable declaration statement ([§14.4.2](ch14-blocks-statements-patterns.md#jls-14.4.2))
+
+  - A local variable declared by a `for` statement or a `try`-with-resources statement ([§14.14](ch14-blocks-statements-patterns.md#jls-14.14), [§14.20.3](ch14-blocks-statements-patterns.md#jls-14.20.3))
+
+  - A local variable declared by a pattern ([§14.30.1](ch14-blocks-statements-patterns.md#jls-14.30.1))
+
+  
+
+- An exception parameter of an exception handler declared in a `catch` clause of a `try` statement ([§14.20](ch14-blocks-statements-patterns.md#jls-14.20))
+
+- A formal parameter of a lambda expression ([§15.27.1](ch15-expressions.md#jls-15.27.1))
+
+
+A local variable, exception parameter, or lambda parameter that is declared using an underscore is called an *unnamed local variable*, *unnamed exception parameter*, or *unnamed lambda parameter*, respectively.
+
+The declaration of a generic class or interface (`class` C`<`T`>` `...` or `interface` C`<`T`>` `...`) introduces both a class named C and a family of types: the raw type C, the parameterized type C`<``Foo``>`, the parameterized type C`<``Bar``>`, etc.
+
+When a reference to C occurs where genericity is unimportant, identified below as one of the non-generic contexts, the reference to C denotes the class or interface C. In other contexts, the reference to C denotes a type, or part of a type, introduced by C.
+
+The 15 non-generic contexts are as follows:
+
+
+1.  In a `uses` or `provides` directive in a module declaration ([§7.7.1](ch07-packages-modules.md#jls-7.7.1))
+
+2.  In a single-type-import declaration ([§7.5.1](ch07-packages-modules.md#jls-7.5.1))
+
+3.  To the left of the `.` in a single-static-import declaration ([§7.5.3](ch07-packages-modules.md#jls-7.5.3))
+
+4.  To the left of the `.` in a static-import-on-demand declaration ([§7.5.4](ch07-packages-modules.md#jls-7.5.4))
+
+5.  In a `permits` clause of a `sealed` class or interface declaration ([§8.1.6](ch08-classes.md#jls-8.1.6), [§9.1.4](ch09-interfaces.md#jls-9.1.4)).
+
+6.  To the left of the `(` in a constructor declaration ([§8.8](ch08-classes.md#jls-8.8))
+
+7.  After the `@` sign in an annotation ([§9.7](ch09-interfaces.md#jls-9.7))
+
+8.  To the left of `.``class` in a class literal ([§15.8.2](ch15-expressions.md#jls-15.8.2))
+
+9.  To the left of `.``this` in a qualified `this` expression ([§15.8.4](ch15-expressions.md#jls-15.8.4))
+
+10. To the left of `.``super` in a qualified superclass field access expression ([§15.11.2](ch15-expressions.md#jls-15.11.2))
+
+11. To the left of `.`*Identifier* or `.``super``.`*Identifier* in a qualified method invocation expression ([§15.12](ch15-expressions.md#jls-15.12))
+
+12. To the left of `.``super``::` in a method reference expression ([§15.13](ch15-expressions.md#jls-15.13))
+
+13. In a qualified expression name in a postfix expression or a `try`-with-resources statement ([§15.14.1](ch15-expressions.md#jls-15.14.1), [§14.20.3](ch14-blocks-statements-patterns.md#jls-14.20.3))
+
+14. In a `throws` clause of a method or constructor ([§8.4.6](ch08-classes.md#jls-8.4.6), [§8.8.5](ch08-classes.md#jls-8.8.5), [§9.4](ch09-interfaces.md#jls-9.4))
+
+15. In an exception parameter declaration ([§14.20](ch14-blocks-statements-patterns.md#jls-14.20))
+
+
+The first twelve non-generic contexts correspond to the first twelve syntactic contexts for a *TypeName* in [§6.5.1](ch06-names.md#jls-6.5.1). The thirteenth non-generic context is where a qualified *ExpressionName* such as `C.x` may include a *TypeName* `C` to denote static member access. The common use of *TypeName* in these thirteen contexts is significant: it indicates that these contexts involve a less-than-first-class use of a type. In contrast, the fourteenth and fifteenth non-generic contexts employ *ClassType*, indicating that `throws` and `catch` clauses use types in a first-class way, in line with, for example, field declarations. The characterization of these two contexts as non-generic is due to the fact that an exception type cannot be parameterized ([§8.1.2](ch08-classes.md#jls-8.1.2)).
+
+Note that the *ClassType* production allows annotations, so it is possible to annotate the use of a type in a `throws` or `catch` clause, whereas the *TypeName* production disallows annotations, so it is not possible to annotate the name of a type in, for example, a single-type-import declaration.
+
+*Naming Conventions*
+
+The class libraries of the Java SE Platform attempt to use, whenever possible, names chosen according to the conventions presented below. These conventions help to make code more readable and avoid certain kinds of name conflicts.
+
+We recommend these conventions for use in all programs written in the Java programming language. However, these conventions should not be followed slavishly if long-held conventional usage dictates otherwise. So, for example, the `sin` and `cos` methods of the class `java.lang.Math` have mathematically conventional names, even though these method names flout the convention suggested here because they are short and are not verbs.
+
+*Package Names and Module Names*
+
+Programmers should take steps to avoid the possibility of two published packages having the same name by choosing *unique package names* for packages that are widely distributed. This allows packages to be easily and automatically installed and catalogued. This section specifies a suggested convention for generating such unique package names. Implementations of the Java SE Platform are encouraged to provide automatic support for converting a set of packages from local and casual package names to the unique name format described here.
+
+If unique package names are not used, then package name conflicts may arise far from the point of creation of either of the conflicting packages. This may create a situation that is difficult or impossible for the user or programmer to resolve. The classes `ClassLoader` and `ModuleLayer` can be used to isolate packages with the same name from each other in those cases where the packages will have constrained interactions, but not in a way that is transparent to a naïve program.
+
+You form a unique package name by first having (or belonging to an organization that has) an Internet domain name, such as `oracle.com`. You then reverse this name, component by component, to obtain, in this example, `com.oracle`, and use this as a prefix for your package names, using a convention developed within your organization to further administer package names. Such a convention might specify that certain package name components be division, department, project, machine, or login names.
+
+
+**Example 6.1-1. Unique Package Names**
+
+
+``` screen
+
+com.nighthacks.scrabble.dictionary
+org.openjdk.compiler.source.tree
+net.jcip.annotations
+edu.cmu.cs.bovik.cheese
+gov.whitehouse.socks.mousefinder
+```
+
+
+  
+
+The first component of a unique package name is always written in all-lowercase ASCII letters and should be one of the top level domain names, such as `com`, `edu`, `gov`, `mil`, `net`, or `org`, or one of the English two-letter codes identifying countries as specified in *ISO Standard 3166*.
+
+In some cases, the Internet domain name may not be a valid package name. Here are some suggested conventions for dealing with these situations:
+
+
+- If the domain name contains a hyphen, or any other special character not allowed in an identifier ([§3.8](ch03-lexical-structure.md#jls-3.8)), convert it into an underscore.
+
+- If any of the resulting package name components are keywords ([§3.9](ch03-lexical-structure.md#jls-3.9)), append an underscore to them.
+
+- If any of the resulting package name components start with a digit, or any other character that is not allowed as an initial character of an identifier, have an underscore prefixed to the component.
+
+
+The name of a module should correspond to the name of its principal exported package. If a module does not have such a package, or if for legacy reasons it must have a name that does not correspond to one of its exported packages, then its name should still start with the reversed form of an Internet domain with which its author is associated.
+
+
+**Example 6.1-2. Unique Module Names**
+
+
+``` screen
+
+com.nighthacks.scrabble
+org.openjdk.compiler
+net.jcip.annotations
+```
+
+
+  
+
+The first component of a package or module name must not be the identifier `java`. Package and module names that start with the identifier `java` are reserved for packages and modules of the Java SE Platform.
+
+The name of a package or module is not meant to imply where the package or module is stored on the Internet. For example, a package named `edu.cmu.cs.bovik.cheese` is not necessarily obtainable from the host `cmu.edu` or `cs.cmu.edu` or `bovik.cs.cmu.edu`. The suggested convention for generating unique package and module names is merely a way to piggyback a package and module naming convention on top of an existing, widely known unique name registry instead of having to create a separate registry for package and module names.
+
+*Class and Interface Names*
+
+Names of class should be descriptive nouns or noun phrases, not overly long, in mixed case with the first letter of each word capitalized.
+
+
+**Example 6.1-3. Descriptive Class Names**
+
+
+``` screen
+
+ClassLoader
+ProcessBuilder
+Thread
+Dictionary
+BufferedInputStream
+```
+
+
+  
+
+Likewise, names of interface should be short and descriptive, not overly long, in mixed case with the first letter of each word capitalized. The name may be a descriptive noun or noun phrase, which is appropriate when an interface is used as if it were an abstract superclass, such as interfaces `java.io.DataInput` and `java.io.DataOutput`; or it may be an adjective describing a behavior, as for the interfaces `Runnable` and `Cloneable`.
+
+*Type Variable Names*
+
+Type variable names should be pithy (single character if possible) yet evocative, and should not include lower case letters. This makes it easy to distinguish type parameters from ordinary classes and interfaces.
+
+Container classes and interfaces should use the name `E` for their element type. Maps should use `K` for the type of their keys and `V` for the type of their values. The name `X` should be used for arbitrary exception types. We use `T` for type, whenever there is not anything more specific about the type to distinguish it. (This is often the case in generic methods.)
+
+If there are multiple type parameters that denote arbitrary types, one should use letters that neighbor `T` in the alphabet, such as `S`. Alternately, it is acceptable to use numeric subscripts (e.g., `T1`, `T2`) to distinguish among the different type variables. In such cases, all the variables with the same prefix should be subscripted.
+
+If a generic method appears inside a generic class, it is a good idea to avoid using the same names for the type parameters of the method and class, to avoid confusion. The same applies to nested generic classes.
+
+
+**Example 6.1-4. Conventional Type Variable Names**
+
+
+``` programlisting
+
+
+public class HashSet<E> extends AbstractSet<E> { ... }
+public class HashMap<K,V> extends AbstractMap<K,V> { ... }
+public class ThreadLocal<T> { ... }
+public interface Functor<T, X extends Throwable> {
+    T eval() throws X;
+}
+```
+
+
+  
+
+When type parameters do not fall conveniently into one of the categories mentioned, names should be chosen to be as meaningful as possible within the confines of a single letter. The names mentioned above (`E`, `K`, `V`, `X`, `T`) should not be used for type parameters that do not fall into the designated categories.
+
+*Method Names*
+
+Method names should be verbs or verb phrases, in mixed case, with the first letter lowercase and the first letter of any subsequent words capitalized. Here are some additional specific conventions for method names:
+
+
+- Methods to get and set an attribute that might be thought of as a variable *V* should be named `get`*`V`* and `set`*`V`*. An example is the methods `getPriority` and `setPriority` of class `Thread`.
+
+- A method that returns the length of something should be named `length`, as in class `String`.
+
+- A method that tests a boolean condition *V* about an object should be named `is`*`V`*. An example is the method `isInterrupted` of class `Thread`.
+
+- A method that converts its object to a particular format *F* should be named `to`*`F`*. Examples are the method `toString` of class `Object` and the methods `toLocaleString` and `toGMTString` of class `java.util.Date`.
+
+
+Whenever possible and appropriate, basing the names of methods in a new class on names in an existing class that is similar, especially a class from the Java SE Platform API, will make it easier to use.
+
+*Field Names*
+
+Names of fields that are not `final` should be in mixed case with a lowercase first letter and the first letters of subsequent words capitalized. Note that well-designed classes have very few `public` or `protected` fields, except for fields that are constants (`static` `final` fields).
+
+Fields should have names that are nouns, noun phrases, or abbreviations for nouns.
+
+
+Examples of this convention are the fields `buf`, `pos`, and `count` of the class `java.io.ByteArrayInputStream` and the field `bytesTransferred` of the class `java.io.InterruptedIOException`.
+
+
+*Constant Names*
+
+The names of constants in interfaces should be, and `final` variables of classes may conventionally be, a sequence of one or more words, acronyms, or abbreviations, all uppercase, with components separated by underscore "`_`" characters. Constant names should be descriptive and not unnecessarily abbreviated. Conventionally they may be any appropriate part of speech.
+
+
+Examples of names for constants include `MIN_VALUE`, `MAX_VALUE`, `MIN_RADIX`, and `MAX_RADIX` of the class `Character`.
+
+
+A group of constants that represent alternative values of a set, or, less frequently, masking bits in an integer value, are sometimes usefully specified with a common acronym as a name prefix.
+
+
+For example:
+
+``` programlisting
+
+interface ProcessStates {
+    int PS_RUNNING   = 0;
+    int PS_SUSPENDED = 1;
+}
+```
+
+
+*Local Variable and Parameter Names*
+
+Local variable and parameter names should be short, yet meaningful. They are often short sequences of lowercase letters that are not words, such as:
+
+
+- Acronyms, that is the first letter of a series of words, as in `cp` for a variable holding a reference to a `ColoredPoint`
+
+- Abbreviations, as in `buf` holding a pointer to a buffer of some kind
+
+- Mnemonic terms, organized in some way to aid memory and understanding, typically by using a set of local variables with conventional names patterned after the names of parameters to widely used classes. For example:
+
+
+  - `in` and `out`, whenever some kind of input and output are involved, patterned after the fields of `System`
+
+  - `off` and `len`, whenever an offset and length are involved, patterned after the parameters to the `read` and `write` methods of the interfaces `DataInput` and `DataOutput` of `java.io`
+
+  
+
+
+One-character local variable or parameter names should be avoided, except for temporary and looping variables, or where a variable holds an undistinguished value of a type. Conventional one-character names are:
+
+
+- `b` for a `byte`
+
+- `c` for a `char`
+
+- `d` for a `double`
+
+- `e` for an `Exception`
+
+- `f` for a `float`
+
+- `i`, `j`, and `k` for `int`s
+
+- `l` for a `long`
+
+- `o` for an `Object`
+
+- `s` for a `String`
+
+- `v` for an arbitrary value of some type
+
+
+Local variable or parameter names that consist of only two or three lowercase letters should not conflict with the initial country codes and domain names that are the first component of unique package names.
+
+
+## 6.2. Names and Identifiers
+
+
+A *name* is used to refer to an entity declared in a program.
+
+There are two forms of names: simple names and qualified names.
+
+A *simple name* is a single identifier.
+
+A *qualified name* consists of a name, a "`.`" token, and an identifier.
+
+In determining the meaning of a name ([§6.5](ch06-names.md#jls-6.5)), the context in which the name appears is taken into account. The rules of [§6.5](ch06-names.md#jls-6.5) distinguish among contexts where a name must denote (refer to) a package ([§6.5.3](ch06-names.md#jls-6.5.3)); a class, interface, or type parameter ([§6.5.5](ch06-names.md#jls-6.5.5)); a variable or value in an expression ([§6.5.6](ch06-names.md#jls-6.5.6)); or a method ([§6.5.7](ch06-names.md#jls-6.5.7)).
+
+Packages, classes, interfaces, and type parameters have members which may be accessed by qualified names. As background for the discussion of qualified names and the determination of the meaning of names, see the descriptions of membership in [§4.4](ch04-types-values-variables.md#jls-4.4), [§4.5.2](ch04-types-values-variables.md#jls-4.5.2), [§4.8](ch04-types-values-variables.md#jls-4.8), [§4.9](ch04-types-values-variables.md#jls-4.9), [§7.1](ch07-packages-modules.md#jls-7.1), [§8.2](ch08-classes.md#jls-8.2), [§9.2](ch09-interfaces.md#jls-9.2), and [§10.7](ch10-arrays.md#jls-10.7).
+
+Not all identifiers in a program are a part of a name. Identifiers are also used in the following situations:
+
+
+- In declarations ([§6.1](ch06-names.md#jls-6.1)), where an identifier may occur to specify the name by which the declared entity will be known.
+
+- As labels in labeled statements ([§14.7](ch14-blocks-statements-patterns.md#jls-14.7)) and in `break` and `continue` statements ([§14.15](ch14-blocks-statements-patterns.md#jls-14.15), [§14.16](ch14-blocks-statements-patterns.md#jls-14.16)) that refer to statement labels.
+
+  The identifiers used in labeled statements and their associated `break` and `continue` statements are completely separate from those used in declarations.
+
+- In field access expressions ([§15.11](ch15-expressions.md#jls-15.11)), where an identifier occurs after a "`.`" token to indicate a member of the object denoted by the expression before the "`.`" token, or the object denoted by the `super` or *TypeName*`.``super` before the "`.`" token.
+
+- In some method invocation expressions ([§15.12](ch15-expressions.md#jls-15.12)), wherever an identifier occurs after a "`.`" token and before a "`(`" token to indicate a method to be invoked for the object denoted by the expression before the "`.`" token, or the type denoted by the *TypeName* before the "`.`" token, or the object denoted by the `super` or *TypeName*`.``super` before the "`.`" token.
+
+- In some method reference expressions ([§15.13](ch15-expressions.md#jls-15.13)), wherever an identifier occurs after a "`::`" token to indicate a method of the object denoted by the expression before the "`::`" token, or the type denoted by the *TypeName* before the "`::`" token, or the object denoted by the `super` or *TypeName*`.``super` before the "`::`" token.
+
+- In qualified class instance creation expressions ([§15.9](ch15-expressions.md#jls-15.9)), where an identifier occurs to the right of the `new` token to indicate a type that is a member of the compile-time type of the expression preceding the `new` token.
+
+- In element-value pairs of annotations ([§9.7.1](ch09-interfaces.md#jls-9.7.1)), to denote an element of the corresponding annotation interface.
+
+
+In this program:
+
+``` programlisting
+
+class Test {
+    public static void main(String[] args) {
+        Class c = System.out.getClass();
+        System.out.println(c.toString().length() +
+                           args[0].length() + args.length);
+    }
+}
+```
+
+the identifiers `Test`, `main`, and the first occurrences of `args` and `c` are not names. Rather, they are identifiers used in declarations to specify the names of the declared entities. The names `String`, `Class`, `System.out.getClass`, `System.out.println`, `c.toString`, `args`, and `args.length` appear in the example.
+
+The occurrence of `length` in `args.length` is a name because `args.length` is a qualified name ([§6.5.6.2](ch06-names.md#jls-6.5.6.2)) and not a field access expression ([§15.11](ch15-expressions.md#jls-15.11)). A field access expression, as well as a method invocation expression, a method reference expression, and a qualified class instance creation expression, uses an identifier rather than a name to denote the member of interest. Thus, the occurrence of `length` in `args[0].length()` is *not* a name, but rather an identifier appearing in a method invocation expression.
+
+
+One might wonder why these kinds of expression use an identifier rather than a simple name, which is after all just an identifier. The reason is that a simple expression name is defined in terms of the lexical environment; that is, a simple expression name must be in the scope of a variable declaration ([§6.5.6.1](ch06-names.md#jls-6.5.6.1)). On the other hand, field access, qualified method invocation, method references, and qualified class instance creation all refer to members whose names are not in the lexical environment. By definition, such names are bound only in the context provided by the *Primary* of the field access expression, method invocation expression, method reference expression, or class instance creation expression; or by the `super` of the field access expression, method invocation expression, or method reference expression; and so on. Thus, we denote such members with identifiers rather than simple names.
+
+To complicate things further, a field access expression is not the only way to denote a field of an object. For parsing reasons, a qualified name is used to denote a field of an in-scope variable. (The variable itself is denoted with a simple name, alluded to above.) It is necessary for access control ([§6.6](ch06-names.md#jls-6.6)) to apply to both denotations of a field.
+
+
+## 6.3. Scope of a Declaration
+
+
+The *scope* of a declaration is the region of the program within which the entity declared by the declaration can be referred to using a simple name, provided it is not shadowed ([§6.4.1](ch06-names.md#jls-6.4.1)).
+
+A declaration is said to be *in scope* at a particular point in a program if and only if the declaration's scope includes that point.
+
+The scope of the declaration of an observable top level package ([§7.4.3](ch07-packages-modules.md#jls-7.4.3)) is all observable compilation units associated with modules to which the package is uniquely visible ([§7.4.3](ch07-packages-modules.md#jls-7.4.3)).
+
+The declaration of a package that is not observable is never in scope.
+
+The declaration of a subpackage is never in scope.
+
+The package `java` is always in scope.
+
+The scope of a class or interface imported by a single-type-import declaration ([§7.5.1](ch07-packages-modules.md#jls-7.5.1)), a type-import-on-demand declaration ([§7.5.2](ch07-packages-modules.md#jls-7.5.2)), or a single-module-import declaration ([§7.5.5](ch07-packages-modules.md#jls-7.5.5)) is the module declaration ([§7.7](ch07-packages-modules.md#jls-7.7)) and all the class and interface declarations ([§8.1](ch08-classes.md#jls-8.1), [§9.1](ch09-interfaces.md#jls-9.1)) of the compilation unit in which the `import` declaration appears, as well as any annotations on the module declaration or package declaration of the compilation unit.
+
+The scope of a member imported by a single-static-import declaration ([§7.5.3](ch07-packages-modules.md#jls-7.5.3)) or a static-import-on-demand declaration ([§7.5.4](ch07-packages-modules.md#jls-7.5.4)) is the module declaration and all the class and interface declarations of the compilation unit in which the `import` declaration appears, as well as any annotations on the module declaration or package declaration of the compilation unit.
+
+The scope of a top level class or interface ([§7.6](ch07-packages-modules.md#jls-7.6)) declared in an ordinary compilation unit is all the class and interface declarations in the package in which the top level class or interface is declared.
+
+The scope of the implicit declaration of a top level class in a compact compilation unit ([§7.3](ch07-packages-modules.md#jls-7.3)) is empty; the class is never in scope.
+
+The scope of a declaration of a member `m` declared in or inherited by a class or interface C ([§8.2](ch08-classes.md#jls-8.2), [§9.2](ch09-interfaces.md#jls-9.2)) is the entire body of C, including any nested class or interface declarations. If C is a record class, then the scope of `m` additionally includes the header of the record declaration of C.
+
+The scope of a formal parameter of a method ([§8.4.1](ch08-classes.md#jls-8.4.1)), constructor ([§8.8.1](ch08-classes.md#jls-8.8.1)), or lambda expression ([§15.27](ch15-expressions.md#jls-15.27)) is the entire body of the method, constructor, or lambda expression.
+
+The scope of a class's type parameter ([§8.1.2](ch08-classes.md#jls-8.1.2)) is the type parameter section of the class declaration, and the type parameter section of any superclass type or superinterface type of the class declaration, and the class body. If the class is a record class ([§8.10](ch08-classes.md#jls-8.10)), then the scope of the type parameter additionally includes the header of the record declaration ([§8.10.1](ch08-classes.md#jls-8.10.1)).
+
+The scope of an interface's type parameter ([§9.1.2](ch09-interfaces.md#jls-9.1.2)) is the type parameter section of the interface declaration, and the type parameter section of any superinterface type of the interface declaration, and the interface body.
+
+The scope of a method's type parameter ([§8.4.4](ch08-classes.md#jls-8.4.4)) is the entire declaration of the method, including the type parameter section, but excluding the method modifiers.
+
+The scope of a constructor's type parameter ([§8.8.4](ch08-classes.md#jls-8.8.4)) is the entire declaration of the constructor, including the type parameter section, but excluding the constructor modifiers.
+
+The scope of a local class or interface declaration immediately enclosed by a block ([§14.2](ch14-blocks-statements-patterns.md#jls-14.2)) is the rest of the immediately enclosing block, including the local class or interface declaration itself.
+
+The scope of a local class or interface declaration immediately enclosed by a switch block statement group ([§14.11](ch14-blocks-statements-patterns.md#jls-14.11)) is the rest of the immediately enclosing switch block statement group, including the local class or interface declaration itself.
+
+The scope of a local variable declared in a block by a local variable declaration statement ([§14.4.2](ch14-blocks-statements-patterns.md#jls-14.4.2)) is the rest of the block, starting with the declaration's own initializer and including any further declarators to the right in the local variable declaration statement.
+
+The scope of a local variable declared in the *ForInit* part of a basic `for` statement ([§14.14.1](ch14-blocks-statements-patterns.md#jls-14.14.1)) includes all of the following:
+
+
+- Its own initializer
+
+- Any further declarators to the right in the *ForInit* part of the `for` statement
+
+- The *Expression* and *ForUpdate* parts of the `for` statement
+
+- The contained *Statement*
+
+
+The scope of a local variable declared in the header of an enhanced `for` statement ([§14.14.2](ch14-blocks-statements-patterns.md#jls-14.14.2)) is the contained *Statement*.
+
+The scope of a local variable declared in the resource specification of a `try`-with-resources statement ([§14.20.3](ch14-blocks-statements-patterns.md#jls-14.20.3)) is from the declaration rightward over the remainder of the resource specification and the entire `try` block associated with the `try`-with-resources statement.
+
+The translation of a `try`-with-resources statement implies the rule above.
+
+The scope of a parameter of an exception handler that is declared in a `catch` clause of a `try` statement ([§14.20](ch14-blocks-statements-patterns.md#jls-14.20)) is the entire block associated with the `catch`.
+
+
+**Example 6.3-1. Scope of Class Declarations**
+
+
+These rules imply that declarations of class and interface types need not appear before uses of the types. In the following program, the use of `PointList` in class `Point` is valid, because the scope of the class declaration `PointList` includes both class `Point` and class `PointList`, as well as any other class or interface declarations in other compilation units of package `points`.
+
+``` programlisting
+
+package points;
+class Point {
+    int x, y;
+    PointList list;
+    Point next;
+}
+
+class PointList {
+    Point first;
+}
+```
+
+
+  
+
+
+**Example 6.3-2. Scope of Local Variable Declarations**
+
+
+The following program causes a compile-time error because the initialization of local variable `x` is within the scope of the declaration of local variable `x`, but the local variable `x` does not yet have a value and cannot be used. The field `x` has a value of `0` (assigned when `Test1` was initialized) but is a red herring since it is shadowed ([§6.4.1](ch06-names.md#jls-6.4.1)) by the local variable `x`.
+
+``` programlisting
+
+class Test1 {
+    static int x;
+    public static void main(String[] args) {
+        int x = x;
+    }
+}
+```
+
+The following program does compile:
+
+``` programlisting
+
+class Test2 {
+    static int x;
+    public static void main(String[] args) {
+        int x = (x=2)*2;
+        System.out.println(x);
+    }
+}
+```
+
+because the local variable `x` is definitely assigned ([§16 (Definite Assignment)](ch16-definite-assignment.md)) before it is used. It prints:
+
+``` screen
+
+4
+```
+
+In the following program, the initializer for `three` can correctly refer to the variable `two` declared in an earlier declarator, and the method invocation in the next line can correctly refer to the variable `three` declared earlier in the block.
+
+``` programlisting
+
+class Test3 {
+    public static void main(String[] args) {
+        System.out.print("2+1=");
+        int two = 2, three = two + 1;
+        System.out.println(three);
+    }
+}
+```
+
+This program produces the output:
+
+``` screen
+
+2+1=3
+```
+
+
+  
+
+The scope of a pattern variable declaration (that is, a local variable declared by a pattern) is the part of the program that might be executed after the matching of a value against the pattern has succeeded ([§14.30.2](ch14-blocks-statements-patterns.md#jls-14.30.2)). It is determined by considering the program points where the pattern variable is *definitely matched* in a region beginning with the pattern that declares the pattern variable.
+
+The remainder of this section is devoted to a precise explanation of the words "definitely matched". The analysis takes into account the structure of statements and expressions, with a special treatment for the boolean expression operators and certain statement forms.
+
+It will be seen that the scope of a pattern variable declaration is a flow-dependent concept similar to definite assignment ([§16 (Definite Assignment)](ch16-definite-assignment.md)). The rules defined in the rest of this section deliberately have a similar form to the rules of definite assignment.
+
+The analysis relies on the technical term "introduced by", which has the following form:
+
+
+- a pattern variable is *introduced by* an expression *when true*
+
+- a pattern variable is *introduced by* an expression *when false*
+
+- a pattern variable is *introduced by* a statement
+
+
+The simplest example is that the pattern variable `s` is introduced by the expression `a instanceof String s` when true. In other words, if the value of the expression is `true` then the pattern matching must have succeeded, and thus the pattern variable must have been assigned a value.
+
+In contrast, the pattern variable `t` is introduced by the expression `!(b instanceof Integer t)` when false. This is because the pattern matching could only have succeeded if the value of the expression is `false`.
+
+
+### 6.3.1. Scope for Pattern Variables in Expressions
+
+
+Only certain kinds of boolean expressions are involved in introducing pattern variables and determining where those variables are definitely matched. If an expression is not a conditional-and expression, conditional-or expression, logical complement expression, conditional expression, `instanceof` expression, `switch` expression, or parenthesized expression, then no scope rules apply.
+
+
+#### 6.3.1.1. Conditional-And Operator `&&`
+
+
+The following rules apply to a conditional-and expression `a` `&&` `b` ([§15.23](ch15-expressions.md#jls-15.23)):
+
+
+- A pattern variable introduced by `a` when true is definitely matched at `b`.
+
+- A pattern variable is introduced by `a` `&&` `b` when true iff either (i) it is introduced by `a` when true or (ii) it is introduced by `b` when true.
+
+
+It should be noted that there is no rule for introducing a pattern variable by `a` `&&` `b` when false. This is because it cannot be determined at compile time which operand will evaluate to `false`.
+
+It is a compile-time error if any of the following conditions hold:
+
+
+- A pattern variable is both (i) introduced by `a` when true and (ii) introduced by `b` when true.
+
+- A pattern variable is both (i) introduced by `a` when false and (ii) introduced by `b` when false.
+
+
+These two error cases exclude the possibility of both operands of the `&&` operator declaring a pattern variable of the same name. For example, consider the problematic expression `(a instanceof String s)` `&&` `(b instanceof String s)`. The first error case covers the entire expression evaluating to `true`, where (if the code were legal) two declarations of a pattern variable `s` would need to be initialized, given that both the left-hand operand and the right-hand operand evaluated to `true`. Since there is no way to distinguish the two variables called `s` in the rest of the program, the entire expression is considered erroneous. The second error case covers the opposite scenario where the entire expression evaluates to `false`.
+
+
+#### 6.3.1.2. Conditional-Or Operator `||`
+
+
+The following rules apply to a conditional-or expression `a` `||` `b` ([§15.24](ch15-expressions.md#jls-15.24)):
+
+
+- A pattern variable introduced by `a` when false is definitely matched at `b`.
+
+- A pattern variable is introduced by `a` `||` `b` when false iff either (i) it is introduced by `a` when false or (ii) it is introduced by `b` when false.
+
+
+It should be noted that there is no rule for introducing a pattern variable by `a` `||` `b` when true. This is because it cannot be determined at compile time which operand will evaluate to `true`.
+
+It is a compile-time error if any of the following conditions hold:
+
+
+- A pattern variable is both (i) introduced by `a` when true and (ii) introduced by `b` when true.
+
+- A pattern variable is both (i) introduced by `a` when false and (ii) introduced by `b` when false.
+
+
+These two error cases exclude the possibility of both operands of the `||` operator declaring a pattern variable of the same name. For example, consider the problematic expression `(a instanceof String s)` `||` `(b instanceof String s)`. The first error case covers the entire expression evaluating to `true`, where (if the code were legal) exactly one declaration of a pattern variable `s` would be initialized depending on whether the left-hand operand or the right-hand operand evaluated to `true`. Since it cannot be determined at compile time which operand will evaluate to `true`, and therefore which declaration of `s` will be initialized, the entire expression is considered erroneous. The second error case covers the opposite scenario where the entire expression evaluates to `false`.
+
+
+#### 6.3.1.3. Logical Complement Operator `!`
+
+
+The following rules apply to a logical complement expression `!``a` ([§15.15.6](ch15-expressions.md#jls-15.15.6)):
+
+
+- A pattern variable is introduced by `!``a` when true iff it is introduced by `a` when false.
+
+- A pattern variable is introduced by `!``a` when false iff it is introduced by `a` when true.
+
+
+#### 6.3.1.4. Conditional Operator `? :`
+
+
+The following rules apply to a conditional expression `a` `?` `b` `:` `c` ([§15.25](ch15-expressions.md#jls-15.25)):
+
+
+- A pattern variable introduced by `a` when true is definitely matched at `b`.
+
+- A pattern variable introduced by `a` when false is definitely matched at `c`.
+
+
+It should be noted that there are no rules for introducing a pattern variable by `a` `?` `b` `:` `c` when true or false. This is because it cannot be determined at compile time whether the operand `a` will evaluate to `true`.
+
+It is a compile-time error if any of the following conditions hold:
+
+
+- A pattern variable is both (i) introduced by `a` when true and (ii) introduced by `c` when true.
+
+- A pattern variable is both (i) introduced by `a` when true and (ii) introduced by `c` when false.
+
+- A pattern variable is both (i) introduced by `a` when false and (ii) introduced by `b` when true.
+
+- A pattern variable is both (i) introduced by `a` when false and (ii) introduced by `b` when false.
+
+- A pattern variable is both (i) introduced by `b` when true and (ii) introduced by `c` when true.
+
+- A pattern variable is both (i) introduced by `b` when false and (ii) introduced by `c` when false.
+
+
+These error cases are analogous to similar error cases for the `&&` and `||` operators. They eliminate confusing cases where multiple declarations of the same pattern variable may occur across the operands of the `? :` operator.
+
+
+#### 6.3.1.5. Pattern Match Operator `instanceof`
+
+
+The following rule applies to an `instanceof` expression with a pattern operand, `a` `instanceof` `p` ([§15.20.2](ch15-expressions.md#jls-15.20.2)):
+
+
+- A pattern variable is introduced by `a` `instanceof` `p` when true iff the pattern `p` contains a declaration of the pattern variable ([§14.30.1](ch14-blocks-statements-patterns.md#jls-14.30.1)).
+
+
+A pattern variable is not permitted to shadow another local variable ([§6.4](ch06-names.md#jls-6.4)).
+
+It should be noted that there is no rule for introducing a pattern variable by `a` `instanceof` `p` when false.
+
+
+#### 6.3.1.6. `switch` Expressions
+
+
+The following rule applies to a `switch` expression with a switch block consisting of switch rules ([§14.11.1](ch14-blocks-statements-patterns.md#jls-14.11.1)):
+
+
+- A pattern variable introduced by a switch label is definitely matched in the associated switch rule expression, switch rule block, or switch rule `throw` statement.
+
+
+The following rules apply to a `switch` expression with a switch block consisting of switch labeled statement groups ([§14.11.1](ch14-blocks-statements-patterns.md#jls-14.11.1)):
+
+
+- A pattern variable introduced by a switch label is definitely matched in all the statements of the associated switch labeled statement group.
+
+- A pattern variable introduced by a statement S contained in a switch labeled statement group is definitely matched at all the statements following S, if any, in the switch labeled statement group.
+
+
+#### 6.3.1.7. Parenthesized Expressions
+
+
+The following rules apply to a parenthesized expression `(``a``)` ([§15.8.5](ch15-expressions.md#jls-15.8.5)):
+
+
+- A pattern variable is introduced by `(``a``)` when true iff it is introduced by `a` when true.
+
+- A pattern variable is introduced by `(``a``)` when false iff it is introduced by `a` when false.
+
+
+### 6.3.2. Scope for Pattern Variables in Statements
+
+
+Only a few kinds of statements play a significant role in determining the scope of pattern variables.
+
+Where an `if`, `while`, `do`, or `for` statement contains an expression that introduces pattern variables, the scope of those variables can, in certain circumstances, include substatements of the statement.
+
+
+For example, in the following `if`-`then`-`else` statement, the scope of the pattern variable `s` includes one substatement but not another:
+
+``` screen
+
+Object o = ...
+if (o instanceof String s)
+    // s in scope for this substatement; no cast of o needed
+    System.out.println(s.replace('*', '_'));
+else
+    // s not in scope for this substatement (hence, error)
+    System.out.println(s);
+```
+
+
+Also, in certain circumstances, a pattern variable can be introduced by a statement itself, rather than by an expression within the statement. A pattern variable introduced by a statement is in scope at the following statements in the enclosing block.
+
+
+For example, in the following method, the scope of the pattern variable `s` includes the method body following the `if` statement:
+
+``` screen
+
+void test(Object o) {
+    if (!(o instanceof String s)) {
+        throw new IllegalArgumentException();
+    }
+    // This point is only reachable if the pattern match succeeded
+    // Thus, s is in scope for the rest of the block
+    ...
+    System.out.println(s.repeat(5));
+    ...
+}
+```
+
+
+#### 6.3.2.1. Blocks
+
+
+The following rule applies to a block statement S contained in a block ([§14.2](ch14-blocks-statements-patterns.md#jls-14.2)) that is not a switch block ([§14.11.1](ch14-blocks-statements-patterns.md#jls-14.11.1)):
+
+
+- A pattern variable introduced by S is definitely matched at all the block statements following S, if any, in the block.
+
+
+#### 6.3.2.2. `if` Statements
+
+
+The following rules apply to a statement `if` `(``e``)` S ([§14.9.1](ch14-blocks-statements-patterns.md#jls-14.9.1)):
+
+
+- A pattern variable introduced by `e` when true is definitely matched at S.
+
+- A pattern variable is introduced by `if` `(``e``)` S iff (i) it is introduced by `e` when false and (ii) S cannot complete normally.
+
+
+The rule about an `if`-`then` statement introducing a pattern variable relies on the notion of "cannot complete normally" ([§14.22](ch14-blocks-statements-patterns.md#jls-14.22)), which in turn relies on the concept of a constant expression ([§15.29](ch15-expressions.md#jls-15.29)). This means that calculating the scope of a pattern variable may require determining whether a simple name, or a qualified name of the form *TypeName* `.` *Identifier*, refers to a constant variable. As pattern variables can never refer to a constant variable, there is no circularity.
+
+The following rules apply to a statement `if` `(``e``)` S `else` T ([§14.9.2](ch14-blocks-statements-patterns.md#jls-14.9.2)):
+
+
+- A pattern variable introduced by `e` when true is definitely matched at S.
+
+- A pattern variable introduced by `e` when false is definitely matched at T.
+
+- A pattern variable is introduced by `if` `(``e``)` S `else` T iff either:
+
+
+  - It is introduced by `e` when true, and S can complete normally, and T cannot complete normally; or
+
+  - It is introduced by `e` when false, and S cannot complete normally, and T can complete normally.
+
+  
+
+
+These rules highlight the flow-like nature of scoping for pattern variables. For example, in the following statement:
+
+``` screen
+
+if (e instanceof String s) {
+    counter += s.length();
+} else {
+    System.out.println(e);  // s not in scope
+}
+```
+
+The pattern variable `s` is introduced by the `instanceof` expression and is in scope in the first contained statement (the assignment statement in the `then` block), but it is not in scope in the second contained statement (the expression statement in the `else` block).
+
+Moreover, combined with the treatment for boolean expressions, the scope of pattern variables is robust against code refactorings that exploit the familar boolean logical equivalences. For example, the previous code can be rewritten as:
+
+``` screen
+
+if (!(e instanceof String s)) {
+    System.out.println(e);  // s not in scope
+} else {
+    counter += s.length();
+}
+```
+
+The code can even be rewritten as follows, though double use of the `!` operator is not necessarily recommended:
+
+``` screen
+
+if (!!(e instanceof String s)) {
+    counter += s.length();
+} else {
+    System.out.println(e);  // s not in scope
+}
+```
+
+
+#### 6.3.2.3. `while` Statements
+
+
+The following rules apply to a statement `while` `(``e``)` S ([§14.12](ch14-blocks-statements-patterns.md#jls-14.12)):
+
+
+- A pattern variable introduced by `e` when true is definitely matched at S.
+
+- A pattern variable is introduced by `while` `(``e``)` S iff (i) it is introduced by `e` when false and (ii) S does not contain a reachable `break` statement for which the `while` statement is the break target ([§14.15](ch14-blocks-statements-patterns.md#jls-14.15)).
+
+
+#### 6.3.2.4. `do` Statements
+
+
+The following rule applies to a statement `do` S `while` `(``e``)` ([§14.13](ch14-blocks-statements-patterns.md#jls-14.13)):
+
+
+- A pattern variable is introduced by `do` S `while` `(``e``)` iff (i) it is introduced by `e` when false and (ii) S does not contain a reachable `break` statement for which the `do` statement is the break target ([§14.15](ch14-blocks-statements-patterns.md#jls-14.15)).
+
+
+#### 6.3.2.5. `for` Statements
+
+
+The following rules apply to a basic `for` statement ([§14.14.1](ch14-blocks-statements-patterns.md#jls-14.14.1)):
+
+
+- A pattern variable introduced by the condition expression when true is definitely matched at both the incrementation part and the contained statement.
+
+- A pattern variable is introduced by a basic `for` statement iff (i) it is introduced by the condition expression when false and (ii) the contained statement, S, does not contain a reachable `break` for which the basic `for` statement is the break target ([§14.15](ch14-blocks-statements-patterns.md#jls-14.15)).
+
+
+An enhanced `for` statement ([§14.14.2](ch14-blocks-statements-patterns.md#jls-14.14.2)) is defined by translation to a basic `for` statement, so no special rules need to be provided for it.
+
+
+#### 6.3.2.6. `switch` Statements
+
+
+The following rule applies to a `switch` statement with a switch block consisting of switch rules ([§14.11.1](ch14-blocks-statements-patterns.md#jls-14.11.1)):
+
+
+- A pattern variable introduced by a switch label is definitely matched in the associated switch rule expression, switch rule block, or switch rule `throw` statement.
+
+
+The following rules apply to a `switch` statement with a switch block consisting of switch labeled statement groups ([§14.11.1](ch14-blocks-statements-patterns.md#jls-14.11.1)):
+
+
+- A pattern variable introduced by a switch label is definitely matched in all the statements of the associated switch labeled statement group.
+
+- A pattern variable introduced by a statement S contained in a switch block statement group is definitely matched at all the statements following S, if any, in the switch block statement group.
+
+
+#### 6.3.2.7. Labeled Statements
+
+
+The following rule applies to a labeled statement ([§14.7](ch14-blocks-statements-patterns.md#jls-14.7)):
+
+
+- A pattern variable is introduced by a labeled statement `L``:` S (where `L` is a label) iff (i) it is introduced by the statement S, and (ii) S does not contain a reachable `break` statement for which the labeled statement is the break target ([§14.15](ch14-blocks-statements-patterns.md#jls-14.15)).
+
+
+### 6.3.3. Scope for Pattern Variables in `case` Labels
+
+
+Pattern variables can be introduced by `case` labels with a `case` pattern, either by the pattern itself or by a guard, and are in scope for the relevant parts of the associated `switch` expression ([§6.3.1.6](ch06-names.md#jls-6.3.1.6)) or `switch` statement ([§6.3.2.6](ch06-names.md#jls-6.3.2.6)).
+
+The following rules applies to `case` labels:
+
+
+- A pattern variable is introduced by a `case` label with a `case` pattern `p` if `p` contains a declaration of the pattern variable.
+
+- If a `case` pattern in a guarded `case` label contains a declaration of a pattern variable then the pattern variable is definitely matched in the associated guard.
+
+- A pattern variable is introduced by a guarded `case` label if it is introduced by the associated guard when true ([§6.3.1](ch06-names.md#jls-6.3.1)).
+
+
+## 6.4. Shadowing and Obscuring
+
+
+A local variable ([§14.4](ch14-blocks-statements-patterns.md#jls-14.4)), formal parameter ([§8.4.1](ch08-classes.md#jls-8.4.1), [§8.8.1](ch08-classes.md#jls-8.8.1), [§15.27.1](ch15-expressions.md#jls-15.27.1)), exception parameter ([§14.20](ch14-blocks-statements-patterns.md#jls-14.20)), local class, or local interface ([§14.3](ch14-blocks-statements-patterns.md#jls-14.3)) can only be referred to using a simple name, not a qualified name ([§6.2](ch06-names.md#jls-6.2)).
+
+Some declarations are not permitted within the scope of a local variable declaration, formal parameter declaration, exception parameter declaration, local class declaration, or local interface declaration because it would be impossible to distinguish between the declared entities using only simple names.
+
+For example, if the name of a formal parameter of a method could be redeclared as the name of a local variable in the method body, then the local variable would shadow the formal parameter and there would be no way to refer to the formal parameter - an undesirable outcome.
+
+It is a compile-time error if the name of a formal parameter is used to declare a new variable within the body of the method, constructor, or lambda expression, unless the new variable is declared within a class or interface declaration contained by the method, constructor, or lambda expression.
+
+It is a compile-time error if the name of a local variable `v` is used to declare a new variable within the scope of `v`, unless the new variable is declared within a class or interface declaration appearing within the scope of `v`.
+
+It is a compile-time error if the name of an exception parameter is used to declare a new variable within the *Block* of the `catch` clause, unless the new variable is declared within a class or interface declaration contained by the *Block* of the `catch` clause.
+
+It is a compile-time error if the name of a local class or interface C is used to declare a new local class or interface within the scope of C, unless the new local class or interface is declared within a class or interface declaration appearing within the scope of C.
+
+These rules allow redeclaration of a variable, local class, or local interface in nested class or interface declarations that occur in the scope of the variable, local class, or local interface; such nested class or interface declarations may be local class or interface declarations ([§14.3](ch14-blocks-statements-patterns.md#jls-14.3)) or anonymous class declarations ([§15.9.5](ch15-expressions.md#jls-15.9.5)). Thus, the declaration of a formal parameter, local variable, local class, or local interface may be shadowed in a class or interface declaration nested within a method, constructor, or lambda expression; and the declaration of an exception parameter may be shadowed in a class or interface declaration nested within the *Block* of the `catch` clause.
+
+There are two design alternatives for handling name clashes created by lambda parameters and other variables declared in lambda expressions. One is to mimic class declarations: like local classes, lambda expressions introduce a new "level" for names, and all variable names outside the expression can be redeclared. Another is a "local" strategy: like `catch` clauses, `for` loops, and blocks, lambda expressions operate at the same "level" as the enclosing context, and local variables outside the expression cannot be shadowed. The above rules use the local strategy; there is no special dispensation that allows a variable declared in a lambda expression to shadow a variable declared in an enclosing method.
+
+
+**Example 6.4-1. Attempted Shadowing Of A Local Variable**
+
+
+Because a declaration of an identifier as a local variable of a method, constructor, or initializer block must not appear within the scope of a parameter or local variable of the same name, a compile-time error occurs for the following program:
+
+``` programlisting
+
+class Test1 {
+    public static void main(String[] args) {
+        int i;
+        for (int i = 0; i < 10; i++)
+            System.out.println(i);
+    }
+}
+```
+
+This restriction helps to detect some otherwise very obscure bugs. A similar restriction on shadowing of members by local variables was judged impractical, because the addition of a member in a superclass could cause subclasses to have to rename local variables. Related considerations make restrictions on shadowing of local variables by members of nested classes, or on shadowing of local variables by local variables declared within nested classes unattractive as well.
+
+Hence, the following program compiles without error:
+
+``` programlisting
+
+class Test2 {
+    public static void main(String[] args) {
+        int i;
+        class Local {
+            {
+                for (int i = 0; i < 10; i++)
+                    System.out.println(i);
+            }
+        }
+        new Local();
+    }
+}
+```
+
+On the other hand, local variables with the same name may be declared in two separate blocks or `for` statements, neither of which contains the other:
+
+``` programlisting
+
+class Test3 {
+    public static void main(String[] args) {
+        for (int i = 0; i < 10; i++)
+            System.out.print(i + " ");
+        for (int i = 10; i > 0; i--)
+            System.out.print(i + " ");
+        System.out.println();
+    }
+}
+```
+
+This program compiles without error and, when executed, produces the output:
+
+``` screen
+
+0 1 2 3 4 5 6 7 8 9 10 9 8 7 6 5 4 3 2 1
+```
+
+This style is also common with pattern matching, where repeated patterns often employ the same name:
+
+``` programlisting
+
+class Point {
+    int x, y;
+    Point(int x, int y) { this.x = x; this.y = y; }
+}
+
+class Test4 {
+    static void test(Object a, Object b, Object c) {
+        if (a instanceof Point p) {
+            System.out.println("a is a point ("+p.x+","+p.y+")");
+        }
+        if (b instanceof Point p){
+            System.out.println("b is a point ("+p.x+","+p.y+")");
+        } else if (c instanceof Point p) {
+            System.out.println("c is a point ("+p.x+","+p.y+")");
+        }
+    }
+
+    public static void main(String[] args) {
+        Point p = new Point(2,3);
+        Point q = new Point(4,5);
+        Point r = new Point(6,7);
+        test(p, q, r);
+    }
+}
+```
+
+However, pattern variables are not allowed to shadow local variables, including other pattern variables, so two compile-time errors occur for the following program:
+
+``` programlisting
+
+class Point {
+    int x, y;
+    Point(int x, int y) { this.x = x; this.y = y; }
+}
+
+class Test5 {
+    static void test(Object a, Object b, Object c) {
+        if (a instanceof Point p) {
+            System.out.println("a is a point ("+p.x+","+p.y+")");
+
+            if (b instanceof Point p) {  // compile-time error
+                System.out.println("b is a point ("+p.x+","+p.y+")");
+            }
+        }
+    }
+
+    public static void main(String[] args) {
+        Point p = new Point(2,3);
+        Point q = new Point(4,5);
+        Point r = new Point(6,7);
+        test(p, q, r);
+
+        if (new Object() instanceof Point q)  // compile-time error
+            System.out.println("I get your point");
+    }
+}
+```
+
+
+  
+
+
+### 6.4.1. Shadowing
+
+
+Some declarations may be *shadowed* in part of their scope by another declaration of the same name, in which case a simple name cannot be used to refer to the declared entity.
+
+Shadowing is distinct from hiding ([§8.3](ch08-classes.md#jls-8.3), [§8.4.8.2](ch08-classes.md#jls-8.4.8.2), [§8.5](ch08-classes.md#jls-8.5), [§9.3](ch09-interfaces.md#jls-9.3), [§9.5](ch09-interfaces.md#jls-9.5)), which applies only to members which would otherwise be inherited but are not because of a declaration in a subclass. Shadowing is also distinct from obscuring ([§6.4.2](ch06-names.md#jls-6.4.2)).
+
+A declaration d of a type named n shadows the declarations of any other types named n that are in scope at the point where d occurs throughout the scope of d.
+
+A declaration d of a field or formal parameter named n shadows, throughout the scope of d, the declarations of any other variables named n that are in scope at the point where d occurs.
+
+A declaration d of a local variable or exception parameter named n shadows, throughout the scope of d, (a) the declarations of any other fields named n that are in scope at the point where d occurs, and (b) the declarations of any other variables named n that are in scope at the point where d occurs but are *not* declared in the innermost class in which d is declared.
+
+A declaration d of a method named n shadows the declarations of any other methods named n that are in an enclosing scope at the point where d occurs throughout the scope of d.
+
+A package declaration never shadows any other declaration.
+
+A type-import-on-demand declaration d in a compilation unit c of package p that imports a type named n shadows, throughout c, the declarations of any type named n imported by a single-module-import declaration in c.
+
+In particular, as all compilation units are treated as if they contain the implicit declaration `import java.lang.*;` ([§7.3](ch07-packages-modules.md#jls-7.3)), this means that the declaration of a type imported by a single-module-import declaration with the same name as one imported from the package `java.lang` is always shadowed.
+
+A static-import-on-demand declaration d in a compilation unit c of package p that imports a type named n shadows, throughout c, the declarations of any type named n imported by a single-module-import declaration in c.
+
+A single-module-import declaration never causes any other declaration to be shadowed.
+
+A single-type-import declaration d in a compilation unit c of package p that imports a type named n shadows, throughout c, the declarations of:
+
+
+- any top level type named n declared in another compilation unit of p
+
+- any type named n imported by a type-import-on-demand declaration in c
+
+- any type named n imported by a static-import-on-demand declaration in c
+
+- any type named n imported by a single-module-import declaration in c
+
+
+A single-static-import declaration `d` in a compilation unit `c` of package `p` that imports a field named `n` shadows the declaration of any static field named `n` imported by a static-import-on-demand declaration in `c`, throughout `c`.
+
+A single-static-import declaration `d` in a compilation unit `c` of package `p` that imports a method named `n` with signature s shadows the declaration of any static method named n with signature s imported by a static-import-on-demand declaration in `c`, throughout `c`.
+
+A single-static-import declaration `d` in a compilation unit `c` of package `p` that imports a type named n shadows, throughout `c`, the declarations of:
+
+
+- any static type named n imported by a static-import-on-demand declaration in `c`;
+
+- any top level type ([§7.6](ch07-packages-modules.md#jls-7.6)) named n declared in another compilation unit ([§7.3](ch07-packages-modules.md#jls-7.3)) of `p`;
+
+- any type named n imported by a type-import-on-demand declaration ([§7.5.2](ch07-packages-modules.md#jls-7.5.2)) in `c`;
+
+- any type named n imported by a single-module-import declaration ([§7.5.5](ch07-packages-modules.md#jls-7.5.5)) in `c`.
+
+
+**Example 6.4.1-1. Shadowing of a Field Declaration by a Local Variable Declaration**
+
+
+``` programlisting
+
+class Test {
+    static int x = 1;
+    public static void main(String[] args) {
+        int x = 0;
+        System.out.print("x=" + x);
+        System.out.println(", Test.x=" + Test.x);
+    }
+}
+```
+
+This program produces the output:
+
+``` screen
+
+x=0, Test.x=1
+```
+
+This program declares:
+
+
+- a class `Test`
+
+- a class (`static`) variable `x` that is a member of the class `Test`
+
+- a class method `main` that is a member of the class `Test`
+
+- a parameter `args` of the `main` method
+
+- a local variable `x` of the `main` method
+
+
+Since the scope of a class variable includes the entire body of the class ([§8.2](ch08-classes.md#jls-8.2)), the class variable `x` would normally be available throughout the entire body of the method `main`. In this example, however, the class variable `x` is shadowed within the body of the method `main` by the declaration of the local variable `x`.
+
+A local variable has as its scope the rest of the block in which it is declared ([§6.3](ch06-names.md#jls-6.3)); in this case this is the rest of the body of the `main` method, namely its initializer "`0`" and the invocations of `System.out.print` and `System.out.println`.
+
+This means that:
+
+
+- The expression `x` in the invocation of `print` refers to (denotes) the value of the local variable `x`.
+
+- The invocation of `println` uses a qualified name ([§6.6](ch06-names.md#jls-6.6)) `Test.x`, which uses the class type name `Test` to access the class variable `x`, because the declaration of `Test.x` is shadowed at this point and cannot be referred to by its simple name.
+
+
+The keyword `this` can also be used to access a shadowed field `x`, using the form `this.x`. Indeed, this idiom typically appears in constructors ([§8.8](ch08-classes.md#jls-8.8)):
+
+``` programlisting
+
+class Pair {
+    Object first, second;
+    public Pair(Object first, Object second) {
+        this.first = first;
+        this.second = second;
+    }
+}
+```
+
+Here, the constructor takes parameters having the same names as the fields to be initialized. This is simpler than having to invent different names for the parameters and is not too confusing in this stylized context. In general, however, it is considered poor style to have local variables with the same names as fields.
+
+
+  
+
+
+**Example 6.4.1-2. Shadowing of a Type Declaration by Another Type Declaration**
+
+
+``` programlisting
+
+import java.util.*;
+
+class Vector {
+    int[] val = { 1 , 2 };
+}
+
+class Test {
+    public static void main(String[] args) {
+        Vector v = new Vector();
+        System.out.println(v.val[0]);
+    }
+}
+```
+
+The program compiles and prints:
+
+``` screen
+
+1
+```
+
+using the class `Vector` declared here in preference to the generic class `java.util.Vector` ([§8.1.2](ch08-classes.md#jls-8.1.2)) that might be imported on demand.
+
+
+  
+
+
+### 6.4.2. Obscuring
+
+
+A simple name may occur in contexts where it may potentially be interpreted as the name of a variable, a type, or a package. In these situations, the rules of [§6.5.2](ch06-names.md#jls-6.5.2) specify that a variable will be chosen in preference to a type, and that a type will be chosen in preference to a package. Thus, it is may sometimes be impossible to refer to a type or package via its simple name, even though its declaration is in scope and not shadowed. We say that such a declaration is *obscured*.
+
+Obscuring is distinct from shadowing ([§6.4.1](ch06-names.md#jls-6.4.1)) and hiding ([§8.3](ch08-classes.md#jls-8.3), [§8.4.8.2](ch08-classes.md#jls-8.4.8.2), [§8.5](ch08-classes.md#jls-8.5), [§9.3](ch09-interfaces.md#jls-9.3), [§9.5](ch09-interfaces.md#jls-9.5)).
+
+There is no obscuring between the name of a module and the name of a variable, type, or package; thus, modules may share names with variables, types, and packages, though it is not necessarily recommended to name a module after a package it contains.
+
+The naming conventions of [§6.1](ch06-names.md#jls-6.1) help reduce obscuring, but if it does occur, here are some notes about what you can do to avoid it.
+
+When package names occur in expressions:
+
+
+- If a package name is obscured by a field declaration, then `import` declarations ([§7.5](ch07-packages-modules.md#jls-7.5)) can usually be used to make available the type names declared in that package.
+
+- If a package name is obscured by a declaration of a parameter or local variable, then the name of the parameter or local variable can be changed without affecting other code.
+
+
+The first component of a package name is normally not easily mistaken for a type name, as a type name normally begins with a single uppercase letter. (The Java programming language does not actually rely on case distinctions to determine whether a name is a package name or a type name.)
+
+Obscuring involving class and interface type names is rare. Names of fields, parameters, and local variables normally do not obscure type names because they conventionally begin with a lowercase letter whereas type names conventionally begin with an uppercase letter.
+
+Method names cannot obscure or be obscured by other names ([§6.5.7](ch06-names.md#jls-6.5.7)).
+
+Obscuring involving field names is rare; however:
+
+
+- If a field name obscures a package name, then an `import` declaration ([§7.5](ch07-packages-modules.md#jls-7.5)) can usually be used to make available the type names declared in that package.
+
+- If a field name obscures a type name, then a fully qualified name for the type can be used unless the type name denotes a local class or interface ([§14.3](ch14-blocks-statements-patterns.md#jls-14.3)).
+
+- Field names cannot obscure method names.
+
+- If a field name is shadowed by a declaration of a parameter or local variable, then the name of the parameter or local variable can be changed without affecting other code.
+
+
+Obscuring involving constant names is rare:
+
+
+- Constant names normally have no lowercase letters, so they will not normally obscure names of packages or types, nor will they normally shadow fields, whose names typically contain at least one lowercase letter.
+
+- Constant names cannot obscure method names, because they are distinguished syntactically.
+
+
+## 6.5. Determining the Meaning of a Name
+
+
+The meaning of a name depends on the context in which it is used. The determination of the meaning of a name requires three steps:
+
+
+- First, context causes a name syntactically to fall into one of seven categories: *ModuleName*, *PackageName*, *TypeName*, *ExpressionName*, *MethodName*, *PackageOrTypeName*, or *AmbiguousName*.
+
+  *TypeName* and *MethodName* are less expressive than the other five categories, because they are denoted with *TypeIdentifier* and *UnqualifiedMethodIdentifier*, respectively ([§3.8](ch03-lexical-structure.md#jls-3.8)).
+
+- Second, a name that is initially classified by its context as an *AmbiguousName* or as a *PackageOrTypeName* is then reclassified to be a *PackageName*, *TypeName*, or *ExpressionName*.
+
+- Third, the resulting category then dictates the final determination of the meaning of the name (or a compile-time error if the name has no meaning).
+
+
+ModuleName:
+
+
+[Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier")  
+[ModuleName](ch06-names.md#jls-ModuleName "ModuleName") `.` [Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier")
+
+
+PackageName:
+
+
+[Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier")  
+[PackageName](ch06-names.md#jls-PackageName "PackageName") `.` [Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier")
+
+
+TypeName:
+
+
+[TypeIdentifier](ch03-lexical-structure.md#jls-TypeIdentifier "TypeIdentifier")  
+[PackageOrTypeName](ch06-names.md#jls-PackageOrTypeName "PackageOrTypeName") `.` [TypeIdentifier](ch03-lexical-structure.md#jls-TypeIdentifier "TypeIdentifier")
+
+
+PackageOrTypeName:
+
+
+[Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier")  
+[PackageOrTypeName](ch06-names.md#jls-PackageOrTypeName "PackageOrTypeName") `.` [Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier")
+
+
+ExpressionName:
+
+
+[Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier")  
+[AmbiguousName](ch06-names.md#jls-AmbiguousName "AmbiguousName") `.` [Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier")
+
+
+MethodName:
+
+
+[UnqualifiedMethodIdentifier](ch03-lexical-structure.md#jls-UnqualifiedMethodIdentifier "UnqualifiedMethodIdentifier")
+
+
+AmbiguousName:
+
+
+[Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier")  
+[AmbiguousName](ch06-names.md#jls-AmbiguousName "AmbiguousName") `.` [Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier")
+
+
+The use of context helps to minimize name conflicts between entities of different kinds. Such conflicts will be rare if the naming conventions described in [§6.1](ch06-names.md#jls-6.1) are followed. Nevertheless, conflicts may arise unintentionally as types developed by different programmers or different organizations evolve. For example, types, methods, and fields may have the same name. It is always possible to distinguish between a method and a field with the same name, since the context of a use always tells whether a method is intended.
+
+
+### 6.5.1. Syntactic Classification of a Name According to Context
+
+
+A name is syntactically classified as a *ModuleName* in these contexts:
+
+
+- In a `requires` directive in a module declaration ([§7.7.1](ch07-packages-modules.md#jls-7.7.1))
+
+- To the right of `to` in an `exports` or `opens` directive in a module declaration ([§7.7.2](ch07-packages-modules.md#jls-7.7.2))
+
+- To the right of `module` in a single-module-import declaration ([§7.5.5](ch07-packages-modules.md#jls-7.5.5))
+
+
+A name is syntactically classified as a *PackageName* in these contexts:
+
+
+- To the right of `exports` or `opens` in a module declaration
+
+- To the left of the "`.`" in a qualified *PackageName*
+
+
+A name is syntactically classified as a *TypeName* in these contexts:
+
+
+- To name a class or interface:
+
+
+  1.  In a `uses` or `provides` directive in a module declaration ([§7.7.1](ch07-packages-modules.md#jls-7.7.1))
+
+  2.  In a single-type-import declaration ([§7.5.1](ch07-packages-modules.md#jls-7.5.1))
+
+  3.  To the left of the `.` in a single-static-import declaration ([§7.5.3](ch07-packages-modules.md#jls-7.5.3))
+
+  4.  To the left of the `.` in a static-import-on-demand declaration ([§7.5.4](ch07-packages-modules.md#jls-7.5.4))
+
+  5.  In a `permits` clause of a `sealed` class or interface declaration ([§8.1.6](ch08-classes.md#jls-8.1.6), [§9.1.4](ch09-interfaces.md#jls-9.1.4)).
+
+  6.  To the left of the `(` in a constructor declaration ([§8.8](ch08-classes.md#jls-8.8))
+
+  7.  After the `@` sign in an annotation ([§9.7](ch09-interfaces.md#jls-9.7))
+
+  8.  To the left of `.``class` in a class literal ([§15.8.2](ch15-expressions.md#jls-15.8.2))
+
+  9.  To the left of `.``this` in a qualified `this` expression ([§15.8.4](ch15-expressions.md#jls-15.8.4))
+
+  10. To the left of `.``super` in a qualified superclass field access expression ([§15.11.2](ch15-expressions.md#jls-15.11.2))
+
+  11. To the left of `.`*Identifier* or `.``super``.`*Identifier* in a qualified method invocation expression ([§15.12](ch15-expressions.md#jls-15.12))
+
+  12. To the left of `.``super``::` in a method reference expression ([§15.13](ch15-expressions.md#jls-15.13))
+
+  
+
+- As the *Identifier* or dotted *Identifier* sequence that constitutes any *ReferenceType* (including a *ReferenceType* to the left of the brackets in an array type, or to the left of the \< in a parameterized type, or in a non-wildcard type argument of a parameterized type, or in an `extends` or `super` clause of a wildcard type argument of a parameterized type) in the 17 contexts where types are used ([§4.11](ch04-types-values-variables.md#jls-4.11)):
+
+
+  1.  In an `extends` or `implements` clause of a class declaration ([§8.1.4](ch08-classes.md#jls-8.1.4), [§8.1.5](ch08-classes.md#jls-8.1.5))
+
+  2.  In an `extends` clause of an interface declaration ([§9.1.3](ch09-interfaces.md#jls-9.1.3))
+
+  3.  The return type of a method ([§8.4.5](ch08-classes.md#jls-8.4.5), [§9.4](ch09-interfaces.md#jls-9.4)), including the type of an element of an annotation interface ([§9.6.1](ch09-interfaces.md#jls-9.6.1))
+
+  4.  In the `throws` clause of a method or constructor ([§8.4.6](ch08-classes.md#jls-8.4.6), [§8.8.5](ch08-classes.md#jls-8.8.5), [§9.4](ch09-interfaces.md#jls-9.4))
+
+  5.  In an `extends` clause of a type parameter declaration of a generic class, interface, method, or constructor ([§8.1.2](ch08-classes.md#jls-8.1.2), [§9.1.2](ch09-interfaces.md#jls-9.1.2), [§8.4.4](ch08-classes.md#jls-8.4.4), [§8.8.4](ch08-classes.md#jls-8.8.4))
+
+  6.  The type in a field declaration of a class or interface ([§8.3](ch08-classes.md#jls-8.3), [§9.3](ch09-interfaces.md#jls-9.3))
+
+  7.  The type in a formal parameter declaration of a method, constructor, or lambda expression ([§8.4.1](ch08-classes.md#jls-8.4.1), [§8.8.1](ch08-classes.md#jls-8.8.1), [§9.4](ch09-interfaces.md#jls-9.4), [§15.27.1](ch15-expressions.md#jls-15.27.1))
+
+  8.  The type of the receiver parameter of a method ([§8.4](ch08-classes.md#jls-8.4))
+
+  9.  The type in a local variable declaration in either a statement ([§14.4.2](ch14-blocks-statements-patterns.md#jls-14.4.2), [§14.14.1](ch14-blocks-statements-patterns.md#jls-14.14.1), [§14.14.2](ch14-blocks-statements-patterns.md#jls-14.14.2), [§14.20.3](ch14-blocks-statements-patterns.md#jls-14.20.3)) or a pattern ([§14.30.1](ch14-blocks-statements-patterns.md#jls-14.30.1))
+
+  10. A type in an exception parameter declaration ([§14.20](ch14-blocks-statements-patterns.md#jls-14.20))
+
+  11. The type in a record component declaration of a record class ([§8.10.1](ch08-classes.md#jls-8.10.1))
+
+  12. In an explicit type argument list to a constructor invocation or class instance creation expression or method invocation expression ([§8.8.7.1](ch08-classes.md#jls-8.8.7.1), [§15.9](ch15-expressions.md#jls-15.9), [§15.12](ch15-expressions.md#jls-15.12))
+
+  13. In an unqualified class instance creation expression, either as the class type to be instantiated ([§15.9](ch15-expressions.md#jls-15.9)) or as the direct superclass or direct superinterface of an anonymous class to be instantiated ([§15.9.5](ch15-expressions.md#jls-15.9.5))
+
+  14. The element type in an array creation expression ([§15.10.1](ch15-expressions.md#jls-15.10.1))
+
+  15. The type in the cast operator of a cast expression ([§15.16](ch15-expressions.md#jls-15.16))
+
+  16. The type that follows the `instanceof` relational operator ([§15.20.2](ch15-expressions.md#jls-15.20.2))
+
+  17. In a method reference expression ([§15.13](ch15-expressions.md#jls-15.13)), as the reference type to search for a member method or as the class type or array type to construct.
+
+  
+
+
+The extraction of a *TypeName* from the identifiers of a *ReferenceType* in the 17 contexts above is intended to apply recursively to all sub-terms of the *ReferenceType*, such as its element type and any type arguments.
+
+For example, suppose a field declaration uses the type `p.q.Foo[]`. The brackets of the array type are ignored, and the term `p.q.Foo` is extracted as a dotted sequence of *Identifiers* to the left of the brackets in an array type, and classified as a *TypeName*. A later step determines which of `p`, `q`, and `Foo` is a type name or a package name.
+
+As another example, suppose a cast operator uses the type `p.q.Foo<? extends String>`. The term `p.q.Foo` is again extracted as a dotted sequence of *Identifier* terms, this time to the left of the `<` in a parameterized type, and classified as a *TypeName*. The term `String` is extracted as an *Identifier* in an `extends` clause of a wildcard type argument of a parameterized type, and classified as a *TypeName*.
+
+
+A name is syntactically classified as an *ExpressionName* in these contexts:
+
+
+- As the qualifying expression in a qualified superclass constructor invocation ([§8.8.7.1](ch08-classes.md#jls-8.8.7.1))
+
+- As the qualifying expression in a qualified class instance creation expression ([§15.9](ch15-expressions.md#jls-15.9))
+
+- As the array reference expression in an array access expression ([§15.10.3](ch15-expressions.md#jls-15.10.3))
+
+- As a *PostfixExpression* ([§15.14](ch15-expressions.md#jls-15.14))
+
+- As the left-hand operand of an assignment operator ([§15.26](ch15-expressions.md#jls-15.26))
+
+- As a *VariableAccess* in a `try`-with-resources statement ([§14.20.3](ch14-blocks-statements-patterns.md#jls-14.20.3))
+
+
+A name is syntactically classified as a *MethodName* in this context:
+
+
+- Before the "`(`" in a method invocation expression ([§15.12](ch15-expressions.md#jls-15.12))
+
+
+A name is syntactically classified as a *PackageOrTypeName* in these contexts:
+
+
+- To the left of the "`.`" in a qualified *TypeName*
+
+- In a type-import-on-demand declaration ([§7.5.2](ch07-packages-modules.md#jls-7.5.2))
+
+
+A name is syntactically classified as an *AmbiguousName* in these contexts:
+
+
+- To the left of the "`.`" in a qualified *ExpressionName*
+
+- To the left of the rightmost `.` that occurs before the "`(`" in a method invocation expression
+
+- To the left of the "`.`" in a qualified *AmbiguousName*
+
+- In the default value clause of an annotation element declaration ([§9.6.2](ch09-interfaces.md#jls-9.6.2))
+
+- To the right of an "`=`" in an element-value pair ([§9.7.1](ch09-interfaces.md#jls-9.7.1))
+
+- To the left of `::` in a method reference expression ([§15.13](ch15-expressions.md#jls-15.13))
+
+
+The effect of syntactic classification is to restrict certain kinds of entities to certain parts of expressions:
+
+
+- The name of a field, parameter, or local variable may be used as an expression ([§15.14.1](ch15-expressions.md#jls-15.14.1)).
+
+- The name of a method may appear in an expression only as part of a method invocation expression ([§15.12](ch15-expressions.md#jls-15.12)).
+
+- The name of a class or interface may appear in an expression only as part of a class literal ([§15.8.2](ch15-expressions.md#jls-15.8.2)), a qualified `this` expression ([§15.8.4](ch15-expressions.md#jls-15.8.4)), a class instance creation expression ([§15.9](ch15-expressions.md#jls-15.9)), an array creation expression ([§15.10.1](ch15-expressions.md#jls-15.10.1)), a cast expression ([§15.16](ch15-expressions.md#jls-15.16)), an `instanceof` expression ([§15.20.2](ch15-expressions.md#jls-15.20.2)), an enum constant ([§8.9](ch08-classes.md#jls-8.9)), or as part of a qualified name for a field or method.
+
+- The name of a package may appear in an expression only as part of a qualified name for a class or interface.
+
+
+### 6.5.2. Reclassification of Contextually Ambiguous Names
+
+
+An *AmbiguousName* is then reclassified as follows.
+
+If the *AmbiguousName* is a simple name, consisting of a single *Identifier*, then:
+
+
+- If the *Identifier* appears within the scope of a declaration ([§6.3](ch06-names.md#jls-6.3)) denoting either a local variable, formal parameter, exception parameter, or field with that name ([§14.4](ch14-blocks-statements-patterns.md#jls-14.4), [§8.4.1](ch08-classes.md#jls-8.4.1), [§8.8.1](ch08-classes.md#jls-8.8.1), [§15.27.1](ch15-expressions.md#jls-15.27.1), [§14.20](ch14-blocks-statements-patterns.md#jls-14.20), [§8.3](ch08-classes.md#jls-8.3)), then the *AmbiguousName* is reclassified as an *ExpressionName*.
+
+- Otherwise, if the *Identifier* is a valid *TypeIdentifier* ([§3.8](ch03-lexical-structure.md#jls-3.8)) and appears within the scope of a declaration denoting a class, interface, or type parameter with that name ([§8.1](ch08-classes.md#jls-8.1), [§9.1](ch09-interfaces.md#jls-9.1), [§8.4.4](ch08-classes.md#jls-8.4.4), [§8.8.4](ch08-classes.md#jls-8.8.4)), then the *AmbiguousName* is reclassified as a *TypeName*.
+
+- Otherwise, the *AmbiguousName* is reclassified as a *PackageName*. A later step determines whether or not a package of that name actually exists.
+
+
+If the *AmbiguousName* is a qualified name, consisting of a name, a "`.`", and an *Identifier*, then the name to the left of the "`.`" is first reclassified, for it is itself an *AmbiguousName*. There is then a choice:
+
+
+- If the name to the left of the "`.`" is reclassified as a *PackageName*, then:
+
+
+  - If the *Identifier* is a valid *TypeIdentifier*, and there is a package whose name is the name to the left of the "`.`", and that package contains a declaration of a type whose name is the same as the *Identifier*, then this *AmbiguousName* is reclassified as a *TypeName*.
+
+  - Otherwise, this *AmbiguousName* is reclassified as a *PackageName*. A later step determines whether or not a package of that name actually exists.
+
+  
+
+- If the name to the left of the "`.`" is reclassified as a *TypeName*, then:
+
+
+  - If the *Identifier* is the name of a method or field of the type denoted by *TypeName*, then this *AmbiguousName* is reclassified as an *ExpressionName*.
+
+  - Otherwise, if the *Identifier* is a valid *TypeIdentifier* and is the name of a member type of the type denoted by *TypeName*, then this *AmbiguousName* is reclassified as a *TypeName*.
+
+  - Otherwise, a compile-time error occurs.
+
+  
+
+- If the name to the left of the "`.`" is reclassified as an *ExpressionName*, then this *AmbiguousName* is reclassified as an *ExpressionName*. A later step determines whether or not a member with the name *Identifier* actually exists.
+
+
+The requirement that a potential type name be "a valid *TypeIdentifier*" prevents treating `var` and `yield` as a type name. It is usually redundant, because the rules for declarations already prevent the introduction of types named `var` and `yield`. However, in some cases, a compiler may find a binary class named `var` or `yield`, and we want to be clear that such classes can never be named. The simplest solution is to consistently check for a valid *TypeIdentifier*.
+
+
+**Example 6.5.2-1. Reclassification of Contextually Ambiguous Names**
+
+
+Consider the following contrived "library code":
+
+``` programlisting
+
+package org.rpgpoet;
+import java.util.Random;
+public interface Music { Random[] wizards = new Random[4]; }
+```
+
+and then consider this example code in another package:
+
+``` programlisting
+
+package bazola;
+class Gabriel {
+    static int n = org.rpgpoet.Music.wizards.length;
+}
+```
+
+First of all, the name `org.rpgpoet.Music.wizards.length` is classified as an *ExpressionName* because it functions as a *PostfixExpression*. Therefore, each of the names:
+
+``` screen
+
+org.rpgpoet.Music.wizards
+org.rpgpoet.Music
+org.rpgpoet
+org
+```
+
+is initially classified as an *AmbiguousName*. These are then reclassified:
+
+
+- The simple name `org` is reclassified as a *PackageName* (since there is no variable or type named org in scope).
+
+- Next, assuming that there is no class or interface named `rpgpoet` in any compilation unit of package `org` (and we know that there is no such class or interface because package `org` has a subpackage named `rpgpoet`), the qualified name `org.rpgpoet` is reclassified as a *PackageName*.
+
+- Next, because package `org.rpgpoet` has an accessible ([§6.6](ch06-names.md#jls-6.6)) interface type named `Music`, the qualified name `org.rpgpoet.Music` is reclassified as a *TypeName*.
+
+- Finally, because the name `org.rpgpoet.Music` is a *TypeName*, the qualified name `org.rpgpoet.Music.wizards` is reclassified as an *ExpressionName*.
+
+
+  
+
+
+### 6.5.3. Meaning of Module Names and Package Names
+
+
+The module name M, whether simple or qualified, denotes the module (if any) with that name.
+
+This section does not mandate a compile-time error if no module with that name is observable. Instead, the `requires` directive in a module declaration ([§7.7.1](ch07-packages-modules.md#jls-7.7.1)) performs its own validation of the module name, while the `exports` and `opens` directives ([§7.7.2](ch07-packages-modules.md#jls-7.7.2)) are tolerant of non-existent module names.
+
+The meaning of a name classified as a *PackageName* is determined as follows.
+
+
+#### 6.5.3.1. Simple Package Names
+
+
+If a package name consists of a single *Identifier*, then the identifier must occur in the scope of exactly one declaration of a top level package with this name ([§6.3](ch06-names.md#jls-6.3)), and that package must be uniquely visible to the current module ([§7.4.3](ch07-packages-modules.md#jls-7.4.3)), or a compile-time error occurs. The meaning of the package name is that package.
+
+
+#### 6.5.3.2. Qualified Package Names
+
+
+If a package name is of the form `Q.Id`, then `Q` must also be a package name. The package name `Q.Id` names a package that is the member named `Id` within the package named by `Q`.
+
+If `Q.Id` does not name a package that is uniquely visible to the current module ([§7.4.3](ch07-packages-modules.md#jls-7.4.3)), then a compile-time error occurs.
+
+
+### 6.5.4. Meaning of *PackageOrTypeNames*
+
+
+#### 6.5.4.1. Simple *PackageOrTypeNames*
+
+
+If the *PackageOrTypeName*, `Q`, is a valid *TypeIdentifier* and occurs in the scope of a class, interface, or type parameter named `Q`, then the *PackageOrTypeName* is reclassified as a *TypeName*.
+
+Otherwise, the *PackageOrTypeName* is reclassified as a *PackageName*. The meaning of the *PackageOrTypeName* is the meaning of the reclassified name.
+
+
+#### 6.5.4.2. Qualified *PackageOrTypeNames*
+
+
+Given a qualified *PackageOrTypeName* of the form `Q.Id`, if `Id` is a valid *TypeIdentifier* and the class, interface, type parameter, or package denoted by `Q` has a member class or interface named `Id`, then the qualified *PackageOrTypeName* name is reclassified as a *TypeName*.
+
+Otherwise, it is reclassified as a *PackageName*. The meaning of the qualified *PackageOrTypeName* is the meaning of the reclassified name.
+
+
+### 6.5.5. Meaning of Type Names
+
+
+The meaning of a name classified as a *TypeName* is determined as follows.
+
+
+#### 6.5.5.1. Simple Type Names
+
+
+If a type name consists of a single *Identifier*, then the identifier must occur in the scope of exactly one declaration of a class, interface, or type parameter with this name ([§6.3](ch06-names.md#jls-6.3)), or a compile-time error occurs.
+
+If the declaration denotes a type parameter of a generic class or interface C ([§8.1.2](ch08-classes.md#jls-8.1.2), [§9.1.2](ch09-interfaces.md#jls-9.1.2)), then both of the following must be true, or a compile-time error occurs:
+
+
+- The type name does not occur in a static context ([§8.1.3](ch08-classes.md#jls-8.1.3)).
+
+- If the type name appears in a nested class or interface declaration of C, then the immediately enclosing class or interface declaration of the type name is an inner class of C.
+
+
+For example, the type name must not appear in the body of a `static` method declared by C, nor in the body of an instance method of a `static` class nested within C.
+
+If the declaration denotes a type parameter of a generic method or constructor `m` ([§8.4.4](ch08-classes.md#jls-8.4.4), [§8.8.4](ch08-classes.md#jls-8.8.4)), and the type name appears directly or indirectly in the body of a local class, local interface, or anonymous class D declared directly in the body of `m`, then both of the following must be true, or a compile-time error occurs:
+
+
+- The type name does not occur in a static context.
+
+- D is an inner class, and the immediately enclosing class or interface declaration of the type name is D or an inner class of D.
+
+
+For example, the type name must not appear in the body of a `static` method declared by D, nor (if D is a local interface) in the body of a default method of D.
+
+The meaning of the type name is the in-scope class, interface, or type parameter.
+
+
+**Example 6.5.5.1-1. References to Type Parameters**
+
+
+``` programlisting
+
+class Box<T> {
+    T val;
+    Box(T t) { val = t; }
+
+    static Box<T> empty() {  // compile-time error
+        return new Box<>(null);
+    }
+
+    static <U> Box<U> make(U val) {
+        interface Checker {
+            void check(U val);  // compile-time error
+        }
+
+        class NullChecker implements Checker {
+            public void check(U val) {
+                if (val == null) {
+                    throw new IllegalArgumentException();
+                }
+            }
+        }
+
+        new NullChecker().check(val);
+        return new Box<U>(val);
+    }
+}
+```
+
+The class type parameter T is in scope throughout the declaration of class `Box`; however, using the name T in the declaration of `static` method `empty` is illegal.
+
+Similarly, the method type parameter U is in scope throughout the declaration of method `make`; however, using the name U in the declaration of the (implicitly `static`) local interface `Checker` is illegal.
+
+
+  
+
+
+#### 6.5.5.2. Qualified Type Names
+
+
+If a type name is of the form `Q.Id`, then `Q` must be either the name of a class, interface, or type parameter in a package uniquely visible to the current module, or the name of a package uniquely visible to the current module ([§7.4.3](ch07-packages-modules.md#jls-7.4.3)).
+
+If `Id` names exactly one accessible class or interface ([§6.6](ch06-names.md#jls-6.6)) that is a member of the class, interface, type parameter, or package denoted by `Q`, then the qualified type name denotes that class or interface.
+
+If `Id` does not name a member class or interface within `Q` ([§8.5](ch08-classes.md#jls-8.5), [§9.5](ch09-interfaces.md#jls-9.5)), or the member class or interface named `Id` within `Q` is not accessible, or `Id` names more than one member class or interface within `Q`, then a compile-time error occurs.
+
+
+**Example 6.5.5.2-1. Qualified Type Names**
+
+
+``` programlisting
+
+class Test {
+    public static void main(String[] args) {
+        java.util.Date date =
+            new java.util.Date(System.currentTimeMillis());
+        System.out.println(date.toLocaleString());
+    }
+}
+```
+
+This program produced the following output the first time it was run:
+
+``` screen
+
+Sun Jan 21 22:56:29 1996
+```
+
+In this example, the name `java.util.Date` must denote a type, so we first use the procedure recursively to determine if `java.util` is an accessible class or interface or type parameter, or a package, which it is, and then we look to see if the class `Date` is accessible in this package.
+
+
+  
+
+
+### 6.5.6. Meaning of Expression Names
+
+
+The meaning of a name classified as an *ExpressionName* is determined as follows.
+
+
+#### 6.5.6.1. Simple Expression Names
+
+
+If an expression name consists of a single *Identifier*, then:
+
+
+- If the expression name appears as a *CaseConstant* in a switch label ([§14.11.1](ch14-blocks-statements-patterns.md#jls-14.11.1)), and the type of the selector expression of the enclosing `switch` statement or `switch` expression is an enum class type ([§8.9](ch08-classes.md#jls-8.9)), and the enum class declares an enum constant with name *Identifier*, then the expression name refers to the corresponding implicit field of the enum class.
+
+- Otherwise, if there is exactly one declaration denoting either a local variable, formal parameter, exception parameter, or field in scope at the point at which the identifier occurs, then the expression name refers to the in-scope variable.
+
+- Otherwise, a compile-time error occurs.
+
+
+If the declaration denotes an instance variable of a class C ([§8.3.1.1](ch08-classes.md#jls-8.3.1.1)), then all of the following must be true, or a compile-time error occurs:
+
+
+- The expression name does not occur in a static context ([§8.1.3](ch08-classes.md#jls-8.1.3)).
+
+- If the expression name occurs in an early construction context of C ([§8.8.7](ch08-classes.md#jls-8.8.7)), then it is the left-hand operand of a simple assignment expression ([§15.26](ch15-expressions.md#jls-15.26)), the declaration of the named variable lacks an initializer, and the simple assignment expression is not enclosed in a lambda expression or inner class declaration that is contained in the early construction context of C.
+
+- The expression name does not occur in an early construction context of a subclass of C.
+
+- If the expression name appears in a nested class or interface declaration of C, then the immediately enclosing class or interface declaration of the expression name is an inner class of C.
+
+
+For example, the expression name must not appear in the body of a `static` method declared by C, nor in the body of an instance method of a `static` class nested within C.
+
+If the declaration denotes a local variable, formal parameter, or exception parameter, let X be the innermost method declaration, constructor declaration, instance initializer, static initializer, field declaration, or constructor invocation which encloses the local variable or parameter declaration. If the expression name appears directly or indirectly in the body of a local class, local interface, or anonymous class D declared directly in X, then both of the following must be true, or a compile-time error occurs:
+
+
+- The expression name does not occur in a static context.
+
+- D is an inner class, and the immediately enclosing class or interface declaration of the expression name is D or an inner class of D.
+
+
+For example, the expression name must not appear in the body of a `static` method declared by D, nor (if D is a local interface) in the body of a default method of D.
+
+If the declaration denotes a local variable, formal parameter, or exception parameter that is neither `final` nor effectively final ([§4.12.4](ch04-types-values-variables.md#jls-4.12.4)), it is a compile-time error if the expression name appears either in an inner class enclosed directly or indirectly by X, or in a lambda expression contained by X ([§15.27](ch15-expressions.md#jls-15.27)).
+
+The net effect of these rules is that a local variable, formal parameter, or exception parameter can only be referenced from a nested class or interface declared within its scope if (i) the reference is not within a static context, (ii) there is a chain of inner (non-`static`) classes from the reference to the variable declaration, and (iii) the variable is `final` or effectively final. References from lambda expressions also require the variable to be `final` or effectively final.
+
+If the declaration declares a `final` variable which is definitely assigned before the simple expression, the meaning of the name is the value of that variable. Otherwise, the meaning of the expression name is the variable declared by the declaration.
+
+If the expression name appears in an assignment context, invocation context, or casting context, then the type of the expression name is the declared type of the field, local variable, or parameter after capture conversion ([§5.1.10](ch05-conversions-contexts.md#jls-5.1.10)).
+
+Otherwise, the type of the expression name is the declared type of the field, local variable or parameter.
+
+That is, if the expression name appears "on the right hand side", its type is subject to capture conversion. If the expression name is a variable that appears "on the left hand side", its type is not subject to capture conversion.
+
+
+**Example 6.5.6.1-1. Simple Expression Names**
+
+
+``` programlisting
+
+class Test {
+    static int v;
+    static final int f = 3;
+    public static void main(String[] args) {
+        int i;
+        i = 1;
+        v = 2;
+        f = 33;  // compile-time error
+        System.out.println(i + " " + v + " " + f);
+    }
+}
+```
+
+In this program, the names used as the left-hand-sides in the assignments to `i`, `v`, and `f` denote the local variable `i`, the field `v`, and the value of `f` (not the variable `f`, because `f` is a `final` variable). The example therefore produces an error at compile time because the last assignment does not have a variable as its left-hand side. If the erroneous assignment is removed, the modified code can be compiled and it will produce the output:
+
+``` screen
+
+1 2 3
+```
+
+
+  
+
+
+**Example 6.5.6.1-2. References to Instance Variables**
+
+
+``` programlisting
+
+class Test {
+    static String a;
+    String b;
+
+    String concat1() {
+        return a + b;
+    }
+
+    static String concat2() {
+        return a + b;  // compile-time error
+    }
+
+    int index() {
+        interface I {
+            class Matcher {
+                void check() {
+                    if (a == null ||
+                        b == null) {  // compile-time error
+                        throw new IllegalArgumentException();
+                    }
+                }
+                int match(String s, String t) {
+                    return s.indexOf(t);
+                }
+            }
+        }
+
+        I.Matcher matcher = new I.Matcher();
+        matcher.check();
+        return matcher.match(a, b);
+    }
+}
+```
+
+The fields `a` and `b` are in scope throughout the body of class `Test`. However, using the name `b` in the static context of the `concat2` method, or in the declaration of the nested class `Matcher` that is not an inner class of `Test`, is illegal.
+
+
+  
+
+
+**Example 6.5.6.1-3. References to Local Variables and Formal Parameters**
+
+
+``` programlisting
+
+class Test {
+    public static void main(String[] args) {
+        String first = args[0];
+
+        class Checker {
+            void checkWhitespace(int x) {
+                String arg = args[x];
+                if (!arg.trim().equals(arg)) {
+                    throw new IllegalArgumentException();
+                }
+            }
+
+            static void checkFlag(int x) {
+                String arg = args[x];  // compile-time error
+                if (!arg.startsWith("-")) {
+                    throw new IllegalArgumentException();
+                }
+            }
+
+            static void checkFirst() {
+                Runnable r = new Runnable() {
+                    public void run() {
+                        if (first == null) {  // compile-time error
+                            throw new IllegalArgumentException();
+                        }
+                    }
+                };
+                r.run();
+            }
+        }
+
+        final Checker c = new Checker();
+        c.checkFirst();
+        for (int i = 1; i < args.length; i++) {
+            Runnable r = () -> {
+                c.checkWhitespace(i);  // compile-time error
+                c.checkFlag(i);  // compile-time error
+            };
+        }
+    }
+}
+```
+
+The formal parameter `args` is in scope throughout the body of method `main`. `args` is effectively final, so the name `args` can be used in the instance method `checkWhitespace` of local class `Checker`. However, using the name `args` in the static context of the `checkFlag` method of local class `Checker` is illegal.
+
+The local variable `first` is in scope for the remainder of the body of method `main`. `first` is also effectively final. However, the anonymous class declared in `checkFirst` is not an inner class of `Checker`, so using the name `first` in the anonymous class body is illegal. (A lambda expression in the body of `checkFirst` would similarly be unable to refer to `first`, because the lambda expression would occur in a static context.)
+
+The local variable `c` is in scope for the last few lines of the body of method `main`, and is declared `final`, so the name `c` can be used in the body of the lambda expression.
+
+The local variable `i` is in scope throughout the `for` loop. However, `i` is not effectively final, so using the name `i` in the body of the lambda expression is illegal.
+
+
+  
+
+
+#### 6.5.6.2. Qualified Expression Names
+
+
+If an expression name is of the form `Q.Id`, then `Q` has already been classified as a package name, a type name, or an expression name.
+
+If `Q` is a package name, then a compile-time error occurs.
+
+If `Q` is a type name that names a class type, then:
+
+
+- If there is not exactly one accessible member ([§6.6](ch06-names.md#jls-6.6)) of the class type that is a field named `Id`, then a compile-time error occurs.
+
+- Otherwise, if the single accessible member field is not a class variable (that is, it is not declared `static`), then a compile-time error occurs.
+
+- Otherwise, if the class variable is declared `final`, then `Q.Id` denotes the value of the class variable.
+
+  The type of the expression `Q.Id` is the declared type of the class variable after capture conversion ([§5.1.10](ch05-conversions-contexts.md#jls-5.1.10)).
+
+  If `Q.Id` appears in a context that requires a variable and not a value, then a compile-time error occurs.
+
+- Otherwise, `Q.Id` denotes the class variable.
+
+  The type of the expression `Q.Id` is the declared type of the class variable after capture conversion ([§5.1.10](ch05-conversions-contexts.md#jls-5.1.10)).
+
+  Note that this clause covers the use of `enum` constants ([§8.9](ch08-classes.md#jls-8.9)), since these always have a corresponding `final` class variable.
+
+
+If `Q` is a type name that names an interface type, then:
+
+
+- If there is not exactly one accessible member of the interface type that is a field named `Id`, then a compile-time error occurs.
+
+- Otherwise, `Q.Id` denotes the value of the field.
+
+  The type of the expression `Q.Id` is the declared type of the field after capture conversion ([§5.1.10](ch05-conversions-contexts.md#jls-5.1.10)).
+
+  If `Q.Id` appears in a context that requires a variable and not a value, then a compile-time error occurs.
+
+
+If `Q` is an expression name, let T be the type of the expression `Q`:
+
+
+- If T is not a reference type, a compile-time error occurs.
+
+- If there is not exactly one accessible member of the type T that is a field named `Id`, then a compile-time error occurs.
+
+- Otherwise, if this field is any of the following:
+
+
+  - A field of an interface type
+
+  - A `final` field of a class type (which may be either a class variable or an instance variable)
+
+  - The `final` field `length` of an array type ([§10.7](ch10-arrays.md#jls-10.7))
+
+  
+
+  then `Q.Id` denotes the value of the field, unless it appears in a context that requires a variable and the field is a definitely unassigned blank `final` field, in which case it yields a variable.
+
+  The type of the expression `Q.Id` is the declared type of the field after capture conversion ([§5.1.10](ch05-conversions-contexts.md#jls-5.1.10)).
+
+  If `Q.Id` appears in a context that requires a variable and not a value, and the field denoted by `Q.Id` is definitely assigned, then a compile-time error occurs.
+
+- Otherwise, `Q.Id` denotes a variable, the field `Id` of class T, which may be either a class variable or an instance variable.
+
+  The type of the expression `Q.Id` is the type of the field member after capture conversion ([§5.1.10](ch05-conversions-contexts.md#jls-5.1.10)).
+
+
+**Example 6.5.6.2-1. Qualified Expression Names**
+
+
+``` programlisting
+
+class Point {
+    int x, y;
+    static int nPoints;
+}
+
+class Test {
+    public static void main(String[] args) {
+        int i = 0;
+        i.x++;        // compile-time error
+        Point p = new Point();
+        p.nPoints();  // compile-time error
+    }
+}
+```
+
+This program encounters two compile-time errors, because the `int` variable `i` has no members, and because `nPoints` is not a method of class `Point`.
+
+
+  
+
+
+**Example 6.5.6.2-2. Qualifying an Expression with a Type Name**
+
+
+Note that expression names may be qualified by type names, but not by types in general. A consequence is that it is not possible to access a class variable through a parameterized type. For example, given the code:
+
+``` programlisting
+
+
+class Foo<T> {
+    public static int classVar = 42;
+}
+```
+
+the following assignment is illegal:
+
+``` programlisting
+
+
+Foo<String>.classVar = 91; // illegal
+```
+
+Instead, one writes:
+
+``` programlisting
+
+
+Foo.classVar = 91;
+```
+
+This does not restrict the Java programming language in any meaningful way. Type parameters may not be used in the types of static variables, and so the type arguments of a parameterized type can never influence the type of a static variable. Therefore, no expressive power is lost. The type name `Foo` appears to be a raw type, but it is not; rather, it is the name of the non-generic type `Foo` whose static member is to be accessed ([§6.1](ch06-names.md#jls-6.1)). Since there is no use of a raw type, there are no unchecked warnings.
+
+
+  
+
+
+### 6.5.7. Meaning of Method Names
+
+
+The meaning of a name classified as a *MethodName* is determined as follows.
+
+
+#### 6.5.7.1. Simple Method Names
+
+
+A simple method name appears in the context of a method invocation expression ([§15.12](ch15-expressions.md#jls-15.12)). The simple method name consists of a single *UnqualifiedMethodIdentifier* which specifies the name of the method to be invoked. The rules of method invocation require that the *UnqualifiedMethodIdentifier* denotes a method that is in scope at the point of the method invocation. The rules also prohibit ([§15.12.3](ch15-expressions.md#jls-15.12.3)) a reference to an instance method occurring in a static context ([§8.1.3](ch08-classes.md#jls-8.1.3)), or in a nested class or interface other than an inner class of the class or interface which declares the instance method, or in an early construction context ([§8.8.7](ch08-classes.md#jls-8.8.7)) of a class where the instance method is a member.
+
+
+**Example 6.5.7.1-1. Simple Method Names**
+
+
+The following program demonstrates the role of scoping when determining which method to invoke.
+
+``` programlisting
+
+class Super {
+    void f2(String s)       {}
+    void f3(String s)       {}
+    void f3(int i1, int i2) {}
+}
+
+class Test {
+    void f1(int i) {}
+    void f2(int i) {}
+    void f3(int i) {}
+
+    void m() {
+        new Super() {
+            {
+                f1(0);  // OK, resolves to Test.f1(int)
+                f2(0);  // compile-time error
+                f3(0);  // compile-time error
+            }
+        };
+    }
+}
+```
+
+For the invocation `f1(0)`, only one method named `f1` is in scope. It is the method `Test.f1(int)`, whose declaration is in scope throughout the body of `Test` including the anonymous class declaration. [§15.12.1](ch15-expressions.md#jls-15.12.1) chooses to search in class `Test` since the anonymous class declaration has no member named `f1`. Eventually, `Test.f1(int)` is resolved.
+
+For the invocation `f2(0)`, two methods named `f2` are in scope. First, the declaration of the method `Super.f2(String)` is in scope throughout the anonymous class declaration. Second, the declaration of the method `Test.f2(int)` is in scope throughout the body of `Test` including the anonymous class declaration. (Note that neither declaration shadows the other, because at the point where each is declared, the other is not in scope.) [§15.12.1](ch15-expressions.md#jls-15.12.1) chooses to search in class `Super` because it has a member named `f2`. However, `Super.f2(String)` is not applicable to `f2(0)`, so a compile-time error occurs. Note that class `Test` is not searched.
+
+For the invocation `f3(0)`, three methods named `f3` are in scope. First and second, the declarations of the methods `Super.f3(String)` and `Super.f3(int,int)` are in scope throughout the anonymous class declaration. Third, the declaration of the method `Test.f3(int)` is in scope throughout the body of `Test` including the anonymous class declaration. [§15.12.1](ch15-expressions.md#jls-15.12.1) chooses to search in class `Super` because it has a member named `f3`. However, `Super.f3(String)` and `Super.f3(int,int)` are not applicable to `f3(0)`, so a compile-time error occurs. Note that class `Test` is not searched.
+
+Choosing to search a nested class's superclass hierarchy before the lexically enclosing scope is called the "comb rule" ([§15.12.1](ch15-expressions.md#jls-15.12.1)).
+
+
+  
+
+
+## 6.6. Access Control
+
+
+The Java programming language provides mechanisms for *access control*, to prevent the users of a package or class from depending on unnecessary details of the implementation of that package or class. If access is permitted, then the accessed entity is said to be *accessible*.
+
+Note that accessibility is a static property that can be determined at compile time; it depends only on types and declaration modifiers.
+
+Qualified names are a means of access to members of packages, classes, interfaces, type parameters, and reference types. When the name of such a member is classified from its context ([§6.5.1](ch06-names.md#jls-6.5.1)) as a qualified type name (denoting a member of a package, class, interface, or type parameter) or a qualified expression name (denoting a member of a reference type), access control is applied.
+
+For example, a single-type-import declaration uses a qualified type name ([§7.5.1](ch07-packages-modules.md#jls-7.5.1)), so the named class or interface must be accessible from the compilation unit containing the `import` declaration. As another example, a class declaration may use a qualified type name for a superclass type ([§8.1.5](ch08-classes.md#jls-8.1.5)), so again the named class must be accessible.
+
+Some obvious expressions are "missing" from context classification in [§6.5.1](ch06-names.md#jls-6.5.1): field access on a *Primary* ([§15.11.1](ch15-expressions.md#jls-15.11.1)), method invocation on a *Primary* ([§15.12](ch15-expressions.md#jls-15.12)), method reference via a *Primary* ([§15.13](ch15-expressions.md#jls-15.13)), and the instantiated class in a qualified class instance creation ([§15.9](ch15-expressions.md#jls-15.9)). Each of these expressions uses identifiers, rather than names, for the reason given in [§6.2](ch06-names.md#jls-6.2). Consequently, access control to members (whether fields, methods, classes, or interfaces) is applied *explicitly* by field access expressions, method invocation expressions, method reference expressions, and qualified class instance creation expressions. (Note that access to a field may also be denoted by a qualified name occuring as a postfix expression.)
+
+In addition, many statements and expressions allow the use of types that are not expressed exclusively with type names. For example, a class declaration may use a parameterized type ([§4.5](ch04-types-values-variables.md#jls-4.5)) to denote the superclass type. Because a parameterized type is not a qualified type name, it is necessary for the class declaration to explicitly perform access control for the denoted superclass. Consequently, of the statements and expressions that provide contexts in [§6.5.1](ch06-names.md#jls-6.5.1) to classify a *TypeName*, most perform their own access control checks.
+
+Beyond access to members of a package, class, interface, or type parameter, there is the matter of access to constructors of a class. Access control must be checked when a constructor is invoked explicitly or implicitly. Consequently, access control is checked by a constructor invocation ([§8.8.7.1](ch08-classes.md#jls-8.8.7.1)) and by a class instance creation expression ([§15.9.3](ch15-expressions.md#jls-15.9.3)). Such checks are necessary because [§6.5.1](ch06-names.md#jls-6.5.1) has no mention of constructor invocation (as they refer to constructors indirectly, rather than via names) and is unaware of the distinction between the class denoted by an unqualified class instance creation expression and a constructor of that class. Also, constructors do not have qualified names, so we cannot rely on access control being checked during classification of qualified type names.
+
+Accessibility affects inheritance of class members ([§8.2](ch08-classes.md#jls-8.2)), including hiding and method overriding ([§8.4.8.1](ch08-classes.md#jls-8.4.8.1)).
+
+
+### 6.6.1. Determining Accessibility
+
+
+- If a top level class or interface ([§7.6](ch07-packages-modules.md#jls-7.6)) is declared `public` and is a member of a package that is exported by a module, then the class or interface may be accessed by any code in the same module, and by any code in another module to which the package is exported, provided that the compilation unit in which the class or interface is declared is visible to that other module ([§7.3](ch07-packages-modules.md#jls-7.3)).
+
+- If a top level class or interface is declared `public` and is a member of a package that is not exported by a module, then the class or interface may be accessed by any code in the same module.
+
+- If a top level class or interface is declared with package access, then it may be accessed only from within the package in which it is declared.
+
+  A top level class or interface declared without an access modifier implicitly has package access.
+
+- A member (class, interface, field, or method) of a class, interface, type parameter, or reference type, or a constructor of a class, is accessible only if (i) the class, interface, type parameter, or reference type is accessible, and (ii) the member or constructor is declared to permit access:
+
+
+  - If the member or constructor is declared `public`, then access is permitted.
+
+    All members of interfaces lacking access modifiers are implicitly `public`.
+
+  - Otherwise, if the member or constructor is declared `protected`, then access is permitted only when one of the following is true:
+
+
+    - Access to the member or constructor occurs from within the package containing the class in which the `protected` member or constructor is declared.
+
+    - Access is correct as described in [§6.6.2](ch06-names.md#jls-6.6.2).
+
+    
+
+  - Otherwise, if the member or constructor is declared with package access, then access is permitted only when the access occurs from within the package in which the class, interface, type parameter, or reference type is declared.
+
+    A class member or constructor declared without an access modifier implicitly has package access.
+
+  - Otherwise, the member or constructor is declared `private`. Access is permitted only when one of the following is true:
+
+
+    - Access occurs from within the body of the top level class or interface that encloses the declaration of the member or constructor.
+
+    - Access occurs in the `permits` clause of the top level class or interface that encloses the declaration of the member.
+
+    - Access occurs in the record component list of the top level record class that encloses the declaration of the member.
+
+    
+
+  
+
+- An array type is accessible if and only if its element type is accessible.
+
+
+**Example 6.6-1. Access Control**
+
+
+Consider the two compilation units:
+
+``` programlisting
+
+package points;
+class PointVec { Point[] vec; }
+```
+
+and:
+
+``` programlisting
+
+package points;
+public class Point {
+    protected int x, y;
+    public void move(int dx, int dy) { x += dx; y += dy; }
+    public int getX() { return x; }
+    public int getY() { return y; }
+}
+```
+
+which declare two class types in the package `points`:
+
+
+- The class type `PointVec` is not `public` and not part of the `public` interface of the package `points`, but rather can be used only by other classes in the package.
+
+- The class type `Point` is declared `public` and is available to other packages. It is part of the `public` interface of the package `points`.
+
+- The methods `move`, `getX`, and `getY` of the class `Point` are declared `public` and so are available to any code that uses an object of type `Point`.
+
+- The fields `x` and `y` are declared `protected` and are accessible outside the package `points` only in subclasses of class `Point`, and only when they are fields of objects that are being implemented by the code that is accessing them.
+
+  See [§6.6.2](ch06-names.md#jls-6.6.2) for an example of how the `protected` access modifier limits access.
+
+
+  
+
+
+**Example 6.6-2. Access to `public` Fields, Methods, and Constructors**
+
+
+A `public` class member or constructor is accessible throughout the package where it is declared and from any other package, provided the package in which it is declared is observable ([§7.4.3](ch07-packages-modules.md#jls-7.4.3)). For example, in the compilation unit:
+
+``` programlisting
+
+package points;
+public class Point {
+    int x, y;
+    public void move(int dx, int dy) {
+        x += dx; y += dy;
+        moves++;
+    }
+    public static int moves = 0;
+}
+```
+
+the `public` class `Point` has as `public` members the `move` method and the `moves` field. These `public` members are accessible to any other package that has access to package `points`. The fields `x` and `y` are not `public` and therefore are accessible only from within the package `points`.
+
+
+  
+
+
+**Example 6.6-3. Access to `public` and Non-`public` Classes**
+
+
+If a class lacks the `public` modifier, access to the class declaration is limited to the package in which it is declared ([§6.6](ch06-names.md#jls-6.6)). In the example:
+
+``` programlisting
+
+package points;
+public class Point {
+    public int x, y;
+    public void move(int dx, int dy) { x += dx; y += dy; }
+}
+class PointList {
+    Point next, prev;
+}
+```
+
+two classes are declared in the compilation unit. The class `Point` is available outside the package `points`, while the class `PointList` is available for access only within the package. Thus a compilation unit in another package can access `points.Point`, either by using its fully qualified name:
+
+``` programlisting
+
+package pointsUser;
+class Test1 {
+    public static void main(String[] args) {
+        points.Point p = new points.Point();
+        System.out.println(p.x + " " + p.y);
+    }
+}
+```
+
+or by using a single-type-import declaration ([§7.5.1](ch07-packages-modules.md#jls-7.5.1)) that mentions the fully qualified name, so that the simple name may be used thereafter:
+
+``` programlisting
+
+package pointsUser;
+import points.Point;
+class Test2 {
+    public static void main(String[] args) {
+        Point p = new Point();
+        System.out.println(p.x + " " + p.y);
+    }
+}
+```
+
+However, this compilation unit cannot use or import `points.PointList`, which is not declared `public` and is therefore inaccessible outside package `points`.
+
+
+  
+
+
+**Example 6.6-4. Access to Fields, Methods, and Constructors with Package Access**
+
+
+If none of the access modifiers `public`, `protected`, or `private` are specified, a class member or constructor has package access: it is accessible throughout the package that contains the declaration of the class in which the class member is declared, but the class member or constructor is not accessible in any other package.
+
+If a `public` class has a method or constructor with package access, then this method or constructor is not accessible to or inherited by a subclass declared outside this package.
+
+For example, if we have:
+
+``` programlisting
+
+package points;
+public class Point {
+    public int x, y;
+    void move(int dx, int dy) { x += dx; y += dy; }
+    public void moveAlso(int dx, int dy) { move(dx, dy); }
+}
+```
+
+then a subclass in another package may declare an unrelated `move` method, with the same signature ([§8.4.2](ch08-classes.md#jls-8.4.2)) and return type. Because the original `move` method is not accessible from package `morepoints`, `super` may not be used:
+
+``` programlisting
+
+package morepoints;
+public class PlusPoint extends points.Point {
+    public void move(int dx, int dy) {
+        super.move(dx, dy);  // compile-time error
+        moveAlso(dx, dy);
+    }
+}
+```
+
+Because `move` of `Point` is not overridden by `move` in `PlusPoint`, the method `moveAlso` in `Point` never calls the method `move` in `PlusPoint`. Thus if you delete the `super.move` call from `PlusPoint` and execute the test program:
+
+``` programlisting
+
+import points.Point;
+import morepoints.PlusPoint;
+class Test {
+    public static void main(String[] args) {
+        PlusPoint pp = new PlusPoint();
+        pp.move(1, 1);
+    }
+}
+```
+
+it terminates normally. If `move` of `Point` were overridden by `move` in `PlusPoint`, then this program would recurse infinitely, until a `StackOverflowError` occurred.
+
+
+  
+
+
+**Example 6.6-5. Access to `private` Fields, Methods, and Constructors**
+
+
+A `private` class member or constructor is accessible only within the body of the top level class ([§7.6](ch07-packages-modules.md#jls-7.6)) that encloses the declaration of the member or constructor. It is not inherited by subclasses. In the example:
+
+``` programlisting
+
+class Point {
+    Point() { setMasterID(); }
+    int x, y;
+    private int ID;
+    private static int masterID = 0;
+    private void setMasterID() { ID = masterID++; }
+}
+```
+
+the private members `ID`, `masterID`, and `setMasterID` may be used only within the body of class `Point`. They may not be accessed by qualified names, field access expressions, or method invocation expressions outside the body of the declaration of `Point`.
+
+See [§8.8.10](ch08-classes.md#jls-8.8.10) for an example that uses a `private` constructor.
+
+
+  
+
+
+### 6.6.2. Details on `protected` Access
+
+
+A `protected` member or constructor of an object may be accessed from outside the package in which it is declared only by code that is responsible for the implementation of that object.
+
+
+#### 6.6.2.1. Access to a `protected` Member
+
+
+Let C be the class in which a `protected` member is declared. Access is permitted only within the body of a subclass S of C.
+
+A subclass S is regarded as being responsible for the implementation of objects of class C. Depending on C's accessibility, S may be declared in the same package as C, or in different package of the same module as C, or in a package of a different module entirely.
+
+In addition, access to an instance field or instance method is permitted based on the form of the qualified name, field access expression ([§15.11](ch15-expressions.md#jls-15.11)), method invocation expression ([§15.12](ch15-expressions.md#jls-15.12)), or method reference expression ([§15.13](ch15-expressions.md#jls-15.13)):
+
+
+- If the access is by (i) a qualified name of the form `ExpressionName.Id` or `TypeName.Id`, or (ii) a field access expression of the form `Primary.Id`, then access to the instance field `Id` is permitted if and only if the qualifying type is S or a subclass of S.
+
+  The qualifying type is the type of the *ExpressionName* or *Primary*, or the type denoted by *TypeName*.
+
+- If the access is by (i) a method invocation expression of the form `ExpressionName.Id(...)` or `TypeName.Id(...)` or `Primary.Id(...)`, or (ii) a method reference expression of the form `ExpressionName ``::`` Id` or `Primary ``::`` Id` or `ReferenceType ``::`` Id`, then access to the instance method `Id` is permitted if and only if the qualifying type is S or a subclass of S.
+
+  The qualifying type is the type of the *ExpressionName* or *Primary*, or the type denoted by *TypeName* or *ReferenceType*.
+
+
+More information about access to `protected` members can be found in *Checking Access to Protected Members in the Java Virtual Machine* by Alessandro Coglio, in the *Journal of Object Technology*, October 2005.
+
+
+#### 6.6.2.2. Access to a `protected` Constructor
+
+
+Let C be the class in which a `protected` constructor is declared and let S be the innermost class in whose declaration the use of the `protected` constructor occurs. Then:
+
+
+- If the access is by a superclass constructor invocation `super``(...)`, or a qualified superclass constructor invocation `E``.``super``(...)`, where `E` is a *Primary* expression, then the access is permitted.
+
+- If the access is by an anonymous class instance creation expression `new` C`(...){...}`, or a qualified anonymous class instance creation expression E`.``new` C`(...){...}`, where E is a *Primary* expression, then the access is permitted.
+
+- If the access is by a simple class instance creation expression `new` C`(...)`, or a qualified class instance creation expression E`.``new` C`(...)`, where E is a *Primary* expression, or a method reference expression C `::` `new`, where C is a *ClassType*, then the access is not permitted. A `protected` constructor can be accessed by a class instance creation expression (that does not declare an anonymous class) or a method reference expression only from within the package in which it is defined.
+
+
+**Example 6.6.2-1. Access to `protected` Fields, Methods, and Constructors**
+
+
+Consider this example, where the `points` package declares:
+
+``` programlisting
+
+package points;
+public class Point {
+    protected int x, y;
+    void warp(threePoint.Point3d a) {
+        if (a.z > 0)  // compile-time error: cannot access a.z
+            a.delta(this);
+    }
+}
+```
+
+and the `threePoint` package declares:
+
+``` programlisting
+
+package threePoint;
+import points.Point;
+public class Point3d extends Point {
+    protected int z;
+    public void delta(Point p) {
+        p.x += this.x;  // compile-time error: cannot access p.x
+        p.y += this.y;  // compile-time error: cannot access p.y
+    }
+    public void delta3d(Point3d q) {
+        q.x += this.x;
+        q.y += this.y;
+        q.z += this.z;
+    }
+}
+```
+
+A compile-time error occurs in the method `delta` here: it cannot access the `protected` members `x` and `y` of its parameter `p`, because while `Point3d` (the class in which the references to fields `x` and `y` occur) is a subclass of `Point` (the class in which `x` and `y` are declared), it is not involved in the implementation of a `Point` (the type of the parameter `p`). The method `delta3d` can access the `protected` members of its parameter `q`, because the class `Point3d` is a subclass of `Point` and is involved in the implementation of a `Point3d`.
+
+The method `delta` could try to cast ([§5.5](ch05-conversions-contexts.md#jls-5.5), [§15.16](ch15-expressions.md#jls-15.16)) its parameter to be a `Point3d`, but this cast would fail, causing an exception, if the class of `p` at run time were not `Point3d`.
+
+A compile-time error also occurs in the method `warp`: it cannot access the `protected` member `z` of its parameter `a`, because while the class `Point` (the class in which the reference to field `z` occurs) is involved in the implementation of a `Point3d` (the type of the parameter `a`), it is not a subclass of `Point3d` (the class in which `z` is declared).
+
+
+  
+
+
+## 6.7. Fully Qualified Names and Canonical Names
+
+
+Every primitive type, named package, top level class, and top level interface has a *fully qualified name*:
+
+
+- The fully qualified name of a primitive type is the keyword for that primitive type, namely `byte`, `short`, `char`, `int`, `long`, `float`, `double`, or `boolean`.
+
+- The fully qualified name of a named package that is not a subpackage of a named package is its simple name.
+
+- The fully qualified name of a named package that is a subpackage of another named package consists of the fully qualified name of the containing package, followed by "`.`", followed by the simple (member) name of the subpackage.
+
+- The fully qualified name of a top level class or top level interface that is declared in an unnamed package is the simple name of the class or interface.
+
+  In particular, this means that a top level class that is implicitly declared by a compact compilation unit ([§7.3](ch07-packages-modules.md#jls-7.3)) has a fully qualified name, which is the simple name determined by the host system ([§8.1.8](ch08-classes.md#jls-8.1.8)).
+
+- The fully qualified name of a top level class or top level interface that is declared in a named package consists of the fully qualified name of the package, followed by "`.`", followed by the simple name of the class or interface.
+
+
+Each member class, member interface, and array type *may* have a fully qualified name:
+
+
+- A member class or member interface `M` of another class or interface C has a fully qualified name if and only if C has a fully qualified name.
+
+  In that case, the fully qualified name of `M` consists of the fully qualified name of C, followed by "`.`", followed by the simple name of `M`.
+
+- An array type has a fully qualified name if and only if its element type has a fully qualified name.
+
+  In that case, the fully qualified name of an array type consists of the fully qualified name of the component type of the array type followed by "`[]`".
+
+
+A local class, local interface, or anonymous class does not have a fully qualified name.
+
+Every primitive type, named package, top level class, and top level interface has a *canonical name*:
+
+
+- For every primitive type, named package, top level class, and top level interface, the canonical name is the same as the fully qualified name.
+
+
+Each member class, member interface, and array type *may* have a canonical name:
+
+
+- A member class or member interface `M` declared in another class or interface C has a canonical name if and only if C has a canonical name.
+
+  In that case, the canonical name of `M` consists of the canonical name of C, followed by "`.`", followed by the simple name of `M`.
+
+- An array type has a canonical name if and only if its component type has a canonical name.
+
+  In that case, the canonical name of the array type consists of the canonical name of the component type of the array type followed by "`[]`".
+
+
+A local class, local interface, or anonymous class does not have a canonical name.
+
+
+**Example 6.7-1. Fully Qualified Names**
+
+
+- The fully qualified name of the type `long` is "`long`".
+
+- The fully qualified name of the package `java.lang` is "`java.lang`" because it is subpackage `lang` of package `java`.
+
+- The fully qualified name of the class `Object`, which is defined in the package `java.lang`, is "`java.lang.Object`".
+
+- The fully qualified name of the interface `Enumeration`, which is defined in the package `java.util`, is "`java.util.Enumeration`".
+
+- The fully qualified name of the type "array of `double`" is "`double``[]`".
+
+- The fully qualified name of the type "array of array of array of array of `String`" is "`java.lang.String[][][][]`".
+
+
+In the code:
+
+``` programlisting
+
+package points;
+class Point    { int x, y; }
+class PointVec { Point[] vec; }
+```
+
+the fully qualified name of the type `Point` is "`points.Point`"; the fully qualified name of the type `PointVec` is "`points.PointVec`"; and the fully qualified name of the type of the field `vec` of class `PointVec` is "`points.Point[]`".
+
+
+  
+
+
+**Example 6.7-2. Fully Qualified Names v. Canonical Name**
+
+
+The difference between a fully qualified name and a canonical name can be seen in code such as:
+
+``` programlisting
+
+package p;
+class O1 { class I {} }
+class O2 extends O1 {}
+```
+
+Both `p.O1.I` and `p.O2.I` are fully qualified names that denote the member class `I`, but only `p.O1.I` is its canonical name.
+
+
+  
+
+

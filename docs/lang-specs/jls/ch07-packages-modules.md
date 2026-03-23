@@ -1,0 +1,1371 @@
+# Chapter 7. Packages and Modules
+
+
+## Contents
+
+[7.1. Package Members](ch07-packages-modules.md#jls-7.1)
+
+[7.2. Host Support for Modules and Packages](ch07-packages-modules.md#jls-7.2)
+
+[7.3. Compilation Units](ch07-packages-modules.md#jls-7.3)
+
+[7.4. Package Declarations](ch07-packages-modules.md#jls-7.4)
+
+[7.4.1. Named Packages](ch07-packages-modules.md#jls-7.4.1)
+
+[7.4.2. Unnamed Packages](ch07-packages-modules.md#jls-7.4.2)
+
+[7.4.3. Package Observability and Visibility](ch07-packages-modules.md#jls-7.4.3)
+
+[7.5. Import Declarations](ch07-packages-modules.md#jls-7.5)
+
+[7.5.1. Single-Type-Import Declarations](ch07-packages-modules.md#jls-7.5.1)
+
+[7.5.2. Type-Import-on-Demand Declarations](ch07-packages-modules.md#jls-7.5.2)
+
+[7.5.3. Single-Static-Import Declarations](ch07-packages-modules.md#jls-7.5.3)
+
+[7.5.4. Static-Import-on-Demand Declarations](ch07-packages-modules.md#jls-7.5.4)
+
+[7.5.5. Single-Module-Import Declarations](ch07-packages-modules.md#jls-7.5.5)
+
+[7.6. Top Level Class and Interface Declarations](ch07-packages-modules.md#jls-7.6)
+
+[7.7. Module Declarations](ch07-packages-modules.md#jls-7.7)
+
+[7.7.1. Dependences](ch07-packages-modules.md#jls-7.7.1)
+
+[7.7.2. Exported and Opened Packages](ch07-packages-modules.md#jls-7.7.2)
+
+[7.7.3. Service Consumption](ch07-packages-modules.md#jls-7.7.3)
+
+[7.7.4. Service Provision](ch07-packages-modules.md#jls-7.7.4)
+
+[7.7.5. Unnamed Modules](ch07-packages-modules.md#jls-7.7.5)
+
+[7.7.6. Observability of a Module](ch07-packages-modules.md#jls-7.7.6)
+
+
+Programs are organized as sets of packages. The members of a package ([§7.1](ch07-packages-modules.md#jls-7.1)) are classes and interfaces, which are declared in compilation units of the package, and subpackages, which may contain compilation units and subpackages of their own.
+
+Each package has its own set of names for classes and interfaces, which helps to prevent name conflicts. The naming structure for packages is hierarchical.
+
+If a set of packages is sufficiently cohesive, then the packages may be grouped into a module. A module categorizes some or all of its packages as *exported*, which means their classes and interfaces may be accessed from code outside the module. If a package is not exported by a module, then only code inside the module may access its classes and interfaces. Furthermore, if code in a module wishes to access the packages exported by another module, then the first module must explicitly depend on the second module. Thus, a module controls how its packages use other modules (by specifying dependences) and controls how other modules use its packages (by specifying which of its packages are exported).
+
+Modules and packages may be stored in a file system or in a database ([§7.2](ch07-packages-modules.md#jls-7.2)). Modules and packages that are stored in a file system may have certain constraints on the organization of their compilation units to allow a simple implementation to find module, class, and interface declarations easily.
+
+Code in a compilation unit automatically has access to all classes and interfaces declared in its package and also automatically imports all of the `public` classes and interfaces declared in the predefined package `java.lang`.
+
+A top level class or interface is accessible ([§6.6](ch06-names.md#jls-6.6)) outside the package that declares it only if the class or interface is declared `public`. A top level class or interface is accessible outside the module that declares it only if the class or interface is declared `public` and is a member of an exported package. A class or interface that is declared `public` but is not a member of an exported package is accessible only to code inside the module.
+
+For small programs and casual development, a package can be unnamed ([§7.4.2](ch07-packages-modules.md#jls-7.4.2)) or have a simple name, but if code is to be widely distributed, unique package names should be chosen using qualified names. This can prevent the conflicts that would otherwise occur if two development groups happened to pick the same package name and these packages were later to be used in a single program.
+
+
+## 7.1. Package Members
+
+
+The members of a package are its subpackages and all the top level classes ([§8 (Classes)](ch08-classes.md)) and top level interfaces ([§9 (Interfaces)](ch09-interfaces.md)) declared in all the compilation units ([§7.3](ch07-packages-modules.md#jls-7.3)) of the package.
+
+
+For example, in the Java SE Platform API:
+
+
+- The package `java` has subpackages `awt`, `applet`, `io`, `lang`, `net`, and `util`, but no compilation units.
+
+- The package `java.awt` has a subpackage named `image`, as well as a number of compilation units containing declarations of classes and interfaces.
+
+
+If the fully qualified name ([§6.7](ch06-names.md#jls-6.7)) of a package is `P`, and `Q` is a subpackage of `P`, then `P.Q` is the fully qualified name of the subpackage, and furthermore denotes a package.
+
+A package may not contain two members of the same name, or a compile-time error results.
+
+
+Here are some examples:
+
+
+- Because the package `java.awt` has a subpackage `image`, it cannot (and does not) contain a declaration of a class or interface named `image`.
+
+- If there is a package named `mouse` and a member class `Button` in that package (which then might be referred to as `mouse.Button`), then there cannot be any package with the fully qualified name `mouse.Button` or `mouse.Button.Click`.
+
+- If `com.nighthacks.java.jag` is the fully qualified name of a class, then there cannot be any package whose fully qualified name is either `com.nighthacks.java.jag` or `com.nighthacks.java.jag.scrabble`.
+
+
+It is however possible for members of different packages to have the same simple name. For example, it is possible to declare a package:
+
+``` programlisting
+
+
+package vector;
+public class Vector { Object[] vec; }
+```
+
+that has as a member a `public` class named `Vector`, even though the package `java.util` also declares a class named `Vector`. These two classes are different, reflected by the fact that they have different fully qualified names ([§6.7](ch06-names.md#jls-6.7)). The fully qualified name of this example `Vector` is `vector.Vector`, whereas `java.util.Vector` is the fully qualified name of the `Vector` class included in the Java SE Platform. Because the package `vector` contains a class named `Vector`, it cannot also have a subpackage named `Vector`.
+
+
+The hierarchical naming structure for packages is intended to be convenient for organizing related packages in a conventional manner, but has no significance in itself other than the prohibition against a package having a subpackage with the same simple name as a top level class or interface ([§7.6](ch07-packages-modules.md#jls-7.6)) declared in that package.
+
+For example, there is no special access relationship between a package named `oliver` and another package named `oliver.twist`, or between packages named `evelyn.wood` and `evelyn.waugh`. That is, the code in a package named `oliver.twist` has no better access to the classes and interfaces declared within package `oliver` than code in any other package.
+
+
+## 7.2. Host Support for Modules and Packages
+
+
+Each host system determines how modules, packages, and compilation units are created and stored.
+
+Each host system determines which compilation units are *observable* in a particular compilation ([§7.3](ch07-packages-modules.md#jls-7.3)). Each host system also determines which observable compilation units are *associated with* a module. The observability of compilation units associated with a module determines which modules are observable ([§7.7.6](ch07-packages-modules.md#jls-7.7.6)) and which packages are visible within those modules ([§7.4.3](ch07-packages-modules.md#jls-7.4.3)).
+
+The host system is free to determine that a compilation unit which contains a module declaration is not, in fact, observable, and thus is not associated with the module declared therein. This enables a compiler to choose which directory on a `modulesourcepath` is "really" the embodiment of a given module. However, if the host system determines that a compilation unit which contains a module declaration *is* observable, then [§7.4.3](ch07-packages-modules.md#jls-7.4.3) mandates that the compilation unit must be associated with the module declared therein, and not with any other module.
+
+The host system is free to determine that a compilation unit which contains a class or interface declaration is (first) observable and (second) associated with an unnamed module or an automatic module - despite no declaration of an unnamed or automatic module existing in any compilation unit, observable or otherwise.
+
+In simple implementations of the Java SE Platform, packages and compilation units may be stored in a local file system. Other implementations may store them using a distributed file system or some form of database.
+
+If a host system stores packages and compilation units in a database, then the database must not impose the optional restrictions ([§7.6](ch07-packages-modules.md#jls-7.6)) on compilation units permissible in file-based implementations.
+
+For example, a system that uses a database to store packages may not enforce a maximum of one public class or interface per compilation unit.
+
+Systems that use a database must, however, provide an option to convert a program to a form that obeys the restrictions, for purposes of export to file-based implementations.
+
+
+As an extremely simple example of storing packages in a file system, all the packages and source and binary code in a project might be stored in a single directory and its subdirectories. Each immediate subdirectory of this directory would represent a top level package, that is, one whose fully qualified name consists of a single simple name. Each further level of subdirectory would represent a subpackage of the package represented by the containing directory, and so on.
+
+The directory might contain the following immediate subdirectories:
+
+``` screen
+
+com
+gls
+jag
+java
+wnj
+```
+
+where directory `java` would contain the Java SE Platform packages; the directories `jag`, `gls`, and `wnj` might contain packages that three of the authors of this specification created for their personal use and to share with each other within this small group; and the directory `com` would contain packages procured from companies that used the conventions described in [§6.1](ch06-names.md#jls-6.1) to generate unique names for their packages.
+
+Continuing the example, the directory `java` would contain, among others, the following subdirectories:
+
+``` screen
+
+applet
+awt
+io
+lang
+net
+util
+```
+
+corresponding to the packages `java.applet`, `java.awt`, `java.io`, `java.lang`, `java.net`, and `java.util` that are defined as part of the Java SE Platform API.
+
+Still continuing the example, if we were to look inside the directory `util`, we might see the following files:
+
+``` screen
+
+BitSet.java        Observable.java
+BitSet.class       Observable.class
+Date.java          Observer.java
+Date.class         Observer.class
+...
+```
+
+where each of the `.java` files contains the source for a compilation unit ([§7.3](ch07-packages-modules.md#jls-7.3)) that contains the definition of a class or interface whose binary compiled form is contained in the corresponding `.class` file.
+
+Under this simple organization of packages, an implementation of the Java SE Platform would transform a package name into a pathname by concatenating the components of the package name, placing a file name separator (directory indicator) between adjacent components.
+
+For example, if this simple organization were used on an operating system where the file name separator is `/`, the package name:
+
+``` screen
+
+jag.scrabble.board
+```
+
+would be transformed into the directory name:
+
+``` screen
+
+jag/scrabble/board
+```
+
+A package name component or class name might contain a character that cannot correctly appear in a host file system's ordinary directory name, such as a Unicode character on a system that allows only ASCII characters in file names. As a convention, the character can be escaped by using, say, the `@` character followed by four hexadecimal digits giving the numeric value of the character, as in the `\u`*`xxxx`* escape ([§3.3](ch03-lexical-structure.md#jls-3.3)).
+
+Under this convention, the package name:
+
+``` screen
+
+children.activities.crafts.papierM\u00e2ch\u00e9
+```
+
+which can also be written using full Unicode as:
+
+``` screen
+
+children.activities.crafts.papierMâché
+```
+
+might be mapped to the directory name:
+
+``` screen
+
+children/activities/crafts/papierM@00e2ch@00e9
+```
+
+If the `@` character is not a valid character in a file name for some given host file system, then some other character that is not valid in an identifier could be used instead.
+
+
+## 7.3. Compilation Units
+
+
+*CompilationUnit* is the goal symbol ([§2.1](ch02-grammars.md#jls-2.1)) for the syntactic grammar ([§2.3](ch02-grammars.md#jls-2.3)) of Java programs. It is defined by the following production:
+
+
+CompilationUnit:
+
+
+[OrdinaryCompilationUnit](ch07-packages-modules.md#jls-OrdinaryCompilationUnit "OrdinaryCompilationUnit")  
+[CompactCompilationUnit](ch07-packages-modules.md#jls-CompactCompilationUnit "CompactCompilationUnit")  
+[ModularCompilationUnit](ch07-packages-modules.md#jls-ModularCompilationUnit "ModularCompilationUnit")
+
+
+OrdinaryCompilationUnit:
+
+
+\[[PackageDeclaration](ch07-packages-modules.md#jls-PackageDeclaration "PackageDeclaration")\] {[ImportDeclaration](ch07-packages-modules.md#jls-ImportDeclaration "ImportDeclaration")} {[TopLevelClassOrInterfaceDeclaration](ch07-packages-modules.md#jls-TopLevelClassOrInterfaceDeclaration "TopLevelClassOrInterfaceDeclaration")}
+
+
+CompactCompilationUnit:
+
+
+{[ImportDeclaration](ch07-packages-modules.md#jls-ImportDeclaration "ImportDeclaration")} {[ClassMemberDeclarationNoMethod](ch07-packages-modules.md#jls-ClassMemberDeclarationNoMethod "ClassMemberDeclarationNoMethod")} [MethodDeclaration](ch08-classes.md#jls-MethodDeclaration "MethodDeclaration") {[ClassMemberDeclaration](ch08-classes.md#jls-ClassMemberDeclaration "ClassMemberDeclaration")}
+
+
+ClassMemberDeclarationNoMethod:
+
+
+[FieldDeclaration](ch08-classes.md#jls-FieldDeclaration "FieldDeclaration")  
+[ClassDeclaration](ch08-classes.md#jls-ClassDeclaration "ClassDeclaration")  
+[InterfaceDeclaration](ch09-interfaces.md#jls-InterfaceDeclaration "InterfaceDeclaration")  
+`;`
+
+
+ModularCompilationUnit:
+
+
+{[ImportDeclaration](ch07-packages-modules.md#jls-ImportDeclaration "ImportDeclaration")} [ModuleDeclaration](ch07-packages-modules.md#jls-ModuleDeclaration "ModuleDeclaration")
+
+
+An *ordinary compilation unit* consists of three parts, each of which is optional:
+
+
+- A `package` declaration ([§7.4](ch07-packages-modules.md#jls-7.4)), giving the fully qualified name ([§6.7](ch06-names.md#jls-6.7)) of the package to which the compilation unit belongs.
+
+  A compilation unit that has no `package` declaration is part of an unnamed package ([§7.4.2](ch07-packages-modules.md#jls-7.4.2)).
+
+- `import` declarations ([§7.5](ch07-packages-modules.md#jls-7.5)) that allow classes and interfaces from other packages, and `static` members of classes and interfaces, to be referred to using their simple names.
+
+- Top level declarations of classes and interfaces ([§7.6](ch07-packages-modules.md#jls-7.6)).
+
+
+A *compact compilation unit* consists of a non-empty sequence of class member declarations, at least one of which must be a method declaration ([§8.4](ch08-classes.md#jls-8.4)), optionally preceded by `import` declarations. Declarations of methods, fields, classes, and interfaces are permitted in any order after the `import` declarations (if any), as they would be in a class body ([§8.1.7](ch08-classes.md#jls-8.1.7)).
+
+
+This means that the following compilation unit is unambiguously an ordinary compilation unit:
+
+``` programlisting
+
+
+import java.util.Vector;
+class Test { ... }
+```
+
+whereas the following is unambiguously a compact compilation unit:
+
+``` programlisting
+
+
+import java.util.Vector;
+static void main(){ ... }
+class Test { ... }
+```
+
+
+A compact compilation unit implicitly declares a top level class ([§7.6](ch07-packages-modules.md#jls-7.6)) whose members are the methods, fields, classes, and interfaces declared in the compact compilation unit. The details of the class are specified in [§8.1.8](ch08-classes.md#jls-8.1.8).
+
+A *modular compilation unit* consists of a `module` declaration ([§7.7](ch07-packages-modules.md#jls-7.7)), optionally preceded by `import` declarations. The `import` declarations allow classes and interfaces from packages in this module and other modules, as well as `static` members of classes and interfaces, to be referred to using their simple names within the `module` declaration.
+
+Every compilation unit implicitly imports every `public` class or interface declared in the predefined package `java.lang`, as if the declaration `import java.lang.*;` appeared at the beginning of each compilation unit immediately after any `package` declaration. As a result, the names of all those classes and interfaces are available as simple names in every compilation unit.
+
+Every compact compilation unit implicitly imports all the `public` top level classes and interfaces of the packages exported by the module `java.base`, as if the declaration `import module java.base;` appeared at the beginning of each compact compilation unit ([§7.5.5](ch07-packages-modules.md#jls-7.5.5)). As a result, the names of all those classes and interfaces are available as simple names in every compact compilation unit.
+
+The host system determines which compilation units are *observable*, except for the compilation units in the predefined package `java` and its subpackages `lang` and `io`, which are all always observable.
+
+Each observable compilation unit may be *associated* with a module, as follows:
+
+
+- The host system may determine that an observable ordinary compilation unit is associated with a module chosen by the host system, except for (i) the ordinary compilation units in the predefined package `java` and its subpackages `lang` and `io`, which are all associated with the `java.base` module, and (ii) any ordinary compilation unit in an unnamed package, which is associated with a module as specified in [§7.4.2](ch07-packages-modules.md#jls-7.4.2).
+
+- The host system must determine that an observable modular compilation unit is associated with the module declared by the modular compilation unit.
+
+
+The observability of a compilation unit influences the observability of its package ([§7.4.3](ch07-packages-modules.md#jls-7.4.3)), while the association of an observable compilation unit with a module influences the observability of that module ([§7.7.6](ch07-packages-modules.md#jls-7.7.6)).
+
+When compiling the modular and ordinary compilation units associated with a module `M`, the host system must respect the dependences specified in `M`'s declaration. Specifically, the host system must limit the ordinary compilation units that would otherwise be observable, to only those that are *visible to `M`*. The ordinary compilation units that are visible to `M` are the observable ordinary compilation units associated with the modules that are *read by `M`*. The modules read by `M` are given by the result of *resolution*, as described in the `java.lang.module` package specification, with `M` as the only root module. The host system must perform resolution to determine the modules read by `M`; it is a compile-time error if resolution fails for any of the reasons described in the `java.lang.module` package specification.
+
+The readability relation is reflexive, so `M` reads itself, and thus all of the modular and ordinary compilation units associated with `M` are visible to `M`.
+
+The modules read by `M` drive the packages that are uniquely visible to `M` ([§7.4.3](ch07-packages-modules.md#jls-7.4.3)), which in turn drives both the top level packages in scope and the meaning of package names for code in the modular and ordinary compilation units associated with `M` ([§6.3](ch06-names.md#jls-6.3), [§6.5.3](ch06-names.md#jls-6.5.3), [§6.5.5](ch06-names.md#jls-6.5.5)).
+
+The rules above ensure that package and type names used in annotations in a modular compilation unit (in particular, annotations applied to the module declaration) are interpreted as if they appeared in an ordinary compilation unit associated with the module.
+
+Classes and interfaces declared in different ordinary compilation units can refer to each other, circularly. A Java compiler must arrange to compile all such classes and interfaces at the same time.
+
+
+## 7.4. Package Declarations
+
+
+A `package` declaration appears within an ordinary compilation unit to indicate the package to which the compilation unit belongs.
+
+
+### 7.4.1. Named Packages
+
+
+A *package declaration* in an ordinary compilation unit specifies the name ([§6.2](ch06-names.md#jls-6.2)) of the package to which the compilation unit belongs.
+
+
+PackageDeclaration:
+
+
+{[PackageModifier](ch07-packages-modules.md#jls-PackageModifier "PackageModifier")} `package` [Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier") {`.` [Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier")} `;`
+
+
+PackageModifier:
+
+
+[Annotation](ch09-interfaces.md#jls-Annotation "Annotation")
+
+
+The package name mentioned in a `package` declaration must be the fully qualified name of the package ([§6.7](ch06-names.md#jls-6.7)).
+
+The scope and shadowing of a package declaration is specified in [§6.3](ch06-names.md#jls-6.3) and [§6.4](ch06-names.md#jls-6.4).
+
+The rules concerning annotation modifiers for a package declaration are specified in [§9.7.4](ch09-interfaces.md#jls-9.7.4) and [§9.7.5](ch09-interfaces.md#jls-9.7.5).
+
+At most one annotated `package` declaration is permitted for a given package.
+
+The manner in which this restriction is enforced must, of necessity, vary from implementation to implementation. The following scheme is strongly recommended for file-system-based implementations: The sole annotated `package` declaration, if it exists, is placed in a source file called `package-info.java` in the directory containing the source files for the package. This file does not contain the source for a class called `package-info`; indeed it would be illegal for it to do so, as `package-info` is not a legal identifier. Typically `package-info.java` contains only a `package` declaration, preceded immediately by the annotations on the package. While the file could technically contain the source code for one or more classes with package access, it would be very bad form.
+
+It is recommended that `package-info.java`, if it is present, take the place of `package.html` for `javadoc` and other similar documentation generation systems. If this file is present, the documentation generation tool should look for the package documentation comment immediately preceding the (possibly annotated) `package` declaration in `package-info.java`. In this way, `package-info.java` becomes the sole repository for package-level annotations and documentation. If, in future, it becomes desirable to add any other package-level information, this file should prove a convenient home for this information.
+
+
+### 7.4.2. Unnamed Packages
+
+
+A compact compilation unit, or an ordinary compilation unit that has no `package` declaration but has at least one other kind of declaration, is part of an *unnamed package*.
+
+Unnamed packages are provided by the Java SE Platform principally for convenience when developing small or temporary applications or when just beginning development.
+
+An unnamed package cannot have subpackages, since the syntax of a `package` declaration always includes a reference to a named top level package.
+
+An implementation of the Java SE Platform must support at least one unnamed package. An implementation may support more than one unnamed package, but is not required to do so. Which ordinary compilation units are in each unnamed package is determined by the host system.
+
+The host system must associate ordinary compilation units in an unnamed package with an unnamed module ([§7.7.5](ch07-packages-modules.md#jls-7.7.5)), not a named module.
+
+
+**Example 7.4.2-1. Unnamed Package**
+
+
+The compilation unit:
+
+``` programlisting
+
+class FirstCall {
+    public static void main(String[] args) {
+        System.out.println("Mr. Watson, come here. "
+                           + "I want you.");
+    }
+}
+```
+
+defines a very simple compilation unit as part of an unnamed package.
+
+
+  
+
+In implementations of the Java SE Platform that use a hierarchical file system for storing packages, one typical strategy is to associate an unnamed package with each directory; only one unnamed package is observable at a time, namely the one that is associated with the "current working directory". The precise meaning of "current working directory" depends on the host system.
+
+
+### 7.4.3. Package Observability and Visibility
+
+
+A package is *observable* if and only if at least one of the following is true:
+
+
+- An ordinary compilation unit containing a declaration of the package is observable ([§7.3](ch07-packages-modules.md#jls-7.3)).
+
+- A subpackage of the package is observable.
+
+
+The packages `java`, `java.lang`, and `java.io` are always observable.
+
+One can conclude this from the rule above and from the rules of observable compilation units, as follows. The predefined package `java.lang` declares the class `Object`, so the compilation unit for `Object` is always observable ([§7.3](ch07-packages-modules.md#jls-7.3)). Hence, the `java.lang` package is observable, and the `java` package also. Furthermore, since `Object` is observable, the array type `Object``[]` implicitly exists. Its superinterface `java.io.Serializable` ([§10.1](ch10-arrays.md#jls-10.1)) also exists, hence the `java.io` package is observable.
+
+A package is *visible to a module `M`* if and only if an ordinary compilation unit containing a declaration of the package is visible to `M`.
+
+Package visibility is meant to imply that a package is observable in a useful way to a given module. It is generally not useful to know that package P is observable merely because a subpackage P.Q is observable. For example, suppose P.Q is observable (in module M1) and P.R is observable (in module M2); then, P is observable, but where? In M1, or M2, or both? The question is redundant; during compilation of module N that requires only M1, it matters that P.Q is observable, but it does not matter that P is observable.
+
+A package is *uniquely visible to a module `M`* if and only if one of the following holds:
+
+
+- An ordinary compilation unit associated with `M` contains a declaration of the package, and `M` does not read any other module that exports the package to `M`.
+
+- No ordinary compilation unit associated with `M` contains a declaration of the package, and `M` reads exactly one other module that exports the package to `M`.
+
+
+## 7.5. Import Declarations
+
+
+An *import declaration* allows a named class, interface, or `static` member to be referred to by a simple name ([§6.2](ch06-names.md#jls-6.2)) that consists of a single identifier.
+
+Without the use of an appropriate import declaration, a reference to a class or interface declared in another package, or a reference to a `static` member of another class or interface, would typically need to use a fully qualified name ([§6.7](ch06-names.md#jls-6.7)).
+
+
+ImportDeclaration:
+
+
+[SingleTypeImportDeclaration](ch07-packages-modules.md#jls-SingleTypeImportDeclaration "SingleTypeImportDeclaration")  
+[TypeImportOnDemandDeclaration](ch07-packages-modules.md#jls-TypeImportOnDemandDeclaration "TypeImportOnDemandDeclaration")  
+[SingleStaticImportDeclaration](ch07-packages-modules.md#jls-SingleStaticImportDeclaration "SingleStaticImportDeclaration")  
+[StaticImportOnDemandDeclaration](ch07-packages-modules.md#jls-StaticImportOnDemandDeclaration "StaticImportOnDemandDeclaration")  
+[SingleModuleImportDeclaration](ch07-packages-modules.md#jls-SingleModuleImportDeclaration "SingleModuleImportDeclaration")
+
+
+- A single-type-import declaration ([§7.5.1](ch07-packages-modules.md#jls-7.5.1)) imports a single named class or interface, by mentioning its canonical name ([§6.7](ch06-names.md#jls-6.7)).
+
+- A type-import-on-demand declaration ([§7.5.2](ch07-packages-modules.md#jls-7.5.2)) imports all the accessible classes and interfaces of a named package, class, or interface as needed, by mentioning the canonical name of the package, class, or interface.
+
+- A single-static-import declaration ([§7.5.3](ch07-packages-modules.md#jls-7.5.3)) imports all accessible `static` members with a given name from a class or interface, by giving its canonical name.
+
+- A static-import-on-demand declaration ([§7.5.4](ch07-packages-modules.md#jls-7.5.4)) imports all accessible `static` members of a named class or interface as needed, by mentioning the canonical name of the class or interface.
+
+- A single-module-import declaration ([§7.5.5](ch07-packages-modules.md#jls-7.5.5)) imports all the accessible classes and interfaces of the packages exported by a named module, as needed.
+
+
+The scope and shadowing of a class, interface, or member imported by these declarations is specified in [§6.3](ch06-names.md#jls-6.3) and [§6.4](ch06-names.md#jls-6.4).
+
+An `import` declaration makes classes, interfaces, or members available by their simple names only within the compilation unit that actually contains the `import` declaration. The scope of the class(es), interface(s), or member(s) introduced by an `import` declaration specifically does not include other compilation units in the same package, other `import` declarations in the current compilation unit, or a `package` declaration in the current compilation unit (except for the annotations of a `package` declaration).
+
+
+### 7.5.1. Single-Type-Import Declarations
+
+
+A *single-type-import declaration* imports a single class or interface by giving its canonical name, making it available under a simple name in the module, class, and interface declarations of the compilation unit in which the single-type-import declaration appears.
+
+
+SingleTypeImportDeclaration:
+
+
+`import` [TypeName](ch06-names.md#jls-TypeName "TypeName") `;`
+
+
+The *TypeName* must be the canonical name of a class or interface ([§6.7](ch06-names.md#jls-6.7)).
+
+The class or interface must be either a member of a named package, or a member of a class or interface whose outermost lexically enclosing class or interface declaration ([§8.1.3](ch08-classes.md#jls-8.1.3)) is a member of a named package, or a compile-time error occurs.
+
+It is a compile-time error if the named class or interface is not accessible ([§6.6](ch06-names.md#jls-6.6)).
+
+If two single-type-import declarations in the same compilation unit attempt to import classes or interfaces with the same simple name, then a compile-time error occurs, unless the two classes or interface are the same, in which case the duplicate declaration is ignored.
+
+If the class or interface imported by the single-type-import declaration is declared as a top level class or interface ([§7.6](ch07-packages-modules.md#jls-7.6)) in the compilation unit that contains the `import` declaration, then the `import` declaration is ignored.
+
+If a single-type-import declaration imports a class or interface whose simple name is `x`, and the compilation unit also declares a top level class or interface whose simple name is `x`, a compile-time error occurs.
+
+If a compilation unit contains both a single-type-import declaration that imports a class or interface whose simple name is `x`, and a single-static-import declaration ([§7.5.3](ch07-packages-modules.md#jls-7.5.3)) that imports a class or interface whose simple name is `x`, a compile-time error occurs, unless the two classes or interfaces are the same, in which case the duplicate declaration is ignored.
+
+
+**Example 7.5.1-1. Single-Type-Import**
+
+
+``` programlisting
+
+
+import java.util.Vector;
+```
+
+causes the simple name `Vector` to be available within the class and interface declarations in a compilation unit. Thus, the simple name `Vector` refers to the class declaration `Vector` in the package `java.util` in all places where it is not shadowed ([§6.4.1](ch06-names.md#jls-6.4.1)) or obscured ([§6.4.2](ch06-names.md#jls-6.4.2)) by a declaration of a field, parameter, local variable, or nested class or interface declaration with the same name.
+
+Note that the actual declaration of `java.util.Vector` is generic ([§8.1.2](ch08-classes.md#jls-8.1.2)). Once imported, the name `Vector` can be used without qualification in a parameterized type such as `Vector<String>`, or as the raw type `Vector`. A related limitation of the `import` declaration is that a member class or interface declared inside a generic class or interface declaration can be imported, but its outer type is always erased.
+
+
+  
+
+
+**Example 7.5.1-2. Duplicate Class Declarations**
+
+
+This program:
+
+``` programlisting
+
+
+import java.util.Vector;
+class Vector { Object[] vec; }
+```
+
+causes a compile-time error because of the duplicate declaration of `Vector`, as does:
+
+``` programlisting
+
+
+import java.util.Vector;
+import myVector.Vector;
+```
+
+where `myVector` is a package containing the compilation unit:
+
+``` programlisting
+
+
+package myVector;
+public class Vector { Object[] vec; }
+```
+
+
+  
+
+
+**Example 7.5.1-3. No Import of a Subpackage**
+
+
+Note that an `import` declaration cannot import a subpackage, only a class or interface.
+
+For example, it does not work to try to import `java.util` and then use the name `util.Random` to refer to the type `java.util.Random`:
+
+``` programlisting
+
+
+import java.util;
+class Test { util.Random generator; }
+  // incorrect: compile-time error
+```
+
+
+  
+
+
+**Example 7.5.1-4. Importing a Type Name that is also a Package Name**
+
+
+Package names and type names are usually different under the naming conventions described in [§6.1](ch06-names.md#jls-6.1). Nevertheless, in a contrived example where there is an unconventionally named package `Vector`, which declares a public class whose name is `Mosquito`:
+
+``` programlisting
+
+package Vector;
+public class Mosquito { int capacity; }
+```
+
+and then the compilation unit:
+
+``` programlisting
+
+package strange;
+import java.util.Vector;
+import Vector.Mosquito;
+class Test {
+    public static void main(String[] args) {
+        System.out.println(new Vector().getClass());
+        System.out.println(new Mosquito().getClass());
+    }
+}
+```
+
+the single-type-import declaration importing class `Vector` from package `java.util` does not prevent the package name `Vector` from appearing and being correctly recognized in subsequent `import` declarations. The example compiles and produces the output:
+
+``` screen
+
+class java.util.Vector
+class Vector.Mosquito
+```
+
+
+  
+
+
+### 7.5.2. Type-Import-on-Demand Declarations
+
+
+A *type-import-on-demand declaration* allows all accessible classes and interfaces of a named package, class, or interface to be imported as needed.
+
+
+TypeImportOnDemandDeclaration:
+
+
+`import` [PackageOrTypeName](ch06-names.md#jls-PackageOrTypeName "PackageOrTypeName") `.` `*` `;`
+
+
+The *PackageOrTypeName* must be the canonical name ([§6.7](ch06-names.md#jls-6.7)) of a package, a class, or an interface.
+
+If the *PackageOrTypeName* denotes a class or interface ([§6.5.4](ch06-names.md#jls-6.5.4)), then the class or interface must be either a member of a named package, or a member of a class or interface whose outermost lexically enclosing class or interface declaration ([§8.1.3](ch08-classes.md#jls-8.1.3)) is a member of a named package, or a compile-time error occurs.
+
+It is a compile-time error if the named package is not uniquely visible to the current module ([§7.4.3](ch07-packages-modules.md#jls-7.4.3)), or if the named class or interface is not accessible ([§6.6](ch06-names.md#jls-6.6)).
+
+It is not a compile-time error to name either `java.lang` or the named package of the current compilation unit in a type-import-on-demand declaration. The type-import-on-demand declaration is ignored in such cases.
+
+Two or more type-import-on-demand declarations in the same compilation unit may name the same package, class, or interface. All but one of these declarations are considered redundant; the effect is as if that type was imported only once.
+
+If a compilation unit contains both a type-import-on-demand declaration and a static-import-on-demand declaration ([§7.5.4](ch07-packages-modules.md#jls-7.5.4)) that name the same class or interface, the effect is as if the `static` member classes and interfaces of that class or interface ([§8.5](ch08-classes.md#jls-8.5), [§9.5](ch09-interfaces.md#jls-9.5)) are imported only once.
+
+
+**Example 7.5.2-1. Type-Import-on-Demand**
+
+
+``` programlisting
+
+
+import java.util.*;
+```
+
+causes the simple names of all `public` classes and interfaces declared in the package `java.util` to be available within the class and interface declarations of the compilation unit. Thus, the simple name `Vector` refers to the class `Vector` of the package `java.util` in all places in the compilation unit where that class declaration is not shadowed ([§6.4.1](ch06-names.md#jls-6.4.1)) or obscured ([§6.4.2](ch06-names.md#jls-6.4.2)).
+
+The declaration might be shadowed by a single-type-import declaration of a class or interface whose simple name is `Vector`; by a class or interface named `Vector` and declared in the package to which the compilation unit belongs; or any nested classes or interfaces.
+
+The declaration might be obscured by a declaration of a field, parameter, or local variable named `Vector`.
+
+(It would be unusual for any of these conditions to occur.)
+
+
+  
+
+
+### 7.5.3. Single-Static-Import Declarations
+
+
+A *single-static-import declaration* imports all accessible `static` members with a given simple name from a class or interface. This makes these `static` members available under their simple name in the module, class, and interface declarations of the compilation unit in which the single-static-import declaration appears.
+
+
+SingleStaticImportDeclaration:
+
+
+`import` `static` [TypeName](ch06-names.md#jls-TypeName "TypeName") `.` [Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier") `;`
+
+
+The *TypeName* must be the canonical name ([§6.7](ch06-names.md#jls-6.7)) of a class or interface.
+
+The class or interface must be either a member of a named package, or a member of a class or interface whose outermost lexically enclosing class or interface declaration ([§8.1.3](ch08-classes.md#jls-8.1.3)) is a member of a named package, or a compile-time error occurs.
+
+It is a compile-time error if the named class or interface is not accessible ([§6.6](ch06-names.md#jls-6.6)).
+
+The *Identifier* must name at least one `static` member of the named class or interface. It is a compile-time error if there is no `static` member of that name, or if all of the named members are not accessible.
+
+It is permissible for one single-static-import declaration to import several fields, classes, or interfaces with the same name, or several methods with the same name and signature. This occurs when the named class or interface inherits multiple fields, member classes, member interfaces, or methods, all with the same name, from its own supertypes.
+
+If two single-static-import declarations in the same compilation unit attempt to import classes or interface with the same simple name, then a compile-time error occurs, unless the two classes or interfaces are the same, in which case the duplicate declaration is ignored.
+
+If a single-static-import declaration imports a class or interface whose simple name is `x`, and the compilation unit also declares a top level class or interface ([§7.6](ch07-packages-modules.md#jls-7.6)) whose simple name is `x`, a compile-time error occurs.
+
+If a compilation unit contains both a single-static-import declaration that imports a class or interface whose simple name is `x`, and a single-type-import declaration ([§7.5.1](ch07-packages-modules.md#jls-7.5.1)) that imports a class or interface whose simple name is `x`, a compile-time error occurs, unless the two classes or interfaces are the same, in which case the duplicate declaration is ignored.
+
+
+### 7.5.4. Static-Import-on-Demand Declarations
+
+
+A *static-import-on-demand declaration* allows all accessible `static` members of a named class or interface to be imported as needed.
+
+
+StaticImportOnDemandDeclaration:
+
+
+`import` `static` [TypeName](ch06-names.md#jls-TypeName "TypeName") `.` `*` `;`
+
+
+The *TypeName* must be the canonical name ([§6.7](ch06-names.md#jls-6.7)) of a class or interface.
+
+The class or interface must be either a member of a named package, or a member of a class or interface whose outermost lexically enclosing class or interface declaration ([§8.1.3](ch08-classes.md#jls-8.1.3)) is a member of a named package, or a compile-time error occurs.
+
+It is a compile-time error if the named class or interface is not accessible ([§6.6](ch06-names.md#jls-6.6)).
+
+Two or more static-import-on-demand declarations in the same compilation unit may name the same class or interface; the effect is as if there was exactly one such declaration.
+
+Two or more static-import-on-demand declarations in the same compilation unit may name the same member; the effect is as if the member was imported exactly once.
+
+It is permissible for one static-import-on-demand declaration to import several fields, classes, or interfaces with the same name, or several methods with the same name and signature. This occurs when the named class or interface inherits multiple fields, member classes, member interfaces, or methods, all with the same name, from its own supertypes.
+
+If a compilation unit contains both a static-import-on-demand declaration and a type-import-on-demand declaration ([§7.5.2](ch07-packages-modules.md#jls-7.5.2)) that name the same class or interface, the effect is as if the `static` member classes and interfaces of that class or interface ([§8.5](ch08-classes.md#jls-8.5), [§9.5](ch09-interfaces.md#jls-9.5)) are imported only once.
+
+
+### 7.5.5. Single-Module-Import Declarations
+
+
+A *single-module-import declaration* allows all `public` top level classes and interfaces of the packages exported by a named module to be imported as needed.
+
+
+SingleModuleImportDeclaration:
+
+
+`import` `module` [ModuleName](ch06-names.md#jls-ModuleName "ModuleName") `;`
+
+
+A single-module-import declaration imports, on demand, all the `public` top level classes and interfaces in the following packages:
+
+
+1.  The packages exported by the module *ModuleName* to the current module.
+
+2.  The packages exported by the modules that are read by the current module due to reading the module *ModuleName*. This allows a program to use the API of a module, which might refer to classes and interfaces from other modules, without having to import all those other modules.
+
+
+It is a compile-time error if the module *ModuleName* is not read by the current module ([§7.3](ch07-packages-modules.md#jls-7.3)).
+
+The modules read by the current module are given by the result of resolution, as described in the `java.lang.module` package specification ([§7.3](ch07-packages-modules.md#jls-7.3)).
+
+Two or more single-module-import declarations in the same compilation unit may name the same module. All but one of these declarations are considered redundant; the effect is as if that module was imported only once.
+
+A single-module-import declaration can be used in any source file. It is not required for the source file to be part of a module. For example, modules `java.base` and `java.sql` are part of the standard Java runtime, so they can be imported by programs which are not themselves developed as modules.
+
+It is sometimes useful to import a module that does not export any packages. This is because the module may transitively require other modules that do export packages. For example, the `java.se` module does not export any packages, but it requires a number of modules transitively, so the effect of the single-module-import declaration `import module java.se;` is to import the packages which are exported by those modules (and so on, recursively).
+
+
+**Example 7.5.5-1. Single-Module-Import in Ordinary Compilation Units**
+
+
+Modules allow a set of packages to be grouped together for reuse under a single name, and the exported packages of a module are intended to form a cohesive and coherent API. Single-module-import declarations allow the developer to import all the packages exported by a module in one go, simplifying the reuse of modular libraries. For example:
+
+``` programlisting
+
+
+import module java.xml;
+```
+
+causes the simple names of the `public` top level classes and interfaces declared in all packages exported by module `java.xml` to be available within the class and interface declarations of the compilation unit. Thus, the simple name `XPath` refers to the interface `XPath` of the package `javax.xml.xpath` exported by the module `java.xml` in all places in the compilation unit where that class declaration is not shadowed or obscured.
+
+Assume the following compilation unit associated with module `M0`:
+
+``` programlisting
+
+
+package q;
+import module M1;   // What does this import?
+class C { ... }
+```
+
+where module `M0` has the following declaration:
+
+``` programlisting
+
+
+module M0 { requires M1; }
+```
+
+The meaning of the single-module-import declaration `import module M1;` depends on the exports of `M1` and any modules that `M1` requires transitively. Consider as an example:
+
+``` programlisting
+
+
+module M1 {
+    exports p1;
+    exports p2 to M0;
+    exports p3 to M3;
+    requires transitive M4;
+    requires M5;
+}
+
+module M3 { ... }
+
+module M4 { exports p10; }
+
+module M5 { exports p11; }
+```
+
+The effect of the single-module-import declaration `import module M1;` is then:
+
+
+1.  Import the `public` top level classes and interfaces from package `p1`, since `M1` exports `p1` to everyone;
+
+2.  Import the `public` top level classes and interfaces from package `p2`, since `M1` exports `p2` to `M0`, the module with which the compilation unit is associated; and
+
+3.  Import the `public` top level classes and interfaces from package `p10`, since `M1` requires *transitively* `M4`, which exports `p10`.
+
+
+Nothing from packages `p3` or `p11` is imported by the compilation unit.
+
+Single-module-import declarations may appear in a source file containing only a package declaration. Such files are typically called `package-info.java` and are used as the sole repository for package-level annotations and documentation ([§7.4.1](ch07-packages-modules.md#jls-7.4.1)).
+
+
+  
+
+
+**Example 7.5.5-2. Single-Module-Import in Modular Compilation Units**
+
+
+Import declarations can also appear in a modular compilation unit. The following modular compilation unit uses a single-module-import declaration, allowing the simple name of the interface `Driver` associated with module `java.sql` to be used in the `provides` directive:
+
+``` programlisting
+
+
+import module java.sql;
+module com.myDB.core {
+    exports ...
+    requires transitive java.sql;
+    provides Driver with com.myDB.greatDriver;
+}
+```
+
+It is possible for a modular compilation unit that declares a module to also import that module. In the following example, this means that the simple name of a class `C` can be used in a `uses` directive:
+
+``` programlisting
+
+
+import module M;
+module M {
+    ...
+    exports p;
+    ...
+    uses C;
+    ...
+}
+```
+
+where the package `p` exported by module `M` is declared as follows:
+
+``` programlisting
+
+
+package p;
+class C { ... }
+```
+
+Without the single-module-import declaration, the qualified name of the class `C` would need to be used in the `uses` directive.
+
+Suppose a module declaration as follows:
+
+``` programlisting
+
+
+module M2 {
+    requires java.se;
+    exports p2;
+    ...
+}
+```
+
+where the package `p2` exported by `M2` is declared as follows:
+
+``` programlisting
+
+
+package p2;
+import module java.xml;
+class MyClass {
+    ...
+}
+```
+
+Even though the module `M2` does not directly express a dependency on the module `java.xml`, the import of module `java.xml` is still correct as the resolution process will determine that the module `java.xml` is read by module `M2`.
+
+
+  
+
+
+**Example 7.5.5-3. Ambiguous Imports**
+
+
+Clearly importing multiple modules could lead to name ambiguities, for example:
+
+``` programlisting
+
+
+import module java.base;
+import module java.desktop;
+
+...
+List l = ...        // Error - Ambiguous name!
+...
+```
+
+The module `java.base` exports the package `java.util`, which has a `public` `List` interface. The module `java.desktop` exports the package `java.awt`, which a `public` `List` class. Having imported both modules, the use of the simple name `List` is clearly ambiguous and results in a compile-time error.
+
+However, just importing a single module can also lead to a name ambiguity, for example:
+
+``` programlisting
+
+
+import module java.desktop;
+
+...
+Element e = ...     // Error - Ambiguous name!
+...
+```
+
+The module `java.desktop` exports packages `javax.swing.text` and `javax.swing.text.html.parser`, which have a `public` `Element` interface and a `public` `Element` class, respectively. Thus the use of the simple name `Element` is ambiguous and results in a compile-time error.
+
+A single-type-import declaration can be used to resolve a name ambiguity. The earlier example where the simple name `List` is ambiguous can be resolved as follows:
+
+``` programlisting
+
+
+import module java.base;
+import module java.desktop;
+
+import java.util.List;  // Resolving the ambiguity
+                        // of the simple name List
+
+...
+List l = ...            // Ok - List is resolved to
+                        // java.util.List
+...
+```
+
+
+  
+
+
+## 7.6. Top Level Class and Interface Declarations
+
+
+A *top level class or interface declaration* declares a top level class ([§8.1](ch08-classes.md#jls-8.1)) or a top level interface ([§9.1](ch09-interfaces.md#jls-9.1)).
+
+
+TopLevelClassOrInterfaceDeclaration:
+
+
+[ClassDeclaration](ch08-classes.md#jls-ClassDeclaration "ClassDeclaration")  
+[InterfaceDeclaration](ch09-interfaces.md#jls-InterfaceDeclaration "InterfaceDeclaration")  
+`;`
+
+
+Extra "`;`" tokens appearing at the level of class and interface declarations in a compilation unit have no effect on the meaning of the compilation unit. Stray semicolons are permitted in the Java programming language solely as a concession to C++ programmers who are used to placing "`;`" after a class declaration. They should not be used in new Java code.
+
+A top level class may also be implicitly declared ([§8.1.8](ch08-classes.md#jls-8.1.8)) by a compact compilation unit.
+
+In the absence of an access modifier, a top level class or interface has package access: it is accessible only within ordinary compilation units of the package in which it is declared ([§6.6.1](ch06-names.md#jls-6.6.1)). A class or interface may be declared `public` to grant access to the class or interface from code in other packages of the same module, and potentially from code in packages of other modules.
+
+It is a compile-time error if a top level class or interface declaration contains any one of the following access modifiers: `protected`, `private`, or `static`.
+
+It is a compile-time error if the name of a top level class or interface appears as the name of any other top level class or interface declared in the same package.
+
+The scope and shadowing of a top level class or interface is specified in [§6.3](ch06-names.md#jls-6.3) and [§6.4](ch06-names.md#jls-6.4).
+
+The fully qualified name of a top level class or interface is specified in [§6.7](ch06-names.md#jls-6.7).
+
+
+**Example 7.6-1. Conflicting Top Level Class and Interface Declarations**
+
+
+``` programlisting
+
+package test;
+import java.util.Vector;
+class Point {
+    int x, y;
+}
+interface Point {  // compile-time error #1
+    int getR();
+    int getTheta();
+}
+class Vector { Point[] pts; }  // compile-time error #2
+```
+
+Here, the first compile-time error is caused by the duplicate declaration of the name `Point` as both a class and an interface in the same package. A second compile-time error is the attempt to declare the name `Vector` both by a class declaration and by a single-type-import declaration.
+
+Note, however, that it is not an error for the name in a class declaration to overlap with a class or interface that otherwise might be imported by a type-import-on-demand declaration ([§7.5.2](ch07-packages-modules.md#jls-7.5.2)) in the same compilation unit. Thus, in this program:
+
+``` programlisting
+
+package test;
+import java.util.*;
+class Vector {}  // not a compile-time error
+```
+
+the declaration of the class `Vector` is permitted even though there is also a class `java.util.Vector`. Within this compilation unit, the simple name `Vector` refers to the class `test.Vector`, not to `java.util.Vector` (which can still be referred to by code within the compilation unit, but only by its fully qualified name).
+
+
+  
+
+
+**Example 7.6-2. Scope of Top Level Classes and Interfaces**
+
+
+``` programlisting
+
+package points;
+class Point {
+    int x, y;           // coordinates
+    PointColor color;   // color of this point
+    Point next;         // next point with this color
+    static int nPoints;
+}
+class PointColor {
+    Point first;        // first point with this color
+    PointColor(int color) { this.color = color; }
+    private int color;  // color components
+}
+```
+
+This program defines two classes that use each other in the declarations of their class members. Because the classes `Point` and `PointColor` have all the class declarations in package `points`, including all those in the current compilation unit, as their scope, this program compiles correctly. That is, forward reference is not a problem.
+
+
+  
+
+
+**Example 7.6-3. Fully Qualified Names**
+
+
+``` programlisting
+
+
+class Point { int x, y; }
+```
+
+In this code, the class `Point` is declared in a compilation unit with no `package` declaration, and thus `Point` is its fully qualified name, whereas in the code:
+
+``` programlisting
+
+
+package vista;
+class Point { int x, y; }
+```
+
+the fully qualified name of the class `Point` is `vista.Point`. (The package name `vista` is suitable for local or personal use; if the package were intended to be widely distributed, it would be better to give it a unique package name ([§6.1](ch06-names.md#jls-6.1)).)
+
+
+  
+
+An implementation of the Java SE Platform must keep track of classes and interfaces within packages by the combination of their enclosing module names and their binary names ([§13.1](ch13-binary-compatibility.md#jls-13.1)). Multiple ways of naming a class or interface must be expanded to binary names to make sure that such names are understood as referring to the same class or interface.
+
+
+For example, if a compilation unit contains the single-type-import declaration ([§7.5.1](ch07-packages-modules.md#jls-7.5.1)):
+
+``` programlisting
+
+
+import java.util.Vector;
+```
+
+then within that compilation unit, the simple name `Vector` and the fully qualified name `java.util.Vector` refer to the same class.
+
+
+If and only if packages are stored in a file system ([§7.2](ch07-packages-modules.md#jls-7.2)), the host system may choose to enforce the restriction that it is a compile-time error if a class or interface is not found in a file under a name composed of the class or interface name plus an extension (such as `.java` or `.jav`) if either of the following is true:
+
+
+- The class or interface is referred to by code in other ordinary compilation units of the package in which the class or interface is declared.
+
+- The class or interface is declared `public` (and therefore is potentially accessible from code in other packages).
+
+
+This restriction implies that there must be at most one such class or interface per compilation unit. This restriction makes it easy for a Java compiler to find a named class or interface within a package. In practice, many programmers choose to put each class or interface in its own compilation unit, whether or not it is `public` or is referred to by code in other compilation units.
+
+
+For example, the source code for a `public` class `wet.sprocket.Toad` would be found in a file `Toad.java` in the directory `wet/sprocket`, and the corresponding object code would be found in the file `Toad.class` in the same directory.
+
+
+## 7.7. Module Declarations
+
+
+A module declaration specifies a new named module. A named module specifies *dependences* on other modules to define the universe of classes and interfaces available to its own code; and specifies which of its packages are *exported* or *opened* in order to populate the universe of classes and interfaces available to other modules which specify a dependence on it.
+
+A "dependence" is what is expressed by a `requires` directive, independent of whether a module exists with the name specified by the directive. A "dependency" is the observable module enumerated by resolution (as described in the `java.lang.module` package specification) for a given `requires` directive. Generally, the rules of the Java programming language are more interested in dependences than dependencies.
+
+
+ModuleDeclaration:
+
+
+{[Annotation](ch09-interfaces.md#jls-Annotation "Annotation")} \[`open`\] `module` [Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier") {`.` [Identifier](ch03-lexical-structure.md#jls-Identifier "Identifier")} `{` {[ModuleDirective](ch07-packages-modules.md#jls-ModuleDirective "ModuleDirective")} `}`
+
+
+A module declaration introduces a module name that can be used in other module declarations to express relationships between modules. A module name consists of one or more Java identifiers ([§3.8](ch03-lexical-structure.md#jls-3.8)) separated by "`.`" tokens.
+
+There are two kinds of modules: *normal modules* and *open modules*. The kind of a module determines the nature of access to the module's types, and the members of those types, for code outside the module.
+
+A normal module, without the `open` modifier, grants access at compile time and run time to types in only those packages which are explicitly exported.
+
+An open module, with the `open` modifier, grants access at compile time to types in only those packages which are explicitly exported, but grants access at run time to types in all its packages, as if all packages had been exported.
+
+For code outside a module (whether the module is normal or open), the access granted at compile time or run time to types in the module's exported packages is specifically to the `public` and `protected` types in those packages, and the `public` and `protected` members of those types ([§6.6](ch06-names.md#jls-6.6)). No access is granted at compile time or run time to types, or their members, in packages which are not exported. Code inside the module may access `public` and `protected` types, and the `public` and `protected` members of those types, in all packages in the module at both compile time and run time.
+
+Distinct from access at compile time and access at run time, the Java SE Platform provides *reflective access* via the Core Reflection API ([§1.4](ch01-introduction.md#jls-1.4)). A normal module grants reflective access to types in only those packages which are explicitly exported or explicitly opened (or both). An open module grants reflective access to types in all its packages, as if all packages had been opened.
+
+For code outside a normal module, the reflective access granted to types in the module's exported (and not opened) packages is specifically to the `public` and `protected` types in those packages, and the `public` and `protected` members of those types. The reflective access granted to types in the module's opened packages (whether exported or not) is to all types in those packages, and all members of those types. No reflective access is granted to types, or their members, in packages which are not exported or opened. Code inside the module enjoys reflective access to all types, and all their members, in all packages in the module.
+
+For code outside an open module, the reflective access granted to types in the module's opened packages (that is, all packages in the module) is to all types in those packages, and all members of those types. Code inside the module enjoys reflective access to all types, and all their members, in all packages in the module.
+
+The *directives* of a module declaration specify the module's dependences on other modules (via `requires`, [§7.7.1](ch07-packages-modules.md#jls-7.7.1)), the packages it makes available to other modules (via `exports` and `opens`, [§7.7.2](ch07-packages-modules.md#jls-7.7.2)), the services it consumes (via `uses`, [§7.7.3](ch07-packages-modules.md#jls-7.7.3)), and the services it provides (via `provides`, [§7.7.4](ch07-packages-modules.md#jls-7.7.4)).
+
+
+ModuleDirective:
+
+
+`requires` {[RequiresModifier](ch07-packages-modules.md#jls-RequiresModifier "RequiresModifier")} [ModuleName](ch06-names.md#jls-ModuleName "ModuleName") `;`  
+`exports` [PackageName](ch06-names.md#jls-PackageName "PackageName") \[`to` [ModuleName](ch06-names.md#jls-ModuleName "ModuleName") {`,` [ModuleName](ch06-names.md#jls-ModuleName "ModuleName")}\] `;`  
+`opens` [PackageName](ch06-names.md#jls-PackageName "PackageName") \[`to` [ModuleName](ch06-names.md#jls-ModuleName "ModuleName") {`,` [ModuleName](ch06-names.md#jls-ModuleName "ModuleName")}\] `;`  
+`uses` [TypeName](ch06-names.md#jls-TypeName "TypeName") `;`  
+`provides` [TypeName](ch06-names.md#jls-TypeName "TypeName") `with` [TypeName](ch06-names.md#jls-TypeName "TypeName") {`,` [TypeName](ch06-names.md#jls-TypeName "TypeName")} `;`
+
+
+RequiresModifier:
+
+
+(one of)  
+`transitive` `static`
+
+
+If and only if packages are stored in a file system ([§7.2](ch07-packages-modules.md#jls-7.2)), the host system may choose to enforce the restriction that it is a compile-time error if a module declaration is not found in a file under a name composed of `module-info` plus an extension (such as `.java` or `.jav`).
+
+
+To aid comprehension, it is customary, though not required, for a module declaration to group its directives, so that the `requires` directives which pertain to modules are visually distinct from the `exports` and `opens` directives which pertain to packages, and from the `uses` and `provides` directives which pertain to services. For example:
+
+``` programlisting
+
+module com.example.foo {
+    requires com.example.foo.http;
+    requires java.logging;
+
+    requires transitive com.example.foo.network;
+
+    exports com.example.foo.bar;
+    exports com.example.foo.internal to com.example.foo.probe;
+
+    opens com.example.foo.quux;
+    opens com.example.foo.internal to com.example.foo.network,
+                                      com.example.foo.probe;
+
+    uses com.example.foo.spi.Intf;
+    provides com.example.foo.spi.Intf with com.example.foo.Impl;
+}
+```
+
+The `opens` directives can be avoided if the module is open:
+
+``` programlisting
+
+open module com.example.foo {
+    requires com.example.foo.http;
+    requires java.logging;
+
+    requires transitive com.example.foo.network;
+
+    exports com.example.foo.bar;
+    exports com.example.foo.internal to com.example.foo.probe;
+
+    uses com.example.foo.spi.Intf;
+    provides com.example.foo.spi.Intf with com.example.foo.Impl;
+}
+```
+
+Development tools for the Java programming language are encouraged to highlight `requires` `transitive` directives and unqualified `exports` directives, as these form the primary API of a module.
+
+
+### 7.7.1. Dependences
+
+
+The `requires` directive specifies the name of a module on which the current module has a dependence.
+
+A `requires` directive must not appear in the declaration of the `java.base` module, or a compile-time error occurs, because it is the primordial module and has no dependences ([§8.1.4](ch08-classes.md#jls-8.1.4)).
+
+If the declaration of a module does not express a dependence on the `java.base` module, and the module is not itself `java.base`, then the module has an implicitly declared dependence on the `java.base` module.
+
+The `requires` keyword may be followed by the modifier `transitive`. This causes any module which `requires` the current module to have an implicitly declared dependence on the module specified by the `requires` `transitive` directive.
+
+The `requires` keyword may be followed by the modifier `static`. This specifies that the dependence, while mandatory at compile time, is optional at run time.
+
+It is a compile-time error if the same modifier appears more than once following the `requires` keyword.
+
+If the declaration of a module expresses a dependence on the `java.base` module, and the module is not itself `java.base`, then it is a compile-time error if the `static` modifier appears after the `requires` keyword.
+
+It is a compile-time error if more than one `requires` directive in a module declaration specifies the same module name.
+
+It is a compile-time error if resolution, as described in the `java.lang.module` package specification, with the current module as the only root module, fails for any of the reasons described in the `java.lang.module` package specification.
+
+For example, if a `requires` directive specifies a module that is not observable, or if the current module directly or indirectly expresses a dependence on itself.
+
+If resolution succeeds, then its result specifies the modules that are read by the current module. The modules read by the current module determine which ordinary compilation units are visible to the current module ([§7.3](ch07-packages-modules.md#jls-7.3)). The types declared in those ordinary compilation units (and *only* those ordinary compilation units) may be accessible to code in the current module ([§6.6](ch06-names.md#jls-6.6)).
+
+The Java SE Platform distinguishes between named modules that are explicitly declared (that is, with a module declaration) and named modules that are implicitly declared (that is, automatic modules). However, the Java programming language does not surface the distinction: `requires` directives refer to named modules without regard for whether they are explicitly declared or implicitly declared.
+
+While automatic modules are convenient for migration, they are unreliable in the sense that their names and exported packages may change when their authors convert them to explicitly declared modules. A Java compiler is encouraged to issue a warning if a `requires` directive refers to an automatic module. An especially strong warning is recommended if the `transitive` modifier appears in the directive.
+
+
+**Example 7.1.1-1. Resolution of `requires` `transitive` directives**
+
+
+Suppose there are four module declarations as follows:
+
+``` programlisting
+
+module m.A {
+    requires m.B;
+}
+```
+
+``` programlisting
+
+module m.B {
+    requires transitive m.C;
+}
+```
+
+``` programlisting
+
+module m.C {
+    requires transitive m.D;
+}
+```
+
+``` programlisting
+
+module m.D {
+    exports p;
+}
+```
+
+where the package `p` exported by `m.D` is declared as follows:
+
+``` programlisting
+
+package p;
+public class Point {}
+```
+
+and where a package `client` in module `m.A` refers to the `public` type `Point` in the exported package `p`:
+
+``` programlisting
+
+package client;
+import p.Point;
+public class Test {
+    public static void main(String[] args) {
+        System.out.println(new Point());
+    }
+}
+```
+
+The modules may be compiled as follows, assuming that the current directory has one subdirectory per module, named after the module it contains:
+
+``` screen
+
+javac --module-source-path . -d . --module m.D
+javac --module-source-path . -d . --module m.C
+javac --module-source-path . -d . --module m.B
+javac --module-source-path . -d . --module m.A
+```
+
+The program `client.Test` may be run as follows:
+
+``` screen
+
+java --module-path . --module m.A/client.Test
+```
+
+The reference from code in `m.A` to the exported `public` type `Point` in `m.D` is legal because `m.A` reads `m.D`, and `m.D` exports the package containing `Point`. Resolution determines that `m.A` reads `m.D` as follows:
+
+
+- `m.A` `requires` `m.B` and therefore reads `m.B`.
+
+- Since `m.A` reads `m.B`, and since `m.B` `requires` `transitive` `m.C`, resolution determines that `m.A` reads `m.C`.
+
+- Then, since `m.A` reads `m.C`, and since `m.C` `requires` `transitive` `m.D`, resolution determines that `m.A` reads `m.D`.
+
+
+In effect, a module may read another module through multiple levels of dependence, in order to support arbitrary amounts of refactoring. Once a module is released for someone to reuse (via `requires`), the module's author has committed to its name and API but is free to refactor its content into other modules which the original module reuses (via `requires` `transitive`) for the benefit of consumers. In the example above, package `p` may have been exported originally by `m.B` (thus, `m.A` `requires` `m.B`) but refactoring has caused some of `m.B`'s content to move into `m.C` and `m.D`. By using a chain of `requires` `transitive` directives, the family of `m.B`, `m.C`, and `m.D` can preserve access to package `p` for code in `m.A` without forcing any changes to the `requires` directives of `m.A`. Note that package `p` in `m.D` is not "re-exported" by `m.C` and `m.B`; rather, `m.A` is made to read `m.D` directly.
+
+
+  
+
+
+### 7.7.2. Exported and Opened Packages
+
+
+The `exports` directive specifies the name of a package to be exported by the current module. For code in other modules, this grants access at compile time and run time to the `public` and `protected` types in the package, and the `public` and `protected` members of those types ([§6.6](ch06-names.md#jls-6.6)). It also grants reflective access to those types and members for code in other modules.
+
+The `opens` directive specifies the name of a package to be opened by the current module. For code in other modules, this grants access at run time, but not compile time, to the `public` and `protected` types in the package, and the `public` and `protected` members of those types. It also grants reflective access to all types in the package, and all their members, for code in other modules.
+
+It is a compile-time error if the package specified by `exports` is not declared by a compilation unit associated with the current module ([§7.3](ch07-packages-modules.md#jls-7.3)).
+
+It is permitted for `opens` to specify a package which is not declared by a compilation unit associated with the current module. (If the package should happen to be declared by an observable compilation unit associated with another module, the `opens` directive has no effect on that other module.)
+
+It is a compile-time error if more than one `exports` directive in a module declaration specifies the same package name.
+
+It is a compile-time error if more than one `opens` directive in a module declaration specifies the same package name.
+
+It is a compile-time error if an `opens` directive appears in the declaration of an open module.
+
+If an `exports` or `opens` directive has a `to` clause, then the directive is *qualified*; otherwise, it is *unqualified*. For a qualified directive, the `public` and `protected` types in the package, and their `public` and `protected` members, are accessible solely to code in the modules specified in the `to` clause. The modules specified in the `to` clause are referred to as *friends* of the current module. For an unqualified directive, these types and their members are accessible to code in any module.
+
+It is permitted for the `to` clause of an `exports` or `opens` directive to specify a module which is not observable ([§7.7.6](ch07-packages-modules.md#jls-7.7.6)).
+
+It is a compile-time error if the `to` clause of a given `exports` directive specifies the same module name more than once.
+
+It is a compile-time error if the `to` clause of a given `opens` directive specifies the same module name more than once.
+
+
+### 7.7.3. Service Consumption
+
+
+The `uses` directive specifies a *service* for which code in the current module may discover providers via `java.util.ServiceLoader`.
+
+It is a compile-time error if a `uses` directive specifies an enum class ([§8.9](ch08-classes.md#jls-8.9)).
+
+The service may be declared in the current module or in another module. If the service is not declared in the current module, then the service must be accessible to code in the current module ([§6.6](ch06-names.md#jls-6.6)), or a compile-time error occurs.
+
+It is a compile-time error if more than one `uses` directive in a module declaration specifies the same service.
+
+
+### 7.7.4. Service Provision
+
+
+The `provides` directive specifies a service for which the `with` clause specifies one or more *service providers* to `java.util.ServiceLoader`.
+
+It is a compile-time error if a `provides` directive specifies an enum class ([§8.9](ch08-classes.md#jls-8.9)) as the service.
+
+The service may be declared in the current module or in another module. If the service is not declared in the current module, then the service must be accessible to code in the current module ([§6.6](ch06-names.md#jls-6.6)), or a compile-time error occurs.
+
+Every service provider must be a `public` class or interface that is either top level or `static`, or a compile-time error occurs.
+
+Every service provider must be declared in the current module, or a compile-time error occurs.
+
+If a service provider explicitly declares a `public` constructor with no formal parameters, or implicitly declares a `public` default constructor ([§8.8.9](ch08-classes.md#jls-8.8.9)), then that constructor is called the *provider constructor*.
+
+If a service provider explicitly declares a `public` `static` method called `provider` with no formal parameters, then that method is called the *provider method*.
+
+If a service provider has a provider method, then its return type must (i) either be declared in the current module, or be declared in another module and be accessible to code in the current module; and (ii) be a subtype of the service specified in the `provides` directive; or a compile-time error occurs.
+
+While a service provider that is specified by a `provides` directive must be declared in the current module, its provider method may have a return type that is declared in *another* module. Also, note that when a service provider declares a provider method, the service provider itself need not be a subtype of the service.
+
+If a service provider does not have a provider method, then that service provider must have a provider constructor and must be a subtype of the service specified in the `provides` directive, or a compile-time error occurs.
+
+It is a compile-time error if more than one `provides` directive in a module declaration specifies the same service.
+
+It is a compile-time error if the `with` clause of a given `provides` directive specifies the same service provider more than once.
+
+
+### 7.7.5. Unnamed Modules
+
+
+An observable ordinary compilation unit that the host system does not associate with a named module ([§7.3](ch07-packages-modules.md#jls-7.3)) is associated with an *unnamed module*.
+
+Unnamed modules are provided by the Java SE Platform in recognition of the fact that programs developed prior to Java SE 9 could not declare named modules. In addition, the reasons for the Java SE Platform providing unnamed packages ([§7.4.2](ch07-packages-modules.md#jls-7.4.2)) are largely applicable to unnamed modules.
+
+An implementation of the Java SE Platform must support at least one unnamed module. An implementation may support more than one unnamed module, but is not required to do so. Which ordinary compilation units are associated with each unnamed module is determined by the host system.
+
+The host system may associate ordinary compilation units in a named package with an unnamed module.
+
+The rules for unnamed modules are designed to maximize their interoperation with named modules, as follows:
+
+
+- An unnamed module reads every observable module ([§7.7.6](ch07-packages-modules.md#jls-7.7.6)).
+
+  By virtue of the fact that an ordinary compilation unit associated with an unnamed module is observable, the associated unnamed module is observable. Thus, if the implementation of the Java SE Platform supports more than one unnamed module, every unnamed module is observable; and each unnamed module reads every unnamed module including itself.
+
+  However, it is important to realize that the ordinary compilation units of an unnamed module are never *visible* to a named module ([§7.3](ch07-packages-modules.md#jls-7.3)) because no `requires` directive can arrange for a named module to read an unnamed module. The Core Reflection API of the Java SE Platform may be used to arrange for a named module to read an unnamed module at run time.
+
+- An unnamed module exports every package whose ordinary compilation units are associated with that unnamed module.
+
+- An unnamed module opens every package whose ordinary compilation units are associated with that unnamed module.
+
+
+### 7.7.6. Observability of a Module
+
+
+A module is observable if at least one of the following is true:
+
+
+- A modular compilation unit containing the declaration of the module is observable ([§7.3](ch07-packages-modules.md#jls-7.3)).
+
+- An ordinary compilation unit associated with the module is observable.
+
+
