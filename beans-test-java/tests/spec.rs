@@ -1,5 +1,7 @@
+mod prelude;
+
 use beans_core::{Modifier, SymbolKind};
-use beans_test_harness::fixture::Fixture;
+use prelude::fixture;
 
 // =============================================================================
 // Import resolution tests
@@ -7,7 +9,7 @@ use beans_test_harness::fixture::Fixture;
 
 #[test]
 fn single_import_resolves() {
-    Fixture::new()
+    fixture()
         .file("com/example/model/User.java", r#"
             package com.example.model;
             public class User {
@@ -30,7 +32,7 @@ fn single_import_resolves() {
 
 #[test]
 fn wildcard_import_resolves() {
-    Fixture::new()
+    fixture()
         .file("com/example/model/User.java", r#"
             package com.example.model;
             public class User {}
@@ -56,7 +58,7 @@ fn wildcard_import_resolves() {
 
 #[test]
 fn same_package_resolves_without_import() {
-    Fixture::new()
+    fixture()
         .file("com/example/Foo.java", r#"
             package com.example;
             public class Foo {}
@@ -79,7 +81,7 @@ fn same_package_resolves_without_import() {
 
 #[test]
 fn class_children_and_signatures() {
-    Fixture::new()
+    fixture()
         .file("com/example/Dog.java", r#"
             package com.example;
             public class <cur:class>Dog {
@@ -105,7 +107,7 @@ fn class_children_and_signatures() {
 
 #[test]
 fn method_with_parameters() {
-    Fixture::new()
+    fixture()
         .file("com/example/Calculator.java", r#"
             package com.example;
             public class Calculator {
@@ -125,7 +127,7 @@ fn method_with_parameters() {
 
 #[test]
 fn cross_package_resolution() {
-    Fixture::new()
+    fixture()
         .file("com/example/model/User.java", r#"
             package com.example.model;
             public class User {
@@ -159,12 +161,12 @@ fn cross_package_resolution() {
 }
 
 // =============================================================================
-// Skip and xfail demonstration
+// Skip and expected failure demonstration
 // =============================================================================
 
 #[test]
 fn skip_unimplemented_feature() {
-    Fixture::new()
+    fixture()
         .file("com/example/Foo.java", r#"
             package com.example;
             public class Foo {
