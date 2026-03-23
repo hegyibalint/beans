@@ -14,7 +14,8 @@ Beans is a multi-language LSP for JVM languages (Java, Kotlin, Groovy, Scala, Cl
 beans-core/           # Shared JVM symbol model, symbol table, Language trait, resolution
 beans-lang-java/      # Java source parser (tree-sitter-java) + JavaLanguage impl
 beans-lsp/            # LSP server (go-to-def, hover, references, document symbols)
-beans-test-harness/   # Fixture-driven test framework for encoding spec behavior
+beans-test-harness/   # Fixture test framework (language-agnostic, no language deps)
+beans-test-java/      # Java spec tests (uses harness + JavaLanguage via prelude)
 ```
 
 ## Development
@@ -34,18 +35,23 @@ Quality over quantity. Tests should verify behavior that matters, not chase cove
 
 ### Fixture Test Framework
 
-The primary way to encode expected LSP behavior. Tests use `beans-test-harness` with cursor markers in source files and a chainable Rust assertion API. See `docs/FIXTURE.md` for the full tutorial.
+The primary way to encode expected LSP behavior. The framework (`beans-test-harness`) is language-agnostic. Per-language test crates (`beans-test-java`, etc.) provide a prelude that registers the language. See `docs/FIXTURE.md` for the full tutorial.
 
 ```rust
-Fixture::new()
-    .file("Foo.java", r#"
-        package com.example;
-        public class <cur:cls>Foo {}
-    "#)
-    .assert_at("cls")
-        .kind(SymbolKind::Class)
-        .fqn("com.example.Foo")
-    .run();
-```
+// beans-test-java/tests/spec.rs
+mod prelude;
+use prelude::fixture;
 
-The framework is language-agnostic — it dispatches parsing per file extension via the `Language` trait. Multi-language interop tests use `.with_language()` to register additional languages.
+#[test]
+fn test() {
+    fixture()
+        .file("Foo.java", r#"
+            package com.example;
+            public class <cur:cls>Foo {}
+        "#)
+        .assert_at("cls")
+            .kind(SymbolKind::Class)
+            .fqn("com.example.Foo")
+        .run();
+}
+```

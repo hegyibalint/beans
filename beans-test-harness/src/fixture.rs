@@ -4,8 +4,6 @@ use std::path::{Path, PathBuf};
 use beans_core::language::Language;
 use beans_core::resolve::{self, Import};
 use beans_core::{Modifier, Signature, Symbol, SymbolKind, SymbolTable};
-use beans_lang_java::JavaLanguage;
-
 use crate::markers::{strip_markers, CursorPosition};
 
 // --- Assertion types ---
@@ -152,7 +150,7 @@ impl CursorAssert {
 /// builds symbol tables, and runs assertions.
 ///
 /// Language-agnostic: dispatches parsing and word extraction per file extension.
-/// Java is registered by default; add more with `.with_language()`.
+/// No languages are registered by default; add them with `.with_language()`.
 pub struct Fixture {
     files: Vec<(PathBuf, String)>,
     assertions: Vec<PendingAssertion>,
@@ -160,12 +158,13 @@ pub struct Fixture {
 }
 
 impl Fixture {
-    /// Create a new fixture with Java support registered by default.
+    /// Create a new fixture with no languages registered.
+    /// Use `.with_language()` to add language support.
     pub fn new() -> Self {
         Self {
             files: Vec::new(),
             assertions: Vec::new(),
-            languages: vec![Box::new(JavaLanguage)],
+            languages: Vec::new(),
         }
     }
 

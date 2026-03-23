@@ -6,4 +6,3 @@ authors.workspace = true
 
 [dependencies]
 beans-core = { path = "../beans-core" }
-beans-lang-java = { path = "../beans-lang-java" }
