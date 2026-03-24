@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use beans_core::completion::CompletionItems;
 use beans_core::language::Language;
 use beans_core::resolve::{self, Import};
 use beans_core::{Modifier, Signature, Symbol, SymbolKind, SymbolTable};
@@ -37,10 +38,16 @@ struct PendingAssertion {
     mode: TestMode,
 }
 
+struct PendingCompletion {
+    cursor_name: Option<String>,
+    check_fn: Box<dyn FnOnce(&CompletionItems) + Send>,
+    mode: TestMode,
+}
+
 // --- CursorAssert builder ---
 
-/// Builder for assertions at a specific cursor position.
-/// Returned by `Fixture::assert_at` / `Fixture::assert_default`.
+/// Builder for resolution assertions at a specific cursor position.
+/// Returned by `Fixture::resolve` / `Fixture::resolve("name")`.
 pub struct CursorAssert {
     fixture: Fixture,
     cursor_name: Option<String>,
@@ -118,14 +125,25 @@ impl CursorAssert {
         self
     }
 
-    /// Start asserting at a different named cursor. Finalizes current assertions.
-    pub fn assert_at(self, cursor_name: &str) -> CursorAssert {
-        self.finalize().assert_at(cursor_name)
+    /// Start resolving at a different named cursor. Finalizes current assertions.
+    pub fn resolve(self, cursor_name: &str) -> CursorAssert {
+        self.finalize().resolve(cursor_name)
     }
 
-    /// Start asserting at the anonymous cursor. Finalizes current assertions.
+    /// Start resolving at the anonymous cursor. Finalizes current assertions.
+    pub fn resolve_default(self) -> CursorAssert {
+        self.finalize().resolve_default()
+    }
+
+    // Backward compatibility aliases
+    #[doc(hidden)]
+    pub fn assert_at(self, cursor_name: &str) -> CursorAssert {
+        self.resolve(cursor_name)
+    }
+
+    #[doc(hidden)]
     pub fn assert_default(self) -> CursorAssert {
-        self.finalize().assert_default()
+        self.resolve_default()
     }
 
     /// Execute all assertions.
@@ -144,6 +162,55 @@ impl CursorAssert {
     }
 }
 
+// --- CompletionAssert builder ---
+
+/// Builder returned after `.complete()` / `.complete("name", ...)`.
+/// Allows chaining `.expected_failure()` before `.run()` or further operations.
+pub struct CompletionAssert {
+    fixture: Fixture,
+}
+
+impl CompletionAssert {
+    /// Mark the preceding completion assertion as expected to fail.
+    pub fn expected_failure(mut self, reason: &str) -> Self {
+        if let Some(last) = self.fixture.completions.last_mut() {
+            last.mode = TestMode::ExpectedFailure(reason.to_string());
+        }
+        self
+    }
+
+    /// Start resolving at a named cursor. Finalizes and continues.
+    pub fn resolve(self, cursor_name: &str) -> CursorAssert {
+        self.fixture.resolve(cursor_name)
+    }
+
+    /// Start resolving at the anonymous cursor.
+    pub fn resolve_default(self) -> CursorAssert {
+        self.fixture.resolve_default()
+    }
+
+    /// Test completions at another named cursor.
+    pub fn complete(self, cursor_name: &str, check: impl FnOnce(&CompletionItems) + Send + 'static) -> CompletionAssert {
+        self.fixture.complete(cursor_name, check)
+    }
+
+    /// Test completions at the anonymous cursor.
+    pub fn complete_default(self, check: impl FnOnce(&CompletionItems) + Send + 'static) -> CompletionAssert {
+        self.fixture.complete_default(check)
+    }
+
+    // Backward compat
+    #[doc(hidden)]
+    pub fn assert_at(self, cursor_name: &str) -> CursorAssert {
+        self.resolve(cursor_name)
+    }
+
+    /// Execute all assertions and completions.
+    pub fn run(self) {
+        self.fixture.run();
+    }
+}
+
 // --- Fixture builder ---
 
 /// Test fixture builder. Loads source files, strips cursor markers,
@@ -154,6 +221,7 @@ impl CursorAssert {
 pub struct Fixture {
     files: Vec<(PathBuf, String)>,
     assertions: Vec<PendingAssertion>,
+    completions: Vec<PendingCompletion>,
     languages: Vec<Box<dyn Language>>,
 }
 
@@ -164,6 +232,7 @@ impl Fixture {
         Self {
             files: Vec::new(),
             assertions: Vec::new(),
+            completions: Vec::new(),
             languages: Vec::new(),
         }
     }
@@ -182,8 +251,8 @@ impl Fixture {
         self
     }
 
-    /// Start asserting at a named cursor.
-    pub fn assert_at(self, cursor_name: &str) -> CursorAssert {
+    /// Resolve the symbol at a named cursor `<cur:name>`.
+    pub fn resolve(self, cursor_name: &str) -> CursorAssert {
         CursorAssert {
             fixture: self,
             cursor_name: Some(cursor_name.to_string()),
@@ -192,14 +261,45 @@ impl Fixture {
         }
     }
 
-    /// Start asserting at the anonymous `<cur>` cursor.
-    pub fn assert_default(self) -> CursorAssert {
+    /// Resolve the symbol at the anonymous `<cur>` cursor.
+    pub fn resolve_default(self) -> CursorAssert {
         CursorAssert {
             fixture: self,
             cursor_name: None,
             checks: Vec::new(),
             mode: TestMode::Normal,
         }
+    }
+
+    /// Test completions at a named cursor `<cur:name>`.
+    pub fn complete(mut self, cursor_name: &str, check: impl FnOnce(&CompletionItems) + Send + 'static) -> CompletionAssert {
+        self.completions.push(PendingCompletion {
+            cursor_name: Some(cursor_name.to_string()),
+            check_fn: Box::new(check),
+            mode: TestMode::Normal,
+        });
+        CompletionAssert { fixture: self }
+    }
+
+    /// Test completions at the anonymous `<cur>` cursor.
+    pub fn complete_default(mut self, check: impl FnOnce(&CompletionItems) + Send + 'static) -> CompletionAssert {
+        self.completions.push(PendingCompletion {
+            cursor_name: None,
+            check_fn: Box::new(check),
+            mode: TestMode::Normal,
+        });
+        CompletionAssert { fixture: self }
+    }
+
+    // Backward compatibility aliases
+    #[doc(hidden)]
+    pub fn assert_at(self, cursor_name: &str) -> CursorAssert {
+        self.resolve(cursor_name)
+    }
+
+    #[doc(hidden)]
+    pub fn assert_default(self) -> CursorAssert {
+        self.resolve_default()
     }
 
     /// Find the registered language for a file extension.
@@ -220,7 +320,7 @@ impl Fixture {
         );
     }
 
-    /// Execute all pending assertions.
+    /// Execute all pending assertions and completion checks.
     pub fn run(self) {
         // 1. Strip markers from all files
         let mut all_cursors: Vec<CursorPosition> = Vec::new();
@@ -271,7 +371,7 @@ impl Fixture {
             file_sources.insert(path.clone(), clean_source.clone());
         }
 
-        // 3. Run assertions
+        // 3. Run resolution assertions
         let mut skipped = Vec::new();
         let mut expected_failure_passed = Vec::new();
 
@@ -334,6 +434,52 @@ impl Fixture {
                 cursor_display,
                 lang,
             );
+        }
+
+        // 4. Run completion assertions
+        for completion in self.completions {
+            let cursor_display = completion
+                .cursor_name
+                .as_deref()
+                .unwrap_or("<default>");
+
+            let _cursor = all_cursors
+                .iter()
+                .find(|c| c.name == completion.cursor_name)
+                .unwrap_or_else(|| {
+                    panic!("cursor '{}' not found in any file", cursor_display);
+                });
+
+            // Stub: return empty completions for now.
+            // As the completion engine is built, this will compute real items.
+            let items = CompletionItems(Vec::new());
+
+            match &completion.mode {
+                TestMode::Skip(reason) => {
+                    skipped.push(format!("SKIP completion [{}]: {}", cursor_display, reason));
+                    continue;
+                }
+                TestMode::ExpectedFailure(reason) => {
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        (completion.check_fn)(&items);
+                    }));
+                    match result {
+                        Ok(()) => {
+                            expected_failure_passed.push(format!(
+                                "EXPECTED_FAILURE PASSED [completion {}]: expected failure '{}' but checks passed — promote this test!",
+                                cursor_display, reason
+                            ));
+                        }
+                        Err(_) => {
+                            // Expected failure — fine
+                        }
+                    }
+                    continue;
+                }
+                TestMode::Normal => {
+                    (completion.check_fn)(&items);
+                }
+            }
         }
 
         if !skipped.is_empty() {

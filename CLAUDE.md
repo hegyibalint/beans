@@ -35,23 +35,34 @@ Quality over quantity. Tests should verify behavior that matters, not chase cove
 
 ### Fixture Test Framework
 
-The primary way to encode expected LSP behavior. The framework (`beans-test-harness`) is language-agnostic. Per-language test crates (`beans-test-java`, etc.) provide a prelude that registers the language. See `docs/FIXTURE.md` for the full tutorial.
+The primary way to encode expected LSP behavior. See `docs/FIXTURE.md` for the full tutorial. Two operations:
+
+- **`.complete(|items| { ... })`** — test completions at cursor (what items appear when pressing cmd+space)
+- **`.resolve()`** — test go-to-definition / hover at cursor (what does this symbol resolve to)
 
 ```rust
-// beans-test-java/tests/spec.rs
-mod prelude;
-use prelude::fixture;
-
 #[test]
-fn test() {
+fn service_dot_completion() {
     fixture()
-        .file("Foo.java", r#"
+        .file("com/example/Service.java", r#"
             package com.example;
-            public class <cur:cls>Foo {}
+            public class Service {
+                public String process(int count) { return null; }
+                private int internal;
+            }
         "#)
-        .assert_at("cls")
-            .kind(SymbolKind::Class)
-            .fqn("com.example.Foo")
-        .run();
+        .file("com/example/App.java", r#"
+            package com.example;
+            public class App {
+                public void run(Service svc) {
+                    svc.<cur>
+                }
+            }
+        "#)
+        .complete(|items| {
+            assert!(items.has("process", SymbolKind::Method));
+            assert!(!items.has("internal", SymbolKind::Field));
+        })
+        .expected_failure("member completion not yet implemented");
 }
 ```
