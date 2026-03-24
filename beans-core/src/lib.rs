@@ -1,3 +1,4 @@
+pub mod completion;
 pub mod language;
 mod location;
 mod modifier;
@@ -9,6 +10,7 @@ mod symbol_id;
 mod symbol_kind;
 mod symbol_table;
 
+pub use completion::{CompletionItem, CompletionItems};
 pub use language::Language;
 pub use location::Location;
 pub use modifier::Modifier;
