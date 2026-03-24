@@ -1,14 +1,54 @@
 # Fixture Test Framework
 
-The fixture framework encodes expected LSP behavior as tests. Each test is a small Rust function that sets up source files with cursor markers, then asserts what the LSP should know at each cursor.
+The fixture framework encodes expected LSP behavior as tests. Each test sets up source files with cursor markers, then queries what the LSP should present at each cursor.
+
+## Test mentality
+
+Write tests from the developer's perspective. The developer has a cursor somewhere in their code — what should the LSP offer?
+
+Two operations, in priority order:
+
+1. **Completions** — "I typed `svc.` and pressed cmd+space. What items appear?" → `.complete()`
+2. **Resolution** — "I clicked on `User`. Where does it jump? What does hover show?" → `.resolve()`
+
+Most tests should be **multi-file**: a declaring file and a consuming file with cursors. Single-file declaration-site tests have low value.
 
 ## Quick start
 
-```rust
-mod prelude;
-use prelude::fixture;
-use beans_core::SymbolKind;
+### Completion test
 
+```rust
+#[test]
+fn dot_completion_on_service() {
+    fixture()
+        .file("com/example/Service.java", r#"
+            package com.example;
+            public class Service {
+                public String process(int count) { return null; }
+                public void shutdown() {}
+                private int internal;
+            }
+        "#)
+        .file("com/example/App.java", r#"
+            package com.example;
+            public class App {
+                public void run(Service svc) {
+                    svc.<cur>
+                }
+            }
+        "#)
+        .complete(|items| {
+            assert!(items.has("process", SymbolKind::Method));
+            assert!(items.has("shutdown", SymbolKind::Method));
+            assert!(!items.has("internal", SymbolKind::Field));
+        })
+        .expected_failure("member completion not yet implemented");
+}
+```
+
+### Resolution test
+
+```rust
 #[test]
 fn import_resolves_to_class() {
     fixture()
@@ -20,10 +60,10 @@ fn import_resolves_to_class() {
             package com.example;
             import com.example.model.User;
             public class App {
-                private <cur:field>User user;
+                private <cur>User user;
             }
         "#)
-        .assert_at("field")
+        .resolve()
             .resolves_to("com.example.model.User")
             .kind(SymbolKind::Class)
         .run();
@@ -34,127 +74,185 @@ Run with `cargo test -p beans-test-java`.
 
 ## Architecture
 
-The test infrastructure is split into layers:
-
 ```
 beans-test-harness/     Framework library (language-agnostic)
 beans-test-java/        Java spec tests + Java prelude
-beans-test-kotlin/      Kotlin spec tests + Kotlin prelude (future)
+beans-test-kotlin/      Kotlin spec tests (future)
 beans-test-interop/     Cross-language tests (future)
 ```
 
-**`beans-test-harness`** provides `Fixture`, cursor marker stripping, and the assertion API. It has no language dependencies — it doesn't know about Java, Kotlin, or any other language.
+**`beans-test-harness`** provides `Fixture`, cursor markers, and both APIs (completions and resolution). No language dependencies.
 
-**Per-language test crates** each have a `prelude.rs` that creates a `Fixture` with the right language(s) registered:
+**Per-language test crates** have a `prelude.rs`:
 
 ```rust
 // beans-test-java/tests/prelude.rs
-use beans_test_harness::fixture::Fixture;
-use beans_lang_java::JavaLanguage;
-
-pub fn fixture() -> Fixture {
-    Fixture::new()
-        .with_language(JavaLanguage)
+pub fn fixture() -> beans_test_harness::fixture::Fixture {
+    beans_test_harness::fixture::Fixture::new()
+        .with_language(beans_lang_java::JavaLanguage)
 }
 ```
-
-Test files import the prelude and call `fixture()` — no registration boilerplate:
-
-```rust
-mod prelude;
-use prelude::fixture;
-
-#[test]
-fn my_test() {
-    fixture()
-        .file("Foo.java", src)
-        .assert_at("x").kind(SymbolKind::Class)
-        .run();
-}
-```
-
-When a new language is added, it gets its own test crate with its own prelude. Existing tests don't change.
-
-**`beans-test-interop/`** (future) will depend on all language crates and test cross-language scenarios — e.g., Java code referencing a Kotlin class. Its prelude registers every language. This is the only crate that needs all language dependencies, which is appropriate since cross-language testing inherently requires them.
 
 ## Cursor markers
 
-Place `<cur>` or `<cur:name>` anywhere in a source file. The harness strips them before parsing.
+Place `<cur>` or `<cur:name>` in source files. The harness strips them before parsing.
 
 | Marker | Usage |
 |--------|-------|
-| `<cur>` | Anonymous cursor. One per file. Assert with `.assert_default()`. |
-| `<cur:name>` | Named cursor. Multiple per file. Assert with `.assert_at("name")`. |
+| `<cur>` | Anonymous cursor. Use with `.complete(\|items\| ...)` or `.resolve()`. |
+| `<cur:name>` | Named cursor. Use with `.complete("name", \|items\| ...)` or `.resolve("name")`. |
 
 Names must be unique across all files in a fixture.
 
-### Where to place cursors
-
-Cursors mark a position in the source. Place them immediately before the identifier you want to query:
-
 ```java
-private <cur:type>User user;       // cursor on "User"
-public String <cur:method>getName() // cursor on "getName"
+svc.<cur>                           // completion: what members are available?
+private <cur:type>User user;        // resolution: where does User point?
 ```
 
-## Assertions
+## Completions
 
-Chain assertions after `.assert_at("name")`:
+Test "what appears when the developer presses cmd+space here?"
 
 ```rust
-.assert_at("name")
-    .kind(SymbolKind::Class)              // symbol kind
-    .fqn("com.example.Foo")              // fully qualified name
-    .name("Foo")                          // simple name
-    .resolves_to("com.example.Foo")       // go-to-definition target
-    .hover_contains("class Foo")          // hover text substring
-    .signature_return("String")           // method return type
-    .signature_params(&[("x", "int")])    // method parameters
-    .modifiers(vec![Modifier::Public])    // required modifiers
-    .parent_fqn("com.example.Bar")       // enclosing symbol
-    .children_include(&["field", "method"]) // child symbol names
-    .children_count(3)                    // exact child count
+// Anonymous cursor
+.complete(|items| { ... })
+
+// Named cursor
+.complete("dot", |items| { ... })
+
+// With expected_failure
+.complete(|items| { ... })
+.expected_failure("reason")
 ```
 
-All assertions are optional and combinable. Use only what matters for the test.
+### `CompletionItems` methods
+
+| Method | Returns | Purpose |
+|--------|---------|---------|
+| `has(name, kind)` | `bool` | Is this item offered? |
+| `get(name, kind)` | `&CompletionItem` | Get item (panics if missing) |
+| `count(kind)` | `usize` | How many items of this kind? |
+| `names(kind)` | `Vec<&str>` | Sorted names of all items of this kind |
+| `iter()` | iterator | Full access for edge cases |
+
+### `CompletionItem` fields
+
+All public. Assert with `assert_eq!`.
+
+| Field | Type |
+|-------|------|
+| `name` | `String` |
+| `kind` | `SymbolKind` |
+| `return_type` | `String` |
+| `params` | `Vec<(String, String)>` |
+| `modifiers` | `Vec<Modifier>` |
+| `fqn` | `String` |
+| `detail` | `String` |
+
+### Examples
+
+```rust
+.complete(|items| {
+    // Presence / absence
+    assert!(items.has("getName", Method));
+    assert!(!items.has("secret", Field));
+
+    // Count
+    assert_eq!(items.count(Method), 3);
+
+    // All names of a kind
+    assert_eq!(items.names(Method), &["close", "execute", "isOpen"]);
+
+    // Deep inspection
+    let exec = items.get("execute", Method);
+    assert_eq!(exec.return_type, "void");
+    assert_eq!(exec.params, &[("sql", "String")]);
+})
+```
+
+## Resolution
+
+Test "what does the LSP know about the symbol at this cursor?"
+
+```rust
+// Anonymous cursor
+.resolve()
+    .resolves_to("com.example.Foo")
+    .kind(SymbolKind::Class)
+.run()
+
+// Named cursor
+.resolve("field")
+    .hover_contains("String")
+    .modifiers(vec![Modifier::Private])
+.run()
+```
+
+### Chainable assertions
+
+| Method | Purpose |
+|--------|---------|
+| `.kind(SymbolKind)` | Symbol kind |
+| `.fqn("...")` | Fully qualified name |
+| `.name("...")` | Simple name |
+| `.resolves_to("...")` | Go-to-definition target FQN |
+| `.hover_contains("...")` | Hover text substring |
+| `.signature_return("...")` | Method return type |
+| `.signature_params(&[("x", "int")])` | Method parameters |
+| `.modifiers(vec![...])` | Required modifiers |
+| `.parent_fqn("...")` | Enclosing symbol FQN |
+| `.children_include(&["..."])` | Child symbol names |
+| `.children_count(n)` | Exact child count |
+
+All optional and combinable. End with `.run()`.
 
 ## Multi-file tests
 
-Add multiple files with `.file()`. Cursors can appear in any file:
+Most tests need at least two files — declaring and consuming:
 
 ```rust
 fixture()
-    .file("model/User.java", r#"
-        package com.example.model;
-        public class User { ... }
-    "#)
-    .file("service/UserService.java", r#"
-        package com.example.service;
-        import com.example.model.User;
-        public class UserService {
-            private <cur:ref>User user;
+    .file("com/example/db/Connection.java", r#"
+        package com.example.db;
+        public class Connection {
+            public void execute(String sql) {}
+            public void close() {}
         }
     "#)
-    .assert_at("ref")
-        .resolves_to("com.example.model.User")
-    .run();
+    .file("com/example/App.java", r#"
+        package com.example;
+        import com.example.db.Connection;
+        public class App {
+            public void query(Connection conn) {
+                conn.<cur>
+            }
+        }
+    "#)
+    .complete(|items| {
+        assert!(items.has("execute", SymbolKind::Method));
+        assert!(items.has("close", SymbolKind::Method));
+    })
+    .expected_failure("cross-package member completion not yet implemented");
 ```
 
-## Skip and expected failure
-
-For features not yet implemented:
+## Expected failure and skip
 
 ```rust
-// Skip: don't run the assertion, just log it
-.assert_at("diamond")
-    .skip("diamond inference not implemented")
-    .resolves_to("java.util.ArrayList")
+// Expected failure: runs the test, expects it to fail.
+// If it unexpectedly passes → test fails, telling you to promote it.
+.complete(|items| {
+    assert!(items.has("process", Method));
+})
+.expected_failure("member completion not yet implemented")
 
-// Expected failure: run it, but expect it to fail
-// If it passes, the test fails — telling you to promote it
-.assert_at("overload")
-    .expected_failure("overload resolution not yet correct")
+// Also works on resolution
+.resolve("overload")
     .resolves_to("com.example.Foo.bar(int)")
+    .expected_failure("overload resolution not yet correct")
+
+// Skip: don't run, just log
+.resolve("diamond")
+    .skip("diamond inference not implemented")
 ```
 
 ## How it works
@@ -162,11 +260,12 @@ For features not yet implemented:
 1. The harness strips `<cur>` markers and records their positions
 2. Each file is parsed by the `Language` matching its extension
 3. Symbols are inserted into a shared `SymbolTable`
-4. For each assertion, the harness finds the word at the cursor position, resolves it through the symbol table, and checks the expected properties
+4. For **resolution**: resolves the word at cursor through the symbol table, checks properties
+5. For **completions**: computes available items at cursor position, passes to closure
 
 ## File organization
 
-Each language has its own test crate. Tests are organized by JLS chapter, with nested modules per section:
+Tests organized by JLS chapter, nested modules per section:
 
 ```
 beans-test-java/tests/
@@ -175,7 +274,7 @@ beans-test-java/tests/
     spec/
         jls04_types.rs              # Ch 4: Types, Values, and Variables
         jls06_names.rs              # Ch 6: Names
-        jls07_packages.rs           # Ch 7: Packages and Modules (imports)
+        jls07_packages.rs           # Ch 7: Packages and Modules
         jls08_classes.rs            # Ch 8: Classes
         jls09_interfaces.rs         # Ch 9: Interfaces
         jls10_arrays.rs             # Ch 10: Arrays
@@ -183,25 +282,13 @@ beans-test-java/tests/
         jls15_expressions.rs        # Ch 15: Expressions
 ```
 
-Within each file, nested `mod` blocks map to JLS sections:
-
 ```rust
-// In jls07_packages.rs
 mod jls_7_5_1_single_type_import {
     use super::*;
 
     #[test]
     fn basic() { ... }
-
-    /// Also exercises §8.5 (member class declarations)
-    #[test]
-    fn import_inner_class() { ... }
 }
 ```
 
-Run subsets with `cargo test` filtering:
-- `cargo test -p beans-test-java jls_7` — all chapter 7 tests
-- `cargo test -p beans-test-java jls_7_5_1` — just §7.5.1 tests
-- `cargo test -p beans-test-java jls_8` — all chapter 8 tests
-
-Cross-chapter tests live in their primary chapter with a doc comment noting the cross-reference. Use `grep -r "§8.5" tests/spec/` to find all tests touching a given section.
+Run subsets: `cargo test -p beans-test-java jls_7` (chapter), `jls_7_5_1` (section).
