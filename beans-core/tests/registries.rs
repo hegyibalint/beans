@@ -341,3 +341,43 @@ fn fqn_round_trips_through_keys() {
     assert_eq!(key1, key2);
     assert_eq!(key2, key3);
 }
+
+#[test]
+fn merge_all_returns_duplicates_when_same_node_hits_multiple_queries() {
+    // Per ADR-0008 the MergeAll combine mode does NOT dedup. If the same
+    // NodeId is registered under two queries on the link's list — for
+    // example a node that providers both a Java-side key and its JVM
+    // projection key — `resolve_all` returns it once per hit, in
+    // priority order. The consumer is responsible for collapsing
+    // duplicates with knowledge of which language wins (ADR-0013: the
+    // registry layer is dumb).
+    let mut graph: Graph<NodePayload> = Graph::new();
+    let registries = Registries::new();
+
+    // Register the same NodeId in both registries. This models a node
+    // that "is its own JVM projection" — useful as a stress test for the
+    // dedup contract even if the parser typically uses two distinct
+    // NodeIds (one Java, one JVM-projection child).
+    let id = graph.insert(
+        java_class("Shared", "com.example.Shared"),
+        None,
+    );
+    let _hj = registries
+        .java
+        .symbols
+        .register(JavaSymbolKey::new("com.example.Shared"), id);
+    let _ht = registries
+        .jvm
+        .types
+        .register(JvmTypeKey::new("com.example.Shared"), id);
+
+    let link = DynamicLink::merge_all(vec![
+        TypeQuery::Java(JavaSymbolKey::new("com.example.Shared")),
+        TypeQuery::Jvm(JvmTypeKey::new("com.example.Shared")),
+    ]);
+
+    // Two hits, same NodeId — the link returns both, no dedup. Consumers
+    // that want one entry per logical symbol (typical for completion)
+    // collapse downstream.
+    assert_eq!(link.resolve_all(&registries), vec![id, id]);
+}
