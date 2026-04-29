@@ -9,8 +9,7 @@ name = "beans-lsp"
 path = "src/main.rs"
 
 [dependencies]
-beans-core = { path = "../beans-core" }
-beans-lang-java = { path = "../beans-lang-java" }
+beans-core = { path = "../beans-core", features = ["java"] }
 tower-lsp = "0.20"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }

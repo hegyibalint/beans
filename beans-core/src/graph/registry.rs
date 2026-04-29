@@ -181,6 +181,13 @@ impl<K: Eq + Hash + Clone> Registry<K> {
 /// RAII registration. Drop unregisters this `(key, node)` from the registry.
 /// If the registry has already been dropped, the upgrade fails and Drop
 /// is a no-op — gracefully handling tear-down ordering (ADR-0015).
+///
+/// Deliberately not [`Clone`]: each handle owns exactly one provider
+/// entry and dropping it removes one entry from the registry's provider
+/// list. Cloning would let two handles believe they own the same
+/// registration, and dropping both would over-remove. Per ADR-0014 the
+/// handle is the *one* RAII anchor for its registration.
+#[derive(Debug)]
 pub struct ProviderHandle<K: Eq + Hash> {
     inner: Weak<RefCell<RegistryInner<K>>>,
     key: K,
@@ -196,6 +203,8 @@ impl<K: Eq + Hash> Drop for ProviderHandle<K> {
 }
 
 /// RAII subscription. Drop removes this subscription from the registry.
+/// Same single-owner contract as [`ProviderHandle`]; not [`Clone`].
+#[derive(Debug)]
 pub struct SubscriptionHandle<K: Eq + Hash> {
     inner: Weak<RefCell<RegistryInner<K>>>,
     key: K,
