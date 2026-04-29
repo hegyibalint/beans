@@ -106,8 +106,12 @@ impl<P> Graph<P> {
 
         if let Some(parent_id) = parent {
             // Parent must exist; treating a missing parent as a programmer error.
-            self.slots[parent_id.slot()]
-                .as_mut()
+            // Index via `get_mut` so an out-of-range parent NodeId surfaces
+            // through the same descriptive expect rather than the slice's
+            // bounds-check message.
+            self.slots
+                .get_mut(parent_id.slot())
+                .and_then(|s| s.as_mut())
                 .expect("insert: parent NodeId references an empty slot")
                 .children
                 .push(id);
