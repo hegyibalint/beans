@@ -3,7 +3,7 @@
 //! `Signature` is the prototype symbol model's escape hatch for the parts
 //! of a declaration that vary by kind: a method has a return type and
 //! parameters, a field has a type and an optional constant value, a class
-//! has type parameters. Rather than baking those into [`Symbol`] directly,
+//! has type parameters. Rather than baking those into [`Symbol`](crate::Symbol) directly,
 //! the prototype carries `signature: Option<Signature>` and pattern-matches
 //! at consumer sites.
 //!
@@ -12,7 +12,7 @@
 //! consumers don't pattern-match `Option`. `Signature` will go away with
 //! the prototype.
 
-use crate::type_ref::{TypeParam, TypeRef};
+use crate::jvm::type_ref::{TypeParam, TypeRef};
 
 /// Kind-specific structural data for a symbol.
 ///
