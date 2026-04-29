@@ -243,14 +243,6 @@ impl Fixture {
         }
     }
 
-    /// Backward-compat shim. The new fixture ignores its argument and
-    /// dispatches by file extension; left here so existing prelude
-    /// builders keep compiling. Will go away with the prototype path.
-    #[doc(hidden)]
-    pub fn with_language<L>(self, _lang: L) -> Self {
-        self
-    }
-
     pub fn file(mut self, path: &str, source: &str) -> Self {
         self.files.push((PathBuf::from(path), source.to_string()));
         self
