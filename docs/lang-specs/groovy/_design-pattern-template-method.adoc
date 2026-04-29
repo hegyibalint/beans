@@ -1,0 +1,100 @@
+//////////////////////////////////////////
+
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+
+//////////////////////////////////////////
+
+= Template Method Pattern
+
+
+The https://en.wikipedia.org/wiki/Template_method_pattern[Template Method Pattern] abstracts
+away the details of several algorithms.
+The generic part of an algorithm is contained within a base class.
+Particular implementation details are captured within child classes.
+The generic pattern of classes involved looks like this:
+
+[plantuml, TemplateMethodClasses, png]
+....
+!pragma layout smetana
+skinparam nodesep 100
+class AbstractClass {
+    +algorithm1()
+    +algorithm2()
+    {abstract} +primitiveOperationA()
+    {abstract} +primitiveOperationB()
+}
+class ConcreteClass1 {
+    +primitiveOperationA()
+    +primitiveOperationB()
+}
+class ConcreteClass2 {
+    +primitiveOperationA()
+    +primitiveOperationB()
+}
+object templateMethodUser
+hide fields
+templateMethodUser ......r......> "<<use>>" AbstractClass
+AbstractClass <|-- ConcreteClass1
+AbstractClass <|-- ConcreteClass2
+....
+
+== Example with traditional classes
+
+In this example, the base `Accumulator` class captures the essence of the accumulation algorithm.
+The child classes `Sum` and `Product` provide particular customised ways to use the generic accumulation algorithm.
+
+[source,groovy]
+----
+include::../test/DesignPatternsTest.groovy[tags=template_method_example,indent=0]
+----
+
+== Example with simplifying strategies
+
+In this particular case, you could use Groovy's inject method to achieve a similar result using Closures:
+
+[source,groovy]
+----
+include::../test/DesignPatternsTest.groovy[tags=template_method_example2,indent=0]
+----
+
+Thanks to duck-typing, this would also work with other objects which support an add (`plus()` in Groovy) method, e.g.:
+
+[source,groovy]
+----
+include::../test/DesignPatternsTest.groovy[tags=template_method_example3,indent=0]
+----
+
+We could also do the multiplication case as follows (re-writing as a one-liner):
+
+[source,groovy]
+----
+include::../test/DesignPatternsTest.groovy[tags=template_method_example4,indent=0]
+----
+Using closures this way looks like the <<_strategy_pattern,Strategy Pattern>>, but if we realise
+that Groovy's `inject` method is the generic part of the algorithm for our template method,
+then the Closures become the customised parts of the template method pattern.
+
+For Groovy 3+, we can use lambda syntax as an alternative to the closure syntax:
+
+[source,groovy]
+----
+include::../test/DesignPatternsTest.groovy[tags=template_method_example5,indent=0]
+----
+
+Here the stream api's `reduce` method is the generic part of the algorithm for our template method,
+and the lambdas are the customised parts of the template method pattern.
