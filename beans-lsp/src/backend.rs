@@ -172,7 +172,7 @@ fn symbol_kind_to_lsp(kind: SymbolKind) -> SymbolKind2 {
             SymbolKind2::METHOD
         }
         SymbolKind::Constructor => SymbolKind2::CONSTRUCTOR,
-        SymbolKind::Field => SymbolKind2::FIELD,
+        SymbolKind::Field | SymbolKind::EnumConstant => SymbolKind2::FIELD,
         SymbolKind::Parameter => SymbolKind2::VARIABLE,
         SymbolKind::Package | SymbolKind::Namespace => SymbolKind2::NAMESPACE,
         SymbolKind::Object | SymbolKind::CompanionObject => SymbolKind2::OBJECT,
@@ -521,10 +521,10 @@ fn build_document_symbol(
             parameters,
             ..
         }) => {
-            let params: Vec<String> = parameters.iter().map(|p| p.param_type.clone()).collect();
+            let params: Vec<String> = parameters.iter().map(|p| p.param_type.to_string()).collect();
             Some(format!("({}) -> {}", params.join(", "), return_type))
         }
-        Some(beans_core::Signature::Field { field_type }) => Some(field_type.clone()),
+        Some(beans_core::Signature::Field { field_type, .. }) => Some(field_type.to_string()),
         _ => None,
     };
 

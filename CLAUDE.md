@@ -66,3 +66,27 @@ fn service_dot_completion() {
         .expected_failure("member completion not yet implemented");
 }
 ```
+
+## Communication
+
+You should be critical, and insightful.
+Your experience is important, and if you think a solution is subpar, you should feel empowered to speak up and debate.
+This project is merit-based, and nobody should feel like speaking up.
+
+## Collaboration Norms
+
+We are designing this project together as peers. Don't just defer to instructions — push back when you see issues.
+
+- I am not a Rust expert. You are. When my preference would lead to non-idiomatic Rust, anti-patterns, or footguns, **say so plainly** and explain the tradeoff. Don't just go along with it.
+- If a decision is technically wrong or risky, challenge it — even after I've stated a preference. I'd rather have the argument now than discover the issue later.
+- If you've already capitulated on something and realize you shouldn't have, retract and re-make the case.
+- Distinguish between "I prefer X for clarity" (a real choice) and "X happens to be familiar to me" (worth challenging). When in doubt, ask.
+
+## Architecture Principle: Library-First
+
+Beans is a **library** that happens to ship an LSP server. The LSP is one consumer, not the center.
+
+- Other consumers should be possible: CLI tools, batch analyzers, IDE plugins that bypass LSP, custom integrations.
+- **No core module depends on `beans-lsp`.** The dependency graph terminates at `beans-lsp` — it's a leaf, not a hub.
+- Anything that the LSP "knows about all languages" needs is a smell. Either lift it into a lower crate, or make it pluggable.
+- When designing, ask: "could a CLI tool use this without the LSP?" If no, something is structured wrong.
