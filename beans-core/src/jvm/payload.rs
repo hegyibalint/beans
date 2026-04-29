@@ -128,6 +128,14 @@ pub struct JvmMethodNode {
 /// A JVM constructor declaration (JLS §8.8). Distinct from
 /// [`JvmMethodNode`] because dispatch and resolution differ at the JVM
 /// level (constructors are `<init>` methods, not named).
+///
+/// No `enrichments` field. The promoted enrichments [`JvmEnrichments`]
+/// models today (nullability) live on the things they describe — the
+/// constructor's *parameters* carry their own [`JvmParameter::enrichments`]
+/// for nullability, and a constructor's "return value" is the enclosing
+/// type, which is the [`JvmTypeNode`] this constructor hangs off and
+/// already carries its own enrichments. Adding a constructor-level bag
+/// would just duplicate the type's enrichments.
 #[derive(Debug, Clone, PartialEq)]
 pub struct JvmConstructorNode {
     pub header: JvmDeclHeader,
