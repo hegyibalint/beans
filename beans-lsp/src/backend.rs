@@ -603,7 +603,7 @@ mod tests {
     #[test]
     fn test_document_symbol_outline() {
         // Parse a Java file, populate the symbol table, and verify document_symbol output
-        use beans_lang_java::parse_java_file;
+        use beans_core::languages::java::parse_java_file;
         use std::path::Path;
 
         let source = r#"

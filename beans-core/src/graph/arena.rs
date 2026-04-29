@@ -195,4 +195,15 @@ impl<P> Graph<P> {
     pub fn current_generation(&self) -> Generation {
         self.current_gen
     }
+
+    /// Iterate over every occupied node in the arena, yielding
+    /// `(NodeId, &NodeData<P>)`. Order is by ascending slot index.
+    /// Skips freed slots; the iterator is not invalidated by reads but
+    /// is invalidated by mutation, like any borrow over the arena.
+    pub fn iter(&self) -> impl Iterator<Item = (NodeId, &NodeData<P>)> {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, slot)| slot.as_ref().map(|n| (NodeId(idx as u64), n)))
+    }
 }

@@ -10,8 +10,12 @@ authors.workspace = true
 # them with `default-features = false` and turn on only what it needs.
 [features]
 default = ["java", "kotlin", "scala", "groovy", "clojure"]
-java = []
+java = ["dep:tree-sitter", "dep:tree-sitter-java"]
 kotlin = []
 scala = []
 groovy = []
 clojure = []
+
+[dependencies]
+tree-sitter = { version = "0.25", optional = true }
+tree-sitter-java = { version = "0.23", optional = true }

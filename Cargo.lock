@@ -36,12 +36,7 @@ dependencies = [
 [[package]]
 name = "beans-core"
 version = "0.0.1"
-
-[[package]]
-name = "beans-lang-java"
-version = "0.0.1"
 dependencies = [
- "beans-core",
  "tree-sitter",
  "tree-sitter-java",
 ]
@@ -51,7 +46,6 @@ name = "beans-lsp"
 version = "0.0.1"
 dependencies = [
  "beans-core",
- "beans-lang-java",
  "serde",
  "serde_json",
  "tokio",
@@ -73,7 +67,6 @@ name = "beans-test-java"
 version = "0.0.1"
 dependencies = [
  "beans-core",
- "beans-lang-java",
  "beans-test-harness",
 ]
 
