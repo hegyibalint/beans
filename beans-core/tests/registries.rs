@@ -66,6 +66,7 @@ fn java_class(name: &str, fqn: &str) -> NodePayload {
         kind: JavaTypeKind::Class,
         type_parameters: vec![],
         record_components: vec![],
+        symbol_provider: None,
     }))
 }
 
@@ -76,6 +77,7 @@ fn java_method(name: &str, fqn: &str) -> NodePayload {
         parameters: vec![],
         type_parameters: vec![],
         throws: vec![],
+        symbol_provider: None,
     }))
 }
 
@@ -86,27 +88,32 @@ fn jvm_type(name: &str, fqn: &str, kind: JvmTypeKind) -> NodePayload {
         type_parameters: vec![],
         record_components: vec![],
         enrichments: JvmEnrichments::default(),
+        type_provider: None,
     }))
 }
 
-fn jvm_method(name: &str, fqn: &str, return_type: TypeRef) -> NodePayload {
+fn jvm_method(name: &str, fqn: &str, owner: &str, return_type: TypeRef) -> NodePayload {
     NodePayload::Jvm(JvmNodePayload::Method(JvmMethodNode {
         header: JvmDeclHeader::new(name, fqn),
+        owner: owner.into(),
         return_type,
         parameters: vec![],
         type_parameters: vec![],
         throws: vec![],
         enrichments: JvmEnrichments::default(),
+        method_provider: None,
     }))
 }
 
-fn jvm_field(name: &str, fqn: &str, field_type: TypeRef) -> NodePayload {
+fn jvm_field(name: &str, fqn: &str, owner: &str, field_type: TypeRef) -> NodePayload {
     NodePayload::Jvm(JvmNodePayload::Field(JvmFieldNode {
         header: JvmDeclHeader::new(name, fqn),
+        owner: owner.into(),
         field_type,
         constant_value: None,
         initialized: false,
         enrichments: JvmEnrichments::default(),
+        field_provider: None,
     }))
 }
 
@@ -197,11 +204,11 @@ fn method_overload_keys_distinguish_by_param_types() {
 
     let owner = "com.example.Service";
     let int_id = graph.insert(
-        jvm_method("process", "com.example.Service.process", TypeRef::Void),
+        jvm_method("process", "com.example.Service.process", owner, TypeRef::Void),
         None,
     );
     let str_id = graph.insert(
-        jvm_method("process", "com.example.Service.process", TypeRef::Void),
+        jvm_method("process", "com.example.Service.process", owner, TypeRef::Void),
         None,
     );
 
@@ -243,7 +250,7 @@ fn merge_all_unions_java_and_jvm_completions_in_priority_order() {
         .register(JavaSymbolKey::new("com.example.Service.process"), java_id);
 
     let jvm_method_id = graph.insert(
-        jvm_method("process", "com.example.Service.process", TypeRef::Void),
+        jvm_method("process", "com.example.Service.process", owner, TypeRef::Void),
         Some(java_id),
     );
     let _jvm_h = registries.jvm.methods.register(
@@ -255,6 +262,7 @@ fn merge_all_unions_java_and_jvm_completions_in_priority_order() {
         jvm_field(
             "name",
             "com.example.Service.name",
+            owner,
             TypeRef::simple("java.lang.String"),
         ),
         None,
@@ -285,6 +293,7 @@ fn package_registry_isolated_from_type_registry() {
     let pkg_payload =
         NodePayload::Jvm(JvmNodePayload::Package(beans_core::jvm::JvmPackageNode {
             header: JvmDeclHeader::new("com.example", "com.example"),
+            package_provider: None,
         }));
     let pkg_id = graph.insert(pkg_payload, None);
     let _hp = registries
@@ -310,7 +319,12 @@ fn enrichments_default_to_none_for_java_sources() {
     // ADR-0004 promotes nullability onto the JVM projection, but a
     // Java-sourced JVM node has no source-language opinion, so its
     // enrichments must default to None.
-    let payload = jvm_method("process", "com.example.Service.process", TypeRef::Void);
+    let payload = jvm_method(
+        "process",
+        "com.example.Service.process",
+        "com.example.Service",
+        TypeRef::Void,
+    );
     if let NodePayload::Jvm(JvmNodePayload::Method(node)) = payload {
         assert!(node.enrichments.nullability.is_none());
     } else {

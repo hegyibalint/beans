@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use beans_core::SymbolTable;
-use beans_lang_java::parse_java_file;
+use beans_core::languages::java::parse_java_file;
 use walkdir::WalkDir;
 
 use crate::resolve::Import;

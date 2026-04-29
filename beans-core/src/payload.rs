@@ -21,17 +21,37 @@
 //!
 //! New language variants land alongside their feature-gated module.
 
+use crate::graph::NodeBehavior;
+use crate::graph::arena::NodeId;
 use crate::jvm::payload::JvmNodePayload;
+use crate::registries::Registries;
 
 #[cfg(feature = "java")]
 use crate::languages::java::payload::JavaNodePayload;
 
 /// Union of every node payload the engine can store. Variants are
 /// feature-gated to match their owning language module.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// Deliberately not [`Clone`] — payload variants own RAII
+/// [`ProviderHandle`](crate::graph::ProviderHandle)s; cloning would
+/// double-register or double-drop. Per ADR-0014 each payload is the
+/// single owner of its registrations.
+#[derive(Debug)]
 pub enum NodePayload {
     Jvm(JvmNodePayload),
 
     #[cfg(feature = "java")]
     Java(JavaNodePayload),
+}
+
+impl NodeBehavior for NodePayload {
+    type Ctx = Registries;
+    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
+        match self {
+            NodePayload::Jvm(p) => p.on_created(id, ctx),
+
+            #[cfg(feature = "java")]
+            NodePayload::Java(p) => p.on_created(id, ctx),
+        }
+    }
 }

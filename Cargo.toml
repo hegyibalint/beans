@@ -3,7 +3,6 @@ resolver = "3"
 members = [
     "beans-core",
     "beans-lsp",
-    "beans-lang-java",
     "beans-test-harness",
     "beans-test-java",
 ]

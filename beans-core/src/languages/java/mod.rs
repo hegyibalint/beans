@@ -1,23 +1,35 @@
 //! Java language module.
 //!
 //! Per ADR-0004 / ADR-0019 each JVM language has its own module under
-//! [`crate::languages`]. Java's surface is small — Java's source model
-//! maps cleanly to its JVM projection — so the module today carries
-//! [`JavaSymbolKey`] (the single per-language registry key),
-//! [`JavaRegistries`] (the bag), and [`JavaNodePayload`] (the typed
-//! per-kind payload). The Java parser, type resolution, and rule set
-//! land in subsequent migration steps; the types here exist now so the
-//! engine and registry tests can exercise the language layer end-to-end
-//! without waiting for the parser port.
+//! [`crate::languages`]. Java's source model maps closely to its JVM
+//! projection, so this module is mostly a thin Java-specific overlay on
+//! top of [`crate::jvm`]:
+//!
+//! - [`keys`] / [`registries`] — the single Java-side key (`JavaSymbolKey`)
+//!   and registry (`JavaRegistries`).
+//! - [`payload`] — the typed `JavaNodePayload` variants.
+//! - [`parser`] — the tree-sitter walker; per ADR-0021 the walker
+//!   structure is preserved verbatim while the layers above it are
+//!   rewritten.
+//! - [`types`] — Java-local `TypeRef` shape used by the walker; converts
+//!   to the canonical [`crate::TypeRef`] via `to_core`.
+//! - [`syntax`] — language-local `extract_imports`, `extract_package`,
+//!   `word_at_position` helpers; consumed by the fixture harness and the
+//!   LSP via direct calls (no `Language` trait per ADR-0021).
 
 pub mod keys;
+pub mod parser;
 pub mod payload;
 pub mod registries;
+pub mod syntax;
+pub mod types;
 
 pub use keys::JavaSymbolKey;
+pub use parser::{integrate, parse_java_file, parse_java_to_graph, ParsedJavaFile};
 pub use payload::{
     JavaAnnotationElementNode, JavaConstructorNode, JavaDeclHeader, JavaEnumConstantNode,
     JavaFieldNode, JavaMethodNode, JavaNodePayload, JavaPackageNode, JavaParameter,
     JavaTypeKind, JavaTypeNode,
 };
 pub use registries::JavaRegistries;
+pub use syntax::{extract_imports, extract_package, word_at_position};
