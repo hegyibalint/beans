@@ -3,3 +3,15 @@ name = "beans-core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+
+# Per ADR-0019, languages are feature-gated submodules of `beans-core`. All
+# five default on so existing consumers (the LSP, the test harness, the
+# spec-test crates) compile unchanged. A bytecode-only consumer can disable
+# them with `default-features = false` and turn on only what it needs.
+[features]
+default = ["java", "kotlin", "scala", "groovy", "clojure"]
+java = []
+kotlin = []
+scala = []
+groovy = []
+clojure = []
