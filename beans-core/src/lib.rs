@@ -22,7 +22,9 @@
 pub mod graph;
 pub mod jvm;
 pub mod languages;
+pub mod payload;
 pub mod primitives;
+pub mod registries;
 
 // Prototype-era modules — retired as the graph migration progresses.
 pub mod completion;
@@ -40,7 +42,9 @@ pub use jvm::{
     RecordComponent, Relation, RelationKind, Signature, Symbol, TypeParam, TypeRef, WildcardBound,
 };
 
+pub use payload::NodePayload;
 pub use primitives::Location;
+pub use registries::Registries;
 
 // Prototype-era re-exports.
 pub use completion::{CompletionItem, CompletionItems};
