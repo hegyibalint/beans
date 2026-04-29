@@ -271,3 +271,24 @@ fn generation_zero_default() {
     let graph: Graph<TestNode> = Graph::new();
     assert_eq!(graph.current_generation(), Generation::ZERO);
 }
+
+#[test]
+fn duplicate_provider_registration_drops_one_at_a_time() {
+    // RAII invariant: each ProviderHandle owns exactly one entry. If a node
+    // registers twice for the same key, dropping one handle must leave the
+    // other entry intact.
+    let registry: Registry<TestKey> = Registry::new();
+    let key = TestKey("dup");
+    let node = NodeId(7);
+
+    let h1 = registry.register(key.clone(), node);
+    let h2 = registry.register(key.clone(), node);
+
+    assert_eq!(registry.query(&key), vec![node, node]);
+
+    drop(h1);
+    assert_eq!(registry.query(&key), vec![node]);
+
+    drop(h2);
+    assert!(registry.query(&key).is_empty());
+}
