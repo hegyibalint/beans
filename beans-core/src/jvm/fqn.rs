@@ -1,0 +1,92 @@
+//! Fully-qualified names.
+//!
+//! Per ADR-0007 the engine's [`NodeId`](crate::graph::NodeId) is a runtime
+//! arena index, not a stable identity. Semantic identity lives in registry
+//! keys, and the keys lean on fully-qualified names. [`Fqn`] is the
+//! single source-of-truth wrapper for those — defined once here so that
+//! `JvmTypeKey`, `JvmMethodKey`, and the per-language equivalents share a
+//! comparable representation.
+//!
+//! For now [`Fqn`] is a thin newtype around [`String`]. ADR-0008 calls out
+//! that link objects exist at the scale of millions in a real project and
+//! that "we need to keep the query objects compact"; when that becomes
+//! load-bearing we will swap the inner storage for `Arc<str>` or a string
+//! intern table without changing the public API.
+
+use std::fmt;
+
+/// A dotted, fully-qualified name as it appears in cross-file lookups:
+/// `com.example.Service`, `java.util.List`, `com.example.Service.process`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Fqn(String);
+
+impl Fqn {
+    /// Construct an [`Fqn`] from any owned-or-borrowed string.
+    pub fn new(name: impl Into<String>) -> Self {
+        Fqn(name.into())
+    }
+
+    /// Borrow the dotted form.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Consume into the inner [`String`].
+    pub fn into_string(self) -> String {
+        self.0
+    }
+
+    /// Split off the last segment: `"com.example.Service.process"` →
+    /// `("com.example.Service", "process")`. Returns `None` for an
+    /// unqualified name (no dot).
+    pub fn split_last(&self) -> Option<(Fqn, &str)> {
+        let dot = self.0.rfind('.')?;
+        let parent = &self.0[..dot];
+        let leaf = &self.0[dot + 1..];
+        Some((Fqn::new(parent), leaf))
+    }
+}
+
+impl fmt::Display for Fqn {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl From<&str> for Fqn {
+    fn from(value: &str) -> Self {
+        Fqn::new(value)
+    }
+}
+
+impl From<String> for Fqn {
+    fn from(value: String) -> Self {
+        Fqn(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_last_qualified() {
+        let fqn = Fqn::new("com.example.Service.process");
+        let (parent, leaf) = fqn.split_last().unwrap();
+        assert_eq!(parent.as_str(), "com.example.Service");
+        assert_eq!(leaf, "process");
+    }
+
+    #[test]
+    fn split_last_unqualified() {
+        let fqn = Fqn::new("Service");
+        assert!(fqn.split_last().is_none());
+    }
+
+    #[test]
+    fn display_round_trips() {
+        let fqn = Fqn::new("a.b.c");
+        assert_eq!(fqn.to_string(), "a.b.c");
+        assert_eq!(fqn.as_str(), "a.b.c");
+    }
+}
