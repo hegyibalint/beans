@@ -21,7 +21,9 @@ pub use arena::{Graph, NodeData, NodeId};
 pub use behavior::NodeBehavior;
 pub use cache_state::{CacheState, Generation};
 pub use dynamic_link::{DynamicLink, LinkMode, RegistryQuery};
-pub use registry::{Callback, ProviderHandle, Registry, SubscriptionHandle, SubscriptionId};
+pub use registry::{
+    Callback, NodeHandle, ProviderHandle, Registry, SubscriptionHandle, SubscriptionId,
+};
 
 #[cfg(test)]
 mod tests;

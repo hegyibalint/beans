@@ -178,6 +178,18 @@ impl<K: Eq + Hash + Clone> Registry<K> {
     }
 }
 
+/// Marker trait for registration handles that
+/// [`NodeData::handles`](crate::graph::NodeData::handles) can store as
+/// `Box<dyn NodeHandle>`. Per ADR-0014 each handle is its own RAII
+/// anchor — its `Drop` impl removes its registry entry. The trait
+/// has no methods; it exists so the engine can type-erase handles
+/// without going through `dyn Drop` (which clippy warns against, since
+/// `Drop` is special-cased and can be misleading as a trait object).
+pub trait NodeHandle {}
+
+impl<K: Eq + Hash> NodeHandle for ProviderHandle<K> {}
+impl<K: Eq + Hash> NodeHandle for SubscriptionHandle<K> {}
+
 /// RAII registration. Drop unregisters this `(key, node)` from the registry.
 /// If the registry has already been dropped, the upgrade fails and Drop
 /// is a no-op — gracefully handling tear-down ordering (ADR-0015).

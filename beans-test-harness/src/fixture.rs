@@ -323,7 +323,7 @@ impl Fixture {
 
         // 2. Parse all files and integrate into one graph + registries.
         let mut graph: Graph<NodePayload> = Graph::new();
-        let mut registries = Registries::new();
+        let registries = Registries::new();
         let mut file_imports: HashMap<PathBuf, Vec<Import>> = HashMap::new();
         let mut file_packages: HashMap<PathBuf, String> = HashMap::new();
         let mut file_sources: HashMap<PathBuf, String> = HashMap::new();
@@ -336,7 +336,7 @@ impl Fixture {
             }
             file_sources.insert(path.clone(), clean_source.clone());
             #[cfg(feature = "java")]
-            java::integrate(&mut graph, &mut registries, parsed.into_java());
+            java::integrate(&mut graph, &registries, parsed.into_java());
             #[cfg(not(feature = "java"))]
             drop(parsed);
         }

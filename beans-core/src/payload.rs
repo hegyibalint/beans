@@ -20,9 +20,16 @@
 //!   `Jvm` projection child per ADR-0004. Gated by `feature = "java"`.
 //!
 //! New language variants land alongside their feature-gated module.
+//!
+//! Per ADR-0014 RAII handles for each variant's registrations live on
+//! [`NodeData::handles`](crate::graph::NodeData::handles), not on the
+//! payload itself. The payload values are therefore plain data —
+//! `Send + Sync`-eligible — which lets pre-integration parse plans
+//! travel between rayon workers (ADR-0005).
 
 use crate::graph::NodeBehavior;
 use crate::graph::arena::NodeId;
+use crate::graph::registry::NodeHandle;
 use crate::jvm::payload::JvmNodePayload;
 use crate::registries::Registries;
 
@@ -31,12 +38,7 @@ use crate::languages::java::payload::JavaNodePayload;
 
 /// Union of every node payload the engine can store. Variants are
 /// feature-gated to match their owning language module.
-///
-/// Deliberately not [`Clone`] — payload variants own RAII
-/// [`ProviderHandle`](crate::graph::ProviderHandle)s; cloning would
-/// double-register or double-drop. Per ADR-0014 each payload is the
-/// single owner of its registrations.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum NodePayload {
     Jvm(JvmNodePayload),
 
@@ -46,7 +48,7 @@ pub enum NodePayload {
 
 impl NodeBehavior for NodePayload {
     type Ctx = Registries;
-    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
+    fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         match self {
             NodePayload::Jvm(p) => p.on_created(id, ctx),
 
