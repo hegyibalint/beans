@@ -54,9 +54,23 @@ impl JvmFieldKey {
 ///
 /// Per JLS §8.4.2 two methods with the same `(name, erased-params)` on
 /// the same class are duplicates; this key is therefore unique up to
-/// overload. The `param_types` `Vec<TypeRef>` is expected to be erased
-/// — pre-erase via [`TypeRef::erasure`](crate::jvm::TypeRef::erasure)
-/// at construction time.
+/// overload.
+///
+/// **Producer obligations.** The `param_types` `Vec<TypeRef>` must be
+/// constructed with both:
+///
+/// 1. **Erasure applied** — pre-erase via
+///    [`TypeRef::erasure`](crate::jvm::TypeRef::erasure) (JLS §4.6) so
+///    `List<String>` and `List<Integer>` collapse to the same key.
+/// 2. **Fully-qualified `Simple` names** — `TypeRef::Simple { name:
+///    "java.lang.String" }`, never `Simple { name: "String" }`. Two
+///    producers that disagree on `String` vs `java.lang.String` will
+///    register identical-looking methods under different keys, and
+///    cross-file resolution will silently miss.
+///
+/// Per ADR-0013 the registry layer is dumb and does not normalise either
+/// of these — both are the producer's responsibility. The JVM-projection
+/// emit path in `languages/java/parser.rs` is the canonical example.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct JvmMethodKey {
     pub owner: Fqn,
@@ -85,6 +99,9 @@ impl JvmMethodKey {
 /// represents them differently (`<init>` byte-name, no return type
 /// dispatch); keeping the key separate from [`JvmMethodKey`] means
 /// constructor lookups don't have to thread a sentinel name through.
+///
+/// The same producer obligations as [`JvmMethodKey`] apply to
+/// `param_types`: erased and fully-qualified.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct JvmConstructorKey {
     pub owner: Fqn,

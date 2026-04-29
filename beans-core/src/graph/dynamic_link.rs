@@ -157,17 +157,18 @@ impl<Q> DynamicLink<Q> {
 impl<Q: RegistryQuery> DynamicLink<Q> {
     /// Resolve this link to a single target.
     ///
-    /// For [`LinkMode::FirstMatch`] (the standard mode): walk the query
-    /// list in order; the first query whose [`resolve`](RegistryQuery::resolve)
-    /// returns at least one [`NodeId`] wins. The link caches the
-    /// `(active_index, cached_result)` pair so subsequent calls without
-    /// an [`invalidate`](Self::invalidate) return the cached value
-    /// directly.
+    /// Calling this on a [`LinkMode::MergeAll`] link is a bug — merge-all
+    /// results don't compose into a single answer. The mode is asserted
+    /// in debug builds; in release builds the call still walks the list
+    /// and returns the first hit, but the resulting `(active_index,
+    /// cached_result)` pair has no defined meaning for a `MergeAll` link.
+    /// Use [`resolve_all`](Self::resolve_all) for those.
     ///
-    /// For [`LinkMode::MergeAll`] this still picks the first hit (the
-    /// merge-all results don't compose into a single answer); use
-    /// [`resolve_all`](Self::resolve_all) when the caller wants every
-    /// candidate.
+    /// Walks the query list in order; the first query whose
+    /// [`resolve`](RegistryQuery::resolve) returns at least one
+    /// [`NodeId`] wins. The link caches the `(active_index,
+    /// cached_result)` pair so subsequent calls without an
+    /// [`invalidate`](Self::invalidate) return the cached value directly.
     ///
     /// When a query returns multiple providers, this function picks the
     /// first one. Per ADR-0013 the registry's provider order carries no
@@ -175,6 +176,11 @@ impl<Q: RegistryQuery> DynamicLink<Q> {
     /// hits in a single registry must encode that as additional queries
     /// or apply a resolution rule outside the link.
     pub fn resolve(&mut self, ctx: &Q::Ctx) -> Option<NodeId> {
+        debug_assert_eq!(
+            self.mode,
+            LinkMode::FirstMatch,
+            "DynamicLink::resolve called on a MergeAll link; use resolve_all"
+        );
         for (idx, query) in self.queries.iter().enumerate() {
             let hits = query.resolve(ctx);
             if let Some(&first) = hits.first() {
@@ -190,16 +196,31 @@ impl<Q: RegistryQuery> DynamicLink<Q> {
 
     /// Resolve this link to every candidate target.
     ///
-    /// Walks every query in the list (regardless of [`mode`](Self::mode))
-    /// and returns every provider in query order. Per ADR-0008 this is
-    /// the operation completion uses; per the same ADR the consumer is
-    /// responsible for any language-specific dedup (e.g., Kotlin-defined
-    /// symbols winning over JVM projections of themselves).
+    /// Calling this on a [`LinkMode::FirstMatch`] link is a bug — the
+    /// caller should be using [`resolve`](Self::resolve) to get a single
+    /// authoritative target with cached fallback state. The mode is
+    /// asserted in debug builds.
+    ///
+    /// Walks every query and returns every provider in query order. Per
+    /// ADR-0008 this is the operation completion uses; per the same ADR
+    /// the consumer is responsible for any language-specific dedup
+    /// (e.g., Kotlin-defined symbols winning over JVM projections of
+    /// themselves). The link returns providers verbatim, with no
+    /// deduplication: if the same [`NodeId`] is registered under
+    /// multiple queries (a Java payload and its hard-linked JVM
+    /// projection both hitting their respective registries) it appears
+    /// in the result once per hit, in priority order. The consumer
+    /// collapses duplicates with knowledge of which language wins.
     ///
     /// Does not cache — completion candidates change too often for a
     /// single-NodeId cache to mean anything. Callers that want to memoise
     /// the result do so externally.
     pub fn resolve_all(&self, ctx: &Q::Ctx) -> Vec<NodeId> {
+        debug_assert_eq!(
+            self.mode,
+            LinkMode::MergeAll,
+            "DynamicLink::resolve_all called on a FirstMatch link; use resolve"
+        );
         let mut out = Vec::new();
         for query in &self.queries {
             out.extend(query.resolve(ctx));
