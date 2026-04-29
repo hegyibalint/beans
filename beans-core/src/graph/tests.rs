@@ -292,3 +292,207 @@ fn duplicate_provider_registration_drops_one_at_a_time() {
     drop(h2);
     assert!(registry.query(&key).is_empty());
 }
+
+// --------- Dynamic-link tests (ADR-0006, ADR-0008). ---------
+//
+// `TwoRegistryCtx` plays the role of a real `Registries` struct: it owns
+// two registries with different keys (`TestKey` and `OtherKey`) so the
+// query enum has to dispatch to the right one. This is the smallest
+// faithful model of the typed-key discipline ADR-0012 commits to — a
+// single test registry would let us cheat by reusing one key type
+// everywhere.
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct OtherKey(&'static str);
+
+struct TwoRegistryCtx {
+    primary: Registry<TestKey>,
+    secondary: Registry<OtherKey>,
+}
+
+#[derive(Debug, Clone)]
+enum TestQuery {
+    Primary(TestKey),
+    Secondary(OtherKey),
+}
+
+impl crate::graph::dynamic_link::RegistryQuery for TestQuery {
+    type Ctx = TwoRegistryCtx;
+
+    fn resolve(&self, ctx: &Self::Ctx) -> Vec<NodeId> {
+        match self {
+            TestQuery::Primary(k) => ctx.primary.query(k),
+            TestQuery::Secondary(k) => ctx.secondary.query(k),
+        }
+    }
+}
+
+#[test]
+fn dynamic_link_first_match_picks_first_hit() {
+    use crate::graph::dynamic_link::DynamicLink;
+
+    let ctx = TwoRegistryCtx {
+        primary: Registry::new(),
+        secondary: Registry::new(),
+    };
+
+    // Only the *secondary* key has a provider — the primary query misses
+    // and the link falls through.
+    let _h = ctx.secondary.register(OtherKey("svc"), NodeId(42));
+
+    let mut link = DynamicLink::first_match(vec![
+        TestQuery::Primary(TestKey("svc")),
+        TestQuery::Secondary(OtherKey("svc")),
+    ]);
+
+    assert_eq!(link.resolve(&ctx), Some(NodeId(42)));
+    assert_eq!(link.active_index(), Some(1));
+    assert_eq!(link.cached_result(), Some(NodeId(42)));
+}
+
+#[test]
+fn dynamic_link_first_match_prefers_higher_priority() {
+    use crate::graph::dynamic_link::DynamicLink;
+
+    let ctx = TwoRegistryCtx {
+        primary: Registry::new(),
+        secondary: Registry::new(),
+    };
+
+    // Both registries hold the symbol; the primary wins because it is
+    // listed first.
+    let _hp = ctx.primary.register(TestKey("svc"), NodeId(7));
+    let _hs = ctx.secondary.register(OtherKey("svc"), NodeId(99));
+
+    let mut link = DynamicLink::first_match(vec![
+        TestQuery::Primary(TestKey("svc")),
+        TestQuery::Secondary(OtherKey("svc")),
+    ]);
+
+    assert_eq!(link.resolve(&ctx), Some(NodeId(7)));
+    assert_eq!(link.active_index(), Some(0));
+}
+
+#[test]
+fn dynamic_link_resolve_returns_none_when_all_queries_miss() {
+    use crate::graph::dynamic_link::DynamicLink;
+
+    let ctx = TwoRegistryCtx {
+        primary: Registry::new(),
+        secondary: Registry::new(),
+    };
+
+    let mut link = DynamicLink::first_match(vec![
+        TestQuery::Primary(TestKey("missing")),
+        TestQuery::Secondary(OtherKey("missing")),
+    ]);
+
+    assert_eq!(link.resolve(&ctx), None);
+    assert_eq!(link.active_index(), None);
+    assert_eq!(link.cached_result(), None);
+}
+
+#[test]
+fn dynamic_link_invalidate_clears_cache() {
+    use crate::graph::dynamic_link::DynamicLink;
+
+    let ctx = TwoRegistryCtx {
+        primary: Registry::new(),
+        secondary: Registry::new(),
+    };
+    let _h = ctx.primary.register(TestKey("svc"), NodeId(1));
+
+    let mut link = DynamicLink::first_match(vec![TestQuery::Primary(TestKey("svc"))]);
+
+    assert_eq!(link.resolve(&ctx), Some(NodeId(1)));
+    assert_eq!(link.cached_result(), Some(NodeId(1)));
+
+    link.invalidate();
+    assert_eq!(link.cached_result(), None);
+    assert_eq!(link.active_index(), None);
+}
+
+#[test]
+fn dynamic_link_falls_through_when_higher_priority_misses() {
+    use crate::graph::dynamic_link::DynamicLink;
+
+    let ctx = TwoRegistryCtx {
+        primary: Registry::new(),
+        secondary: Registry::new(),
+    };
+
+    // Start with only the secondary registered.
+    let hs = ctx.secondary.register(OtherKey("svc"), NodeId(99));
+
+    let mut link = DynamicLink::first_match(vec![
+        TestQuery::Primary(TestKey("svc")),
+        TestQuery::Secondary(OtherKey("svc")),
+    ]);
+
+    // First resolve falls through to the secondary.
+    assert_eq!(link.resolve(&ctx), Some(NodeId(99)));
+    assert_eq!(link.active_index(), Some(1));
+
+    // A higher-priority provider appears.
+    let _hp = ctx.primary.register(TestKey("svc"), NodeId(7));
+    link.invalidate();
+    assert_eq!(link.resolve(&ctx), Some(NodeId(7)));
+    assert_eq!(link.active_index(), Some(0));
+
+    // Higher-priority provider goes away again.
+    drop(_hp);
+    link.invalidate();
+    assert_eq!(link.resolve(&ctx), Some(NodeId(99)));
+    assert_eq!(link.active_index(), Some(1));
+
+    // Last provider goes away too.
+    drop(hs);
+    link.invalidate();
+    assert_eq!(link.resolve(&ctx), None);
+}
+
+#[test]
+fn dynamic_link_merge_all_unions_results_in_query_order() {
+    use crate::graph::dynamic_link::DynamicLink;
+
+    let ctx = TwoRegistryCtx {
+        primary: Registry::new(),
+        secondary: Registry::new(),
+    };
+
+    // Two providers in primary, one in secondary. MergeAll returns all
+    // three, primary first (queries are walked in order).
+    let _hp1 = ctx.primary.register(TestKey("svc"), NodeId(1));
+    let _hp2 = ctx.primary.register(TestKey("svc"), NodeId(2));
+    let _hs = ctx.secondary.register(OtherKey("svc"), NodeId(99));
+
+    let link = DynamicLink::merge_all(vec![
+        TestQuery::Primary(TestKey("svc")),
+        TestQuery::Secondary(OtherKey("svc")),
+    ]);
+
+    assert_eq!(
+        link.resolve_all(&ctx),
+        vec![NodeId(1), NodeId(2), NodeId(99)]
+    );
+}
+
+#[test]
+fn dynamic_link_resolve_caches_first_provider_when_query_has_many() {
+    use crate::graph::dynamic_link::DynamicLink;
+
+    let ctx = TwoRegistryCtx {
+        primary: Registry::new(),
+        secondary: Registry::new(),
+    };
+
+    // Two providers for the same key — `resolve` (FirstMatch single) takes
+    // the first one. Per ADR-0013 the registry's provider order has no
+    // semantic weight, so callers needing precedence among multiple hits
+    // in one registry must encode that as additional queries.
+    let _h1 = ctx.primary.register(TestKey("svc"), NodeId(1));
+    let _h2 = ctx.primary.register(TestKey("svc"), NodeId(2));
+
+    let mut link = DynamicLink::first_match(vec![TestQuery::Primary(TestKey("svc"))]);
+    assert_eq!(link.resolve(&ctx), Some(NodeId(1)));
+}
