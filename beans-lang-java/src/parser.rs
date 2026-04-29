@@ -159,7 +159,7 @@ fn extract_class_like(ctx: &mut ParseContext, node: Node, kind: SymbolKind) {
     let type_params = extract_type_parameters(node, ctx.source);
     let signature = if !type_params.is_empty() {
         Some(Signature::Class {
-            type_parameters: type_params,
+            type_parameters: type_params.iter().map(|s| beans_core::TypeParam::new(s)).collect(),
         })
     } else {
         None
@@ -175,6 +175,7 @@ fn extract_class_like(ctx: &mut ParseContext, node: Node, kind: SymbolKind) {
         kind,
         location: Some(location),
         modifiers,
+        annotations: vec![],
         parent: parent_idx.map(|i| SymbolId(i)),
         children: vec![],
         relations: vec![],
@@ -214,6 +215,7 @@ fn extract_enum(ctx: &mut ParseContext, node: Node) {
         kind: SymbolKind::Enum,
         location: Some(location),
         modifiers,
+        annotations: vec![],
         parent: parent_idx.map(|i| SymbolId(i)),
         children: vec![],
         relations: vec![],
@@ -265,6 +267,7 @@ fn extract_enum_constant(ctx: &mut ParseContext, node: Node) {
         kind: SymbolKind::Field, // enum constants are fields
         location: Some(location),
         modifiers: vec![Modifier::Public, Modifier::Static, Modifier::Final],
+        annotations: vec![],
         parent: parent_idx.map(|i| SymbolId(i)),
         children: vec![],
         relations: vec![],
@@ -334,15 +337,17 @@ fn extract_method(ctx: &mut ParseContext, node: Node) {
     let type_params = extract_type_parameters(node, ctx.source);
 
     let signature = Signature::Method {
-        return_type: return_type.to_string_repr(),
+        return_type: return_type.to_core(),
         parameters: parameters
             .iter()
             .map(|(name, ty)| beans_core::MethodParam {
                 name: name.clone(),
-                param_type: ty.to_string_repr(),
+                param_type: ty.to_core(),
+                is_varargs: false,
             })
             .collect(),
-        type_parameters: type_params,
+        type_parameters: type_params.iter().map(|s| beans_core::TypeParam::new(s)).collect(),
+        throws: vec![],
     };
 
     let parent_idx = ctx.enclosing_stack.last().map(|(idx, _)| *idx);
@@ -355,6 +360,7 @@ fn extract_method(ctx: &mut ParseContext, node: Node) {
         kind: SymbolKind::Method,
         location: Some(location),
         modifiers,
+        annotations: vec![],
         parent: parent_idx.map(|i| SymbolId(i)),
         children: vec![],
         relations: vec![],
@@ -382,15 +388,17 @@ fn extract_constructor(ctx: &mut ParseContext, node: Node) {
     let type_params = extract_type_parameters(node, ctx.source);
 
     let signature = Signature::Method {
-        return_type: "void".to_string(),
+        return_type: beans_core::TypeRef::Void,
         parameters: parameters
             .iter()
             .map(|(name, ty)| beans_core::MethodParam {
                 name: name.clone(),
-                param_type: ty.to_string_repr(),
+                param_type: ty.to_core(),
+                is_varargs: false,
             })
             .collect(),
-        type_parameters: type_params,
+        type_parameters: type_params.iter().map(|s| beans_core::TypeParam::new(s)).collect(),
+        throws: vec![],
     };
 
     let parent_idx = ctx.enclosing_stack.last().map(|(idx, _)| *idx);
@@ -403,6 +411,7 @@ fn extract_constructor(ctx: &mut ParseContext, node: Node) {
         kind: SymbolKind::Constructor,
         location: Some(location),
         modifiers,
+        annotations: vec![],
         parent: parent_idx.map(|i| SymbolId(i)),
         children: vec![],
         relations: vec![],
@@ -449,11 +458,14 @@ fn extract_fields(ctx: &mut ParseContext, node: Node) {
                 kind: SymbolKind::Field,
                 location: Some(location),
                 modifiers: modifiers.clone(),
+                annotations: vec![],
                 parent: parent_idx.map(|i| SymbolId(i)),
                 children: vec![],
                 relations: vec![],
                 signature: Some(Signature::Field {
-                    field_type: actual_type.to_string_repr(),
+                    field_type: actual_type.to_core(),
+                    constant_value: None,
+                    initialized: false,
                 }),
             });
 
@@ -627,7 +639,7 @@ public class Dog extends Animal implements Runnable {
         assert_eq!(name_field.fqn, "com.example.Dog.name");
         assert_eq!(name_field.kind, SymbolKind::Field);
         assert!(name_field.modifiers.contains(&Modifier::Private));
-        if let Some(Signature::Field { ref field_type }) = name_field.signature {
+        if let Some(Signature::Field { ref field_type, .. }) = name_field.signature {
             assert_eq!(field_type, "String");
         } else {
             panic!("expected Field signature");
@@ -796,7 +808,8 @@ public class Container<T> {
             ref type_parameters,
         }) = container.signature
         {
-            assert_eq!(type_parameters, &["T"]);
+            assert_eq!(type_parameters.len(), 1);
+            assert_eq!(type_parameters[0].name, "T");
         } else {
             panic!("expected Class signature with type parameters");
         }
@@ -819,7 +832,7 @@ public class Utils {
             assert_eq!(parameters[0].name, "items");
             // The type should contain the generic info
             assert!(
-                parameters[0].param_type.contains("List"),
+                parameters[0].param_type.to_string().contains("List"),
                 "expected List in type, got: {}",
                 parameters[0].param_type
             );
@@ -882,7 +895,7 @@ public class Arrays {
         let symbols = parse(source);
 
         let numbers = find_by_name(&symbols, "numbers");
-        if let Some(Signature::Field { ref field_type }) = numbers.signature {
+        if let Some(Signature::Field { ref field_type, .. }) = numbers.signature {
             assert_eq!(field_type, "int[]");
         } else {
             panic!("expected Field signature");

@@ -138,7 +138,7 @@ fn test_dog_field_types() {
     let name_id = table.lookup_by_fqn("com.example.Dog.name").unwrap();
     let name_sym = table.get(name_id).unwrap();
     assert_eq!(name_sym.kind, SymbolKind::Field);
-    if let Some(beans_core::Signature::Field { ref field_type }) = name_sym.signature {
+    if let Some(beans_core::Signature::Field { ref field_type, .. }) = name_sym.signature {
         assert_eq!(field_type, "String");
     } else {
         panic!("Expected Field signature for Dog.name");
@@ -147,7 +147,7 @@ fn test_dog_field_types() {
     let age_id = table.lookup_by_fqn("com.example.Dog.age").unwrap();
     let age_sym = table.get(age_id).unwrap();
     assert_eq!(age_sym.kind, SymbolKind::Field);
-    if let Some(beans_core::Signature::Field { ref field_type }) = age_sym.signature {
+    if let Some(beans_core::Signature::Field { ref field_type, .. }) = age_sym.signature {
         assert_eq!(field_type, "int");
     } else {
         panic!("Expected Field signature for Dog.age");
