@@ -7,6 +7,7 @@ pub enum Modifier {
     Abstract,
     Final,
     Sealed,
+    NonSealed,
     Default,
     Synchronized,
     Volatile,

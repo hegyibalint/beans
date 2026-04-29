@@ -624,10 +624,11 @@ fn run_checks(
                 );
                 match &sym.signature {
                     Some(Signature::Method { return_type, .. }) => {
+                        let return_type_str = return_type.to_string();
                         assert_eq!(
-                            return_type, expected_ret,
+                            return_type_str, *expected_ret,
                             "[{}] signature_return: expected '{}', got '{}'",
-                            cursor_display, expected_ret, return_type
+                            cursor_display, expected_ret, return_type_str
                         );
                     }
                     other => panic!(
@@ -654,10 +655,11 @@ fn run_checks(
                                 "[{}] param[{}] name: expected '{}', got '{}'",
                                 cursor_display, i, exp_name, parameters[i].name
                             );
+                            let param_type_str = parameters[i].param_type.to_string();
                             assert_eq!(
-                                parameters[i].param_type, *exp_type,
+                                param_type_str, *exp_type,
                                 "[{}] param[{}] type: expected '{}', got '{}'",
-                                cursor_display, i, exp_type, parameters[i].param_type
+                                cursor_display, i, exp_type, param_type_str
                             );
                         }
                     }

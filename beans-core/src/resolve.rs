@@ -151,11 +151,13 @@ pub fn build_hover_text(symbol: &Symbol) -> String {
             return_type,
             parameters,
             type_parameters,
+            ..
         }) => {
             let tp = if type_parameters.is_empty() {
                 String::new()
             } else {
-                format!("<{}>", type_parameters.join(", "))
+                let names: Vec<&str> = type_parameters.iter().map(|t| t.name.as_str()).collect();
+                format!("<{}>", names.join(", "))
             };
             let params: Vec<String> = parameters
                 .iter()
@@ -171,7 +173,7 @@ pub fn build_hover_text(symbol: &Symbol) -> String {
                 symbol.fqn
             )
         }
-        Some(Signature::Field { field_type }) => {
+        Some(Signature::Field { field_type, .. }) => {
             format!(
                 "```java\n{} {}\n```\n\n{} `{}`",
                 field_type, symbol.name, kind_str, symbol.fqn
@@ -181,11 +183,30 @@ pub fn build_hover_text(symbol: &Symbol) -> String {
             let tp = if type_parameters.is_empty() {
                 String::new()
             } else {
-                format!("<{}>", type_parameters.join(", "))
+                let names: Vec<&str> = type_parameters.iter().map(|t| t.name.as_str()).collect();
+                format!("<{}>", names.join(", "))
             };
             format!(
                 "```java\n{} {}{}\n```\n\n`{}`",
                 kind_str, symbol.name, tp, symbol.fqn
+            )
+        }
+        Some(Signature::Record { type_parameters, .. }) => {
+            let tp = if type_parameters.is_empty() {
+                String::new()
+            } else {
+                let names: Vec<&str> = type_parameters.iter().map(|t| t.name.as_str()).collect();
+                format!("<{}>", names.join(", "))
+            };
+            format!(
+                "```java\nrecord {}{}\n```\n\n`{}`",
+                symbol.name, tp, symbol.fqn
+            )
+        }
+        Some(Signature::AnnotationElement { element_type, .. }) => {
+            format!(
+                "```java\n{} {}()\n```\n\n`{}`",
+                element_type, symbol.name, symbol.fqn
             )
         }
         None => {
@@ -222,6 +243,7 @@ mod tests {
                 end_col: 0,
             }),
             modifiers: vec![Modifier::Public],
+            annotations: vec![],
             parent: None,
             children: vec![],
             relations: vec![],
@@ -242,6 +264,7 @@ mod tests {
                 end_col: 0,
             }),
             modifiers: vec![Modifier::Public],
+            annotations: vec![],
             parent: None,
             children: vec![],
             relations: vec![],
@@ -299,6 +322,7 @@ mod tests {
             kind: SymbolKind::Class,
             location: None,
             modifiers: vec![],
+            annotations: vec![],
             parent: None,
             children: vec![],
             relations: vec![],
@@ -333,6 +357,7 @@ mod tests {
                 end_col: 0,
             }),
             modifiers: vec![],
+            annotations: vec![],
             parent: None,
             children: vec![],
             relations: vec![],
@@ -351,6 +376,7 @@ mod tests {
                 end_col: 0,
             }),
             modifiers: vec![],
+            annotations: vec![],
             parent: Some(class_id),
             children: vec![],
             relations: vec![],
@@ -381,16 +407,19 @@ mod tests {
             kind: SymbolKind::Method,
             location: None,
             modifiers: vec![Modifier::Public],
+            annotations: vec![],
             parent: None,
             children: vec![],
             relations: vec![],
             signature: Some(Signature::Method {
-                return_type: "String".to_string(),
+                return_type: crate::TypeRef::simple("String"),
                 parameters: vec![crate::MethodParam {
                     name: "input".to_string(),
-                    param_type: "int".to_string(),
+                    param_type: crate::TypeRef::Primitive(crate::PrimitiveKind::Int),
+                    is_varargs: false,
                 }],
                 type_parameters: vec![],
+                throws: vec![],
             }),
         };
         let text = build_hover_text(&sym);
@@ -409,11 +438,12 @@ mod tests {
             kind: SymbolKind::Class,
             location: None,
             modifiers: vec![],
+            annotations: vec![],
             parent: None,
             children: vec![],
             relations: vec![],
             signature: Some(Signature::Class {
-                type_parameters: vec!["T".to_string()],
+                type_parameters: vec![crate::TypeParam::new("T")],
             }),
         };
         let text = build_hover_text(&sym);
