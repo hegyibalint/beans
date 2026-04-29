@@ -639,15 +639,6 @@ pub(crate) struct PendingNode {
     parent: Option<usize>,
 }
 
-impl ParsedJavaFile {
-    /// Borrow the plan's pre-payload list. Test-only; production
-    /// consumers go through [`integrate`].
-    #[cfg(test)]
-    pub(crate) fn plan(&self) -> &[PendingNode] {
-        &self.plan
-    }
-}
-
 /// Parse a Java source file into a self-contained [`ParsedJavaFile`].
 ///
 /// Performs no graph mutation — runs purely on its own thread, suitable

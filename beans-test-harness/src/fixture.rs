@@ -703,20 +703,21 @@ fn resolve_at_cursor<'a>(
         );
     });
 
-    let id = resolve_name_to_node(
-        &word,
-        &cursor.file,
-        file_imports,
-        file_packages,
-        registries,
-        graph,
-    )
-    .unwrap_or_else(|| {
-        panic!(
-            "[{}] could not resolve '{}' to any symbol",
-            cursor_display, word
-        );
-    });
+    let imports = file_imports
+        .get(&cursor.file)
+        .map(|v| v.as_slice())
+        .unwrap_or(&[]);
+    let current_package = file_packages
+        .get(&cursor.file)
+        .map(|s| s.as_str())
+        .unwrap_or("");
+    let id = java::resolve_name(&word, imports, current_package, registries, graph)
+        .unwrap_or_else(|| {
+            panic!(
+                "[{}] could not resolve '{}' to any symbol",
+                cursor_display, word
+            );
+        });
 
     ResolvedView::from_node(graph, id).unwrap_or_else(|| {
         panic!(
@@ -736,127 +737,10 @@ fn word_at(source: &str, line: u32, col: u32, file: &Path) -> Option<String> {
     }
 }
 
-/// Mirror of `beans_core::resolve::resolve_name`, talking to the graph
-/// + registries instead of `SymbolTable`. Tries (in order): exact FQN,
-/// explicit imports, same-package qualification, wildcard imports,
-/// static imports, and a final simple-name fallback.
-fn resolve_name_to_node(
-    name: &str,
-    file: &Path,
-    file_imports: &HashMap<PathBuf, Vec<Import>>,
-    file_packages: &HashMap<PathBuf, String>,
-    registries: &Registries,
-    graph: &Graph<NodePayload>,
-) -> Option<NodeId> {
-    let imports = file_imports.get(file).map(|v| v.as_slice()).unwrap_or(&[]);
-    let current_package = file_packages.get(file).map(|s| s.as_str()).unwrap_or("");
-
-    // 1. Exact FQN.
-    if let Some(id) = lookup_fqn(registries, name) {
-        return Some(id);
-    }
-
-    // 2. Explicit imports (`import com.example.MyClass;`).
-    for import in imports {
-        if let Import::Single(fqn) = import {
-            if fqn.ends_with(&format!(".{}", name)) || fqn == name {
-                if let Some(id) = lookup_fqn(registries, fqn) {
-                    return Some(id);
-                }
-            }
-        }
-    }
-
-    // 3. Same-package qualification.
-    if !current_package.is_empty() {
-        let candidate = format!("{}.{}", current_package, name);
-        if let Some(id) = lookup_fqn(registries, &candidate) {
-            return Some(id);
-        }
-    }
-
-    // 4. Wildcard imports.
-    for import in imports {
-        if let Import::Wildcard(package) = import {
-            let candidate = format!("{}.{}", package, name);
-            if let Some(id) = lookup_fqn(registries, &candidate) {
-                return Some(id);
-            }
-        }
-    }
-
-    // 5. Static imports.
-    for import in imports {
-        if let Import::Static(fqn) = import {
-            if fqn.ends_with(&format!(".{}", name)) || fqn == name {
-                if let Some(id) = lookup_fqn(registries, fqn) {
-                    return Some(id);
-                }
-            }
-        }
-    }
-
-    // 6. Simple-name fallback. The registries are FQN-keyed, so we
-    //    walk the graph looking for a single payload whose simple name
-    //    matches. This mirrors the prototype's `lookup_by_name` —
-    //    expensive at scale but the harness is per-test and the
-    //    fallback only triggers when steps 1-5 missed.
-    resolve_simple_name_via_graph(name, graph)
-}
-
-fn resolve_simple_name_via_graph(name: &str, graph: &Graph<NodePayload>) -> Option<NodeId> {
-    let mut hits = Vec::new();
-    for (id, node) in graph.iter() {
-        if let Some(payload_name) = payload_simple_name(&node.payload) {
-            if payload_name == name {
-                hits.push(id);
-            }
-        }
-    }
-    // Prototype semantics: return Some(id) iff exactly one hit.
-    if hits.len() == 1 {
-        Some(hits[0])
-    } else {
-        None
-    }
-}
-
-fn payload_simple_name(payload: &NodePayload) -> Option<&str> {
-    match payload {
-        #[cfg(feature = "java")]
-        NodePayload::Java(j) => j.header().map(|h| h.name.as_str()),
-        NodePayload::Jvm(_) => None,
-    }
-}
-
-fn lookup_fqn(registries: &Registries, fqn: &str) -> Option<NodeId> {
-    use beans_core::jvm::Fqn;
-
-    // Per spec-test expectations, prefer the Java-side node when both
-    // exist. This mirrors the prototype's `lookup_by_fqn` returning the
-    // single-source declaration.
-    #[cfg(feature = "java")]
-    {
-        use beans_core::languages::java::JavaSymbolKey;
-        let java_key = JavaSymbolKey::new(Fqn::new(fqn));
-        if let Some(&id) = registries.java.symbols.query(&java_key).first() {
-            return Some(id);
-        }
-    }
-
-    use beans_core::jvm::{JvmTypeKey, PackageKey};
-    let type_key = JvmTypeKey::new(Fqn::new(fqn));
-    if let Some(&id) = registries.jvm.types.query(&type_key).first() {
-        return Some(id);
-    }
-
-    let pkg_key = PackageKey::new(Fqn::new(fqn));
-    if let Some(&id) = registries.jvm.packages.query(&pkg_key).first() {
-        return Some(id);
-    }
-
-    None
-}
+// Resolution helpers (FQN chain + simple-name fallback) live in
+// `beans_core::languages::java::resolve` so the LSP and the fixture
+// share one implementation. Per ADR-0012 / ADR-0020 they return raw
+// `NodeId`; LSP-shaped output formatting belongs in `beans-lsp`.
 
 // ---------------------------------------------------------------------
 // Hover, signature, parent/children — payload-shape introspection.

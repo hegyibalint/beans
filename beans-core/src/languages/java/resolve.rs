@@ -1,0 +1,155 @@
+//! Java in-file name resolution.
+//!
+//! Per ADR-0012 the registries are FQN-keyed; per JLS §6.4 a Java
+//! identifier at a use site is interpreted by walking a fixed chain of
+//! qualifications (the same identifier can mean different things in
+//! different files). This module hosts that chain so every consumer
+//! (the LSP, the fixture harness) talks to the same one.
+//!
+//! The chain (matches the prototype's `resolve::resolve_name`):
+//!
+//! 1. **Exact FQN** — the bare name *is* a fully-qualified name.
+//! 2. **Explicit imports** — `import com.example.MyClass;` makes
+//!    `MyClass` mean `com.example.MyClass` (JLS §7.5.1).
+//! 3. **Same-package qualification** — `MyClass` in a file declared in
+//!    package `p` resolves to `p.MyClass` (JLS §7.4.1).
+//! 4. **Wildcard imports** — `import java.util.*;` makes `ArrayList`
+//!    mean `java.util.ArrayList` (JLS §7.5.2).
+//! 5. **Static imports** — `import static com.example.Utils.MAX;`
+//!    makes `MAX` mean `com.example.Utils.MAX` (JLS §7.5.3 / §7.5.4).
+//! 6. **Simple-name fallback** — last-resort iteration over the graph
+//!    for a uniquely-named declaration. Prototype semantics; expensive
+//!    at scale and intended only for the fallback case.
+//!
+//! The function returns a [`NodeId`]; LSP-shaped output (Location,
+//! Hover, etc.) is the consumer's job — per ADR-0020 LSP types do not
+//! enter this layer.
+
+use crate::graph::arena::{Graph, NodeId};
+use crate::jvm::fqn::Fqn;
+use crate::jvm::keys::{JvmTypeKey, PackageKey};
+use crate::languages::java::keys::JavaSymbolKey;
+use crate::payload::NodePayload;
+use crate::registries::Registries;
+use crate::resolve::Import;
+
+/// Resolve a Java identifier at a use site.
+///
+/// `imports` and `current_package` are file-local context; `name` is the
+/// bare identifier (or compound name like `"MyClass.doWork"` — the
+/// chain treats it as one string and lets the FQN exact-match step
+/// catch compound forms when both pieces resolve).
+///
+/// Per ADR-0012 every step but the simple-name fallback queries the
+/// registries; the fallback walks the graph because the registries are
+/// FQN-keyed and have no name-only entry point. The expense of the
+/// fallback is acceptable because it only fires when the preceding
+/// five steps have already missed.
+pub fn resolve_name(
+    name: &str,
+    imports: &[Import],
+    current_package: &str,
+    registries: &Registries,
+    graph: &Graph<NodePayload>,
+) -> Option<NodeId> {
+    // 1. Exact FQN.
+    if let Some(id) = lookup_fqn(registries, name) {
+        return Some(id);
+    }
+
+    // 2. Explicit imports.
+    for import in imports {
+        if let Import::Single(fqn) = import
+            && (fqn.ends_with(&format!(".{}", name)) || fqn == name)
+            && let Some(id) = lookup_fqn(registries, fqn)
+        {
+            return Some(id);
+        }
+    }
+
+    // 3. Same-package qualification.
+    if !current_package.is_empty() {
+        let candidate = format!("{}.{}", current_package, name);
+        if let Some(id) = lookup_fqn(registries, &candidate) {
+            return Some(id);
+        }
+    }
+
+    // 4. Wildcard imports.
+    for import in imports {
+        if let Import::Wildcard(package) = import {
+            let candidate = format!("{}.{}", package, name);
+            if let Some(id) = lookup_fqn(registries, &candidate) {
+                return Some(id);
+            }
+        }
+    }
+
+    // 5. Static imports.
+    for import in imports {
+        if let Import::Static(fqn) = import
+            && (fqn.ends_with(&format!(".{}", name)) || fqn == name)
+            && let Some(id) = lookup_fqn(registries, fqn)
+        {
+            return Some(id);
+        }
+    }
+
+    // 6. Simple-name fallback.
+    resolve_simple_name(name, graph)
+}
+
+/// Resolve a fully-qualified name. Prefers the Java-side node when both
+/// the language-specific and JVM-projection providers exist (the
+/// prototype's `lookup_by_fqn` returned the single declaration node;
+/// the Java-side node is the source-level analogue).
+pub fn lookup_fqn(registries: &Registries, fqn: &str) -> Option<NodeId> {
+    let java_key = JavaSymbolKey::new(Fqn::new(fqn));
+    if let Some(&id) = registries.java.symbols.query(&java_key).first() {
+        return Some(id);
+    }
+
+    let type_key = JvmTypeKey::new(Fqn::new(fqn));
+    if let Some(&id) = registries.jvm.types.query(&type_key).first() {
+        return Some(id);
+    }
+
+    let pkg_key = PackageKey::new(Fqn::new(fqn));
+    if let Some(&id) = registries.jvm.packages.query(&pkg_key).first() {
+        return Some(id);
+    }
+
+    None
+}
+
+/// Walk the graph looking for exactly one Java payload whose simple
+/// name matches. Prototype semantics: returns `Some(id)` iff a single
+/// match exists. Multiple matches are ambiguous and yield `None`.
+///
+/// O(n) over the entire graph — only invoked as the last fallback in
+/// [`resolve_name`].
+pub fn resolve_simple_name(name: &str, graph: &Graph<NodePayload>) -> Option<NodeId> {
+    let mut hits = Vec::new();
+    for (id, node) in graph.iter() {
+        if let Some(payload_name) = payload_simple_name(&node.payload)
+            && payload_name == name
+        {
+            hits.push(id);
+        }
+    }
+    if hits.len() == 1 {
+        Some(hits[0])
+    } else {
+        None
+    }
+}
+
+/// Borrow the simple name of a Java payload. JVM-projection nodes
+/// return `None` because they're hard-linked siblings of their Java
+/// counterparts; resolution always lands on the Java side.
+fn payload_simple_name(payload: &NodePayload) -> Option<&str> {
+    match payload {
+        NodePayload::Java(j) => j.header().map(|h| h.name.as_str()),
+        NodePayload::Jvm(_) => None,
+    }
+}
