@@ -78,7 +78,7 @@ mutate nodes. Adding a JVM projection is a step in the Kotlin enrich
 path, not a separate processor that watches the Kotlin registry.
 
 Cross-file dependencies — the Java-references-Kotlin-extension case —
-are handled by the **dynamic link** mechanism (see SEMANTIC_GRAPH.md):
+are handled by the **dynamic link** mechanism (see [ARCHITECTURE.md](../../ARCHITECTURE.md)):
 the Java node has an unresolved query that returns "not yet" if the
 Kotlin file has not been parsed. When the Kotlin file is later parsed
 and its node is enriched and registered, the registry's subscriber

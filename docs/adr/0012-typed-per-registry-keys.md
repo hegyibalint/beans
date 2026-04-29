@@ -7,7 +7,7 @@ Accepted
 ## Context
 
 The semantic graph is fronted by a set of registries — one per "lookup
-shape" the system needs (see `SEMANTIC_GRAPH.md`). The JVM registry is
+shape" the system needs (see [ARCHITECTURE.md](../../ARCHITECTURE.md)). The JVM registry is
 keyed by an FQN plus method/field disambiguation. Kotlin has separate
 registries for plain symbols, extension functions, and companions. Scala
 adds implicits and extensions. Each registry has its own natural key.
