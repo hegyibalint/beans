@@ -9,6 +9,7 @@ pub enum SymbolKind {
     Method,
     Constructor,
     Field,
+    EnumConstant,
     Parameter,
     Package,
 

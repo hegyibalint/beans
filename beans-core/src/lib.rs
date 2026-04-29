@@ -1,3 +1,4 @@
+mod annotation;
 pub mod completion;
 pub mod language;
 mod location;
@@ -6,18 +7,21 @@ mod relation;
 pub mod resolve;
 mod signature;
 mod symbol;
+pub mod type_ref;
 mod symbol_id;
 mod symbol_kind;
 mod symbol_table;
 
+pub use annotation::{AnnotationInstance, AnnotationValue};
 pub use completion::{CompletionItem, CompletionItems};
 pub use language::Language;
 pub use location::Location;
 pub use modifier::Modifier;
 pub use relation::{Relation, RelationKind};
 pub use resolve::Import;
-pub use signature::{MethodParam, Signature};
+pub use signature::{ConstantValue, MethodParam, RecordComponent, Signature};
 pub use symbol::Symbol;
 pub use symbol_id::SymbolId;
 pub use symbol_kind::SymbolKind;
 pub use symbol_table::SymbolTable;
+pub use type_ref::{PrimitiveKind, TypeParam, TypeRef, WildcardBound};
