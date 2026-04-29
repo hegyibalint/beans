@@ -10,16 +10,18 @@
 //! projection"), and Java-specific facts that don't travel through JVM
 //! (when we add them) attach here, not on the JVM payload.
 //!
-//! Per ADR-0014 each registered Java payload variant carries its
-//! [`ProviderHandle`] in an `Option<...>` field; dropping the payload
-//! removes the registry entry. Per ADR-0012 every Java-side declaration
-//! shares one registry — `Registries::java.symbols`, keyed by
-//! [`JavaSymbolKey`] (FQN-only). Method overload disambiguation
+//! Per ADR-0014 RAII registration handles live on
+//! [`NodeData::handles`](crate::graph::NodeData::handles), not on the
+//! payload variants. Each variant's [`NodeBehavior::on_created`] returns
+//! the registered handles boxed; the engine stores them on the node and
+//! drops them when the slot is freed. Per ADR-0012 every Java-side
+//! declaration shares one registry — `Registries::java.symbols`,
+//! keyed by [`JavaSymbolKey`] (FQN-only). Method overload disambiguation
 //! happens at the JVM layer.
 
 use crate::graph::NodeBehavior;
 use crate::graph::arena::NodeId;
-use crate::graph::registry::ProviderHandle;
+use crate::graph::registry::NodeHandle;
 use crate::jvm::annotation::AnnotationInstance;
 use crate::jvm::fqn::Fqn;
 use crate::jvm::modifier::Modifier;
@@ -76,129 +78,122 @@ pub struct JavaParameter {
 }
 
 /// A Java type declaration.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct JavaTypeNode {
     pub header: JavaDeclHeader,
     pub kind: JavaTypeKind,
     pub type_parameters: Vec<TypeParam>,
     /// Record components, present iff `kind == JavaTypeKind::Record`.
     pub record_components: Vec<RecordComponent>,
-    pub symbol_provider: Option<ProviderHandle<JavaSymbolKey>>,
 }
 
 impl NodeBehavior for JavaTypeNode {
     type Ctx = Registries;
-    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
+    fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        self.symbol_provider = Some(ctx.java.symbols.register(key, id));
+        vec![Box::new(ctx.java.symbols.register(key, id))]
     }
 }
 
 /// A Java method declaration.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct JavaMethodNode {
     pub header: JavaDeclHeader,
     pub return_type: TypeRef,
     pub parameters: Vec<JavaParameter>,
     pub type_parameters: Vec<TypeParam>,
     pub throws: Vec<TypeRef>,
-    pub symbol_provider: Option<ProviderHandle<JavaSymbolKey>>,
 }
 
 impl NodeBehavior for JavaMethodNode {
     type Ctx = Registries;
-    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
+    fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        self.symbol_provider = Some(ctx.java.symbols.register(key, id));
+        vec![Box::new(ctx.java.symbols.register(key, id))]
     }
 }
 
 /// A Java constructor declaration.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct JavaConstructorNode {
     pub header: JavaDeclHeader,
     pub parameters: Vec<JavaParameter>,
     pub type_parameters: Vec<TypeParam>,
     pub throws: Vec<TypeRef>,
-    pub symbol_provider: Option<ProviderHandle<JavaSymbolKey>>,
 }
 
 impl NodeBehavior for JavaConstructorNode {
     type Ctx = Registries;
-    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
+    fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        self.symbol_provider = Some(ctx.java.symbols.register(key, id));
+        vec![Box::new(ctx.java.symbols.register(key, id))]
     }
 }
 
 /// A Java field declaration.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct JavaFieldNode {
     pub header: JavaDeclHeader,
     pub field_type: TypeRef,
     pub constant_value: Option<ConstantValue>,
     pub initialized: bool,
-    pub symbol_provider: Option<ProviderHandle<JavaSymbolKey>>,
 }
 
 impl NodeBehavior for JavaFieldNode {
     type Ctx = Registries;
-    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
+    fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        self.symbol_provider = Some(ctx.java.symbols.register(key, id));
+        vec![Box::new(ctx.java.symbols.register(key, id))]
     }
 }
 
 /// A Java enum constant.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct JavaEnumConstantNode {
     pub header: JavaDeclHeader,
     pub enum_owner: Fqn,
-    pub symbol_provider: Option<ProviderHandle<JavaSymbolKey>>,
 }
 
 impl NodeBehavior for JavaEnumConstantNode {
     type Ctx = Registries;
-    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
+    fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        self.symbol_provider = Some(ctx.java.symbols.register(key, id));
+        vec![Box::new(ctx.java.symbols.register(key, id))]
     }
 }
 
 /// A Java annotation-type element (JLS §9.6.1).
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct JavaAnnotationElementNode {
     pub header: JavaDeclHeader,
     pub element_type: TypeRef,
     pub default_value: Option<ConstantValue>,
-    pub symbol_provider: Option<ProviderHandle<JavaSymbolKey>>,
 }
 
 impl NodeBehavior for JavaAnnotationElementNode {
     type Ctx = Registries;
-    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
+    fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        self.symbol_provider = Some(ctx.java.symbols.register(key, id));
+        vec![Box::new(ctx.java.symbols.register(key, id))]
     }
 }
 
 /// A Java package declaration.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct JavaPackageNode {
     pub header: JavaDeclHeader,
-    pub symbol_provider: Option<ProviderHandle<JavaSymbolKey>>,
 }
 
 impl NodeBehavior for JavaPackageNode {
     type Ctx = Registries;
-    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
+    fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        self.symbol_provider = Some(ctx.java.symbols.register(key, id));
+        vec![Box::new(ctx.java.symbols.register(key, id))]
     }
 }
 
 /// Union of every Java-side node payload variant.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum JavaNodePayload {
     Type(JavaTypeNode),
     Method(JavaMethodNode),
@@ -229,7 +224,7 @@ impl JavaNodePayload {
 
 impl NodeBehavior for JavaNodePayload {
     type Ctx = Registries;
-    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
+    fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         match self {
             JavaNodePayload::Type(n) => n.on_created(id, ctx),
             JavaNodePayload::Method(n) => n.on_created(id, ctx),
@@ -238,7 +233,7 @@ impl NodeBehavior for JavaNodePayload {
             JavaNodePayload::EnumConstant(n) => n.on_created(id, ctx),
             JavaNodePayload::AnnotationElement(n) => n.on_created(id, ctx),
             JavaNodePayload::Package(n) => n.on_created(id, ctx),
-            JavaNodePayload::Parameter(_) => {}
+            JavaNodePayload::Parameter(_) => Vec::new(),
         }
     }
 }

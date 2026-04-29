@@ -9,6 +9,7 @@
 //! frees every descendant.
 
 use crate::graph::cache_state::{CacheState, Generation};
+use crate::graph::registry::NodeHandle;
 
 /// Runtime arena index into a `Graph<P>`. Per ADR-0007 this is an internal
 /// identifier — external APIs speak in registry keys, not `NodeId`. The
@@ -38,16 +39,42 @@ impl NodeId {
 /// Per-node storage. The payload `P` is the union of all node variants
 /// the engine cares about (defined by the consumer; this module is generic).
 ///
-/// Provider/subscription handles are *stored inside the payload itself*
-/// (per ADR-0014), so dropping the payload runs the RAII cleanup. We do
-/// not carry handle vectors at this level because we do not know the
-/// registry types at the engine layer.
-#[derive(Debug)]
+/// Per ADR-0014, RAII registration handles live on `NodeData` itself:
+/// when the slot is freed, [`handles`](Self::handles) drops, each handle's
+/// `Drop` runs, and registry entries are removed automatically. The
+/// engine doesn't know the registry types involved — handles are stored
+/// as `Box<dyn NodeHandle>` and unregistration is a side effect of dropping
+/// them in `Vec`-drop order.
+///
+/// Keeping handles on the node (not on the payload) lets the *payload*
+/// stay free of `Rc`-flavoured `!Send` types, which is what makes
+/// pre-integration parse output (e.g. `ParsedJavaFile`) safe to compute
+/// on a rayon worker per ADR-0005. The integrated node stays
+/// thread-local per ADR-0018, but its payload value can travel.
 pub struct NodeData<P> {
     pub state: CacheState,
     pub payload: P,
     pub parent: Option<NodeId>,
     pub children: Vec<NodeId>,
+    /// RAII handles installed by [`NodeBehavior::on_created`](crate::graph::NodeBehavior::on_created)
+    /// after the node is in the arena. Stored as `Box<dyn NodeHandle>` because
+    /// the engine has no per-key knowledge; each impl drops itself.
+    pub handles: Vec<Box<dyn NodeHandle>>,
+}
+
+// `Vec<Box<dyn NodeHandle>>` doesn't impl `Debug`, so we manually derive a
+// `Debug` that elides the handles. They're opaque to anything except
+// their own Drop impls.
+impl<P: std::fmt::Debug> std::fmt::Debug for NodeData<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NodeData")
+            .field("state", &self.state)
+            .field("payload", &self.payload)
+            .field("parent", &self.parent)
+            .field("children", &self.children)
+            .field("handles", &format_args!("[{} handles]", self.handles.len()))
+            .finish()
+    }
 }
 
 /// Single-payload graph arena. Owns a flat `Vec<Option<NodeData<P>>>`.
@@ -55,11 +82,20 @@ pub struct NodeData<P> {
 ///
 /// The engine is generic over `P` so the same machinery serves the JVM
 /// payload union, test payloads, and any future tagged variant.
-#[derive(Debug)]
 pub struct Graph<P> {
     slots: Vec<Option<NodeData<P>>>,
     free: Vec<usize>,
     current_gen: Generation,
+}
+
+impl<P: std::fmt::Debug> std::fmt::Debug for Graph<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Graph")
+            .field("slots", &self.slots)
+            .field("free", &self.free)
+            .field("current_gen", &self.current_gen)
+            .finish()
+    }
 }
 
 impl<P> Default for Graph<P> {
@@ -87,6 +123,7 @@ impl<P> Graph<P> {
             payload,
             parent,
             children: Vec::new(),
+            handles: Vec::new(),
         };
 
         let slot_index = match self.free.pop() {
@@ -134,9 +171,9 @@ impl<P> Graph<P> {
     }
 
     /// Recursive, post-order destroy: every descendant is freed before the
-    /// node itself. Per ADR-0014 the payload's RAII handles run their
-    /// `Drop` impls during this walk and unregister themselves from any
-    /// registry they joined.
+    /// node itself. Per ADR-0014 each [`NodeData`]'s [`handles`](NodeData::handles)
+    /// vec drops as the slot is freed, and each handle's `Drop` removes
+    /// its registry entry.
     ///
     /// If `id` has a parent, it is also detached from the parent's
     /// `children` list. Calling `destroy` on a non-existent slot is a no-op.
@@ -168,8 +205,10 @@ impl<P> Graph<P> {
             self.destroy_subtree(child);
         }
 
-        // Now drop the node itself; its payload's Drop runs here, which is
-        // where RAII handles unregister.
+        // Now drop the node itself; its `handles` vec drops here, and
+        // each contained `Box<dyn NodeHandle>` runs its `Drop` impl —
+        // ProviderHandle/SubscriptionHandle remove their registry
+        // entries via the snapshot-and-release pattern (ADR-0015).
         let slot = id.slot();
         self.slots[slot] = None;
         self.free.push(slot);

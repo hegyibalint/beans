@@ -66,7 +66,6 @@ fn java_class(name: &str, fqn: &str) -> NodePayload {
         kind: JavaTypeKind::Class,
         type_parameters: vec![],
         record_components: vec![],
-        symbol_provider: None,
     }))
 }
 
@@ -77,7 +76,6 @@ fn java_method(name: &str, fqn: &str) -> NodePayload {
         parameters: vec![],
         type_parameters: vec![],
         throws: vec![],
-        symbol_provider: None,
     }))
 }
 
@@ -88,7 +86,6 @@ fn jvm_type(name: &str, fqn: &str, kind: JvmTypeKind) -> NodePayload {
         type_parameters: vec![],
         record_components: vec![],
         enrichments: JvmEnrichments::default(),
-        type_provider: None,
     }))
 }
 
@@ -101,7 +98,6 @@ fn jvm_method(name: &str, fqn: &str, owner: &str, return_type: TypeRef) -> NodeP
         type_parameters: vec![],
         throws: vec![],
         enrichments: JvmEnrichments::default(),
-        method_provider: None,
     }))
 }
 
@@ -113,7 +109,6 @@ fn jvm_field(name: &str, fqn: &str, owner: &str, field_type: TypeRef) -> NodePay
         constant_value: None,
         initialized: false,
         enrichments: JvmEnrichments::default(),
-        field_provider: None,
     }))
 }
 
@@ -293,7 +288,6 @@ fn package_registry_isolated_from_type_registry() {
     let pkg_payload =
         NodePayload::Jvm(JvmNodePayload::Package(beans_core::jvm::JvmPackageNode {
             header: JvmDeclHeader::new("com.example", "com.example"),
-            package_provider: None,
         }));
     let pkg_id = graph.insert(pkg_payload, None);
     let _hp = registries
