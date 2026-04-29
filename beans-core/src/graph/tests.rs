@@ -577,3 +577,41 @@ fn dynamic_link_resolve_re_walks_registries_after_invalidate() {
     assert_eq!(link.resolve(&ctx), Some(NodeId(7)));
     assert_eq!(link.active_index(), Some(0));
 }
+
+#[test]
+fn dynamic_link_resolve_short_circuits_through_cache() {
+    use crate::graph::dynamic_link::DynamicLink;
+
+    // Per the documented contract: once `resolve` populates the cache,
+    // subsequent calls return the cached value without re-walking
+    // queries. We verify this by mutating the registry the link would
+    // otherwise consult — it should *not* observe the change without an
+    // explicit `invalidate`. Subscription-driven auto-invalidation is
+    // the eventual answer (backlog #027); until then, callers own the
+    // freshness contract.
+    let ctx = TwoRegistryCtx {
+        primary: Registry::new(),
+        secondary: Registry::new(),
+    };
+    let _h = ctx.primary.register(TestKey("svc"), NodeId(1));
+
+    let mut link = DynamicLink::first_match(vec![
+        TestQuery::Primary(TestKey("svc")),
+        TestQuery::Secondary(OtherKey("svc")),
+    ]);
+
+    // Prime the cache.
+    assert_eq!(link.resolve(&ctx), Some(NodeId(1)));
+    assert_eq!(link.cached_result(), Some(NodeId(1)));
+
+    // Drop the only provider. Without invalidate, the next resolve must
+    // still return the cached NodeId — even though the registry has
+    // moved on. This is the documented "explicit invalidate" contract.
+    drop(_h);
+    assert!(ctx.primary.query(&TestKey("svc")).is_empty());
+    assert_eq!(link.resolve(&ctx), Some(NodeId(1)));
+
+    // After invalidate, the next resolve sees the (now-empty) registry.
+    link.invalidate();
+    assert_eq!(link.resolve(&ctx), None);
+}

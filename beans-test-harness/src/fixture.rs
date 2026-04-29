@@ -1,10 +1,23 @@
+//! Fixture test harness — graph-backed.
+//!
+//! Per ADR-0006 / ADR-0021 the harness queries `beans-core`'s graph and
+//! registries directly; the prototype `SymbolTable` path is gone.
+//!
+//! Per the team-lead's step 4+5 direction, dispatch is per-extension via
+//! a `match` on the file's extension, gated by Cargo features. The
+//! `Language` trait is no longer used.
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use beans_core::completion::CompletionItems;
-use beans_core::language::Language;
-use beans_core::resolve::{self, Import};
-use beans_core::{Modifier, Signature, Symbol, SymbolKind, SymbolTable};
+use beans_core::graph::{Graph, NodeId};
+use beans_core::resolve::Import;
+use beans_core::{Modifier, NodePayload, Registries, SymbolKind};
+
+#[cfg(feature = "java")]
+use beans_core::languages::java;
+
 use crate::markers::{strip_markers, CursorPosition};
 
 // --- Assertion types ---
@@ -47,7 +60,6 @@ struct PendingCompletion {
 // --- CursorAssert builder ---
 
 /// Builder for resolution assertions at a specific cursor position.
-/// Returned by `Fixture::resolve` / `Fixture::resolve("name")`.
 pub struct CursorAssert {
     fixture: Fixture,
     cursor_name: Option<String>,
@@ -164,14 +176,11 @@ impl CursorAssert {
 
 // --- CompletionAssert builder ---
 
-/// Builder returned after `.complete()` / `.complete("name", ...)`.
-/// Allows chaining `.expected_failure()` before `.run()` or further operations.
 pub struct CompletionAssert {
     fixture: Fixture,
 }
 
 impl CompletionAssert {
-    /// Mark the preceding completion assertion as expected to fail.
     pub fn expected_failure(mut self, reason: &str) -> Self {
         if let Some(last) = self.fixture.completions.last_mut() {
             last.mode = TestMode::ExpectedFailure(reason.to_string());
@@ -179,33 +188,27 @@ impl CompletionAssert {
         self
     }
 
-    /// Start resolving at a named cursor. Finalizes and continues.
     pub fn resolve(self, cursor_name: &str) -> CursorAssert {
         self.fixture.resolve(cursor_name)
     }
 
-    /// Start resolving at the anonymous cursor.
     pub fn resolve_default(self) -> CursorAssert {
         self.fixture.resolve_default()
     }
 
-    /// Test completions at another named cursor.
     pub fn complete(self, cursor_name: &str, check: impl FnOnce(&CompletionItems) + Send + 'static) -> CompletionAssert {
         self.fixture.complete(cursor_name, check)
     }
 
-    /// Test completions at the anonymous cursor.
     pub fn complete_default(self, check: impl FnOnce(&CompletionItems) + Send + 'static) -> CompletionAssert {
         self.fixture.complete_default(check)
     }
 
-    // Backward compat
     #[doc(hidden)]
     pub fn assert_at(self, cursor_name: &str) -> CursorAssert {
         self.resolve(cursor_name)
     }
 
-    /// Execute all assertions and completions.
     pub fn run(self) {
         self.fixture.run();
     }
@@ -214,44 +217,45 @@ impl CompletionAssert {
 // --- Fixture builder ---
 
 /// Test fixture builder. Loads source files, strips cursor markers,
-/// builds symbol tables, and runs assertions.
+/// builds a graph + registries, and runs assertions.
 ///
-/// Language-agnostic: dispatches parsing and word extraction per file extension.
-/// No languages are registered by default; add them with `.with_language()`.
+/// Per-extension dispatch is controlled by Cargo features on
+/// `beans-test-harness`. A fixture can only handle a file whose
+/// extension's feature is enabled.
 pub struct Fixture {
     files: Vec<(PathBuf, String)>,
     assertions: Vec<PendingAssertion>,
     completions: Vec<PendingCompletion>,
-    languages: Vec<Box<dyn Language>>,
+}
+
+impl Default for Fixture {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Fixture {
-    /// Create a new fixture with no languages registered.
-    /// Use `.with_language()` to add language support.
     pub fn new() -> Self {
         Self {
             files: Vec::new(),
             assertions: Vec::new(),
             completions: Vec::new(),
-            languages: Vec::new(),
         }
     }
 
-    /// Register an additional language for this fixture.
-    pub fn with_language(mut self, lang: impl Language + 'static) -> Self {
-        self.languages.push(Box::new(lang));
+    /// Backward-compat shim. The new fixture ignores its argument and
+    /// dispatches by file extension; left here so existing prelude
+    /// builders keep compiling. Will go away with the prototype path.
+    #[doc(hidden)]
+    pub fn with_language<L>(self, _lang: L) -> Self {
         self
     }
 
-    /// Add a source file to the fixture.
-    /// The file extension determines which language handles it.
-    /// The source may contain `<cur>` / `<cur:name>` markers.
     pub fn file(mut self, path: &str, source: &str) -> Self {
         self.files.push((PathBuf::from(path), source.to_string()));
         self
     }
 
-    /// Resolve the symbol at a named cursor `<cur:name>`.
     pub fn resolve(self, cursor_name: &str) -> CursorAssert {
         CursorAssert {
             fixture: self,
@@ -261,7 +265,6 @@ impl Fixture {
         }
     }
 
-    /// Resolve the symbol at the anonymous `<cur>` cursor.
     pub fn resolve_default(self) -> CursorAssert {
         CursorAssert {
             fixture: self,
@@ -271,7 +274,6 @@ impl Fixture {
         }
     }
 
-    /// Test completions at a named cursor `<cur:name>`.
     pub fn complete(mut self, cursor_name: &str, check: impl FnOnce(&CompletionItems) + Send + 'static) -> CompletionAssert {
         self.completions.push(PendingCompletion {
             cursor_name: Some(cursor_name.to_string()),
@@ -281,7 +283,6 @@ impl Fixture {
         CompletionAssert { fixture: self }
     }
 
-    /// Test completions at the anonymous `<cur>` cursor.
     pub fn complete_default(mut self, check: impl FnOnce(&CompletionItems) + Send + 'static) -> CompletionAssert {
         self.completions.push(PendingCompletion {
             cursor_name: None,
@@ -291,7 +292,6 @@ impl Fixture {
         CompletionAssert { fixture: self }
     }
 
-    // Backward compatibility aliases
     #[doc(hidden)]
     pub fn assert_at(self, cursor_name: &str) -> CursorAssert {
         self.resolve(cursor_name)
@@ -302,27 +302,8 @@ impl Fixture {
         self.resolve_default()
     }
 
-    /// Find the registered language for a file extension.
-    fn language_for_file(&self, path: &Path) -> &dyn Language {
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
-        for lang in &self.languages {
-            if lang.extensions().contains(&ext) {
-                return lang.as_ref();
-            }
-        }
-        panic!(
-            "no language registered for extension '.{}' (file: {}) — use .with_language()",
-            ext,
-            path.display()
-        );
-    }
-
-    /// Execute all pending assertions and completion checks.
     pub fn run(self) {
-        // 1. Strip markers from all files
+        // 1. Strip markers from all files.
         let mut all_cursors: Vec<CursorPosition> = Vec::new();
         let mut stripped_files: Vec<(PathBuf, String)> = Vec::new();
 
@@ -332,7 +313,7 @@ impl Fixture {
             stripped_files.push((path.clone(), stripped.clean));
         }
 
-        // Validate cursor name uniqueness across files
+        // Validate cursor name uniqueness across files.
         let mut seen_names: HashMap<Option<&str>, &Path> = HashMap::new();
         for cursor in &all_cursors {
             let key = cursor.name.as_deref();
@@ -348,30 +329,27 @@ impl Fixture {
             seen_names.insert(key, &cursor.file);
         }
 
-        // 2. Parse all files and build symbol table (dispatching per language)
-        let mut table = SymbolTable::new();
+        // 2. Parse all files and integrate into one graph + registries.
+        let mut graph: Graph<NodePayload> = Graph::new();
+        let mut registries = Registries::new();
         let mut file_imports: HashMap<PathBuf, Vec<Import>> = HashMap::new();
         let mut file_packages: HashMap<PathBuf, String> = HashMap::new();
         let mut file_sources: HashMap<PathBuf, String> = HashMap::new();
 
         for (path, clean_source) in &stripped_files {
-            let lang = self.language_for_file(path);
-
-            let symbols = lang.parse(path, clean_source);
-            table.insert_parsed_symbols(symbols);
-
-            let imports = lang.extract_imports(clean_source);
-            file_imports.insert(path.clone(), imports);
-
-            let pkg = lang.extract_package(clean_source);
-            if !pkg.is_empty() {
-                file_packages.insert(path.clone(), pkg);
+            let parsed = parse_for_extension(path, clean_source);
+            file_imports.insert(path.clone(), parsed.imports.clone());
+            if !parsed.package.is_empty() {
+                file_packages.insert(path.clone(), parsed.package.clone());
             }
-
             file_sources.insert(path.clone(), clean_source.clone());
+            #[cfg(feature = "java")]
+            java::integrate(&mut graph, &mut registries, parsed.into_java());
+            #[cfg(not(feature = "java"))]
+            drop(parsed);
         }
 
-        // 3. Run resolution assertions
+        // 3. Run resolution assertions.
         let mut skipped = Vec::new();
         let mut expected_failure_passed = Vec::new();
 
@@ -388,8 +366,6 @@ impl Fixture {
                     panic!("cursor '{}' not found in any file", cursor_display);
                 });
 
-            let lang = self.language_for_file(&cursor.file);
-
             match &assertion.mode {
                 TestMode::Skip(reason) => {
                     skipped.push(format!("SKIP [{}]: {}", cursor_display, reason));
@@ -400,12 +376,12 @@ impl Fixture {
                         run_checks(
                             &assertion.checks,
                             cursor,
-                            &table,
+                            &graph,
+                            &registries,
                             &file_imports,
                             &file_packages,
                             &file_sources,
                             cursor_display,
-                            lang,
                         );
                     }));
                     match result {
@@ -427,16 +403,17 @@ impl Fixture {
             run_checks(
                 &assertion.checks,
                 cursor,
-                &table,
+                &graph,
+                &registries,
                 &file_imports,
                 &file_packages,
                 &file_sources,
                 cursor_display,
-                lang,
             );
         }
 
-        // 4. Run completion assertions
+        // 4. Run completion assertions. Stub: empty until graph-driven
+        //    completion lands per backlog #025 / #027.
         for completion in self.completions {
             let cursor_display = completion
                 .cursor_name
@@ -450,8 +427,6 @@ impl Fixture {
                     panic!("cursor '{}' not found in any file", cursor_display);
                 });
 
-            // Stub: return empty completions for now.
-            // As the completion engine is built, this will compute real items.
             let items = CompletionItems(Vec::new());
 
             match &completion.mode {
@@ -470,9 +445,7 @@ impl Fixture {
                                 cursor_display, reason
                             ));
                         }
-                        Err(_) => {
-                            // Expected failure — fine
-                        }
+                        Err(_) => {}
                     }
                     continue;
                 }
@@ -496,51 +469,559 @@ impl Fixture {
     }
 }
 
-// --- Assertion execution ---
+// ---------------------------------------------------------------------
+// Per-extension parse dispatch.
+// ---------------------------------------------------------------------
 
-fn resolve_symbol_at_cursor<'a>(
+/// Output of a per-extension parse — wraps the language-specific
+/// `Parsed*` value plus shared metadata (package, imports). Implemented
+/// as an enum gated by language feature so the harness can dispatch
+/// without `dyn`.
+struct ParsedForFixture {
+    package: String,
+    imports: Vec<Import>,
+    #[cfg(feature = "java")]
+    java: Option<java::ParsedJavaFile>,
+}
+
+impl ParsedForFixture {
+    #[cfg(feature = "java")]
+    fn into_java(self) -> java::ParsedJavaFile {
+        self.java.expect(
+            "ParsedForFixture::into_java called on non-Java parse — fixture dispatch bug",
+        )
+    }
+}
+
+fn parse_for_extension(path: &Path, source: &str) -> ParsedForFixture {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+
+    match ext {
+        #[cfg(feature = "java")]
+        "java" => {
+            let parsed = java::parse_java_to_graph(path, source);
+            ParsedForFixture {
+                package: parsed.package.clone(),
+                imports: parsed.imports.clone(),
+                java: Some(parsed),
+            }
+        }
+        _ => panic!(
+            "no parser registered for extension '.{}' (file: {}). \
+             Enable the matching beans-test-harness feature.",
+            ext,
+            path.display()
+        ),
+    }
+}
+
+// ---------------------------------------------------------------------
+// Resolution + assertion execution against the graph.
+// ---------------------------------------------------------------------
+
+/// A view of a node's identity-bearing fields, sufficient for every
+/// assertion the fixture supports. Decouples assertions from whether
+/// the underlying payload is Java or JVM-projection — the Java side
+/// wins when present, since spec tests assert source-level facts.
+struct ResolvedView<'a> {
+    id: NodeId,
+    payload: &'a NodePayload,
+    name: String,
+    fqn: String,
+    kind: SymbolKind,
+    modifiers: Vec<Modifier>,
+}
+
+impl<'a> ResolvedView<'a> {
+    fn from_node(graph: &'a Graph<NodePayload>, id: NodeId) -> Option<Self> {
+        let node = graph.get(id)?;
+        let payload = &node.payload;
+        let (name, fqn, kind, modifiers) = view_fields(payload)?;
+        Some(Self {
+            id,
+            payload,
+            name,
+            fqn,
+            kind,
+            modifiers,
+        })
+    }
+}
+
+fn view_fields(payload: &NodePayload) -> Option<(String, String, SymbolKind, Vec<Modifier>)> {
+    match payload {
+        #[cfg(feature = "java")]
+        NodePayload::Java(java_payload) => Some(java_view_fields(java_payload)),
+        NodePayload::Jvm(jvm_payload) => Some(jvm_view_fields(jvm_payload)),
+    }
+}
+
+#[cfg(feature = "java")]
+fn java_view_fields(
+    payload: &beans_core::languages::java::JavaNodePayload,
+) -> (String, String, SymbolKind, Vec<Modifier>) {
+    use beans_core::languages::java::{JavaNodePayload, JavaTypeKind};
+    match payload {
+        JavaNodePayload::Type(n) => {
+            let kind = match n.kind {
+                JavaTypeKind::Class => SymbolKind::Class,
+                JavaTypeKind::Interface => SymbolKind::Interface,
+                JavaTypeKind::Enum => SymbolKind::Enum,
+                JavaTypeKind::Record => SymbolKind::Record,
+                JavaTypeKind::Annotation => SymbolKind::Annotation,
+            };
+            (
+                n.header.name.clone(),
+                n.header.fqn.to_string(),
+                kind,
+                n.header.modifiers.clone(),
+            )
+        }
+        JavaNodePayload::Method(n) => (
+            n.header.name.clone(),
+            n.header.fqn.to_string(),
+            SymbolKind::Method,
+            n.header.modifiers.clone(),
+        ),
+        JavaNodePayload::Constructor(n) => (
+            n.header.name.clone(),
+            n.header.fqn.to_string(),
+            SymbolKind::Constructor,
+            n.header.modifiers.clone(),
+        ),
+        JavaNodePayload::Field(n) => (
+            n.header.name.clone(),
+            n.header.fqn.to_string(),
+            SymbolKind::Field,
+            n.header.modifiers.clone(),
+        ),
+        JavaNodePayload::EnumConstant(n) => (
+            n.header.name.clone(),
+            n.header.fqn.to_string(),
+            // The prototype emitted enum constants as Field and the
+            // existing spec tests assert SymbolKind::Field; preserve.
+            SymbolKind::Field,
+            n.header.modifiers.clone(),
+        ),
+        JavaNodePayload::AnnotationElement(n) => (
+            n.header.name.clone(),
+            n.header.fqn.to_string(),
+            SymbolKind::Method,
+            n.header.modifiers.clone(),
+        ),
+        JavaNodePayload::Parameter(p) => (
+            p.name.clone(),
+            String::new(),
+            SymbolKind::Parameter,
+            Vec::new(),
+        ),
+        JavaNodePayload::Package(n) => (
+            n.header.name.clone(),
+            n.header.fqn.to_string(),
+            SymbolKind::Package,
+            n.header.modifiers.clone(),
+        ),
+    }
+}
+
+fn jvm_view_fields(
+    payload: &beans_core::jvm::JvmNodePayload,
+) -> (String, String, SymbolKind, Vec<Modifier>) {
+    use beans_core::jvm::{JvmNodePayload, JvmTypeKind};
+    match payload {
+        JvmNodePayload::Type(n) => {
+            let kind = match n.kind {
+                JvmTypeKind::Class => SymbolKind::Class,
+                JvmTypeKind::Interface => SymbolKind::Interface,
+                JvmTypeKind::Enum => SymbolKind::Enum,
+                JvmTypeKind::Record => SymbolKind::Record,
+                JvmTypeKind::Annotation => SymbolKind::Annotation,
+            };
+            (
+                n.header.name.clone(),
+                n.header.fqn.to_string(),
+                kind,
+                n.header.modifiers.clone(),
+            )
+        }
+        JvmNodePayload::Method(n) => (
+            n.header.name.clone(),
+            n.header.fqn.to_string(),
+            SymbolKind::Method,
+            n.header.modifiers.clone(),
+        ),
+        JvmNodePayload::Constructor(n) => (
+            n.header.name.clone(),
+            n.header.fqn.to_string(),
+            SymbolKind::Constructor,
+            n.header.modifiers.clone(),
+        ),
+        JvmNodePayload::Field(n) => (
+            n.header.name.clone(),
+            n.header.fqn.to_string(),
+            SymbolKind::Field,
+            n.header.modifiers.clone(),
+        ),
+        JvmNodePayload::EnumConstant(n) => (
+            n.header.name.clone(),
+            n.header.fqn.to_string(),
+            SymbolKind::Field,
+            n.header.modifiers.clone(),
+        ),
+        JvmNodePayload::AnnotationElement(n) => (
+            n.header.name.clone(),
+            n.header.fqn.to_string(),
+            SymbolKind::Method,
+            n.header.modifiers.clone(),
+        ),
+        JvmNodePayload::Parameter(p) => (
+            p.name.clone(),
+            String::new(),
+            SymbolKind::Parameter,
+            Vec::new(),
+        ),
+        JvmNodePayload::Package(n) => (
+            n.header.name.clone(),
+            n.header.fqn.to_string(),
+            SymbolKind::Package,
+            n.header.modifiers.clone(),
+        ),
+    }
+}
+
+/// Resolve the word at the cursor through the registries, preferring the
+/// language-side node over its JVM projection (spec tests assert
+/// source-level facts).
+fn resolve_at_cursor<'a>(
     cursor: &CursorPosition,
-    table: &'a SymbolTable,
+    graph: &'a Graph<NodePayload>,
+    registries: &Registries,
     file_imports: &HashMap<PathBuf, Vec<Import>>,
     file_packages: &HashMap<PathBuf, String>,
     source: &str,
     cursor_display: &str,
-    lang: &dyn Language,
-) -> &'a Symbol {
-    let word = lang
-        .word_at_position(source, cursor.line, cursor.col)
-        .unwrap_or_else(|| {
-            panic!(
-                "[{}] no word at cursor position ({}:{} in {})",
-                cursor_display, cursor.line, cursor.col, cursor.file.display()
-            );
-        });
-    let resolved = resolve::resolve_name(
+) -> ResolvedView<'a> {
+    let word = word_at(source, cursor.line, cursor.col, &cursor.file).unwrap_or_else(|| {
+        panic!(
+            "[{}] no word at cursor position ({}:{} in {})",
+            cursor_display, cursor.line, cursor.col, cursor.file.display()
+        );
+    });
+
+    let id = resolve_name_to_node(
         &word,
         &cursor.file,
         file_imports,
         file_packages,
-        table,
-    );
-    resolved
-        .and_then(|id| table.get(id))
-        .unwrap_or_else(|| {
-            panic!(
-                "[{}] could not resolve '{}' to any symbol",
-                cursor_display, word
+        registries,
+        graph,
+    )
+    .unwrap_or_else(|| {
+        panic!(
+            "[{}] could not resolve '{}' to any symbol",
+            cursor_display, word
+        );
+    });
+
+    ResolvedView::from_node(graph, id).unwrap_or_else(|| {
+        panic!(
+            "[{}] resolved id {:?} but no view-shaped payload at that node",
+            cursor_display, id
+        );
+    })
+}
+
+#[allow(unused_variables)]
+fn word_at(source: &str, line: u32, col: u32, file: &Path) -> Option<String> {
+    let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
+    match ext {
+        #[cfg(feature = "java")]
+        "java" => java::word_at_position(source, line, col),
+        _ => None,
+    }
+}
+
+/// Mirror of `beans_core::resolve::resolve_name`, talking to the graph
+/// + registries instead of `SymbolTable`. Tries (in order): exact FQN,
+/// explicit imports, same-package qualification, wildcard imports,
+/// static imports, and a final simple-name fallback.
+fn resolve_name_to_node(
+    name: &str,
+    file: &Path,
+    file_imports: &HashMap<PathBuf, Vec<Import>>,
+    file_packages: &HashMap<PathBuf, String>,
+    registries: &Registries,
+    graph: &Graph<NodePayload>,
+) -> Option<NodeId> {
+    let imports = file_imports.get(file).map(|v| v.as_slice()).unwrap_or(&[]);
+    let current_package = file_packages.get(file).map(|s| s.as_str()).unwrap_or("");
+
+    // 1. Exact FQN.
+    if let Some(id) = lookup_fqn(registries, name) {
+        return Some(id);
+    }
+
+    // 2. Explicit imports (`import com.example.MyClass;`).
+    for import in imports {
+        if let Import::Single(fqn) = import {
+            if fqn.ends_with(&format!(".{}", name)) || fqn == name {
+                if let Some(id) = lookup_fqn(registries, fqn) {
+                    return Some(id);
+                }
+            }
+        }
+    }
+
+    // 3. Same-package qualification.
+    if !current_package.is_empty() {
+        let candidate = format!("{}.{}", current_package, name);
+        if let Some(id) = lookup_fqn(registries, &candidate) {
+            return Some(id);
+        }
+    }
+
+    // 4. Wildcard imports.
+    for import in imports {
+        if let Import::Wildcard(package) = import {
+            let candidate = format!("{}.{}", package, name);
+            if let Some(id) = lookup_fqn(registries, &candidate) {
+                return Some(id);
+            }
+        }
+    }
+
+    // 5. Static imports.
+    for import in imports {
+        if let Import::Static(fqn) = import {
+            if fqn.ends_with(&format!(".{}", name)) || fqn == name {
+                if let Some(id) = lookup_fqn(registries, fqn) {
+                    return Some(id);
+                }
+            }
+        }
+    }
+
+    // 6. Simple-name fallback. The registries are FQN-keyed, so we
+    //    walk the graph looking for a single payload whose simple name
+    //    matches. This mirrors the prototype's `lookup_by_name` —
+    //    expensive at scale but the harness is per-test and the
+    //    fallback only triggers when steps 1-5 missed.
+    resolve_simple_name_via_graph(name, graph)
+}
+
+fn resolve_simple_name_via_graph(name: &str, graph: &Graph<NodePayload>) -> Option<NodeId> {
+    let mut hits = Vec::new();
+    for (id, node) in graph.iter() {
+        if let Some(payload_name) = payload_simple_name(&node.payload) {
+            if payload_name == name {
+                hits.push(id);
+            }
+        }
+    }
+    // Prototype semantics: return Some(id) iff exactly one hit.
+    if hits.len() == 1 {
+        Some(hits[0])
+    } else {
+        None
+    }
+}
+
+fn payload_simple_name(payload: &NodePayload) -> Option<&str> {
+    match payload {
+        #[cfg(feature = "java")]
+        NodePayload::Java(j) => j.header().map(|h| h.name.as_str()),
+        NodePayload::Jvm(_) => None,
+    }
+}
+
+fn lookup_fqn(registries: &Registries, fqn: &str) -> Option<NodeId> {
+    use beans_core::jvm::Fqn;
+
+    // Per spec-test expectations, prefer the Java-side node when both
+    // exist. This mirrors the prototype's `lookup_by_fqn` returning the
+    // single-source declaration.
+    #[cfg(feature = "java")]
+    {
+        use beans_core::languages::java::JavaSymbolKey;
+        let java_key = JavaSymbolKey::new(Fqn::new(fqn));
+        if let Some(&id) = registries.java.symbols.query(&java_key).first() {
+            return Some(id);
+        }
+    }
+
+    use beans_core::jvm::{JvmTypeKey, PackageKey};
+    let type_key = JvmTypeKey::new(Fqn::new(fqn));
+    if let Some(&id) = registries.jvm.types.query(&type_key).first() {
+        return Some(id);
+    }
+
+    let pkg_key = PackageKey::new(Fqn::new(fqn));
+    if let Some(&id) = registries.jvm.packages.query(&pkg_key).first() {
+        return Some(id);
+    }
+
+    None
+}
+
+// ---------------------------------------------------------------------
+// Hover, signature, parent/children — payload-shape introspection.
+// ---------------------------------------------------------------------
+
+fn build_hover(view: &ResolvedView<'_>) -> String {
+    use std::fmt::Write;
+
+    let kind_str = match view.kind {
+        SymbolKind::Class => "class",
+        SymbolKind::Interface => "interface",
+        SymbolKind::Enum => "enum",
+        SymbolKind::Record => "record",
+        SymbolKind::Annotation => "@interface",
+        SymbolKind::Method => "method",
+        SymbolKind::Constructor => "constructor",
+        SymbolKind::Field => "field",
+        SymbolKind::EnumConstant => "field",
+        SymbolKind::Parameter => "parameter",
+        SymbolKind::Package => "package",
+        _ => "symbol",
+    };
+
+    let mut s = String::new();
+
+    match view.payload {
+        #[cfg(feature = "java")]
+        NodePayload::Java(beans_core::languages::java::JavaNodePayload::Method(m)) => {
+            let tp = if m.type_parameters.is_empty() {
+                String::new()
+            } else {
+                let names: Vec<&str> = m.type_parameters.iter().map(|t| t.name.as_str()).collect();
+                format!("<{}>", names.join(", "))
+            };
+            let params: Vec<String> = m
+                .parameters
+                .iter()
+                .map(|p| format!("{} {}", p.param_type, p.name))
+                .collect();
+            let _ = write!(
+                s,
+                "```java\n{}{} {}({})\n```\n\n{} `{}`",
+                tp,
+                m.return_type,
+                m.header.name,
+                params.join(", "),
+                kind_str,
+                m.header.fqn
             );
-        })
+        }
+        #[cfg(feature = "java")]
+        NodePayload::Java(beans_core::languages::java::JavaNodePayload::Field(f)) => {
+            let _ = write!(
+                s,
+                "```java\n{} {}\n```\n\n{} `{}`",
+                f.field_type, f.header.name, kind_str, f.header.fqn
+            );
+        }
+        #[cfg(feature = "java")]
+        NodePayload::Java(beans_core::languages::java::JavaNodePayload::Type(t)) => {
+            let tp = if t.type_parameters.is_empty() {
+                String::new()
+            } else {
+                let names: Vec<&str> = t.type_parameters.iter().map(|p| p.name.as_str()).collect();
+                format!("<{}>", names.join(", "))
+            };
+            let header = match t.kind {
+                beans_core::languages::java::JavaTypeKind::Record => format!("record {}{}", t.header.name, tp),
+                _ => format!("{} {}{}", kind_str, t.header.name, tp),
+            };
+            let _ = write!(s, "```java\n{}\n```\n\n`{}`", header, t.header.fqn);
+        }
+        _ => {
+            let _ = write!(s, "```java\n{} {}\n```\n\n`{}`", kind_str, view.name, view.fqn);
+        }
+    }
+
+    s
+}
+
+fn signature_return_type(view: &ResolvedView<'_>) -> Option<String> {
+    match view.payload {
+        #[cfg(feature = "java")]
+        NodePayload::Java(beans_core::languages::java::JavaNodePayload::Method(m)) => {
+            Some(m.return_type.to_string())
+        }
+        _ => None,
+    }
+}
+
+fn signature_params(view: &ResolvedView<'_>) -> Option<Vec<(String, String)>> {
+    match view.payload {
+        #[cfg(feature = "java")]
+        NodePayload::Java(beans_core::languages::java::JavaNodePayload::Method(m)) => Some(
+            m.parameters
+                .iter()
+                .map(|p| (p.name.clone(), p.param_type.to_string()))
+                .collect(),
+        ),
+        #[cfg(feature = "java")]
+        NodePayload::Java(beans_core::languages::java::JavaNodePayload::Constructor(c)) => Some(
+            c.parameters
+                .iter()
+                .map(|p| (p.name.clone(), p.param_type.to_string()))
+                .collect(),
+        ),
+        _ => None,
+    }
+}
+
+fn parent_view<'a>(
+    view: &ResolvedView<'_>,
+    graph: &'a Graph<NodePayload>,
+) -> Option<ResolvedView<'a>> {
+    let parent_id = graph.get(view.id)?.parent?;
+    ResolvedView::from_node(graph, parent_id)
+}
+
+/// Collect names of children at one level down, excluding the JVM
+/// projection sibling. Java nodes hard-link both their own JVM
+/// projection and any source-level children (methods, fields, nested
+/// types); spec tests assert the *source-level* children list, so we
+/// filter out JVM projections.
+fn child_names(view: &ResolvedView<'_>, graph: &Graph<NodePayload>) -> Vec<String> {
+    let node = match graph.get(view.id) {
+        Some(n) => n,
+        None => return Vec::new(),
+    };
+    let mut out = Vec::new();
+    for &child_id in &node.children {
+        if let Some(child) = graph.get(child_id) {
+            // Skip the JVM projection; per the parser's plan layout the
+            // first child of a Java node is its JVM projection sibling.
+            if matches!(child.payload, NodePayload::Jvm(_)) {
+                continue;
+            }
+            if let Some(header) = match &child.payload {
+                #[cfg(feature = "java")]
+                NodePayload::Java(j) => j.header(),
+                NodePayload::Jvm(_) => None,
+            } {
+                out.push(header.name.clone());
+            }
+        }
+    }
+    out
 }
 
 fn run_checks(
     checks: &[AssertionKind],
     cursor: &CursorPosition,
-    table: &SymbolTable,
+    graph: &Graph<NodePayload>,
+    registries: &Registries,
     file_imports: &HashMap<PathBuf, Vec<Import>>,
     file_packages: &HashMap<PathBuf, String>,
     file_sources: &HashMap<PathBuf, String>,
     cursor_display: &str,
-    lang: &dyn Language,
 ) {
     let source = file_sources
         .get(&cursor.file)
@@ -549,69 +1030,50 @@ fn run_checks(
     for check in checks {
         match check {
             AssertionKind::ResolvesTo(expected_fqn) => {
-                let word = lang
-                    .word_at_position(source, cursor.line, cursor.col)
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "[{}] no word at cursor position ({}:{} in {})",
-                            cursor_display, cursor.line, cursor.col, cursor.file.display()
-                        );
-                    });
-                let resolved = resolve::resolve_name(
-                    &word,
-                    &cursor.file,
-                    file_imports,
-                    file_packages,
-                    table,
+                let view = resolve_at_cursor(
+                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
                 );
-                let sym = resolved.and_then(|id| table.get(id));
-                let sym = sym.unwrap_or_else(|| {
-                    panic!(
-                        "[{}] could not resolve '{}' to any symbol",
-                        cursor_display, word
-                    );
-                });
                 assert_eq!(
-                    sym.fqn, *expected_fqn,
+                    view.fqn, *expected_fqn,
                     "[{}] resolves_to: expected '{}', got '{}'",
-                    cursor_display, expected_fqn, sym.fqn
+                    cursor_display, expected_fqn, view.fqn
                 );
             }
             AssertionKind::Kind(expected_kind) => {
-                let sym = resolve_symbol_at_cursor(
-                    cursor, table, file_imports, file_packages, source, cursor_display, lang,
+                let view = resolve_at_cursor(
+                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
                 );
                 assert_eq!(
-                    sym.kind, *expected_kind,
+                    view.kind, *expected_kind,
                     "[{}] kind: expected {:?}, got {:?}",
-                    cursor_display, expected_kind, sym.kind
+                    cursor_display, expected_kind, view.kind
                 );
             }
             AssertionKind::Fqn(expected_fqn) => {
-                let sym = resolve_symbol_at_cursor(
-                    cursor, table, file_imports, file_packages, source, cursor_display, lang,
+                let view = resolve_at_cursor(
+                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
                 );
                 assert_eq!(
-                    sym.fqn, *expected_fqn,
+                    view.fqn, *expected_fqn,
                     "[{}] fqn: expected '{}', got '{}'",
-                    cursor_display, expected_fqn, sym.fqn
+                    cursor_display, expected_fqn, view.fqn
                 );
             }
             AssertionKind::Name(expected_name) => {
-                let sym = resolve_symbol_at_cursor(
-                    cursor, table, file_imports, file_packages, source, cursor_display, lang,
+                let view = resolve_at_cursor(
+                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
                 );
                 assert_eq!(
-                    sym.name, *expected_name,
+                    view.name, *expected_name,
                     "[{}] name: expected '{}', got '{}'",
-                    cursor_display, expected_name, sym.name
+                    cursor_display, expected_name, view.name
                 );
             }
             AssertionKind::HoverContains(text) => {
-                let sym = resolve_symbol_at_cursor(
-                    cursor, table, file_imports, file_packages, source, cursor_display, lang,
+                let view = resolve_at_cursor(
+                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
                 );
-                let hover = resolve::build_hover_text(sym);
+                let hover = build_hover(&view);
                 assert!(
                     hover.contains(text.as_str()),
                     "[{}] hover_contains: '{}' not found in hover text:\n{}",
@@ -619,74 +1081,67 @@ fn run_checks(
                 );
             }
             AssertionKind::SignatureReturn(expected_ret) => {
-                let sym = resolve_symbol_at_cursor(
-                    cursor, table, file_imports, file_packages, source, cursor_display, lang,
+                let view = resolve_at_cursor(
+                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
                 );
-                match &sym.signature {
-                    Some(Signature::Method { return_type, .. }) => {
-                        let return_type_str = return_type.to_string();
-                        assert_eq!(
-                            return_type_str, *expected_ret,
-                            "[{}] signature_return: expected '{}', got '{}'",
-                            cursor_display, expected_ret, return_type_str
-                        );
-                    }
-                    other => panic!(
-                        "[{}] signature_return: expected Method signature, got {:?}",
-                        cursor_display, other
-                    ),
-                }
+                let return_type = signature_return_type(&view).unwrap_or_else(|| {
+                    panic!(
+                        "[{}] signature_return: expected Method-shaped view, got kind {:?}",
+                        cursor_display, view.kind
+                    )
+                });
+                assert_eq!(
+                    return_type, *expected_ret,
+                    "[{}] signature_return: expected '{}', got '{}'",
+                    cursor_display, expected_ret, return_type
+                );
             }
             AssertionKind::SignatureParams(expected_params) => {
-                let sym = resolve_symbol_at_cursor(
-                    cursor, table, file_imports, file_packages, source, cursor_display, lang,
+                let view = resolve_at_cursor(
+                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
                 );
-                match &sym.signature {
-                    Some(Signature::Method { parameters, .. }) => {
-                        assert_eq!(
-                            parameters.len(),
-                            expected_params.len(),
-                            "[{}] signature_params: expected {} params, got {}",
-                            cursor_display, expected_params.len(), parameters.len()
-                        );
-                        for (i, (exp_name, exp_type)) in expected_params.iter().enumerate() {
-                            assert_eq!(
-                                parameters[i].name, *exp_name,
-                                "[{}] param[{}] name: expected '{}', got '{}'",
-                                cursor_display, i, exp_name, parameters[i].name
-                            );
-                            let param_type_str = parameters[i].param_type.to_string();
-                            assert_eq!(
-                                param_type_str, *exp_type,
-                                "[{}] param[{}] type: expected '{}', got '{}'",
-                                cursor_display, i, exp_type, param_type_str
-                            );
-                        }
-                    }
-                    other => panic!(
-                        "[{}] signature_params: expected Method signature, got {:?}",
-                        cursor_display, other
-                    ),
+                let params = signature_params(&view).unwrap_or_else(|| {
+                    panic!(
+                        "[{}] signature_params: expected Method/Constructor view, got kind {:?}",
+                        cursor_display, view.kind
+                    )
+                });
+                assert_eq!(
+                    params.len(),
+                    expected_params.len(),
+                    "[{}] signature_params: expected {} params, got {}",
+                    cursor_display, expected_params.len(), params.len()
+                );
+                for (i, (exp_name, exp_type)) in expected_params.iter().enumerate() {
+                    assert_eq!(
+                        params[i].0, *exp_name,
+                        "[{}] param[{}] name: expected '{}', got '{}'",
+                        cursor_display, i, exp_name, params[i].0
+                    );
+                    assert_eq!(
+                        params[i].1, *exp_type,
+                        "[{}] param[{}] type: expected '{}', got '{}'",
+                        cursor_display, i, exp_type, params[i].1
+                    );
                 }
             }
             AssertionKind::Modifiers(expected_mods) => {
-                let sym = resolve_symbol_at_cursor(
-                    cursor, table, file_imports, file_packages, source, cursor_display, lang,
+                let view = resolve_at_cursor(
+                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
                 );
                 for m in expected_mods {
                     assert!(
-                        sym.modifiers.contains(m),
+                        view.modifiers.contains(m),
                         "[{}] modifiers: expected {:?} but symbol has {:?}",
-                        cursor_display, m, sym.modifiers
+                        cursor_display, m, view.modifiers
                     );
                 }
             }
             AssertionKind::ParentFqn(expected_fqn) => {
-                let sym = resolve_symbol_at_cursor(
-                    cursor, table, file_imports, file_packages, source, cursor_display, lang,
+                let view = resolve_at_cursor(
+                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
                 );
-                let parent = sym.parent.and_then(|pid| table.get(pid));
-                let parent = parent.unwrap_or_else(|| {
+                let parent = parent_view(&view, graph).unwrap_or_else(|| {
                     panic!("[{}] parent_fqn: symbol has no parent", cursor_display);
                 });
                 assert_eq!(
@@ -696,32 +1151,27 @@ fn run_checks(
                 );
             }
             AssertionKind::ChildrenInclude(expected_names) => {
-                let sym = resolve_symbol_at_cursor(
-                    cursor, table, file_imports, file_packages, source, cursor_display, lang,
+                let view = resolve_at_cursor(
+                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
                 );
-                let child_names: Vec<String> = table
-                    .lookup_children(sym.id)
-                    .into_iter()
-                    .filter_map(|cid| table.get(cid))
-                    .map(|c| c.name.clone())
-                    .collect();
+                let names = child_names(&view, graph);
                 for name in expected_names {
                     assert!(
-                        child_names.contains(name),
+                        names.contains(name),
                         "[{}] children_include: '{}' not found among children {:?}",
-                        cursor_display, name, child_names
+                        cursor_display, name, names
                     );
                 }
             }
             AssertionKind::ChildrenCount(expected_count) => {
-                let sym = resolve_symbol_at_cursor(
-                    cursor, table, file_imports, file_packages, source, cursor_display, lang,
+                let view = resolve_at_cursor(
+                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
                 );
-                let count = table.lookup_children(sym.id).len();
+                let names = child_names(&view, graph);
                 assert_eq!(
-                    count, *expected_count,
+                    names.len(), *expected_count,
                     "[{}] children_count: expected {}, got {}",
-                    cursor_display, expected_count, count
+                    cursor_display, expected_count, names.len()
                 );
             }
         }
