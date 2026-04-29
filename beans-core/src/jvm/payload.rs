@@ -1,10 +1,10 @@
 //! JVM node payloads — the typed shape every JVM-projection node carries.
 //!
-//! Per ADR-0021 the prototype's `Symbol`-with-`Option<Signature>` shape is
-//! retired in favour of typed payload variants. A method node carries its
-//! return type and parameters as fields of [`JvmMethodNode`]; consumers
-//! pattern-match on the [`JvmNodePayload`] variant rather than on
-//! `Option`s.
+//! Per ADR-0021 the prototype's `Symbol`-with-`Option<Signature>` shape
+//! is retired in favour of typed payload variants. A method node
+//! carries its return type and parameters as fields of
+//! [`JvmMethodNode`]; consumers pattern-match on the
+//! [`JvmNodePayload`] variant rather than on `Option`s.
 //!
 //! Per ADR-0004 the JVM layer carries promoted enrichments — language-
 //! sourced facts (Kotlin nullability, Scala property origins, default-
@@ -14,16 +14,18 @@
 //! only field we model today; the rest land alongside their first
 //! consumer per ADR-0017 (no central pipeline, utilities-on-demand).
 //!
-//! Per ADR-0014 each payload variant that registers in a registry holds
-//! its [`ProviderHandle`] in an `Option<...>` field on itself. Dropping
-//! the payload — which the graph's hard-link GC walk does on destroy —
-//! drops the handle, which removes the registry entry. Each variant's
-//! [`NodeBehavior::on_created`] populates the field from the relevant
-//! registry; the integrate path in `parser.rs` is the canonical caller.
+//! Per ADR-0014 RAII registration handles live on
+//! [`NodeData::handles`](crate::graph::NodeData::handles) — the
+//! per-node `Vec<Box<dyn NodeHandle>>` — *not* on the payload variants
+//! themselves. Each variant's [`NodeBehavior::on_created`] returns the
+//! registered handles boxed; the engine stores them on the node and
+//! drops them when the slot is freed. This is what makes the payload
+//! variants free of `Rc`-flavoured `!Send` types and lets parse output
+//! travel across rayon worker boundaries (ADR-0005).
 
 use crate::graph::NodeBehavior;
 use crate::graph::arena::NodeId;
-use crate::graph::registry::ProviderHandle;
+use crate::graph::registry::NodeHandle;
 use crate::jvm::annotation::AnnotationInstance;
 use crate::jvm::fqn::Fqn;
 use crate::jvm::keys::{
@@ -109,27 +111,23 @@ impl JvmDeclHeader {
 
 /// A JVM type declaration (class / interface / enum / record /
 /// annotation type).
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct JvmTypeNode {
     pub header: JvmDeclHeader,
     pub kind: JvmTypeKind,
     pub type_parameters: Vec<TypeParam>,
-    /// Record components, present iff `kind == JvmTypeKind::Record`. The
-    /// component list is the source-of-truth for accessor generation
-    /// (JLS §8.10.3); empty for non-records.
+    /// Record components, present iff `kind == JvmTypeKind::Record`.
+    /// The component list is the source-of-truth for accessor
+    /// generation (JLS §8.10.3); empty for non-records.
     pub record_components: Vec<RecordComponent>,
     pub enrichments: JvmEnrichments,
-    /// RAII registration in `Registries::jvm.types`. Populated by
-    /// [`NodeBehavior::on_created`]; cleared on payload drop, which
-    /// removes the registry entry per ADR-0014.
-    pub type_provider: Option<ProviderHandle<JvmTypeKey>>,
 }
 
 impl NodeBehavior for JvmTypeNode {
     type Ctx = Registries;
-    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
+    fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JvmTypeKey::new(self.header.fqn.clone());
-        self.type_provider = Some(ctx.jvm.types.register(key, id));
+        vec![Box::new(ctx.jvm.types.register(key, id))]
     }
 }
 
@@ -143,7 +141,7 @@ pub struct JvmParameter {
 }
 
 /// A JVM method declaration (JLS §8.4).
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct JvmMethodNode {
     pub header: JvmDeclHeader,
     /// FQN of the declaring type. Redundant with `header.fqn`'s parent
@@ -155,8 +153,6 @@ pub struct JvmMethodNode {
     pub type_parameters: Vec<TypeParam>,
     pub throws: Vec<TypeRef>,
     pub enrichments: JvmEnrichments,
-    /// RAII registration in `Registries::jvm.methods`.
-    pub method_provider: Option<ProviderHandle<JvmMethodKey>>,
 }
 
 impl JvmMethodNode {
@@ -176,9 +172,8 @@ impl JvmMethodNode {
 
 impl NodeBehavior for JvmMethodNode {
     type Ctx = Registries;
-    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
-        let key = self.key();
-        self.method_provider = Some(ctx.jvm.methods.register(key, id));
+    fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
+        vec![Box::new(ctx.jvm.methods.register(self.key(), id))]
     }
 }
 
@@ -193,14 +188,13 @@ impl NodeBehavior for JvmMethodNode {
 /// type, which is the [`JvmTypeNode`] this constructor hangs off and
 /// already carries its own enrichments. Adding a constructor-level bag
 /// would just duplicate the type's enrichments.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct JvmConstructorNode {
     pub header: JvmDeclHeader,
     pub owner: Fqn,
     pub parameters: Vec<JvmParameter>,
     pub type_parameters: Vec<TypeParam>,
     pub throws: Vec<TypeRef>,
-    pub constructor_provider: Option<ProviderHandle<JvmConstructorKey>>,
 }
 
 impl JvmConstructorNode {
@@ -214,15 +208,14 @@ impl JvmConstructorNode {
 
 impl NodeBehavior for JvmConstructorNode {
     type Ctx = Registries;
-    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
-        let key = self.key();
-        self.constructor_provider = Some(ctx.jvm.constructors.register(key, id));
+    fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
+        vec![Box::new(ctx.jvm.constructors.register(self.key(), id))]
     }
 }
 
 /// A JVM field declaration (JLS §8.3). Includes static-final constants
 /// via [`constant_value`](Self::constant_value).
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct JvmFieldNode {
     pub header: JvmDeclHeader,
     pub owner: Fqn,
@@ -230,7 +223,6 @@ pub struct JvmFieldNode {
     pub constant_value: Option<ConstantValue>,
     pub initialized: bool,
     pub enrichments: JvmEnrichments,
-    pub field_provider: Option<ProviderHandle<JvmFieldKey>>,
 }
 
 impl JvmFieldNode {
@@ -241,9 +233,8 @@ impl JvmFieldNode {
 
 impl NodeBehavior for JvmFieldNode {
     type Ctx = Registries;
-    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
-        let key = self.key();
-        self.field_provider = Some(ctx.jvm.fields.register(key, id));
+    fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
+        vec![Box::new(ctx.jvm.fields.register(self.key(), id))]
     }
 }
 
@@ -252,14 +243,13 @@ impl NodeBehavior for JvmFieldNode {
 /// `static final` with a known declaring enum, and consumers commonly
 /// dispatch on enum-constant-ness directly. Registers under the same
 /// [`JvmFieldKey`] registry as regular fields.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct JvmEnumConstantNode {
     pub header: JvmDeclHeader,
     /// FQN of the enclosing enum type. Redundant with `header.fqn`'s
     /// parent, but keeping it explicit avoids a parse on every consumer
     /// and removes ambiguity with the `JvmFieldKey::owner` semantics.
     pub enum_owner: Fqn,
-    pub field_provider: Option<ProviderHandle<JvmFieldKey>>,
 }
 
 impl JvmEnumConstantNode {
@@ -270,23 +260,21 @@ impl JvmEnumConstantNode {
 
 impl NodeBehavior for JvmEnumConstantNode {
     type Ctx = Registries;
-    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
-        let key = self.key();
-        self.field_provider = Some(ctx.jvm.fields.register(key, id));
+    fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
+        vec![Box::new(ctx.jvm.fields.register(self.key(), id))]
     }
 }
 
 /// A JVM annotation-type element (JLS §9.6.1). Distinct from a method
 /// because of the `default` value mechanism. Registered as a zero-arg
 /// method on the annotation type since that is how the JVM models them.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct JvmAnnotationElementNode {
     pub header: JvmDeclHeader,
     /// FQN of the enclosing annotation type.
     pub owner: Fqn,
     pub element_type: TypeRef,
     pub default_value: Option<ConstantValue>,
-    pub method_provider: Option<ProviderHandle<JvmMethodKey>>,
 }
 
 impl JvmAnnotationElementNode {
@@ -297,19 +285,17 @@ impl JvmAnnotationElementNode {
 
 impl NodeBehavior for JvmAnnotationElementNode {
     type Ctx = Registries;
-    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
-        let key = self.key();
-        self.method_provider = Some(ctx.jvm.methods.register(key, id));
+    fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
+        vec![Box::new(ctx.jvm.methods.register(self.key(), id))]
     }
 }
 
 /// A package declaration (JLS §7.4). One node per package; the package
 /// FQN is its dotted name and is also stored on `header.fqn` for
 /// uniformity.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct JvmPackageNode {
     pub header: JvmDeclHeader,
-    pub package_provider: Option<ProviderHandle<PackageKey>>,
 }
 
 impl JvmPackageNode {
@@ -320,14 +306,13 @@ impl JvmPackageNode {
 
 impl NodeBehavior for JvmPackageNode {
     type Ctx = Registries;
-    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
-        let key = self.key();
-        self.package_provider = Some(ctx.jvm.packages.register(key, id));
+    fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
+        vec![Box::new(ctx.jvm.packages.register(self.key(), id))]
     }
 }
 
 /// Union of every JVM-projection node payload variant.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum JvmNodePayload {
     Type(JvmTypeNode),
     Method(JvmMethodNode),
@@ -359,7 +344,7 @@ impl JvmNodePayload {
 
 impl NodeBehavior for JvmNodePayload {
     type Ctx = Registries;
-    fn on_created(&mut self, id: NodeId, ctx: &mut Self::Ctx) {
+    fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         match self {
             JvmNodePayload::Type(n) => n.on_created(id, ctx),
             JvmNodePayload::Method(n) => n.on_created(id, ctx),
@@ -370,7 +355,7 @@ impl NodeBehavior for JvmNodePayload {
             JvmNodePayload::Package(n) => n.on_created(id, ctx),
             // Parameters are hard-linked under their method/constructor;
             // they don't have their own registry slot.
-            JvmNodePayload::Parameter(_) => {}
+            JvmNodePayload::Parameter(_) => Vec::new(),
         }
     }
 }
