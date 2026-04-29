@@ -1,12 +1,14 @@
 # Beans
 
-Beans is a multi-language LSP for JVM languages (Java, Kotlin, Groovy, Scala, Clojure). See DIRECTION.md for vision and roadmap, ARCHITECTURE.md for technical design.
+Beans is a multi-language LSP for JVM languages (Java, Kotlin, Groovy, Scala, Clojure). See README.md for vision and project status, ARCHITECTURE.md for technical design, docs/adr/ for the design decisions behind it.
 
 ## Key Documents
 
-- `DIRECTION.md` — Vision, motivation, user stories, phased roadmap
-- `ARCHITECTURE.md` — Symbol model, symbol table, crate structure, data flow
-- `docs/FIXTURE.md` — Fixture test framework tutorial
+- `README.md` — Project intro, vision, build/test commands
+- `ARCHITECTURE.md` — Current technical reference: data model, graph, registries, lifecycle, crate layout
+- `CONTRIBUTING.md` — Development setup, fixture framework tutorial, spec test discipline
+- `docs/adr/` — Architecture decision records. Read these before proposing structural changes.
+- `backlog/` — Pending and completed work items, one file per item
 
 ## Project Structure
 
@@ -35,7 +37,7 @@ Quality over quantity. Tests should verify behavior that matters, not chase cove
 
 ### Fixture Test Framework
 
-The primary way to encode expected LSP behavior. See `docs/FIXTURE.md` for the full tutorial. Two operations:
+The primary way to encode expected LSP behavior. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full tutorial. Two operations:
 
 - **`.complete(|items| { ... })`** — test completions at cursor (what items appear when pressing cmd+space)
 - **`.resolve()`** — test go-to-definition / hover at cursor (what does this symbol resolve to)
