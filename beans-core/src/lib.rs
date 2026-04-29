@@ -1,5 +1,6 @@
 mod annotation;
 pub mod completion;
+pub mod graph;
 pub mod language;
 mod location;
 mod modifier;
