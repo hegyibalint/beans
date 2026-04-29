@@ -8,9 +8,16 @@
 //! [`Symbol`](crate::Symbol).
 //!
 //! Variants:
-//! - `Jvm` — a JVM-projection node ([`JvmNodePayload`]).
+//! - `Jvm` — a JVM-projection node ([`JvmNodePayload`]). **Always
+//!   present**, never feature-gated. Per ADR-0004 each language node
+//!   hard-links a JVM projection as its descendant; cross-file resolution
+//!   between languages goes through the JVM layer (the only vocabulary
+//!   shared by all five). Gating `Jvm` behind a feature would dissolve
+//!   the cross-language interop story the entire architecture is built
+//!   around — even a Kotlin-only build of beans needs the JVM payload
+//!   variant to represent the projection of the Kotlin source nodes.
 //! - `Java` — a Java-side node ([`JavaNodePayload`]). Hard-links its
-//!   `Jvm` projection child per ADR-0004.
+//!   `Jvm` projection child per ADR-0004. Gated by `feature = "java"`.
 //!
 //! New language variants land alongside their feature-gated module.
 

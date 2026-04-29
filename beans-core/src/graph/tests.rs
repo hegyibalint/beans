@@ -6,7 +6,7 @@
 //! lifecycle is wired manually here (no `NodeBehavior` impl) so each test
 //! is a tight, transparent script.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::graph::arena::{Graph, NodeId};
@@ -495,4 +495,85 @@ fn dynamic_link_resolve_caches_first_provider_when_query_has_many() {
 
     let mut link = DynamicLink::first_match(vec![TestQuery::Primary(TestKey("svc"))]);
     assert_eq!(link.resolve(&ctx), Some(NodeId(1)));
+}
+
+#[test]
+fn notify_callback_can_register_in_a_different_registry() {
+    // The snapshot-and-release pattern (ADR-0015) handles re-entrancy on
+    // the *same* registry — a callback querying the registry that fired
+    // it. The cross-registry case is also supported: a callback that
+    // mutates a *different* registry while the first is mid-notify must
+    // not RefCell-panic and must leave both registries internally
+    // consistent.
+    let primary: Registry<TestKey> = Registry::new();
+    let secondary: Registry<OtherKey> = Registry::new();
+    let key_a = TestKey("source");
+    let key_b = OtherKey("derived");
+
+    // Subscriber on `primary` registers a provider in `secondary` when
+    // notified. Holding the handle in a Cell so the closure can move it
+    // and the test can still observe `secondary`'s state afterwards.
+    let derived_handle: Rc<RefCell<Option<ProviderHandle<OtherKey>>>> =
+        Rc::new(RefCell::new(None));
+    let secondary_in_cb = secondary.clone();
+    let key_b_in_cb = key_b.clone();
+    let dh_in_cb = Rc::clone(&derived_handle);
+    let _sub = primary.subscribe(
+        key_a.clone(),
+        Rc::new(move || {
+            // Re-enter the *secondary* registry from inside the primary's
+            // notification path.
+            let h = secondary_in_cb.register(key_b_in_cb.clone(), NodeId(123));
+            *dh_in_cb.borrow_mut() = Some(h);
+        }),
+    );
+
+    // Before notify: secondary is empty.
+    assert!(secondary.query(&key_b).is_empty());
+
+    primary.notify(&key_a);
+
+    // After notify: secondary has the provider the callback registered,
+    // and the primary's internals are still usable (re-entrancy didn't
+    // wedge it).
+    assert_eq!(secondary.query(&key_b), vec![NodeId(123)]);
+    let _ = primary.register(key_a.clone(), NodeId(7));
+
+    // Drop the derived handle — secondary cleans up.
+    *derived_handle.borrow_mut() = None;
+    assert!(secondary.query(&key_b).is_empty());
+}
+
+#[test]
+fn dynamic_link_resolve_re_walks_registries_after_invalidate() {
+    use crate::graph::dynamic_link::DynamicLink;
+
+    // Stability check: a link that resolved against one provider should,
+    // after invalidate(), pick up a new higher-priority provider that
+    // appeared in the meantime. Documents the contract: callers MUST
+    // call `invalidate` to rebuild the cache; the link does not poll on
+    // its own (subscription tiering — ADR-0008 — would handle that and
+    // is deferred per backlog #027).
+    let ctx = TwoRegistryCtx {
+        primary: Registry::new(),
+        secondary: Registry::new(),
+    };
+    let _hs = ctx.secondary.register(OtherKey("svc"), NodeId(99));
+
+    let mut link = DynamicLink::first_match(vec![
+        TestQuery::Primary(TestKey("svc")),
+        TestQuery::Secondary(OtherKey("svc")),
+    ]);
+    assert_eq!(link.resolve(&ctx), Some(NodeId(99)));
+    assert_eq!(link.active_index(), Some(1));
+
+    // Higher-priority provider appears. Without invalidate the link's
+    // cached state is *stale* — by design until subscriptions land.
+    let _hp = ctx.primary.register(TestKey("svc"), NodeId(7));
+    assert_eq!(link.cached_result(), Some(NodeId(99)));
+
+    // After invalidate the next resolve picks up the new provider.
+    link.invalidate();
+    assert_eq!(link.resolve(&ctx), Some(NodeId(7)));
+    assert_eq!(link.active_index(), Some(0));
 }
