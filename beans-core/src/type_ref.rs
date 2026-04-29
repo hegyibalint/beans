@@ -1,8 +1,34 @@
-/// A structured representation of Java types.
+//! Structured types at the JVM level.
+//!
+//! `TypeRef` is the JVM-layer type representation — the lingua franca that
+//! every language module projects into for cross-language interop. It models
+//! the JVM's view of types: classes, interfaces, primitives, parameterized
+//! types, wildcards, arrays. Per ADR-0004, this is intentionally the
+//! *intersection* of what all five JVM languages need to talk about each
+//! other, not a superset of any one language.
+//!
+//! Language-specific type features that don't fit the JVM model — Kotlin's
+//! nullability (`String?`), Scala's union types (`A | B`), match types,
+//! path-dependent types, and so on — are *not* in `TypeRef`. They live in
+//! the per-language rich model and only flatten into `TypeRef` at the
+//! JVM-projection boundary, possibly with information loss. A Kotlin
+//! `String?` projects to `TypeRef::Simple { name: "java.lang.String" }`
+//! plus a nullability bit on the JVM-projection node, not into a TypeRef
+//! variant.
+//!
+//! What `TypeRef` enables (cross-file semantic analysis that string-based
+//! types could not support):
+//! - Erasure (`erasure()`, JLS §4.6) — collapse parameterized types and
+//!   type variables to their JVM bytecode shape.
+//! - Substitution (`substitute()`) — replace type variables with concrete
+//!   arguments through inheritance chains.
+//! - Subtype checking, when paired with the supertype graph.
+//! - Stable structural equality across files.
+
+/// A structured JVM-level type reference.
 ///
-/// Replaces raw `String` type references throughout the symbol model.
-/// Enables type substitution, erasure computation, subtype checking,
-/// and all the cross-file semantic analysis that string-based types cannot support.
+/// See the module doc for what's deliberately *not* in this enum (nullability,
+/// union types, etc. — those belong in language-specific models).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeRef {
     /// `void`
@@ -193,8 +219,8 @@ impl TypeRef {
         matches!(self, TypeRef::Void)
     }
 
-    /// Compute the erasure of this type (JLS 4.6).
-    /// Type variables erase to their leftmost bound (or Object).
+    /// Compute the erasure of this type (JLS §4.6).
+    /// Type variables erase to their leftmost bound (or `Object`).
     /// Parameterized types erase to their raw type.
     /// Everything else erases to itself.
     pub fn erasure(&self) -> TypeRef {
@@ -287,7 +313,7 @@ impl PrimitiveKind {
         }
     }
 
-    /// Can this primitive be widened to `target`? (JLS 5.1.2)
+    /// Can this primitive be widened to `target`? (JLS §5.1.2)
     pub fn widens_to(&self, target: &PrimitiveKind) -> bool {
         use PrimitiveKind::*;
         matches!(
