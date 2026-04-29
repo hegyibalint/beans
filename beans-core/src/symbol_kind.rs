@@ -1,15 +1,17 @@
-//! Tag enum identifying what a [`Symbol`](crate::Symbol) declares.
+//! Prototype-era union [`SymbolKind`] tag enum.
 //!
-//! `SymbolKind` is the one piece of the symbol model where ADR-0001
-//! ("cohesive, not extensible") shows most explicitly. The variants are
-//! organised by which language family contributes them: a shared core
-//! covering everything Java models, then per-language additions for Kotlin,
-//! Scala, and Clojure constructs that have no direct Java analogue.
+//! Per ADR-0019 / ADR-0004 the model splits into a JVM layer ([`crate::jvm`])
+//! and per-language layers ([`crate::languages`]). When the prototype dies
+//! (step 7 of the graph migration) this file goes away and its variants
+//! split across `jvm::SymbolKind` and the per-language
+//! `languages::<lang>::SymbolKind` enums. Until then it stays at the crate
+//! root as a single union enum so prototype consumers
+//! ([`crate::Symbol`], [`crate::SymbolTable`], the resolution code) keep
+//! pattern-matching on one tag.
 //!
-//! There is no plugin path. A new JVM language is a code change to this
-//! enum (and to any `match` that consumes it). A future sixth language
-//! that fits the JVM model would add its own variant block here; one that
-//! does not fit the JVM model is out of scope by design.
+//! Variants are grouped by language origin. A new JVM language is still a
+//! code change here today; once the split happens, language-specific
+//! variants belong to their own per-language module.
 
 /// The category of a symbol — class, method, field, namespace, etc.
 ///
