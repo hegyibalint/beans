@@ -55,8 +55,15 @@ impl<K: Eq + Hash> RegistryInner<K> {
     }
 
     fn remove_provider(&mut self, key: &K, node: NodeId) {
+        // Remove only the *first* matching entry. Each ProviderHandle owns
+        // exactly one registration; if a node registers twice for the same
+        // key, two handles exist and dropping one must leave the other's
+        // entry intact. `swap_remove` is fine because per ADR-0013 the
+        // provider list has no significant order.
         if let Some(list) = self.providers.get_mut(key) {
-            list.retain(|n| *n != node);
+            if let Some(pos) = list.iter().position(|n| *n == node) {
+                list.swap_remove(pos);
+            }
             if list.is_empty() {
                 self.providers.remove(key);
             }
