@@ -197,9 +197,18 @@ impl<P> Graph<P> {
     }
 
     /// Iterate over every occupied node in the arena, yielding
-    /// `(NodeId, &NodeData<P>)`. Order is by ascending slot index.
-    /// Skips freed slots; the iterator is not invalidated by reads but
-    /// is invalidated by mutation, like any borrow over the arena.
+    /// `(NodeId, &NodeData<P>)`. Order is by ascending slot index;
+    /// freed slots are skipped. The iterator is not invalidated by
+    /// reads but is invalidated by mutation, like any borrow over the
+    /// arena.
+    ///
+    /// For inspection, debugging, snapshotting, or test-harness fallback
+    /// use. Semantic resolution (cross-file lookup, member resolution,
+    /// type lookup, etc.) goes through registries — `iter` is O(n) over
+    /// the entire graph and must not appear on hot paths. If you find
+    /// yourself reaching for `iter` to answer a real query, you almost
+    /// certainly want a dedicated [`Registry`](crate::graph::Registry)
+    /// keyed by whatever discriminator the query carries.
     pub fn iter(&self) -> impl Iterator<Item = (NodeId, &NodeData<P>)> {
         self.slots
             .iter()
