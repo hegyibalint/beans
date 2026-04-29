@@ -4,5 +4,13 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 
+[features]
+default = ["java", "kotlin", "scala", "groovy", "clojure"]
+java = ["beans-core/java"]
+kotlin = ["beans-core/kotlin"]
+scala = ["beans-core/scala"]
+groovy = ["beans-core/groovy"]
+clojure = ["beans-core/clojure"]
+
 [dependencies]
-beans-core = { path = "../beans-core" }
+beans-core = { path = "../beans-core", default-features = false }

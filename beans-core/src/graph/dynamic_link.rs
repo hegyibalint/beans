@@ -181,6 +181,9 @@ impl<Q: RegistryQuery> DynamicLink<Q> {
             LinkMode::FirstMatch,
             "DynamicLink::resolve called on a MergeAll link; use resolve_all"
         );
+        if let Some(cached) = self.cached_result {
+            return Some(cached);
+        }
         for (idx, query) in self.queries.iter().enumerate() {
             let hits = query.resolve(ctx);
             if let Some(&first) = hits.first() {
