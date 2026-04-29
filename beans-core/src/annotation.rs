@@ -1,12 +1,26 @@
+//! Annotation instances attached to symbols.
+//!
+//! An annotation is a compile-time-evaluated value attached to a
+//! declaration: `@Override`, `@Retention(RUNTIME)`,
+//! `@Target({TYPE, METHOD})`. Annotations are first-class on every
+//! [`Symbol`](crate::Symbol) that can carry them; diagnostic rules and JVM
+//! enrichments (e.g., promoting Kotlin nullability to the JVM projection)
+//! read them directly.
+//!
+//! The shape of an annotation value is constrained by JLS §9.6.1 — the
+//! [`AnnotationValue`] variants enumerate exactly what is permitted.
+
 use crate::{ConstantValue, TypeRef};
 
 /// An annotation applied to a symbol: `@Override`, `@Retention(RUNTIME)`, etc.
+/// (JLS §9.7).
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnnotationInstance {
     /// FQN of the annotation type, e.g., "java.lang.Override"
     pub fqn: String,
-    /// Element name-value pairs. For marker annotations, this is empty.
-    /// For single-element annotations, the element name is "value".
+    /// Element name-value pairs. For marker annotations, this is empty
+    /// (JLS §9.7.2). For single-element annotations, the element name
+    /// is "value" (JLS §9.7.3).
     pub elements: Vec<(String, AnnotationValue)>,
 }
 
@@ -18,9 +32,9 @@ pub struct AnnotationInstance {
 pub enum AnnotationValue {
     /// A compile-time constant: `42`, `"hello"`, `true`
     Const(ConstantValue),
-    /// A class literal: `String.class`, `int.class`
+    /// A class literal: `String.class`, `int.class` (JLS §9.6.1).
     ClassLiteral(TypeRef),
-    /// An enum constant reference: `RetentionPolicy.RUNTIME`
+    /// An enum constant reference: `RetentionPolicy.RUNTIME` (JLS §9.6.1).
     EnumRef {
         /// FQN of the enum type
         type_fqn: String,
