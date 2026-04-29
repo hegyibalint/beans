@@ -671,11 +671,12 @@ pub fn parse_java_to_graph(path: &Path, source: &str) -> ParsedJavaFile {
 ///
 /// Hard-link parent/child relationships are reconstructed from the
 /// plan's `parent` indices. Per ADR-0014 the registration handles are
-/// installed on each payload by the trait impl, so dropping the node
-/// (via [`Graph::destroy`]) cleans up the registry entry.
+/// stored on [`NodeData::handles`](crate::graph::NodeData::handles); the
+/// engine drops them when [`Graph::destroy`] frees the slot, removing
+/// each registry entry as a side effect.
 pub fn integrate(
     graph: &mut Graph<NodePayload>,
-    registries: &mut Registries,
+    registries: &Registries,
     parsed: ParsedJavaFile,
 ) -> Vec<NodeId> {
     // First pass: insert each pending node, mapping plan-indices to real
@@ -690,11 +691,18 @@ pub fn integrate(
     }
 
     // Second pass: run on_created for each. Per ADR-0014 / ADR-0016 this
-    // is what wires the RAII handles. We borrow each node mutably one at
-    // a time; the registries' interior mutability handles the rest.
+    // is what wires the RAII handles. The behavior impl returns the
+    // handles; the engine stores them on `NodeData::handles`.
     for &id in &inserted {
+        // Read the payload through `&self` to compute the handles, then
+        // store them with a separate `&mut` borrow. Splitting the borrow
+        // keeps the trait `on_created(&self, &Ctx)` signature simple.
+        let handles = graph
+            .get(id)
+            .map(|node| node.payload.on_created(id, registries))
+            .unwrap_or_default();
         if let Some(node) = graph.get_mut(id) {
-            node.payload.on_created(id, registries);
+            node.handles = handles;
         }
     }
 
@@ -811,7 +819,6 @@ fn symbol_to_java_payload(sym: &Symbol) -> NodePayload {
                 kind,
                 type_parameters,
                 record_components,
-                symbol_provider: None,
             })
         }
         SymbolKind::Method => {
@@ -842,7 +849,6 @@ fn symbol_to_java_payload(sym: &Symbol) -> NodePayload {
                 parameters,
                 type_parameters,
                 throws,
-                symbol_provider: None,
             })
         }
         SymbolKind::Constructor => {
@@ -871,7 +877,6 @@ fn symbol_to_java_payload(sym: &Symbol) -> NodePayload {
                 parameters,
                 type_parameters,
                 throws,
-                symbol_provider: None,
             })
         }
         SymbolKind::Field => {
@@ -892,13 +897,11 @@ fn symbol_to_java_payload(sym: &Symbol) -> NodePayload {
                 field_type,
                 constant_value,
                 initialized,
-                symbol_provider: None,
             })
         }
         SymbolKind::EnumConstant => JavaNodePayload::EnumConstant(JavaEnumConstantNode {
             header,
             enum_owner: parent_fqn(sym),
-            symbol_provider: None,
         }),
         SymbolKind::Parameter => JavaNodePayload::Parameter(JavaParameter {
             name: sym.name.clone(),
@@ -907,7 +910,6 @@ fn symbol_to_java_payload(sym: &Symbol) -> NodePayload {
         }),
         SymbolKind::Package => JavaNodePayload::Package(JavaPackageNode {
             header,
-            symbol_provider: None,
         }),
         // Language-specific kinds (Kotlin/Scala/Clojure) cannot reach
         // here from the Java parser. Fall back to a Type node tagged as
@@ -919,7 +921,6 @@ fn symbol_to_java_payload(sym: &Symbol) -> NodePayload {
             kind: JavaTypeKind::Class,
             type_parameters: Vec::new(),
             record_components: Vec::new(),
-            symbol_provider: None,
         }),
     };
     NodePayload::Java(payload)
@@ -957,7 +958,6 @@ fn symbol_to_jvm_payload(sym: &Symbol) -> NodePayload {
                 type_parameters,
                 record_components,
                 enrichments: JvmEnrichments::default(),
-                type_provider: None,
             })
         }
         SymbolKind::Method => {
@@ -993,7 +993,6 @@ fn symbol_to_jvm_payload(sym: &Symbol) -> NodePayload {
                 type_parameters,
                 throws,
                 enrichments: JvmEnrichments::default(),
-                method_provider: None,
             })
         }
         SymbolKind::Constructor => {
@@ -1024,7 +1023,6 @@ fn symbol_to_jvm_payload(sym: &Symbol) -> NodePayload {
                 parameters,
                 type_parameters,
                 throws,
-                constructor_provider: None,
             })
         }
         SymbolKind::Field => {
@@ -1047,13 +1045,11 @@ fn symbol_to_jvm_payload(sym: &Symbol) -> NodePayload {
                 constant_value,
                 initialized,
                 enrichments: JvmEnrichments::default(),
-                field_provider: None,
             })
         }
         SymbolKind::EnumConstant => JvmNodePayload::EnumConstant(JvmEnumConstantNode {
             header,
             enum_owner: parent_fqn(sym),
-            field_provider: None,
         }),
         SymbolKind::Parameter => JvmNodePayload::Parameter(JvmParameter {
             name: sym.name.clone(),
@@ -1063,7 +1059,6 @@ fn symbol_to_jvm_payload(sym: &Symbol) -> NodePayload {
         }),
         SymbolKind::Package => JvmNodePayload::Package(JvmPackageNode {
             header,
-            package_provider: None,
         }),
         _ => JvmNodePayload::Type(JvmTypeNode {
             header,
@@ -1071,7 +1066,6 @@ fn symbol_to_jvm_payload(sym: &Symbol) -> NodePayload {
             type_parameters: Vec::new(),
             record_components: Vec::new(),
             enrichments: JvmEnrichments::default(),
-            type_provider: None,
         }),
     };
     NodePayload::Jvm(payload)
@@ -1081,6 +1075,20 @@ fn symbol_to_jvm_payload(sym: &Symbol) -> NodePayload {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    /// Per ADR-0005 the parse phase must be runnable on a rayon worker
+    /// — meaning the parse output type has to be `Send`. Per ADR-0014
+    /// RAII registration handles live on
+    /// [`NodeData::handles`](crate::graph::NodeData::handles), not on
+    /// the payload, which keeps every payload variant free of
+    /// `Rc`-flavoured `!Send` taints. This is a static check that the
+    /// invariant holds — a regression here would silently break
+    /// workspace indexing parallelism.
+    fn _assert_parse_output_is_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<ParsedJavaFile>();
+        assert_send::<NodePayload>();
+    }
 
     fn parse(source: &str) -> Vec<Symbol> {
         parse_java_file(Path::new("Test.java"), source)
