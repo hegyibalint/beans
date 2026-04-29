@@ -16,11 +16,15 @@
 //! - [`syntax`] — language-local `extract_imports`, `extract_package`,
 //!   `word_at_position` helpers; consumed by the fixture harness and the
 //!   LSP via direct calls (no `Language` trait per ADR-0021).
+//! - [`resolve`] — in-file name resolution chain (FQN → imports →
+//!   same-package → wildcard → static → simple-name fallback). Returns
+//!   `NodeId` so consumers can format their own result types.
 
 pub mod keys;
 pub mod parser;
 pub mod payload;
 pub mod registries;
+pub mod resolve;
 pub mod syntax;
 pub mod types;
 
@@ -32,4 +36,5 @@ pub use payload::{
     JavaTypeKind, JavaTypeNode,
 };
 pub use registries::JavaRegistries;
+pub use resolve::{lookup_fqn, resolve_name, resolve_simple_name};
 pub use syntax::{extract_imports, extract_package, word_at_position};
