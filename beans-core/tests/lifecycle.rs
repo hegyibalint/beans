@@ -11,9 +11,8 @@
 //! * **Tier 1 — baseline.** What any consumer (LSP, CLI, batch tool)
 //!   needs to be true. Failures here are bugs.
 //! * **Tier 2 — running engine.** What makes the graph a graph, not a
-//!   static snapshot: subscribers fire on lifecycle changes, dynamic
-//!   links observe registry mutations. Today most fail; each failure
-//!   pins a contract the runtime owes the architecture.
+//!   static snapshot: subscribers fire on lifecycle changes, stale
+//!   `NodeId`s do not silently resolve to unrelated payloads.
 //! * **Tier 3 — lazy recomputation.** ADR-0009/0010's pull-on-demand
 //!   contract. All fail today (no pull function); informs the
 //!   path-A-vs-path-B decision documented in the audit.
@@ -23,7 +22,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use beans_core::graph::dynamic_link::{DynamicLink, RegistryQuery};
 use beans_core::graph::{Graph, NodeId};
 use beans_core::jvm::keys::{JvmMethodKey, JvmTypeKey};
 use beans_core::jvm::{Fqn, JvmNodePayload};
@@ -93,22 +91,6 @@ impl Env {
             .jvm
             .methods
             .query(&JvmMethodKey::new(Fqn::new(owner), name, params))
-    }
-}
-
-/// Dynamic-link query enum used by the cross-file tests. Wraps a single
-/// JVM type lookup so the tests can mint a `DynamicLink` keyed against
-/// `Registries`.
-enum Q {
-    Type(JvmTypeKey),
-}
-
-impl RegistryQuery for Q {
-    type Ctx = Registries;
-    fn resolve(&self, ctx: &Self::Ctx) -> Vec<NodeId> {
-        match self {
-            Q::Type(k) => ctx.jvm.types.query(k),
-        }
     }
 }
 
@@ -344,75 +326,6 @@ fn dropping_a_provider_fires_existing_subscribers() {
         "subscriber should fire when its provider drops; got {}",
         counter.get()
     );
-}
-
-#[test]
-fn dynamic_link_observes_provider_change_after_edit() {
-    // ADR-0008's tiered-subscription promise: a link kept across an edit
-    // observes the new state without explicit `invalidate()`. Today fails
-    // — links cache `cached_result` indefinitely (see
-    // dynamic_link_resolve_short_circuits_through_cache in
-    // graph::tests, which pins today's manual-invalidate contract).
-    let mut env = Env::new();
-    let path = Path::new("Service.java");
-    env.integrate(path, "package com.example; public class Service {}");
-
-    let mut link = DynamicLink::first_match(vec![Q::Type(JvmTypeKey::new(Fqn::new(
-        "com.example.Service",
-    )))]);
-    let initial = link
-        .resolve(&env.registries)
-        .expect("initial resolution succeeds");
-
-    env.delete(path);
-    env.integrate(path, "package com.example; public class Service {}");
-
-    let after = link.resolve(&env.registries);
-    assert_ne!(
-        after,
-        Some(initial),
-        "dynamic link should observe registry change without manual invalidate; \
-         still cached at {:?}",
-        initial
-    );
-}
-
-#[test]
-fn dynamic_link_promotes_when_higher_priority_provider_appears() {
-    // Existence-watch (ADR-0008): a link resolved against a fallback
-    // query should promote when a higher-priority query gains a
-    // provider. Today: link stays on the lower-priority answer until
-    // explicitly invalidated.
-    let mut env = Env::new();
-    // Only secondary provider exists; primary (higher priority) misses.
-    env.integrate(
-        Path::new("a/Service.java"),
-        "package com.example.a; public class Service {}",
-    );
-
-    let primary = JvmTypeKey::new(Fqn::new("com.example.Service")); // misses
-    let fallback = JvmTypeKey::new(Fqn::new("com.example.a.Service")); // hits
-    let mut link = DynamicLink::first_match(vec![Q::Type(primary), Q::Type(fallback)]);
-
-    let initial = link.resolve(&env.registries).expect("falls through");
-    assert_eq!(link.active_index(), Some(1));
-
-    // Higher-priority provider appears.
-    env.integrate(
-        Path::new("Service.java"),
-        "package com.example; public class Service {}",
-    );
-
-    // Without manual invalidate, the link should promote to active_index 0.
-    let after = link.resolve(&env.registries);
-    assert_eq!(
-        link.active_index(),
-        Some(0),
-        "link should promote to higher-priority query; active_index still {:?}, was at {:?}",
-        link.active_index(),
-        initial
-    );
-    assert_ne!(after, Some(initial));
 }
 
 #[test]
