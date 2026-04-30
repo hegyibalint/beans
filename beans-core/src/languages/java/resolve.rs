@@ -31,7 +31,7 @@ use crate::jvm::keys::{JvmTypeKey, PackageKey};
 use crate::languages::java::keys::JavaSymbolKey;
 use crate::payload::NodePayload;
 use crate::registries::Registries;
-use crate::resolve::Import;
+use crate::languages::java::syntax::Import;
 
 /// Resolve a Java identifier at a use site.
 ///

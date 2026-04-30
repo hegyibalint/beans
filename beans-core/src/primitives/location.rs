@@ -1,9 +1,10 @@
-//! Source-file source ranges used by every symbol that has one.
+//! Source-file source ranges used by every payload that has one.
 //!
-//! `Location` is the bridge between an in-memory [`Symbol`](crate::Symbol)
-//! and the bytes on disk that produced it. Go-to-definition, hover, and
-//! diagnostics all need to point back at a span in a file; this is that
-//! span.
+//! `Location` is the bridge between an in-memory node payload (a
+//! [`crate::jvm::JvmDeclHeader::location`] or
+//! [`crate::languages::java::JavaDeclHeader::location`]) and the bytes
+//! on disk that produced it. Go-to-definition, hover, and diagnostics
+//! all need to point back at a span in a file; this is that span.
 
 use std::path::PathBuf;
 

@@ -12,7 +12,13 @@ use std::path::{Path, PathBuf};
 
 use beans_core::completion::CompletionItems;
 use beans_core::graph::{Graph, NodeId};
-use beans_core::resolve::Import;
+// `Import` is Java-syntactic data; lives behind the `java` feature.
+// Without any language feature the fixture parses markers but doesn't
+// resolve cursors, so the imports map is a no-op type alias.
+#[cfg(feature = "java")]
+use beans_core::languages::java::Import;
+#[cfg(not(feature = "java"))]
+type Import = std::convert::Infallible;
 use beans_core::{Modifier, NodePayload, Registries, SymbolKind};
 
 #[cfg(feature = "java")]
@@ -767,6 +773,10 @@ fn word_at(source: &str, line: u32, col: u32, file: &Path) -> Option<String> {
 fn build_hover(view: &ResolvedView<'_>) -> String {
     use std::fmt::Write;
 
+    // The `EnumConstant` arm is reachable in principle but unreachable
+    // today: `view_fields` collapses `JavaNodePayload::EnumConstant`
+    // into `SymbolKind::Field` for spec-test stability. Backlog #032
+    // tracks whether to surface `EnumConstant` distinctly.
     let kind_str = match view.kind {
         SymbolKind::Class => "class",
         SymbolKind::Interface => "interface",
@@ -775,11 +785,9 @@ fn build_hover(view: &ResolvedView<'_>) -> String {
         SymbolKind::Annotation => "@interface",
         SymbolKind::Method => "method",
         SymbolKind::Constructor => "constructor",
-        SymbolKind::Field => "field",
-        SymbolKind::EnumConstant => "field",
+        SymbolKind::Field | SymbolKind::EnumConstant => "field",
         SymbolKind::Parameter => "parameter",
         SymbolKind::Package => "package",
-        _ => "symbol",
     };
 
     let mut s = String::new();
