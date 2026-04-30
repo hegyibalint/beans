@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use beans_core::Registries;
 use beans_core::graph::{Graph, NodeId};
 use beans_core::payload::NodePayload;
-use beans_core::resolve::Import;
+use beans_core::languages::java::Import;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};

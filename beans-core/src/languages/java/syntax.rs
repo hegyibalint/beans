@@ -6,7 +6,21 @@
 //! to via a `match ext { "java" => ..., "kt" => ..., ... }` at the
 //! consumer's edge. No central registry.
 
-use crate::resolve::Import;
+/// One Java `import` statement.
+///
+/// Lives here rather than in a generic `Import` because Java's import
+/// shapes (single, wildcard, static) are language-specific. Other JVM
+/// languages (Kotlin, Scala) have different import syntax and will
+/// surface their own `Import` shapes when their parsers land.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Import {
+    /// `import com.example.MyClass;`
+    Single(String),
+    /// `import com.example.*;`
+    Wildcard(String),
+    /// `import static com.example.Utils.MAX;`
+    Static(String),
+}
 
 /// Extract `import` statements from a Java source. Recognises:
 /// - `import com.example.Foo;` → [`Import::Single`]
