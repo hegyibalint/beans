@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use beans_core::completion::CompletionItems;
+use beans_core::completion::CompletionCandidates;
 use beans_core::graph::{Graph, NodeId};
 // `Import` is Java-syntactic data; lives behind the `java` feature.
 // Without any language feature the fixture parses markers but doesn't
@@ -59,7 +59,7 @@ struct PendingAssertion {
 
 struct PendingCompletion {
     cursor_name: Option<String>,
-    check_fn: Box<dyn FnOnce(&CompletionItems) + Send>,
+    check_fn: Box<dyn FnOnce(&CompletionCandidates) + Send>,
     mode: TestMode,
 }
 
@@ -202,11 +202,11 @@ impl CompletionAssert {
         self.fixture.resolve_default()
     }
 
-    pub fn complete(self, cursor_name: &str, check: impl FnOnce(&CompletionItems) + Send + 'static) -> CompletionAssert {
+    pub fn complete(self, cursor_name: &str, check: impl FnOnce(&CompletionCandidates) + Send + 'static) -> CompletionAssert {
         self.fixture.complete(cursor_name, check)
     }
 
-    pub fn complete_default(self, check: impl FnOnce(&CompletionItems) + Send + 'static) -> CompletionAssert {
+    pub fn complete_default(self, check: impl FnOnce(&CompletionCandidates) + Send + 'static) -> CompletionAssert {
         self.fixture.complete_default(check)
     }
 
@@ -272,7 +272,7 @@ impl Fixture {
         }
     }
 
-    pub fn complete(mut self, cursor_name: &str, check: impl FnOnce(&CompletionItems) + Send + 'static) -> CompletionAssert {
+    pub fn complete(mut self, cursor_name: &str, check: impl FnOnce(&CompletionCandidates) + Send + 'static) -> CompletionAssert {
         self.completions.push(PendingCompletion {
             cursor_name: Some(cursor_name.to_string()),
             check_fn: Box::new(check),
@@ -281,7 +281,7 @@ impl Fixture {
         CompletionAssert { fixture: self }
     }
 
-    pub fn complete_default(mut self, check: impl FnOnce(&CompletionItems) + Send + 'static) -> CompletionAssert {
+    pub fn complete_default(mut self, check: impl FnOnce(&CompletionCandidates) + Send + 'static) -> CompletionAssert {
         self.completions.push(PendingCompletion {
             cursor_name: None,
             check_fn: Box::new(check),
@@ -430,7 +430,7 @@ impl Fixture {
                     panic!("cursor '{}' not found in any file", cursor_display);
                 });
 
-            let items = CompletionItems(Vec::new());
+            let items = CompletionCandidates::default();
 
             match &completion.mode {
                 TestMode::Skip(reason) => {

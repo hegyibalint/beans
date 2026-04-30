@@ -1,56 +1,89 @@
-use crate::{Modifier, SymbolKind};
+//! Neutral completion result types.
+//!
+//! Per ADR-0002 / ADR-0020 / backlog #025 the LSP-shaped completion
+//! item (with formatted `detail` strings, parameter lists shaped like
+//! the LSP wire) belongs in `beans-lsp`, not in the core library. The
+//! core's responsibility is the *neutral* answer to "what's visible at
+//! this cursor" — a list of candidates with enough information for any
+//! consumer (the LSP, a CLI, a batch analyzer) to format on its own.
+//!
+//! The fixture harness asserts on these neutral types so it stays a
+//! `beans-core`-only consumer per ADR-0020.
 
-/// A completion item represents a symbol that is visible and relevant
-/// at a cursor position. This is what the LSP offers when the developer
-/// presses cmd+space.
-#[derive(Debug, Clone)]
-pub struct CompletionItem {
+use crate::SymbolKind;
+use crate::graph::NodeId;
+use crate::jvm::Fqn;
+
+/// One completion candidate — what one symbol would contribute to a
+/// completion list. Producers fill these in from a graph walk; the
+/// LSP-shaped formatter in `beans-lsp` adapts them into wire shapes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompletionCandidate {
     pub name: String,
     pub kind: SymbolKind,
-    pub return_type: String,
-    pub params: Vec<(String, String)>,
-    pub modifiers: Vec<Modifier>,
-    pub fqn: String,
-    pub detail: String,
+    pub fqn: Fqn,
+    /// The graph node this candidate references. Stable for the
+    /// duration of one query; not preserved across rebuilds (per
+    /// ADR-0007). Consumers that want a durable identity use the
+    /// FQN.
+    pub node_id: NodeId,
 }
 
-/// Thin wrapper around `Vec<CompletionItem>` with convenience query methods.
-pub struct CompletionItems(pub Vec<CompletionItem>);
+/// Thin wrapper around `Vec<CompletionCandidate>` with the query
+/// methods spec tests use. The inner vec is private so the public
+/// surface stays the query API ([`has`](Self::has), [`get`](Self::get),
+/// [`count`](Self::count), [`names`](Self::names),
+/// [`iter`](Self::iter)); producers in `beans-core` construct via
+/// [`CompletionCandidates::default`] and append through internal
+/// helpers when the completion engine lands. Today the only producer
+/// is the fixture harness's empty stub.
+#[derive(Debug, Default)]
+pub struct CompletionCandidates(Vec<CompletionCandidate>);
 
-impl CompletionItems {
-    /// Is an item with this name and kind offered?
+impl CompletionCandidates {
+    /// Is a candidate with this name and kind offered?
     pub fn has(&self, name: &str, kind: SymbolKind) -> bool {
-        self.0.iter().any(|i| i.name == name && i.kind == kind)
+        self.0.iter().any(|c| c.name == name && c.kind == kind)
     }
 
-    /// Get the item with this name and kind. Panics with a clear message if missing.
-    pub fn get(&self, name: &str, kind: SymbolKind) -> &CompletionItem {
+    /// Get the candidate with this name and kind. Panics with a clear
+    /// message if missing — useful in test assertions.
+    pub fn get(&self, name: &str, kind: SymbolKind) -> &CompletionCandidate {
         self.0
             .iter()
-            .find(|i| i.name == name && i.kind == kind)
+            .find(|c| c.name == name && c.kind == kind)
             .unwrap_or_else(|| {
-                let available: Vec<_> = self.0.iter().map(|i| format!("{} ({:?})", i.name, i.kind)).collect();
+                let available: Vec<_> = self
+                    .0
+                    .iter()
+                    .map(|c| format!("{} ({:?})", c.name, c.kind))
+                    .collect();
                 panic!(
-                    "completion item '{}' ({:?}) not found.\nAvailable items: {:?}",
+                    "completion candidate '{}' ({:?}) not found.\nAvailable items: {:?}",
                     name, kind, available
                 );
             })
     }
 
-    /// How many items of this kind?
+    /// How many candidates of this kind?
     pub fn count(&self, kind: SymbolKind) -> usize {
-        self.0.iter().filter(|i| i.kind == kind).count()
+        self.0.iter().filter(|c| c.kind == kind).count()
     }
 
-    /// Sorted names of all items of a given kind.
+    /// Sorted names of all candidates of a given kind.
     pub fn names(&self, kind: SymbolKind) -> Vec<&str> {
-        let mut names: Vec<&str> = self.0.iter().filter(|i| i.kind == kind).map(|i| i.name.as_str()).collect();
+        let mut names: Vec<&str> = self
+            .0
+            .iter()
+            .filter(|c| c.kind == kind)
+            .map(|c| c.name.as_str())
+            .collect();
         names.sort();
         names
     }
 
-    /// Full iterator access for edge cases.
-    pub fn iter(&self) -> std::slice::Iter<'_, CompletionItem> {
+    /// Iterator over all candidates, in insertion order.
+    pub fn iter(&self) -> std::slice::Iter<'_, CompletionCandidate> {
         self.0.iter()
     }
 }

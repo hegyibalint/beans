@@ -1,5 +1,6 @@
 mod actor;
 mod backend;
+mod completion;
 mod hover;
 mod workspace;
 
