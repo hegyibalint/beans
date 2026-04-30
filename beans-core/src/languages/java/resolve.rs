@@ -99,6 +99,55 @@ pub fn resolve_name(
     resolve_simple_name(name, graph)
 }
 
+/// Resolve a compound name like `Type.method` or `Type.field` against
+/// the same chain as [`resolve_name`]: try the whole thing as an FQN
+/// first, then split on the last dot and resolve the type part through
+/// the chain, then look for the member among the type's hard-link
+/// children.
+///
+/// Returns `None` if either step fails. Caller-provided `name` is
+/// expected to be a dotted identifier (`A.b.c`) — the function does not
+/// itself parse expressions.
+pub fn resolve_compound_name(
+    name: &str,
+    imports: &[Import],
+    current_package: &str,
+    registries: &Registries,
+    graph: &Graph<NodePayload>,
+) -> Option<NodeId> {
+    // Try the whole thing as an FQN first.
+    if let Some(id) = lookup_fqn(registries, name) {
+        return Some(id);
+    }
+
+    // Split on the last dot: `Type.method` → ("Type", "method").
+    if let Some(dot) = name.rfind('.') {
+        let type_part = &name[..dot];
+        let member_part = &name[dot + 1..];
+
+        if let Some(type_id) =
+            resolve_name(type_part, imports, current_package, registries, graph)
+        {
+            // Walk the type's hard-link children, filtering for a Java
+            // payload whose simple name matches (mirrors the
+            // prototype's `lookup_children + filter`).
+            let node = graph.get(type_id)?;
+            for &child_id in &node.children {
+                if let Some(child) = graph.get(child_id)
+                    && let Some(child_name) = payload_simple_name(&child.payload)
+                    && child_name == member_part
+                {
+                    return Some(child_id);
+                }
+            }
+        }
+    }
+
+    // Fall back to the simple-name chain in case the caller passed an
+    // unqualified compound that happened not to split helpfully.
+    resolve_name(name, imports, current_package, registries, graph)
+}
+
 /// Resolve a fully-qualified name. Prefers the Java-side node when both
 /// the language-specific and JVM-projection providers exist (the
 /// prototype's `lookup_by_fqn` returned the single declaration node;
