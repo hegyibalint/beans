@@ -33,8 +33,7 @@
 //! [`NodeData`]: crate::graph::NodeData
 //! [`NodeData::handles`]: crate::graph::NodeData::handles
 
-use crate::graph::arena::NodeId;
-use crate::graph::registry::NodeHandle;
+use crate::graph::arena::{NodeHandle, NodeId};
 
 pub trait NodeBehavior {
     /// Registry/registries struct the consumer threads through
