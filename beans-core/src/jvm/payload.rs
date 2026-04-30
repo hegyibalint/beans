@@ -32,7 +32,8 @@ use crate::jvm::keys::{
     JvmConstructorKey, JvmFieldKey, JvmMethodKey, JvmTypeKey, PackageKey,
 };
 use crate::jvm::modifier::Modifier;
-use crate::jvm::signature::{ConstantValue, RecordComponent};
+use crate::jvm::constant::ConstantValue;
+use crate::jvm::record::RecordComponent;
 use crate::jvm::type_ref::{TypeParam, TypeRef};
 use crate::primitives::Location;
 use crate::registries::Registries;

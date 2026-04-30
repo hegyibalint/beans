@@ -508,28 +508,28 @@ fn location_to_lsp(loc: &beans_core::Location) -> Option<Location> {
     })
 }
 
+/// Map a JVM-shaped `beans_core::SymbolKind` to the LSP wire's
+/// `SymbolKind`. Per-language kinds (Kotlin's `Object`, Scala's
+/// `Trait`, Clojure's `Namespace`, etc.) live in their respective
+/// per-language enums (`crate::languages::<lang>::SymbolKind`); when
+/// those payloads land they'll need their own `to_lsp` mapping.
+///
+/// The `EnumConstant` arm is reachable in principle but unreachable
+/// today: `payload_view` collapses `JavaNodePayload::EnumConstant`
+/// into `SymbolKind::Field` for spec-test stability. Backlog #032
+/// tracks whether to surface `EnumConstant` distinctly.
 fn symbol_kind_to_lsp(kind: SymbolKind) -> LspSymbolKind {
     match kind {
-        SymbolKind::Class | SymbolKind::DataClass | SymbolKind::SealedClass => {
-            LspSymbolKind::CLASS
-        }
-        SymbolKind::Interface | SymbolKind::Trait | SymbolKind::Protocol => {
-            LspSymbolKind::INTERFACE
-        }
-        SymbolKind::Enum | SymbolKind::CaseClass | SymbolKind::CaseObject => {
-            LspSymbolKind::ENUM
-        }
+        SymbolKind::Class => LspSymbolKind::CLASS,
+        SymbolKind::Interface => LspSymbolKind::INTERFACE,
+        SymbolKind::Enum => LspSymbolKind::ENUM,
         SymbolKind::Record => LspSymbolKind::STRUCT,
         SymbolKind::Annotation => LspSymbolKind::CLASS,
-        SymbolKind::Method | SymbolKind::Function | SymbolKind::Multimethod => {
-            LspSymbolKind::METHOD
-        }
+        SymbolKind::Method => LspSymbolKind::METHOD,
         SymbolKind::Constructor => LspSymbolKind::CONSTRUCTOR,
         SymbolKind::Field | SymbolKind::EnumConstant => LspSymbolKind::FIELD,
         SymbolKind::Parameter => LspSymbolKind::VARIABLE,
-        SymbolKind::Package | SymbolKind::Namespace => LspSymbolKind::NAMESPACE,
-        SymbolKind::Object | SymbolKind::CompanionObject => LspSymbolKind::OBJECT,
-        SymbolKind::Defrecord | SymbolKind::Deftype => LspSymbolKind::CLASS,
+        SymbolKind::Package => LspSymbolKind::NAMESPACE,
     }
 }
 

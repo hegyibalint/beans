@@ -4,8 +4,8 @@
 //! Per ADR-0006 a single graph holds both per-language nodes and their
 //! JVM projections, so [`NodePayload`] unions the per-language payloads
 //! (gated by their language feature) with the shared JVM payload.
-//! Per ADR-0021 this replaces the prototype's monolithic
-//! [`Symbol`](crate::Symbol).
+//! Per ADR-0021 this replaces the prototype's monolithic `Symbol`
+//! (deleted in step 7 of the graph migration).
 //!
 //! Variants:
 //! - `Jvm` — a JVM-projection node ([`JvmNodePayload`]). **Always
