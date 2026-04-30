@@ -1,36 +1,26 @@
-//! Integration tests for the graph engine skeleton.
+//! Graph-engine tests: arena lifecycle (insert / destroy / hard-link
+//! cascade / free-list reuse / generation), and dynamic-link mechanics
+//! (which use [`Registry`] as the example resolver because
+//! [`RegistryQuery`] is the trait every cross-file lookup goes through).
 //!
-//! `TestNode` is a minimal payload that exercises the engine surface:
-//! it carries a name, an optional `ProviderHandle`, an optional
-//! `SubscriptionHandle`, and a counter that a callback can bump. The
-//! lifecycle is wired manually here (no `NodeBehavior` impl) so each test
-//! is a tight, transparent script.
-
-use std::cell::{Cell, RefCell};
-use std::rc::Rc;
+//! Pure registry tests (provider/subscription RAII, snapshot-and-release,
+//! auto-notify on register/drop) live with their owner in
+//! [`crate::registry`].
 
 use crate::graph::arena::{Graph, NodeId};
 use crate::graph::cache_state::{CacheState, Generation};
-use crate::graph::registry::{ProviderHandle, Registry, SubscriptionHandle};
+use crate::registry::Registry;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct TestKey(&'static str);
 
 struct TestNode {
     name: &'static str,
-    provider: Option<ProviderHandle<TestKey>>,
-    subscription: Option<SubscriptionHandle<TestKey>>,
-    notifications: Rc<Cell<u32>>,
 }
 
 impl TestNode {
     fn new(name: &'static str) -> Self {
-        Self {
-            name,
-            provider: None,
-            subscription: None,
-            notifications: Rc::new(Cell::new(0)),
-        }
+        Self { name }
     }
 }
 
@@ -65,112 +55,6 @@ fn hard_link_cascade() {
     assert!(!graph.contains(parent));
     assert!(!graph.contains(child));
     assert!(!graph.contains(grandchild));
-}
-
-#[test]
-fn provider_handle_drop_unregisters() {
-    let mut graph: Graph<TestNode> = Graph::new();
-    let registry: Registry<TestKey> = Registry::new();
-
-    let id = graph.insert(TestNode::new("provider-node"), None);
-    let key = TestKey("foo");
-    {
-        let node = graph.get_mut(id).unwrap();
-        node.payload.provider = Some(registry.register(key.clone(), id));
-    }
-
-    assert_eq!(registry.query(&key), vec![id]);
-
-    graph.destroy(id);
-
-    assert!(registry.query(&key).is_empty());
-}
-
-#[test]
-fn subscription_handle_drop_unsubscribes() {
-    let mut graph: Graph<TestNode> = Graph::new();
-    let registry: Registry<TestKey> = Registry::new();
-    let key = TestKey("watch-me");
-
-    let id = graph.insert(TestNode::new("subscriber"), None);
-    let counter = graph.get(id).unwrap().payload.notifications.clone();
-    {
-        let cb_counter = counter.clone();
-        let cb = Rc::new(move || {
-            cb_counter.set(cb_counter.get() + 1);
-        });
-        let node = graph.get_mut(id).unwrap();
-        node.payload.subscription = Some(registry.subscribe(key.clone(), cb));
-    }
-
-    // Sanity: callback fires while subscribed.
-    registry.notify(&key);
-    assert_eq!(counter.get(), 1);
-
-    graph.destroy(id);
-
-    // Counter is dropped along with the node, but the registry should no
-    // longer carry the callback. Notifying again must not panic.
-    registry.notify(&key);
-    // The strong reference inside the now-dropped Callback is gone; counter
-    // still has one strong handle (this test owns it) and reads zero
-    // additional increments.
-    assert_eq!(counter.get(), 1);
-}
-
-#[test]
-fn notification_fires() {
-    let registry: Registry<TestKey> = Registry::new();
-    let key = TestKey("fanout");
-
-    let counter = Rc::new(Cell::new(0u32));
-    let cb_counter = counter.clone();
-    let _sub = registry.subscribe(
-        key.clone(),
-        Rc::new(move || {
-            cb_counter.set(cb_counter.get() + 1);
-        }),
-    );
-
-    // Provider registration alone does not notify; a later `notify` does.
-    let _provider = registry.register(key.clone(), NodeId(42));
-    assert_eq!(counter.get(), 0);
-
-    registry.notify(&key);
-    assert_eq!(counter.get(), 1);
-
-    registry.notify(&key);
-    assert_eq!(counter.get(), 2);
-}
-
-#[test]
-fn snapshot_and_release_allows_reentrant_query() {
-    // A subscriber callback that reads the providers map on the same
-    // registry must not RefCell-panic. The snapshot-and-release pattern
-    // copies the callback list out under a short borrow and drops the
-    // borrow before invoking, so the callback is free to re-enter.
-    let registry: Registry<TestKey> = Registry::new();
-    let key = TestKey("reentrant");
-
-    let _provider_a = registry.register(key.clone(), NodeId(1));
-    let _provider_b = registry.register(key.clone(), NodeId(2));
-
-    let observed: Rc<Cell<usize>> = Rc::new(Cell::new(0));
-    let observed_in_cb = observed.clone();
-    let registry_in_cb = registry.clone();
-    let key_in_cb = key.clone();
-    let _sub = registry.subscribe(
-        key.clone(),
-        Rc::new(move || {
-            // Re-enter: query the same registry from inside the callback.
-            let providers = registry_in_cb.query(&key_in_cb);
-            observed_in_cb.set(providers.len());
-        }),
-    );
-
-    registry.notify(&key);
-
-    assert_eq!(observed.get(), 2);
 }
 
 #[test]
@@ -243,54 +127,9 @@ fn destroyed_subtree_detaches_from_parent() {
 }
 
 #[test]
-fn registry_outliving_handles_does_not_panic() {
-    // Drop order: registry first, then handles. Per ADR-0015 the handles'
-    // Drop should no-op via failed Weak::upgrade rather than panic.
-    let registry: Registry<TestKey> = Registry::new();
-    let key = TestKey("drop-order");
-
-    let provider = registry.register(key.clone(), NodeId(7));
-    let counter = Rc::new(Cell::new(0u32));
-    let cb_counter = counter.clone();
-    let subscription = registry.subscribe(
-        key.clone(),
-        Rc::new(move || cb_counter.set(cb_counter.get() + 1)),
-    );
-
-    drop(registry);
-    // These drops happen here; if the Weak upgrade did not gracefully
-    // no-op we would either panic or borrow-mut a dangling cell.
-    drop(provider);
-    drop(subscription);
-
-    assert_eq!(counter.get(), 0);
-}
-
-#[test]
 fn generation_zero_default() {
     let graph: Graph<TestNode> = Graph::new();
     assert_eq!(graph.current_generation(), Generation::ZERO);
-}
-
-#[test]
-fn duplicate_provider_registration_drops_one_at_a_time() {
-    // RAII invariant: each ProviderHandle owns exactly one entry. If a node
-    // registers twice for the same key, dropping one handle must leave the
-    // other entry intact.
-    let registry: Registry<TestKey> = Registry::new();
-    let key = TestKey("dup");
-    let node = NodeId(7);
-
-    let h1 = registry.register(key.clone(), node);
-    let h2 = registry.register(key.clone(), node);
-
-    assert_eq!(registry.query(&key), vec![node, node]);
-
-    drop(h1);
-    assert_eq!(registry.query(&key), vec![node]);
-
-    drop(h2);
-    assert!(registry.query(&key).is_empty());
 }
 
 // --------- Dynamic-link tests (ADR-0006, ADR-0008). ---------
@@ -495,53 +334,6 @@ fn dynamic_link_resolve_caches_first_provider_when_query_has_many() {
 
     let mut link = DynamicLink::first_match(vec![TestQuery::Primary(TestKey("svc"))]);
     assert_eq!(link.resolve(&ctx), Some(NodeId(1)));
-}
-
-#[test]
-fn notify_callback_can_register_in_a_different_registry() {
-    // The snapshot-and-release pattern (ADR-0015) handles re-entrancy on
-    // the *same* registry — a callback querying the registry that fired
-    // it. The cross-registry case is also supported: a callback that
-    // mutates a *different* registry while the first is mid-notify must
-    // not RefCell-panic and must leave both registries internally
-    // consistent.
-    let primary: Registry<TestKey> = Registry::new();
-    let secondary: Registry<OtherKey> = Registry::new();
-    let key_a = TestKey("source");
-    let key_b = OtherKey("derived");
-
-    // Subscriber on `primary` registers a provider in `secondary` when
-    // notified. Holding the handle in a Cell so the closure can move it
-    // and the test can still observe `secondary`'s state afterwards.
-    let derived_handle: Rc<RefCell<Option<ProviderHandle<OtherKey>>>> =
-        Rc::new(RefCell::new(None));
-    let secondary_in_cb = secondary.clone();
-    let key_b_in_cb = key_b.clone();
-    let dh_in_cb = Rc::clone(&derived_handle);
-    let _sub = primary.subscribe(
-        key_a.clone(),
-        Rc::new(move || {
-            // Re-enter the *secondary* registry from inside the primary's
-            // notification path.
-            let h = secondary_in_cb.register(key_b_in_cb.clone(), NodeId(123));
-            *dh_in_cb.borrow_mut() = Some(h);
-        }),
-    );
-
-    // Before notify: secondary is empty.
-    assert!(secondary.query(&key_b).is_empty());
-
-    primary.notify(&key_a);
-
-    // After notify: secondary has the provider the callback registered,
-    // and the primary's internals are still usable (re-entrancy didn't
-    // wedge it).
-    assert_eq!(secondary.query(&key_b), vec![NodeId(123)]);
-    let _ = primary.register(key_a.clone(), NodeId(7));
-
-    // Drop the derived handle — secondary cleans up.
-    *derived_handle.borrow_mut() = None;
-    assert!(secondary.query(&key_b).is_empty());
 }
 
 #[test]

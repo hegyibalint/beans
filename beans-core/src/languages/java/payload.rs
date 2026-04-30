@@ -20,8 +20,7 @@
 //! happens at the JVM layer.
 
 use crate::graph::NodeBehavior;
-use crate::graph::arena::NodeId;
-use crate::graph::registry::NodeHandle;
+use crate::graph::arena::{NodeHandle, NodeId};
 use crate::jvm::annotation::AnnotationInstance;
 use crate::jvm::fqn::Fqn;
 use crate::jvm::modifier::Modifier;
