@@ -9,7 +9,21 @@
 //! frees every descendant.
 
 use crate::graph::cache_state::{CacheState, Generation};
-use crate::graph::registry::NodeHandle;
+
+/// Marker trait for type-erased RAII handles stored on
+/// [`NodeData::handles`]. Per ADR-0014 each handle is its own RAII anchor —
+/// its `Drop` impl performs whatever cleanup the handle owns (typically
+/// removing a registry entry, but the graph layer doesn't know or care).
+/// The trait has no methods; it exists so the engine can type-erase
+/// handles without going through `dyn Drop` (which clippy warns against,
+/// since `Drop` is special-cased and can be misleading as a trait
+/// object).
+///
+/// The trait lives here, next to its consumer [`NodeData::handles`], so
+/// the graph module has no dependency on any specific handle producer
+/// (e.g. `crate::registry`). Producers impl this trait for their handle
+/// types in their own module.
+pub trait NodeHandle {}
 
 /// Runtime arena index into a `Graph<P>`. Per ADR-0007 this is an internal
 /// identifier — external APIs speak in registry keys, not `NodeId`. The
@@ -246,7 +260,7 @@ impl<P> Graph<P> {
     /// type lookup, etc.) goes through registries — `iter` is O(n) over
     /// the entire graph and must not appear on hot paths. If you find
     /// yourself reaching for `iter` to answer a real query, you almost
-    /// certainly want a dedicated [`Registry`](crate::graph::Registry)
+    /// certainly want a dedicated [`Registry`](crate::registry::Registry)
     /// keyed by whatever discriminator the query carries.
     pub fn iter(&self) -> impl Iterator<Item = (NodeId, &NodeData<P>)> {
         self.slots

@@ -8,7 +8,7 @@
 //! `JavaPermitsKey` if the rules diverge) land without churning the
 //! consumer-facing surface.
 
-use crate::graph::registry::Registry;
+use crate::registry::Registry;
 use crate::languages::java::keys::JavaSymbolKey;
 
 /// All Java-side registries.

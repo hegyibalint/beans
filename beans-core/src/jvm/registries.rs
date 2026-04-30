@@ -7,7 +7,7 @@
 //! `Rc<RefCell<_>>`, so the struct is cheap to clone — clones share
 //! state, they don't fork it.
 
-use crate::graph::registry::Registry;
+use crate::registry::Registry;
 use crate::jvm::keys::{
     JvmConstructorKey, JvmFieldKey, JvmMethodKey, JvmTypeKey, PackageKey,
 };
