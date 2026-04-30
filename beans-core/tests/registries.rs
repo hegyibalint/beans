@@ -1,11 +1,13 @@
 //! End-to-end exercises for the JVM and Java registries.
 //!
-//! Per step 3 of the graph migration (ADR-0006 / ADR-0008 / ADR-0012):
-//! build node payloads by hand (no parser yet), register them with the
-//! typed-key registries, and prove that a dynamic link with a Java →
-//! JVM fallback chain resolves the way ADR-0008 describes.
+//! Build node payloads by hand (no parser), register them with the
+//! typed-key registries (ADR-0012 / ADR-0013), and prove the cross-
+//! language Java → JVM fallback shape ADR-0008 describes works as a
+//! priority-ordered iterator chain over [`RegistryQuery`] impls. The
+//! eventual `MultiQuery<Q>` abstraction (when use-site nodes need
+//! caching/subscriptions) will wrap this same iter shape.
 
-use beans_core::graph::{DynamicLink, Graph, NodeId, RegistryQuery};
+use beans_core::graph::{Graph, NodeId, RegistryQuery};
 use beans_core::jvm::{
     Fqn, JvmDeclHeader, JvmEnrichments, JvmFieldKey, JvmFieldNode, JvmMethodKey, JvmMethodNode,
     JvmNodePayload, JvmParameter, JvmTypeKey, JvmTypeKind, JvmTypeNode, NullabilityInfo,
@@ -116,8 +118,9 @@ fn jvm_field(name: &str, fqn: &str, owner: &str, field_type: TypeRef) -> NodePay
 
 #[test]
 fn java_type_resolves_through_java_registry_first() {
-    // Java side has the type; the JVM projection has it too. The link's
-    // FirstMatch order [Java, Jvm] should pick the Java node.
+    // Java side has the type; the JVM projection has it too. The
+    // priority-ordered iter chain `[Java, Jvm].flat_map(resolve).next()`
+    // picks the Java node.
     let mut graph: Graph<NodePayload> = Graph::new();
     let registries = Registries::new();
 
@@ -136,30 +139,26 @@ fn java_type_resolves_through_java_registry_first() {
         .types
         .register(JvmTypeKey::new("com.example.Service"), jvm_id);
 
-    let mut link = DynamicLink::first_match(vec![
+    let queries = [
         TypeQuery::Java(JavaSymbolKey::new("com.example.Service")),
         TypeQuery::Jvm(JvmTypeKey::new("com.example.Service")),
-    ]);
+    ];
 
-    assert_eq!(link.resolve(&registries), Some(java_id));
-    assert_eq!(link.active_index(), Some(0));
+    let resolved = queries.iter().flat_map(|q| q.resolve(&registries)).next();
+    assert_eq!(resolved, Some(java_id));
 }
 
 #[test]
 fn falls_through_to_jvm_when_no_java_provider_exists() {
     // Cross-language case: the type is defined in Kotlin (modelled here
     // as "no Java provider, only a JVM projection"). The Java-side
-    // query misses; the link falls through to the JVM query.
+    // query misses; the iter chain falls through to the JVM query.
     let mut graph: Graph<NodePayload> = Graph::new();
     let registries = Registries::new();
 
     // Only the JVM projection is registered.
     let jvm_id = graph.insert(
-        jvm_type(
-            "Service",
-            "com.example.Service",
-            JvmTypeKind::Class,
-        ),
+        jvm_type("Service", "com.example.Service", JvmTypeKind::Class),
         None,
     );
     let _jvm_h = registries
@@ -167,26 +166,26 @@ fn falls_through_to_jvm_when_no_java_provider_exists() {
         .types
         .register(JvmTypeKey::new("com.example.Service"), jvm_id);
 
-    let mut link = DynamicLink::first_match(vec![
+    let queries = [
         TypeQuery::Java(JavaSymbolKey::new("com.example.Service")),
         TypeQuery::Jvm(JvmTypeKey::new("com.example.Service")),
-    ]);
+    ];
 
-    assert_eq!(link.resolve(&registries), Some(jvm_id));
-    assert_eq!(link.active_index(), Some(1));
+    let resolved = queries.iter().flat_map(|q| q.resolve(&registries)).next();
+    assert_eq!(resolved, Some(jvm_id));
 }
 
 #[test]
 fn unresolved_when_neither_registry_has_provider() {
     let registries = Registries::new();
 
-    let mut link = DynamicLink::first_match(vec![
+    let queries = [
         TypeQuery::Java(JavaSymbolKey::new("missing.Type")),
         TypeQuery::Jvm(JvmTypeKey::new("missing.Type")),
-    ]);
+    ];
 
-    assert_eq!(link.resolve(&registries), None);
-    assert_eq!(link.active_index(), None);
+    let resolved = queries.iter().flat_map(|q| q.resolve(&registries)).next();
+    assert_eq!(resolved, None);
 }
 
 #[test]
@@ -267,13 +266,16 @@ fn merge_all_unions_java_and_jvm_completions_in_priority_order() {
         .fields
         .register(JvmFieldKey::new(owner, "name"), field_id);
 
-    let link = DynamicLink::merge_all(vec![
+    let queries = [
         MemberQuery::Java(JavaSymbolKey::new("com.example.Service.process")),
         MemberQuery::JvmMethod(JvmMethodKey::new(owner, "process", vec![])),
         MemberQuery::JvmField(JvmFieldKey::new(owner, "name")),
-    ]);
+    ];
 
-    let results = link.resolve_all(&registries);
+    let results: Vec<NodeId> = queries
+        .iter()
+        .flat_map(|q| q.resolve(&registries))
+        .collect();
     assert_eq!(results, vec![java_id, jvm_method_id, field_id]);
 }
 
@@ -379,13 +381,19 @@ fn merge_all_returns_duplicates_when_same_node_hits_multiple_queries() {
         .types
         .register(JvmTypeKey::new("com.example.Shared"), id);
 
-    let link = DynamicLink::merge_all(vec![
+    let queries = [
         TypeQuery::Java(JavaSymbolKey::new("com.example.Shared")),
         TypeQuery::Jvm(JvmTypeKey::new("com.example.Shared")),
-    ]);
+    ];
 
-    // Two hits, same NodeId — the link returns both, no dedup. Consumers
-    // that want one entry per logical symbol (typical for completion)
-    // collapse downstream.
-    assert_eq!(link.resolve_all(&registries), vec![id, id]);
+    // Two hits, same NodeId — the iter chain returns both, no dedup.
+    // Consumers that want one entry per logical symbol (typical for
+    // completion) collapse downstream. ADR-0008 commits to dedup as a
+    // future MultiQuery<Q> responsibility, not the registry layer's
+    // (ADR-0013: registry is dumb).
+    let merged: Vec<NodeId> = queries
+        .iter()
+        .flat_map(|q| q.resolve(&registries))
+        .collect();
+    assert_eq!(merged, vec![id, id]);
 }
