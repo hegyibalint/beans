@@ -1,52 +1,38 @@
-//! Dynamic links and registry queries.
+//! Cross-registry queries.
 //!
-//! Per ADR-0006 dynamic links are cross-file dependency edges, mediated by
-//! registries. A use site referencing `Service.process` does not store a
-//! target [`NodeId`] — it stores an ordered list of registry queries plus a
-//! cached result for whichever query is currently active.
+//! ADR-0006 distinguishes hard links (intra-file ownership, stored as
+//! `Vec<NodeId>` on `NodeData::children`) from "dynamic links" — cross-file
+//! lookups that must survive their target's deletion and recreation. The
+//! load-bearing piece for the second is the question itself: what does the
+//! use-site store so that lookup remains valid as files come and go?
 //!
-//! Per ADR-0008 each link carries:
-//! - An ordered list of queries (highest priority first).
-//! - A combine mode ([`LinkMode::FirstMatch`] for resolution,
-//!   [`LinkMode::MergeAll`] for completion).
-//! - An active query index and a cached result. When the active query
-//!   stops returning a hit, the link falls through to the next query in
-//!   the list and re-caches.
+//! ADR-0008 answers: the use-site stores **the question, not the answer**.
+//! The question is some [`RegistryQuery`] impl that knows how to consult
+//! one or more typed registries against the current
+//! [`Registries`](crate::Registries) state.
+//! At lookup time the query produces fresh [`NodeId`]s; nothing dangles
+//! across edits because the use-site never cached a target id in the
+//! first place.
 //!
-//! Per ADR-0012 each registry has its own typed key. The link does not
-//! commit to a single key type; instead it is generic over a query enum
-//! `Q` that the consumer defines (typically `enum JavaQuery { Java(...),
-//! Jvm(...), ... }`) and that implements [`RegistryQuery`]. The trait's
-//! associated [`Ctx`](RegistryQuery::Ctx) is the registry bag the consumer
-//! exposes (typically `Registries`); the engine never names specific
-//! registries.
+//! Today this module is just the trait. ADR-0008 also describes a
+//! "priority list of queries with FirstMatch / MergeAll combine modes
+//! and tiered subscriptions" — a richer abstraction that earns its weight
+//! when (a) per-language node payloads carry information the JVM
+//! projection loses (so language-native first / JVM fallback is a real
+//! choice) and (b) cached cross-file resolutions exist that can go stale.
+//! Neither holds today, so the larger abstraction is deferred. When it
+//! lands it should be named for what it is — `MultiQuery<Q>` or similar
+//! — and decide its own caching/subscription policy at that point.
 //!
-//! What this module deliberately does *not* implement yet:
-//! - Tiered subscriptions (value-watch on the active query, existence-
-//!   watch on higher-priority queries). See ADR-0008's "subscriptions
-//!   tiered by query position." That is non-trivial state-machine work
-//!   and is not on the critical path for the migration's steps 3-8;
-//!   resolution and fallback are. When subscriptions land, they wire in
-//!   alongside [`DynamicLink`] without changing its public API.
-//! - MergeAll-time dedup. Per ADR-0008 dedup is "language-specific"
-//!   (Kotlin-defined symbols win over JVM projections of themselves).
-//!   The dedup rule lives in the consumer that knows the languages
-//!   involved; the link returns the unioned `Vec<NodeId>` in query
-//!   order and lets the consumer collapse duplicates.
+//! Use-sites that need the simple priority-then-fallback shape today can
+//! inline it as an iterator chain over their [`RegistryQuery`] impls:
+//!
+//! ```text
+//! queries.iter().flat_map(|q| q.resolve(ctx)).next()       // FirstMatch
+//! queries.iter().flat_map(|q| q.resolve(ctx)).collect()    // MergeAll
+//! ```
 
 use crate::graph::arena::NodeId;
-
-/// How a [`DynamicLink`] combines results from its query list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum LinkMode {
-    /// Try queries in order; the first non-empty result wins. Used for
-    /// go-to-definition, type-checking, and any operation that needs a
-    /// single authoritative target.
-    FirstMatch,
-    /// Run every query and union all results in query order. Used for
-    /// completion, which surfaces every plausible candidate.
-    MergeAll,
-}
 
 /// A registry query the consumer can resolve against a context of
 /// registries. Implementations are typically thin enum dispatch:
@@ -60,8 +46,8 @@ pub enum LinkMode {
 ///     type Ctx = Registries;
 ///     fn resolve(&self, ctx: &Self::Ctx) -> Vec<NodeId> {
 ///         match self {
-///             JavaQuery::Java(k) => ctx.java.query(k),
-///             JavaQuery::Jvm(k)  => ctx.jvm_types.query(k),
+///             JavaQuery::Java(k) => ctx.java.symbols.query(k),
+///             JavaQuery::Jvm(k)  => ctx.jvm.types.query(k),
 ///         }
 ///     }
 /// }
@@ -79,155 +65,4 @@ pub trait RegistryQuery {
     /// own provider order (per ADR-0013 it carries no semantic weight at
     /// the registry layer).
     fn resolve(&self, ctx: &Self::Ctx) -> Vec<NodeId>;
-}
-
-/// A dynamic link from one node to a target identified by registry
-/// queries.
-///
-/// The link is *not* registered anywhere on its own — it is a value held
-/// by the source node, typically inside a `Vec<DynamicLink<...>>` on the
-/// node's payload. Registry providers are registered separately on the
-/// target node; resolution walks the link's queries against the registry
-/// to find the current target.
-#[derive(Debug, Clone)]
-pub struct DynamicLink<Q> {
-    queries: Vec<Q>,
-    mode: LinkMode,
-    active_index: Option<usize>,
-    cached_result: Option<NodeId>,
-}
-
-impl<Q> DynamicLink<Q> {
-    /// Create a link with an explicit mode.
-    pub fn new(queries: Vec<Q>, mode: LinkMode) -> Self {
-        Self {
-            queries,
-            mode,
-            active_index: None,
-            cached_result: None,
-        }
-    }
-
-    /// Convenience constructor for a [`LinkMode::FirstMatch`] link.
-    pub fn first_match(queries: Vec<Q>) -> Self {
-        Self::new(queries, LinkMode::FirstMatch)
-    }
-
-    /// Convenience constructor for a [`LinkMode::MergeAll`] link.
-    pub fn merge_all(queries: Vec<Q>) -> Self {
-        Self::new(queries, LinkMode::MergeAll)
-    }
-
-    /// The queries this link will consult, in priority order.
-    pub fn queries(&self) -> &[Q] {
-        &self.queries
-    }
-
-    /// The link's combine mode.
-    pub fn mode(&self) -> LinkMode {
-        self.mode
-    }
-
-    /// Index into [`queries`](Self::queries) whose result is currently
-    /// cached, if any. Only meaningful for [`LinkMode::FirstMatch`]; for
-    /// [`LinkMode::MergeAll`] this stays `None` because no single query
-    /// is "active."
-    pub fn active_index(&self) -> Option<usize> {
-        self.active_index
-    }
-
-    /// Cached single-result for [`LinkMode::FirstMatch`] links. `None`
-    /// before [`resolve`](Self::resolve) is called, and `None` if no
-    /// query in the list returned a hit on the last call. Always `None`
-    /// for [`LinkMode::MergeAll`] links.
-    pub fn cached_result(&self) -> Option<NodeId> {
-        self.cached_result
-    }
-
-    /// Drop any cached active index and result. Call this when the
-    /// underlying registries change in a way that may have invalidated
-    /// the cached value (the next [`resolve`](Self::resolve) call will
-    /// re-walk the query list).
-    pub fn invalidate(&mut self) {
-        self.active_index = None;
-        self.cached_result = None;
-    }
-}
-
-impl<Q: RegistryQuery> DynamicLink<Q> {
-    /// Resolve this link to a single target.
-    ///
-    /// Calling this on a [`LinkMode::MergeAll`] link is a bug — merge-all
-    /// results don't compose into a single answer. The mode is asserted
-    /// in debug builds; in release builds the call still walks the list
-    /// and returns the first hit, but the resulting `(active_index,
-    /// cached_result)` pair has no defined meaning for a `MergeAll` link.
-    /// Use [`resolve_all`](Self::resolve_all) for those.
-    ///
-    /// Walks the query list in order; the first query whose
-    /// [`resolve`](RegistryQuery::resolve) returns at least one
-    /// [`NodeId`] wins. The link caches the `(active_index,
-    /// cached_result)` pair so subsequent calls without an
-    /// [`invalidate`](Self::invalidate) return the cached value directly.
-    ///
-    /// When a query returns multiple providers, this function picks the
-    /// first one. Per ADR-0013 the registry's provider order carries no
-    /// semantic weight, so callers that need precedence among multiple
-    /// hits in a single registry must encode that as additional queries
-    /// or apply a resolution rule outside the link.
-    pub fn resolve(&mut self, ctx: &Q::Ctx) -> Option<NodeId> {
-        debug_assert_eq!(
-            self.mode,
-            LinkMode::FirstMatch,
-            "DynamicLink::resolve called on a MergeAll link; use resolve_all"
-        );
-        if let Some(cached) = self.cached_result {
-            return Some(cached);
-        }
-        for (idx, query) in self.queries.iter().enumerate() {
-            let hits = query.resolve(ctx);
-            if let Some(&first) = hits.first() {
-                self.active_index = Some(idx);
-                self.cached_result = Some(first);
-                return Some(first);
-            }
-        }
-        self.active_index = None;
-        self.cached_result = None;
-        None
-    }
-
-    /// Resolve this link to every candidate target.
-    ///
-    /// Calling this on a [`LinkMode::FirstMatch`] link is a bug — the
-    /// caller should be using [`resolve`](Self::resolve) to get a single
-    /// authoritative target with cached fallback state. The mode is
-    /// asserted in debug builds.
-    ///
-    /// Walks every query and returns every provider in query order. Per
-    /// ADR-0008 this is the operation completion uses; per the same ADR
-    /// the consumer is responsible for any language-specific dedup
-    /// (e.g., Kotlin-defined symbols winning over JVM projections of
-    /// themselves). The link returns providers verbatim, with no
-    /// deduplication: if the same [`NodeId`] is registered under
-    /// multiple queries (a Java payload and its hard-linked JVM
-    /// projection both hitting their respective registries) it appears
-    /// in the result once per hit, in priority order. The consumer
-    /// collapses duplicates with knowledge of which language wins.
-    ///
-    /// Does not cache — completion candidates change too often for a
-    /// single-NodeId cache to mean anything. Callers that want to memoise
-    /// the result do so externally.
-    pub fn resolve_all(&self, ctx: &Q::Ctx) -> Vec<NodeId> {
-        debug_assert_eq!(
-            self.mode,
-            LinkMode::MergeAll,
-            "DynamicLink::resolve_all called on a FirstMatch link; use resolve"
-        );
-        let mut out = Vec::new();
-        for query in &self.queries {
-            out.extend(query.resolve(ctx));
-        }
-        out
-    }
 }

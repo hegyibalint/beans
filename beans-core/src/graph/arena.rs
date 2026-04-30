@@ -269,3 +269,129 @@ impl<P> Graph<P> {
             .filter_map(|(idx, slot)| slot.as_ref().map(|n| (NodeId(idx as u64), n)))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestNode {
+        name: &'static str,
+    }
+
+    impl TestNode {
+        fn new(name: &'static str) -> Self {
+            Self { name }
+        }
+    }
+
+    #[test]
+    fn insert_and_lookup() {
+        let mut graph: Graph<TestNode> = Graph::new();
+        let id = graph.insert(TestNode::new("alpha"), None);
+
+        let node = graph.get(id).expect("node should exist");
+        assert_eq!(node.payload.name, "alpha");
+        assert_eq!(node.parent, None);
+        assert!(node.children.is_empty());
+
+        // NodeId stable within session — two reads return the same slot.
+        assert_eq!(graph.get(id).unwrap().payload.name, "alpha");
+        assert_eq!(id, NodeId(0));
+    }
+
+    #[test]
+    fn hard_link_cascade() {
+        let mut graph: Graph<TestNode> = Graph::new();
+        let parent = graph.insert(TestNode::new("parent"), None);
+        let child = graph.insert(TestNode::new("child"), Some(parent));
+        let grandchild = graph.insert(TestNode::new("grandchild"), Some(child));
+
+        assert_eq!(graph.get(parent).unwrap().children, vec![child]);
+        assert_eq!(graph.get(child).unwrap().children, vec![grandchild]);
+        assert_eq!(graph.get(grandchild).unwrap().parent, Some(child));
+
+        graph.destroy(parent);
+
+        assert!(!graph.contains(parent));
+        assert!(!graph.contains(child));
+        assert!(!graph.contains(grandchild));
+    }
+
+    #[test]
+    fn free_list_reuses_slots() {
+        let mut graph: Graph<TestNode> = Graph::new();
+
+        let a = graph.insert(TestNode::new("a"), None);
+        let b = graph.insert(TestNode::new("b"), None);
+        let c = graph.insert(TestNode::new("c"), None);
+
+        assert_eq!(a, NodeId(0));
+        assert_eq!(b, NodeId(1));
+        assert_eq!(c, NodeId(2));
+
+        graph.destroy(b);
+        assert!(!graph.contains(b));
+
+        // The next insert should land in slot 1, the freed one.
+        let d = graph.insert(TestNode::new("d"), None);
+        assert_eq!(d, NodeId(1));
+        assert_eq!(graph.get(d).unwrap().payload.name, "d");
+
+        // Original slots a and c are untouched.
+        assert_eq!(graph.get(a).unwrap().payload.name, "a");
+        assert_eq!(graph.get(c).unwrap().payload.name, "c");
+    }
+
+    #[test]
+    fn destroyed_subtree_detaches_from_parent() {
+        // Hard-link cascade plus parent fix-up: after destroying a child, the
+        // parent's `children` list no longer references it.
+        let mut graph: Graph<TestNode> = Graph::new();
+        let parent = graph.insert(TestNode::new("p"), None);
+        let child_a = graph.insert(TestNode::new("a"), Some(parent));
+        let child_b = graph.insert(TestNode::new("b"), Some(parent));
+
+        assert_eq!(graph.get(parent).unwrap().children, vec![child_a, child_b]);
+
+        graph.destroy(child_a);
+
+        assert!(graph.contains(parent));
+        assert!(!graph.contains(child_a));
+        assert_eq!(graph.get(parent).unwrap().children, vec![child_b]);
+    }
+
+    #[test]
+    fn generation_is_monotonic_across_mark_stale() {
+        // `mark_stale` lives on the arena (it owns `current_gen`), so its
+        // monotonicity test belongs here. The `Generation` value-type
+        // tests live in cache_state.
+        let mut graph: Graph<TestNode> = Graph::new();
+        let id = graph.insert(TestNode::new("gen"), None);
+
+        let g0 = graph.current_generation();
+
+        graph.mark_stale(id);
+        let g1 = graph.current_generation();
+        assert!(g1 > g0);
+        assert_eq!(graph.get(id).unwrap().state, CacheState::Stale);
+
+        graph.mark_fresh(id, g1);
+        assert_eq!(graph.get(id).unwrap().state, CacheState::Fresh(g1));
+        // mark_fresh does not touch the global counter.
+        assert_eq!(graph.current_generation(), g1);
+
+        graph.mark_stale(id);
+        let g2 = graph.current_generation();
+        assert!(g2 > g1);
+
+        graph.mark_stale(id);
+        let g3 = graph.current_generation();
+        assert!(g3 > g2);
+    }
+
+    #[test]
+    fn fresh_graph_starts_at_generation_zero() {
+        let graph: Graph<TestNode> = Graph::new();
+        assert_eq!(graph.current_generation(), Generation::ZERO);
+    }
+}
