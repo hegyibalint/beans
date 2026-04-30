@@ -1,12 +1,73 @@
-use std::path::Path;
+//! Tree-sitter walker for Java source files.
+//!
+//! Per ADR-0021 the walker structure (which tree-sitter nodes it visits,
+//! which fields it reads) is preserved verbatim from the prototype
+//! parser; the emit shape changed in step 7 of the graph migration. The
+//! walker now pushes a `PendingNode` pair — one Java payload plus a
+//! hard-linked JVM projection per declaration — directly into a
+//! [`ParsedJavaFile`]'s plan, which `integrate` later inserts into the
+//! graph and registers against `Registries`.
+//!
+//! Per ADR-0005 the parse phase produces a self-contained
+//! [`ParsedJavaFile`] (verified `Send` per the static check at the
+//! bottom of this file) so it can run on a rayon worker; integration
+//! is serial on the graph thread.
 
-use crate::{Location, Modifier, Signature, Symbol, SymbolId, SymbolKind};
+use std::path::{Path, PathBuf};
+
 use tree_sitter::{Node, Parser};
 
-use crate::languages::java::types::TypeRef;
+use crate::graph::NodeBehavior;
+use crate::graph::arena::{Graph, NodeId};
+use crate::jvm::fqn::Fqn;
+use crate::jvm::payload::{
+    JvmConstructorNode, JvmDeclHeader, JvmEnrichments, JvmEnumConstantNode, JvmFieldNode,
+    JvmMethodNode, JvmNodePayload, JvmParameter, JvmTypeKind, JvmTypeNode,
+};
+use crate::languages::java::payload::{
+    JavaConstructorNode, JavaDeclHeader, JavaEnumConstantNode, JavaFieldNode, JavaMethodNode,
+    JavaNodePayload, JavaParameter, JavaTypeKind, JavaTypeNode,
+};
+use crate::languages::java::syntax::Import;
+use crate::languages::java::types::TypeRef as ParsedTypeRef;
+use crate::payload::NodePayload;
+use crate::primitives::Location;
+use crate::registries::Registries;
+use crate::{Modifier, TypeParam, TypeRef};
 
-/// Parse a Java source file and return all extracted symbols.
-pub fn parse_java_file(path: &Path, source: &str) -> Vec<Symbol> {
+// ---- Public surface ----
+
+/// Pre-computed integration plan for one parsed Java file.
+///
+/// Per ADR-0005 a `ParsedFile` is "self-contained, with no graph
+/// references" so it can be produced on a rayon worker. The plan stores
+/// payloads and parent indices into its own internal vector;
+/// [`integrate`] resolves indices to real [`NodeId`]s as it inserts
+/// each payload into the graph.
+#[derive(Debug)]
+pub struct ParsedJavaFile {
+    pub path: PathBuf,
+    pub package: String,
+    pub imports: Vec<Import>,
+    plan: Vec<PendingNode>,
+}
+
+/// One unit of work in a parsed file's plan: a payload and its parent
+/// index into the same plan (`None` for a root). The plan is in
+/// topological order — parents are always pushed before children — so
+/// integration can resolve indices linearly.
+#[derive(Debug)]
+pub(crate) struct PendingNode {
+    payload: NodePayload,
+    parent: Option<usize>,
+}
+
+/// Parse a Java source file into a self-contained [`ParsedJavaFile`].
+///
+/// Performs no graph mutation — runs on its own thread, suitable for
+/// rayon parallel parsing. The returned plan is then consumed by
+/// [`integrate`] on the graph thread.
+pub fn parse_java_to_graph(path: &Path, source: &str) -> ParsedJavaFile {
     let mut parser = Parser::new();
     let language = tree_sitter_java::LANGUAGE;
     parser
@@ -15,7 +76,14 @@ pub fn parse_java_file(path: &Path, source: &str) -> Vec<Symbol> {
 
     let tree = match parser.parse(source, None) {
         Some(t) => t,
-        None => return vec![],
+        None => {
+            return ParsedJavaFile {
+                path: path.to_path_buf(),
+                package: String::new(),
+                imports: Vec::new(),
+                plan: Vec::new(),
+            };
+        }
     };
 
     let root = tree.root_node();
@@ -24,12 +92,13 @@ pub fn parse_java_file(path: &Path, source: &str) -> Vec<Symbol> {
     let mut ctx = ParseContext {
         path,
         source: source_bytes,
-        symbols: Vec::new(),
+        plan: Vec::new(),
         package: String::new(),
         enclosing_stack: Vec::new(),
     };
 
-    // First pass: find package declaration
+    // First pass: find the package declaration so `build_fqn` works for
+    // every following symbol.
     for i in 0..root.child_count() {
         let child = root.child(i).unwrap();
         if child.kind() == "package_declaration" {
@@ -37,26 +106,84 @@ pub fn parse_java_file(path: &Path, source: &str) -> Vec<Symbol> {
         }
     }
 
-    // Second pass: extract symbols
+    // Second pass: extract symbols.
     for i in 0..root.child_count() {
         let child = root.child(i).unwrap();
         extract_symbol(&mut ctx, child);
     }
 
-    ctx.symbols
+    let imports = crate::languages::java::syntax::extract_imports(source);
+
+    ParsedJavaFile {
+        path: path.to_path_buf(),
+        package: ctx.package,
+        imports,
+        plan: ctx.plan,
+    }
 }
+
+/// Insert every node in the parsed plan into `graph`, register each
+/// via its [`NodeBehavior::on_created`], and return the resulting
+/// [`NodeId`]s in plan order.
+///
+/// Hard-link parent/child relationships are reconstructed from the
+/// plan's `parent` indices. Per ADR-0014 the registration handles are
+/// stored on [`NodeData::handles`](crate::graph::NodeData::handles); the
+/// engine drops them when [`Graph::destroy`] frees the slot, removing
+/// each registry entry as a side effect.
+pub fn integrate(
+    graph: &mut Graph<NodePayload>,
+    registries: &Registries,
+    parsed: ParsedJavaFile,
+) -> Vec<NodeId> {
+    let mut inserted: Vec<NodeId> = Vec::with_capacity(parsed.plan.len());
+    for pending in parsed.plan {
+        let parent = pending.parent.and_then(|idx| inserted.get(idx).copied());
+        let id = graph.insert(pending.payload, parent);
+        inserted.push(id);
+    }
+
+    for &id in &inserted {
+        let handles = graph
+            .get(id)
+            .map(|node| node.payload.on_created(id, registries))
+            .unwrap_or_default();
+        if let Some(node) = graph.get_mut(id) {
+            node.handles = handles;
+        }
+    }
+
+    inserted
+}
+
+// ---- Walker context ----
 
 struct ParseContext<'a> {
     path: &'a Path,
     source: &'a [u8],
-    symbols: Vec<Symbol>,
+    /// The plan being built. Every [`emit_pair`] call pushes two
+    /// entries — Java then JVM — and the JVM entry is hard-linked off
+    /// the Java one. `enclosing_stack` records Java-payload plan
+    /// indices, so when a nested member fixes up its parent it always
+    /// points at the Java side.
+    plan: Vec<PendingNode>,
     package: String,
-    /// Stack of (symbol_index, simple_name) for enclosing classes
-    enclosing_stack: Vec<(usize, String)>,
+    /// Plan-indices of currently-open enclosing declarations (Java
+    /// payloads). The walker pushes/pops as it descends/ascends class
+    /// bodies.
+    enclosing_stack: Vec<EnclosingFrame>,
 }
 
+struct EnclosingFrame {
+    /// Plan index of the enclosing declaration's Java payload.
+    java_idx: usize,
+    /// The simple name, used to build child FQNs.
+    name: String,
+}
+
+// ---- Tree-sitter helpers (unchanged from the prototype walker) ----
+
 fn extract_package_name(node: Node, source: &[u8]) -> String {
-    // The package name is in a child that is either an identifier or scoped_identifier
     for i in 0..node.child_count() {
         let child = node.child(i).unwrap();
         match child.kind() {
@@ -73,27 +200,27 @@ fn node_text<'a>(node: Node, source: &'a [u8]) -> &'a str {
     std::str::from_utf8(&source[node.byte_range()]).unwrap_or("")
 }
 
-fn extract_symbol(ctx: &mut ParseContext, node: Node) {
-    match node.kind() {
-        "class_declaration" => extract_class_like(ctx, node, SymbolKind::Class),
-        "interface_declaration" => extract_class_like(ctx, node, SymbolKind::Interface),
-        "enum_declaration" => extract_enum(ctx, node),
-        "record_declaration" => extract_class_like(ctx, node, SymbolKind::Record),
-        "annotation_type_declaration" => extract_class_like(ctx, node, SymbolKind::Annotation),
-        _ => {}
-    }
-}
-
 fn build_fqn(ctx: &ParseContext, name: &str) -> String {
     let mut parts = Vec::new();
     if !ctx.package.is_empty() {
         parts.push(ctx.package.as_str());
     }
-    for (_, enclosing_name) in &ctx.enclosing_stack {
-        parts.push(enclosing_name.as_str());
+    for frame in &ctx.enclosing_stack {
+        parts.push(frame.name.as_str());
     }
     parts.push(name);
     parts.join(".")
+}
+
+fn parent_owner_fqn(ctx: &ParseContext) -> Fqn {
+    let mut parts = Vec::new();
+    if !ctx.package.is_empty() {
+        parts.push(ctx.package.as_str());
+    }
+    for frame in &ctx.enclosing_stack {
+        parts.push(frame.name.as_str());
+    }
+    Fqn::new(parts.join("."))
 }
 
 fn make_location(ctx: &ParseContext, node: Node) -> Location {
@@ -110,7 +237,6 @@ fn make_location(ctx: &ParseContext, node: Node) -> Location {
 
 fn extract_modifiers(node: Node, _source: &[u8]) -> Vec<Modifier> {
     let mut modifiers = Vec::new();
-    // In tree-sitter-java, modifiers is a positional child (no field name)
     for i in 0..node.child_count() {
         let child = node.child(i).unwrap();
         if child.kind() == "modifiers" {
@@ -135,6 +261,7 @@ fn parse_modifier(text: &str) -> Option<Modifier> {
         "abstract" => Some(Modifier::Abstract),
         "final" => Some(Modifier::Final),
         "sealed" => Some(Modifier::Sealed),
+        "non-sealed" => Some(Modifier::NonSealed),
         "default" => Some(Modifier::Default),
         "synchronized" => Some(Modifier::Synchronized),
         "volatile" => Some(Modifier::Volatile),
@@ -145,52 +272,192 @@ fn parse_modifier(text: &str) -> Option<Modifier> {
     }
 }
 
-fn extract_class_like(ctx: &mut ParseContext, node: Node, kind: SymbolKind) {
+fn extract_type_parameters(node: Node, source: &[u8]) -> Vec<TypeParam> {
+    let mut type_params = Vec::new();
+    if let Some(tp_node) = node.child_by_field_name("type_parameters") {
+        for i in 0..tp_node.child_count() {
+            let child = tp_node.child(i).unwrap();
+            if child.kind() == "type_parameter" {
+                type_params.push(TypeParam::new(node_text(child, source).to_string()));
+            }
+        }
+    }
+    type_params
+}
+
+fn extract_formal_parameters(node: Node, source: &[u8]) -> Vec<(String, TypeRef, bool)> {
+    let mut params = Vec::new();
+    if let Some(params_node) = node.child_by_field_name("parameters") {
+        for i in 0..params_node.child_count() {
+            let child = params_node.child(i).unwrap();
+            let is_varargs = child.kind() == "spread_parameter";
+            if child.kind() == "formal_parameter" || is_varargs {
+                let name = child
+                    .child_by_field_name("name")
+                    .map(|n| node_text(n, source).to_string())
+                    .unwrap_or_default();
+                let ty = child
+                    .child_by_field_name("type")
+                    .map(|n| parse_type_ref(n, source).to_core())
+                    .unwrap_or_else(|| TypeRef::simple("unknown"));
+                params.push((name, ty, is_varargs));
+            }
+        }
+    }
+    params
+}
+
+fn parse_type_ref(node: Node, source: &[u8]) -> ParsedTypeRef {
+    match node.kind() {
+        "void_type" => ParsedTypeRef::Void,
+        "integral_type" | "floating_point_type" | "boolean_type" => {
+            ParsedTypeRef::Primitive(node_text(node, source).to_string())
+        }
+        "type_identifier" | "identifier" => {
+            ParsedTypeRef::Simple(node_text(node, source).to_string())
+        }
+        "scoped_type_identifier" => {
+            ParsedTypeRef::Qualified(node_text(node, source).to_string())
+        }
+        "generic_type" => {
+            let base = node
+                .child(0)
+                .map(|n| node_text(n, source).to_string())
+                .unwrap_or_default();
+            let mut args = Vec::new();
+            if let Some(type_args) = node.child_by_field_name("arguments") {
+                for i in 0..type_args.child_count() {
+                    let child = type_args.child(i).unwrap();
+                    if child.kind() != "<" && child.kind() != ">" && child.kind() != "," {
+                        args.push(parse_type_ref(child, source));
+                    }
+                }
+            } else {
+                for i in 0..node.child_count() {
+                    let child = node.child(i).unwrap();
+                    if child.kind() == "type_arguments" {
+                        for j in 0..child.child_count() {
+                            let arg = child.child(j).unwrap();
+                            if arg.kind() != "<" && arg.kind() != ">" && arg.kind() != "," {
+                                args.push(parse_type_ref(arg, source));
+                            }
+                        }
+                    }
+                }
+            }
+            ParsedTypeRef::Parameterized(base, args)
+        }
+        "array_type" => {
+            if let Some(element) = node.child_by_field_name("element") {
+                ParsedTypeRef::Array(Box::new(parse_type_ref(element, source)))
+            } else if let Some(first_child) = node.child(0) {
+                ParsedTypeRef::Array(Box::new(parse_type_ref(first_child, source)))
+            } else {
+                ParsedTypeRef::Array(Box::new(ParsedTypeRef::Simple(
+                    node_text(node, source).to_string(),
+                )))
+            }
+        }
+        "wildcard" => ParsedTypeRef::Wildcard,
+        _ => ParsedTypeRef::Simple(node_text(node, source).to_string()),
+    }
+}
+
+// ---- Plan emission helpers ----
+
+/// Push a (Java, JVM) pair into the plan. Returns the Java plan index;
+/// the JVM projection sits at `index + 1` and is hard-linked off the
+/// Java node per ADR-0004 ("each language-model node hard-links a JVM
+/// projection — projections are leaves, not relays").
+fn emit_pair(
+    ctx: &mut ParseContext,
+    java: JavaNodePayload,
+    jvm: JvmNodePayload,
+) -> usize {
+    let parent = ctx.enclosing_stack.last().map(|f| f.java_idx);
+    let java_idx = ctx.plan.len();
+    ctx.plan.push(PendingNode {
+        payload: NodePayload::Java(java),
+        parent,
+    });
+    ctx.plan.push(PendingNode {
+        payload: NodePayload::Jvm(jvm),
+        parent: Some(java_idx),
+    });
+    java_idx
+}
+
+fn java_header(ctx: &ParseContext, name: &str, node: Node, modifiers: Vec<Modifier>) -> JavaDeclHeader {
+    JavaDeclHeader {
+        name: name.to_string(),
+        fqn: Fqn::new(build_fqn(ctx, name)),
+        location: Some(make_location(ctx, node)),
+        modifiers,
+        annotations: Vec::new(),
+    }
+}
+
+fn jvm_header(ctx: &ParseContext, name: &str, node: Node, modifiers: Vec<Modifier>) -> JvmDeclHeader {
+    JvmDeclHeader {
+        name: name.to_string(),
+        fqn: Fqn::new(build_fqn(ctx, name)),
+        location: Some(make_location(ctx, node)),
+        modifiers,
+        annotations: Vec::new(),
+    }
+}
+
+// ---- Walker (extract_*) ----
+//
+// Each function visits one tree-sitter node category and emits a
+// (Java, JVM) plan-pair for it. Per ADR-0021 the walker structure is
+// preserved from the prototype; only the emission body differs.
+
+fn extract_symbol(ctx: &mut ParseContext, node: Node) {
+    match node.kind() {
+        "class_declaration" => extract_class_like(ctx, node, JavaTypeKind::Class, JvmTypeKind::Class),
+        "interface_declaration" => {
+            extract_class_like(ctx, node, JavaTypeKind::Interface, JvmTypeKind::Interface)
+        }
+        "enum_declaration" => extract_enum(ctx, node),
+        "record_declaration" => extract_class_like(ctx, node, JavaTypeKind::Record, JvmTypeKind::Record),
+        "annotation_type_declaration" => {
+            extract_class_like(ctx, node, JavaTypeKind::Annotation, JvmTypeKind::Annotation)
+        }
+        _ => {}
+    }
+}
+
+fn extract_class_like(
+    ctx: &mut ParseContext,
+    node: Node,
+    java_kind: JavaTypeKind,
+    jvm_kind: JvmTypeKind,
+) {
     let name = match node.child_by_field_name("name") {
         Some(n) => node_text(n, ctx.source).to_string(),
         None => return,
     };
 
-    let fqn = build_fqn(ctx, &name);
     let modifiers = extract_modifiers(node, ctx.source);
-    let location = make_location(ctx, node);
+    let type_parameters = extract_type_parameters(node, ctx.source);
 
-    // Extract type parameters for class signature
-    let type_params = extract_type_parameters(node, ctx.source);
-    let signature = if !type_params.is_empty() {
-        Some(Signature::Class {
-            type_parameters: type_params.iter().map(|s| crate::TypeParam::new(s)).collect(),
-        })
-    } else {
-        None
-    };
-
-    let parent_idx = ctx.enclosing_stack.last().map(|(idx, _)| *idx);
-
-    let sym_idx = ctx.symbols.len();
-    ctx.symbols.push(Symbol {
-        id: SymbolId(0), // placeholder, SymbolTable assigns real IDs
-        fqn,
-        name: name.clone(),
-        kind,
-        location: Some(location),
-        modifiers,
-        annotations: vec![],
-        parent: parent_idx.map(|i| SymbolId(i)),
-        children: vec![],
-        relations: vec![],
-        signature,
+    let java_payload = JavaNodePayload::Type(JavaTypeNode {
+        header: java_header(ctx, &name, node, modifiers.clone()),
+        kind: java_kind,
+        type_parameters: type_parameters.clone(),
+        record_components: Vec::new(),
     });
+    let jvm_payload = JvmNodePayload::Type(JvmTypeNode {
+        header: jvm_header(ctx, &name, node, modifiers),
+        kind: jvm_kind,
+        type_parameters,
+        record_components: Vec::new(),
+        enrichments: JvmEnrichments::default(),
+    });
+    let java_idx = emit_pair(ctx, java_payload, jvm_payload);
 
-    // Add as child of parent
-    if let Some(parent_idx) = parent_idx {
-        ctx.symbols[parent_idx]
-            .children
-            .push(SymbolId(sym_idx));
-    }
-
-    // Now parse body members
-    ctx.enclosing_stack.push((sym_idx, name));
+    ctx.enclosing_stack.push(EnclosingFrame { java_idx, name });
     extract_body_members(ctx, node);
     ctx.enclosing_stack.pop();
 }
@@ -201,42 +468,33 @@ fn extract_enum(ctx: &mut ParseContext, node: Node) {
         None => return,
     };
 
-    let fqn = build_fqn(ctx, &name);
     let modifiers = extract_modifiers(node, ctx.source);
-    let location = make_location(ctx, node);
 
-    let parent_idx = ctx.enclosing_stack.last().map(|(idx, _)| *idx);
-
-    let sym_idx = ctx.symbols.len();
-    ctx.symbols.push(Symbol {
-        id: SymbolId(0),
-        fqn,
-        name: name.clone(),
-        kind: SymbolKind::Enum,
-        location: Some(location),
-        modifiers,
-        annotations: vec![],
-        parent: parent_idx.map(|i| SymbolId(i)),
-        children: vec![],
-        relations: vec![],
-        signature: None,
+    let java_payload = JavaNodePayload::Type(JavaTypeNode {
+        header: java_header(ctx, &name, node, modifiers.clone()),
+        kind: JavaTypeKind::Enum,
+        type_parameters: Vec::new(),
+        record_components: Vec::new(),
     });
+    let jvm_payload = JvmNodePayload::Type(JvmTypeNode {
+        header: jvm_header(ctx, &name, node, modifiers),
+        kind: JvmTypeKind::Enum,
+        type_parameters: Vec::new(),
+        record_components: Vec::new(),
+        enrichments: JvmEnrichments::default(),
+    });
+    let java_idx = emit_pair(ctx, java_payload, jvm_payload);
 
-    if let Some(parent_idx) = parent_idx {
-        ctx.symbols[parent_idx]
-            .children
-            .push(SymbolId(sym_idx));
-    }
-
-    // Parse enum body: constants + regular members
-    ctx.enclosing_stack.push((sym_idx, name));
+    ctx.enclosing_stack.push(EnclosingFrame {
+        java_idx,
+        name: name.clone(),
+    });
     if let Some(body) = node.child_by_field_name("body") {
         for i in 0..body.child_count() {
             let child = body.child(i).unwrap();
             match child.kind() {
                 "enum_constant" => extract_enum_constant(ctx, child),
                 "enum_body_declarations" => {
-                    // Methods and fields inside enum are wrapped in this node
                     for j in 0..child.child_count() {
                         let decl = child.child(j).unwrap();
                         extract_body_member(ctx, decl);
@@ -255,46 +513,30 @@ fn extract_enum_constant(ctx: &mut ParseContext, node: Node) {
         None => return,
     };
 
-    let fqn = build_fqn(ctx, &name);
-    let location = make_location(ctx, node);
-    let parent_idx = ctx.enclosing_stack.last().map(|(idx, _)| *idx);
+    let modifiers = vec![Modifier::Public, Modifier::Static, Modifier::Final];
+    let enum_owner = parent_owner_fqn(ctx);
 
-    let sym_idx = ctx.symbols.len();
-    ctx.symbols.push(Symbol {
-        id: SymbolId(0),
-        fqn,
-        name,
-        kind: SymbolKind::Field, // enum constants are fields
-        location: Some(location),
-        modifiers: vec![Modifier::Public, Modifier::Static, Modifier::Final],
-        annotations: vec![],
-        parent: parent_idx.map(|i| SymbolId(i)),
-        children: vec![],
-        relations: vec![],
-        signature: None,
+    let java_payload = JavaNodePayload::EnumConstant(JavaEnumConstantNode {
+        header: java_header(ctx, &name, node, modifiers.clone()),
+        enum_owner: enum_owner.clone(),
     });
-
-    if let Some(parent_idx) = parent_idx {
-        ctx.symbols[parent_idx]
-            .children
-            .push(SymbolId(sym_idx));
-    }
+    let jvm_payload = JvmNodePayload::EnumConstant(JvmEnumConstantNode {
+        header: jvm_header(ctx, &name, node, modifiers),
+        enum_owner,
+    });
+    emit_pair(ctx, java_payload, jvm_payload);
 }
 
 fn extract_body_members(ctx: &mut ParseContext, node: Node) {
-    // Find the body node (class_body, interface_body, etc.)
-    let body = node
-        .child_by_field_name("body")
-        .or_else(|| {
-            // Some nodes use different field names for the body
-            for i in 0..node.child_count() {
-                let child = node.child(i).unwrap();
-                if child.kind().ends_with("_body") {
-                    return Some(child);
-                }
+    let body = node.child_by_field_name("body").or_else(|| {
+        for i in 0..node.child_count() {
+            let child = node.child(i).unwrap();
+            if child.kind().ends_with("_body") {
+                return Some(child);
             }
-            None
-        });
+        }
+        None
+    });
 
     if let Some(body) = body {
         for i in 0..body.child_count() {
@@ -309,11 +551,17 @@ fn extract_body_member(ctx: &mut ParseContext, node: Node) {
         "method_declaration" => extract_method(ctx, node),
         "constructor_declaration" => extract_constructor(ctx, node),
         "field_declaration" => extract_fields(ctx, node),
-        "class_declaration" => extract_class_like(ctx, node, SymbolKind::Class),
-        "interface_declaration" => extract_class_like(ctx, node, SymbolKind::Interface),
+        "class_declaration" => extract_class_like(ctx, node, JavaTypeKind::Class, JvmTypeKind::Class),
+        "interface_declaration" => {
+            extract_class_like(ctx, node, JavaTypeKind::Interface, JvmTypeKind::Interface)
+        }
         "enum_declaration" => extract_enum(ctx, node),
-        "record_declaration" => extract_class_like(ctx, node, SymbolKind::Record),
-        "annotation_type_declaration" => extract_class_like(ctx, node, SymbolKind::Annotation),
+        "record_declaration" => {
+            extract_class_like(ctx, node, JavaTypeKind::Record, JvmTypeKind::Record)
+        }
+        "annotation_type_declaration" => {
+            extract_class_like(ctx, node, JavaTypeKind::Annotation, JvmTypeKind::Annotation)
+        }
         _ => {}
     }
 }
@@ -324,54 +572,52 @@ fn extract_method(ctx: &mut ParseContext, node: Node) {
         None => return,
     };
 
-    let fqn = build_fqn(ctx, &name);
     let modifiers = extract_modifiers(node, ctx.source);
-    let location = make_location(ctx, node);
-
     let return_type = node
         .child_by_field_name("type")
-        .map(|n| parse_type_ref(n, ctx.source))
+        .map(|n| parse_type_ref(n, ctx.source).to_core())
         .unwrap_or(TypeRef::Void);
+    let parameters_raw = extract_formal_parameters(node, ctx.source);
+    let type_parameters = extract_type_parameters(node, ctx.source);
 
-    let parameters = extract_formal_parameters(node, ctx.source);
-    let type_params = extract_type_parameters(node, ctx.source);
+    let java_parameters: Vec<JavaParameter> = parameters_raw
+        .iter()
+        .map(|(pname, pty, varargs)| JavaParameter {
+            name: pname.clone(),
+            param_type: pty.clone(),
+            is_varargs: *varargs,
+        })
+        .collect();
+    let owner = parent_owner_fqn(ctx);
+    let jvm_parameters: Vec<JvmParameter> = parameters_raw
+        .iter()
+        .map(|(pname, pty, varargs)| JvmParameter {
+            name: pname.clone(),
+            // Per ADR-0012 JvmMethodKey requires erased parameter
+            // types; pre-erase here at construction.
+            param_type: pty.erasure(),
+            is_varargs: *varargs,
+            enrichments: JvmEnrichments::default(),
+        })
+        .collect();
 
-    let signature = Signature::Method {
-        return_type: return_type.to_core(),
-        parameters: parameters
-            .iter()
-            .map(|(name, ty)| crate::MethodParam {
-                name: name.clone(),
-                param_type: ty.to_core(),
-                is_varargs: false,
-            })
-            .collect(),
-        type_parameters: type_params.iter().map(|s| crate::TypeParam::new(s)).collect(),
-        throws: vec![],
-    };
-
-    let parent_idx = ctx.enclosing_stack.last().map(|(idx, _)| *idx);
-    let sym_idx = ctx.symbols.len();
-
-    ctx.symbols.push(Symbol {
-        id: SymbolId(0),
-        fqn,
-        name,
-        kind: SymbolKind::Method,
-        location: Some(location),
-        modifiers,
-        annotations: vec![],
-        parent: parent_idx.map(|i| SymbolId(i)),
-        children: vec![],
-        relations: vec![],
-        signature: Some(signature),
+    let java_payload = JavaNodePayload::Method(JavaMethodNode {
+        header: java_header(ctx, &name, node, modifiers.clone()),
+        return_type: return_type.clone(),
+        parameters: java_parameters,
+        type_parameters: type_parameters.clone(),
+        throws: Vec::new(),
     });
-
-    if let Some(parent_idx) = parent_idx {
-        ctx.symbols[parent_idx]
-            .children
-            .push(SymbolId(sym_idx));
-    }
+    let jvm_payload = JvmNodePayload::Method(JvmMethodNode {
+        header: jvm_header(ctx, &name, node, modifiers),
+        owner,
+        return_type: return_type.erasure(),
+        parameters: jvm_parameters,
+        type_parameters,
+        throws: Vec::new(),
+        enrichments: JvmEnrichments::default(),
+    });
+    emit_pair(ctx, java_payload, jvm_payload);
 }
 
 fn extract_constructor(ctx: &mut ParseContext, node: Node) {
@@ -380,60 +626,52 @@ fn extract_constructor(ctx: &mut ParseContext, node: Node) {
         None => return,
     };
 
-    let fqn = build_fqn(ctx, &name);
     let modifiers = extract_modifiers(node, ctx.source);
-    let location = make_location(ctx, node);
+    let parameters_raw = extract_formal_parameters(node, ctx.source);
+    let type_parameters = extract_type_parameters(node, ctx.source);
 
-    let parameters = extract_formal_parameters(node, ctx.source);
-    let type_params = extract_type_parameters(node, ctx.source);
+    let java_parameters: Vec<JavaParameter> = parameters_raw
+        .iter()
+        .map(|(pname, pty, varargs)| JavaParameter {
+            name: pname.clone(),
+            param_type: pty.clone(),
+            is_varargs: *varargs,
+        })
+        .collect();
+    let owner = parent_owner_fqn(ctx);
+    let jvm_parameters: Vec<JvmParameter> = parameters_raw
+        .iter()
+        .map(|(pname, pty, varargs)| JvmParameter {
+            name: pname.clone(),
+            param_type: pty.erasure(),
+            is_varargs: *varargs,
+            enrichments: JvmEnrichments::default(),
+        })
+        .collect();
 
-    let signature = Signature::Method {
-        return_type: crate::TypeRef::Void,
-        parameters: parameters
-            .iter()
-            .map(|(name, ty)| crate::MethodParam {
-                name: name.clone(),
-                param_type: ty.to_core(),
-                is_varargs: false,
-            })
-            .collect(),
-        type_parameters: type_params.iter().map(|s| crate::TypeParam::new(s)).collect(),
-        throws: vec![],
-    };
-
-    let parent_idx = ctx.enclosing_stack.last().map(|(idx, _)| *idx);
-    let sym_idx = ctx.symbols.len();
-
-    ctx.symbols.push(Symbol {
-        id: SymbolId(0),
-        fqn,
-        name,
-        kind: SymbolKind::Constructor,
-        location: Some(location),
-        modifiers,
-        annotations: vec![],
-        parent: parent_idx.map(|i| SymbolId(i)),
-        children: vec![],
-        relations: vec![],
-        signature: Some(signature),
+    let java_payload = JavaNodePayload::Constructor(JavaConstructorNode {
+        header: java_header(ctx, &name, node, modifiers.clone()),
+        parameters: java_parameters,
+        type_parameters: type_parameters.clone(),
+        throws: Vec::new(),
     });
-
-    if let Some(parent_idx) = parent_idx {
-        ctx.symbols[parent_idx]
-            .children
-            .push(SymbolId(sym_idx));
-    }
+    let jvm_payload = JvmNodePayload::Constructor(JvmConstructorNode {
+        header: jvm_header(ctx, &name, node, modifiers),
+        owner,
+        parameters: jvm_parameters,
+        type_parameters,
+        throws: Vec::new(),
+    });
+    emit_pair(ctx, java_payload, jvm_payload);
 }
 
 fn extract_fields(ctx: &mut ParseContext, node: Node) {
     let modifiers = extract_modifiers(node, ctx.source);
-
     let field_type = node
         .child_by_field_name("type")
-        .map(|n| parse_type_ref(n, ctx.source))
-        .unwrap_or(TypeRef::Simple("unknown".to_string()));
-
-    let parent_idx = ctx.enclosing_stack.last().map(|(idx, _)| *idx);
+        .map(|n| parse_type_ref(n, ctx.source).to_core())
+        .unwrap_or_else(|| TypeRef::simple("unknown"));
+    let owner = parent_owner_fqn(ctx);
 
     // Field declarations can have multiple declarators: `int a, b, c;`
     for i in 0..node.child_count() {
@@ -444,637 +682,28 @@ fn extract_fields(ctx: &mut ParseContext, node: Node) {
                 None => continue,
             };
 
-            // Check if declarator has array dimensions (e.g., `int arr[]`)
-            let actual_type = check_declarator_array_dims(child, ctx.source, &field_type);
-
-            let fqn = build_fqn(ctx, &name);
-            let location = make_location(ctx, child);
-
-            let sym_idx = ctx.symbols.len();
-            ctx.symbols.push(Symbol {
-                id: SymbolId(0),
-                fqn,
-                name,
-                kind: SymbolKind::Field,
-                location: Some(location),
-                modifiers: modifiers.clone(),
-                annotations: vec![],
-                parent: parent_idx.map(|i| SymbolId(i)),
-                children: vec![],
-                relations: vec![],
-                signature: Some(Signature::Field {
-                    field_type: actual_type.to_core(),
-                    constant_value: None,
-                    initialized: false,
-                }),
+            let java_payload = JavaNodePayload::Field(JavaFieldNode {
+                header: java_header(ctx, &name, child, modifiers.clone()),
+                field_type: field_type.clone(),
+                constant_value: None,
+                initialized: false,
             });
-
-            if let Some(parent_idx) = parent_idx {
-                ctx.symbols[parent_idx]
-                    .children
-                    .push(SymbolId(sym_idx));
-            }
-        }
-    }
-}
-
-fn check_declarator_array_dims<'a>(
-    _declarator: Node,
-    _source: &[u8],
-    base_type: &TypeRef,
-) -> TypeRef {
-    // For simplicity, we rely on the type node for array dimensions
-    // e.g. `int[] arr` is parsed with type `int[]` already
-    base_type.clone()
-}
-
-fn extract_formal_parameters(node: Node, source: &[u8]) -> Vec<(String, TypeRef)> {
-    let mut params = Vec::new();
-    if let Some(params_node) = node.child_by_field_name("parameters") {
-        for i in 0..params_node.child_count() {
-            let child = params_node.child(i).unwrap();
-            if child.kind() == "formal_parameter" || child.kind() == "spread_parameter" {
-                let name = child
-                    .child_by_field_name("name")
-                    .map(|n| node_text(n, source).to_string())
-                    .unwrap_or_default();
-                let ty = child
-                    .child_by_field_name("type")
-                    .map(|n| parse_type_ref(n, source))
-                    .unwrap_or(TypeRef::Simple("unknown".to_string()));
-                params.push((name, ty));
-            }
-        }
-    }
-    params
-}
-
-fn extract_type_parameters(node: Node, source: &[u8]) -> Vec<String> {
-    let mut type_params = Vec::new();
-    if let Some(tp_node) = node.child_by_field_name("type_parameters") {
-        for i in 0..tp_node.child_count() {
-            let child = tp_node.child(i).unwrap();
-            if child.kind() == "type_parameter" {
-                type_params.push(node_text(child, source).to_string());
-            }
-        }
-    }
-    type_params
-}
-
-fn parse_type_ref(node: Node, source: &[u8]) -> TypeRef {
-    match node.kind() {
-        "void_type" => TypeRef::Void,
-        "integral_type" | "floating_point_type" | "boolean_type" => {
-            TypeRef::Primitive(node_text(node, source).to_string())
-        }
-        "type_identifier" | "identifier" => TypeRef::Simple(node_text(node, source).to_string()),
-        "scoped_type_identifier" => {
-            TypeRef::Qualified(node_text(node, source).to_string())
-        }
-        "generic_type" => {
-            // e.g., List<String>
-            let base = node
-                .child(0)
-                .map(|n| node_text(n, source).to_string())
-                .unwrap_or_default();
-            let mut args = Vec::new();
-            if let Some(type_args) = node.child_by_field_name("arguments") {
-                // tree-sitter-java uses "type_arguments" as a child node
-                for i in 0..type_args.child_count() {
-                    let child = type_args.child(i).unwrap();
-                    if child.kind() != "<" && child.kind() != ">" && child.kind() != "," {
-                        args.push(parse_type_ref(child, source));
-                    }
-                }
-            } else {
-                // Fallback: iterate children looking for type_arguments
-                for i in 0..node.child_count() {
-                    let child = node.child(i).unwrap();
-                    if child.kind() == "type_arguments" {
-                        for j in 0..child.child_count() {
-                            let arg = child.child(j).unwrap();
-                            if arg.kind() != "<" && arg.kind() != ">" && arg.kind() != "," {
-                                args.push(parse_type_ref(arg, source));
-                            }
-                        }
-                    }
-                }
-            }
-            TypeRef::Parameterized(base, args)
-        }
-        "array_type" => {
-            // e.g., int[]
-            if let Some(element) = node.child_by_field_name("element") {
-                TypeRef::Array(Box::new(parse_type_ref(element, source)))
-            } else if let Some(first_child) = node.child(0) {
-                TypeRef::Array(Box::new(parse_type_ref(first_child, source)))
-            } else {
-                TypeRef::Array(Box::new(TypeRef::Simple(
-                    node_text(node, source).to_string(),
-                )))
-            }
-        }
-        "wildcard" => TypeRef::Wildcard,
-        _ => TypeRef::Simple(node_text(node, source).to_string()),
-    }
-}
-
-// ---------------------------------------------------------------------
-// Graph-emit path (the migration's step 4+5 surface).
-//
-// The functions above produce a `Vec<Symbol>` for the prototype
-// `SymbolTable` — kept here so the legacy path keeps compiling until
-// step 7 retires it. The functions below produce a `ParsedJavaFile`
-// against the new graph engine: a self-contained plan with no graph
-// references that the consumer feeds to `integrate` to write into the
-// graph and register against `Registries` (per ADR-0005's "parse on
-// rayon, integrate serially" boundary).
-//
-// At step 4+5 the graph emit is implemented as a thin adapter over
-// `parse_java_file`: parse to the prototype `Symbol` stream, then map
-// each symbol to a (Java, JVM) payload pair. Step 7 collapses both
-// paths by rewriting the `extract_*` walker bodies to emit pending
-// nodes directly; the adapter then goes away alongside the prototype
-// `Symbol`. The boundary the fixture and LSP consume — `ParsedJavaFile`,
-// `parse_java_to_graph`, `integrate` — does not change.
-// ---------------------------------------------------------------------
-
-use crate::graph::arena::{Graph, NodeId};
-use crate::graph::behavior::NodeBehavior;
-use crate::jvm::fqn::Fqn;
-use crate::jvm::payload::{
-    JvmConstructorNode, JvmDeclHeader, JvmEnrichments, JvmEnumConstantNode, JvmFieldNode,
-    JvmMethodNode, JvmNodePayload, JvmPackageNode, JvmParameter, JvmTypeKind, JvmTypeNode,
-};
-use crate::languages::java::payload::{
-    JavaConstructorNode, JavaDeclHeader, JavaEnumConstantNode, JavaFieldNode, JavaMethodNode,
-    JavaNodePayload, JavaPackageNode, JavaParameter, JavaTypeKind, JavaTypeNode,
-};
-use crate::payload::NodePayload;
-use crate::registries::Registries;
-use crate::resolve::Import;
-
-/// Pre-computed integration plan for one parsed Java file.
-///
-/// Per ADR-0005 a `ParsedFile` is "self-contained, with no graph
-/// references" so it can be produced on a rayon worker. The plan stores
-/// payloads and parent indices into its own internal vector;
-/// `integrate` resolves indices to real [`NodeId`]s as it inserts each
-/// payload into the graph.
-#[derive(Debug)]
-pub struct ParsedJavaFile {
-    pub path: std::path::PathBuf,
-    pub package: String,
-    pub imports: Vec<Import>,
-    plan: Vec<PendingNode>,
-}
-
-/// One unit of work in a parsed file's plan: a payload, its parent
-/// index into the same plan (or `None` for a root), and a subsequent
-/// JVM-projection child to attach (also by plan index, or `None`).
-#[derive(Debug)]
-pub(crate) struct PendingNode {
-    payload: NodePayload,
-    parent: Option<usize>,
-}
-
-/// Parse a Java source file into a self-contained [`ParsedJavaFile`].
-///
-/// Performs no graph mutation — runs purely on its own thread, suitable
-/// for parallel parsing on a rayon pool (ADR-0005). The returned plan is
-/// then consumed by [`integrate`] on the graph thread.
-pub fn parse_java_to_graph(path: &Path, source: &str) -> ParsedJavaFile {
-    // Reuse the prototype walker; convert the resulting Symbol stream
-    // into payloads. Per ADR-0021 the *walker* is preserved; the layer
-    // above it is the part that gets rewritten. Today the rewrite is a
-    // post-processing pass over `Vec<Symbol>`; step 7 hoists the
-    // payload construction up into the walker bodies and deletes the
-    // `Vec<Symbol>` path entirely.
-    let symbols = parse_java_file(path, source);
-    let plan = symbols_to_plan(&symbols);
-
-    let package = crate::languages::java::syntax::extract_package(source);
-    let imports = crate::languages::java::syntax::extract_imports(source);
-
-    ParsedJavaFile {
-        path: path.to_path_buf(),
-        package,
-        imports,
-        plan,
-    }
-}
-
-/// Insert every node in the parsed plan into `graph`, register each via
-/// its [`NodeBehavior::on_created`], and return the resulting `NodeId`s
-/// in plan order.
-///
-/// Hard-link parent/child relationships are reconstructed from the
-/// plan's `parent` indices. Per ADR-0014 the registration handles are
-/// stored on [`NodeData::handles`](crate::graph::NodeData::handles); the
-/// engine drops them when [`Graph::destroy`] frees the slot, removing
-/// each registry entry as a side effect.
-pub fn integrate(
-    graph: &mut Graph<NodePayload>,
-    registries: &Registries,
-    parsed: ParsedJavaFile,
-) -> Vec<NodeId> {
-    // First pass: insert each pending node, mapping plan-indices to real
-    // NodeIds. The plan is in topological order — the walker pushes
-    // parents before children — so by the time we reach a child its
-    // parent's `NodeId` is already in `inserted`.
-    let mut inserted: Vec<NodeId> = Vec::with_capacity(parsed.plan.len());
-    for pending in parsed.plan {
-        let parent = pending.parent.and_then(|idx| inserted.get(idx).copied());
-        let id = graph.insert(pending.payload, parent);
-        inserted.push(id);
-    }
-
-    // Second pass: run on_created for each. Per ADR-0014 / ADR-0016 this
-    // is what wires the RAII handles. The behavior impl returns the
-    // handles; the engine stores them on `NodeData::handles`.
-    for &id in &inserted {
-        // Read the payload through `&self` to compute the handles, then
-        // store them with a separate `&mut` borrow. Splitting the borrow
-        // keeps the trait `on_created(&self, &Ctx)` signature simple.
-        let handles = graph
-            .get(id)
-            .map(|node| node.payload.on_created(id, registries))
-            .unwrap_or_default();
-        if let Some(node) = graph.get_mut(id) {
-            node.handles = handles;
-        }
-    }
-
-    inserted
-}
-
-// ---------------------------------------------------------------------
-// Symbol → payload conversion. Internal to this module; goes away when
-// the walker bodies are rewritten in step 7.
-// ---------------------------------------------------------------------
-
-fn symbols_to_plan(symbols: &[Symbol]) -> Vec<PendingNode> {
-    if symbols.is_empty() {
-        return Vec::new();
-    }
-
-    // The walker emits one Symbol per declaration with `parent: Option<SymbolId>`
-    // pointing at indices in the same Vec. The new plan needs *two* nodes
-    // per declaration — a Java payload and a JVM-projection child — but
-    // the indexing relationships have to stay consistent: when symbol B's
-    // parent is symbol A in the prototype, B's Java payload should
-    // hard-link off A's Java payload in the new graph (and B's JVM
-    // payload off A's JVM payload).
-    //
-    // The mapping is therefore:
-    //   - each prototype Symbol i becomes plan indices `2*i` (Java) and
-    //     `2*i + 1` (JVM projection, hard-linked off `2*i`).
-    //   - a child's parent in the prototype maps to the parent's Java
-    //     plan index in the new model; the JVM projection of a child is
-    //     hard-linked off the *Java* node, not the parent's JVM
-    //     projection (per ADR-0004 "each language-model node hard-links
-    //     a JVM projection" — projections are leaves, not relays).
-    let mut plan = Vec::with_capacity(symbols.len() * 2);
-
-    for sym in symbols.iter() {
-        let java_parent = sym.parent.map(|sid| sid.0 * 2);
-        let java_idx = plan.len();
-        let java_payload = symbol_to_java_payload(sym);
-        plan.push(PendingNode {
-            payload: java_payload,
-            parent: java_parent,
-        });
-
-        let jvm_payload = symbol_to_jvm_payload(sym);
-        plan.push(PendingNode {
-            payload: jvm_payload,
-            parent: Some(java_idx),
-        });
-    }
-
-    plan
-}
-
-fn java_header_from_symbol(sym: &Symbol) -> JavaDeclHeader {
-    JavaDeclHeader {
-        name: sym.name.clone(),
-        fqn: Fqn::new(sym.fqn.clone()),
-        location: sym.location.clone(),
-        modifiers: sym.modifiers.clone(),
-        annotations: sym.annotations.clone(),
-    }
-}
-
-fn jvm_header_from_symbol(sym: &Symbol) -> JvmDeclHeader {
-    JvmDeclHeader {
-        name: sym.name.clone(),
-        fqn: Fqn::new(sym.fqn.clone()),
-        location: sym.location.clone(),
-        modifiers: sym.modifiers.clone(),
-        annotations: sym.annotations.clone(),
-    }
-}
-
-fn parent_fqn(sym: &Symbol) -> Fqn {
-    // The owner is everything up to the last dot. For top-level symbols
-    // (where the FQN has no dot), we return an empty Fqn — the JVM
-    // owner is the unnamed package, which is "" per JLS §7.4.2.
-    Fqn::new(
-        sym.fqn
-            .rfind('.')
-            .map(|p| sym.fqn[..p].to_string())
-            .unwrap_or_default(),
-    )
-}
-
-fn symbol_to_java_payload(sym: &Symbol) -> NodePayload {
-    let header = java_header_from_symbol(sym);
-    let payload = match sym.kind {
-        SymbolKind::Class
-        | SymbolKind::Interface
-        | SymbolKind::Enum
-        | SymbolKind::Record
-        | SymbolKind::Annotation => {
-            let kind = match sym.kind {
-                SymbolKind::Class => JavaTypeKind::Class,
-                SymbolKind::Interface => JavaTypeKind::Interface,
-                SymbolKind::Enum => JavaTypeKind::Enum,
-                SymbolKind::Record => JavaTypeKind::Record,
-                SymbolKind::Annotation => JavaTypeKind::Annotation,
-                _ => unreachable!(),
-            };
-            let (type_parameters, record_components) = match &sym.signature {
-                Some(Signature::Class { type_parameters }) => {
-                    (type_parameters.clone(), Vec::new())
-                }
-                Some(Signature::Record {
-                    type_parameters,
-                    components,
-                }) => (type_parameters.clone(), components.clone()),
-                _ => (Vec::new(), Vec::new()),
-            };
-            JavaNodePayload::Type(JavaTypeNode {
-                header,
-                kind,
-                type_parameters,
-                record_components,
-            })
-        }
-        SymbolKind::Method => {
-            let (return_type, parameters, type_parameters, throws) = match &sym.signature {
-                Some(Signature::Method {
-                    return_type,
-                    parameters,
-                    type_parameters,
-                    throws,
-                }) => (
-                    return_type.clone(),
-                    parameters
-                        .iter()
-                        .map(|p| JavaParameter {
-                            name: p.name.clone(),
-                            param_type: p.param_type.clone(),
-                            is_varargs: p.is_varargs,
-                        })
-                        .collect(),
-                    type_parameters.clone(),
-                    throws.clone(),
-                ),
-                _ => (crate::TypeRef::Void, Vec::new(), Vec::new(), Vec::new()),
-            };
-            JavaNodePayload::Method(JavaMethodNode {
-                header,
-                return_type,
-                parameters,
-                type_parameters,
-                throws,
-            })
-        }
-        SymbolKind::Constructor => {
-            let (parameters, type_parameters, throws) = match &sym.signature {
-                Some(Signature::Method {
-                    parameters,
-                    type_parameters,
-                    throws,
-                    ..
-                }) => (
-                    parameters
-                        .iter()
-                        .map(|p| JavaParameter {
-                            name: p.name.clone(),
-                            param_type: p.param_type.clone(),
-                            is_varargs: p.is_varargs,
-                        })
-                        .collect(),
-                    type_parameters.clone(),
-                    throws.clone(),
-                ),
-                _ => (Vec::new(), Vec::new(), Vec::new()),
-            };
-            JavaNodePayload::Constructor(JavaConstructorNode {
-                header,
-                parameters,
-                type_parameters,
-                throws,
-            })
-        }
-        SymbolKind::Field => {
-            let (field_type, constant_value, initialized) = match &sym.signature {
-                Some(Signature::Field {
-                    field_type,
-                    constant_value,
-                    initialized,
-                }) => (
-                    field_type.clone(),
-                    constant_value.clone(),
-                    *initialized,
-                ),
-                _ => (crate::TypeRef::Unknown, None, false),
-            };
-            JavaNodePayload::Field(JavaFieldNode {
-                header,
-                field_type,
-                constant_value,
-                initialized,
-            })
-        }
-        SymbolKind::EnumConstant => JavaNodePayload::EnumConstant(JavaEnumConstantNode {
-            header,
-            enum_owner: parent_fqn(sym),
-        }),
-        SymbolKind::Parameter => JavaNodePayload::Parameter(JavaParameter {
-            name: sym.name.clone(),
-            param_type: crate::TypeRef::Unknown,
-            is_varargs: false,
-        }),
-        SymbolKind::Package => JavaNodePayload::Package(JavaPackageNode {
-            header,
-        }),
-        // Language-specific kinds (Kotlin/Scala/Clojure) cannot reach
-        // here from the Java parser. Fall back to a Type node tagged as
-        // Class so downstream consumers don't crash; the prototype's
-        // SymbolKind::Class shape is a reasonable lossy default until
-        // those parsers land.
-        _ => JavaNodePayload::Type(JavaTypeNode {
-            header,
-            kind: JavaTypeKind::Class,
-            type_parameters: Vec::new(),
-            record_components: Vec::new(),
-        }),
-    };
-    NodePayload::Java(payload)
-}
-
-fn symbol_to_jvm_payload(sym: &Symbol) -> NodePayload {
-    let header = jvm_header_from_symbol(sym);
-    let payload = match sym.kind {
-        SymbolKind::Class
-        | SymbolKind::Interface
-        | SymbolKind::Enum
-        | SymbolKind::Record
-        | SymbolKind::Annotation => {
-            let kind = match sym.kind {
-                SymbolKind::Class => JvmTypeKind::Class,
-                SymbolKind::Interface => JvmTypeKind::Interface,
-                SymbolKind::Enum => JvmTypeKind::Enum,
-                SymbolKind::Record => JvmTypeKind::Record,
-                SymbolKind::Annotation => JvmTypeKind::Annotation,
-                _ => unreachable!(),
-            };
-            let (type_parameters, record_components) = match &sym.signature {
-                Some(Signature::Class { type_parameters }) => {
-                    (type_parameters.clone(), Vec::new())
-                }
-                Some(Signature::Record {
-                    type_parameters,
-                    components,
-                }) => (type_parameters.clone(), components.clone()),
-                _ => (Vec::new(), Vec::new()),
-            };
-            JvmNodePayload::Type(JvmTypeNode {
-                header,
-                kind,
-                type_parameters,
-                record_components,
+            let jvm_payload = JvmNodePayload::Field(JvmFieldNode {
+                header: jvm_header(ctx, &name, child, modifiers.clone()),
+                owner: owner.clone(),
+                field_type: field_type.clone(),
+                constant_value: None,
+                initialized: false,
                 enrichments: JvmEnrichments::default(),
-            })
+            });
+            emit_pair(ctx, java_payload, jvm_payload);
         }
-        SymbolKind::Method => {
-            let (return_type, parameters, type_parameters, throws) = match &sym.signature {
-                Some(Signature::Method {
-                    return_type,
-                    parameters,
-                    type_parameters,
-                    throws,
-                }) => (
-                    return_type.erasure(),
-                    parameters
-                        .iter()
-                        .map(|p| JvmParameter {
-                            name: p.name.clone(),
-                            // Per ADR-0012 JvmMethodKey requires erased
-                            // parameter types; pre-erase here at construction.
-                            param_type: p.param_type.erasure(),
-                            is_varargs: p.is_varargs,
-                            enrichments: JvmEnrichments::default(),
-                        })
-                        .collect(),
-                    type_parameters.clone(),
-                    throws.iter().map(|t| t.erasure()).collect(),
-                ),
-                _ => (crate::TypeRef::Void, Vec::new(), Vec::new(), Vec::new()),
-            };
-            JvmNodePayload::Method(JvmMethodNode {
-                header,
-                owner: parent_fqn(sym),
-                return_type,
-                parameters,
-                type_parameters,
-                throws,
-                enrichments: JvmEnrichments::default(),
-            })
-        }
-        SymbolKind::Constructor => {
-            let (parameters, type_parameters, throws) = match &sym.signature {
-                Some(Signature::Method {
-                    parameters,
-                    type_parameters,
-                    throws,
-                    ..
-                }) => (
-                    parameters
-                        .iter()
-                        .map(|p| JvmParameter {
-                            name: p.name.clone(),
-                            param_type: p.param_type.erasure(),
-                            is_varargs: p.is_varargs,
-                            enrichments: JvmEnrichments::default(),
-                        })
-                        .collect(),
-                    type_parameters.clone(),
-                    throws.iter().map(|t| t.erasure()).collect(),
-                ),
-                _ => (Vec::new(), Vec::new(), Vec::new()),
-            };
-            JvmNodePayload::Constructor(JvmConstructorNode {
-                header,
-                owner: parent_fqn(sym),
-                parameters,
-                type_parameters,
-                throws,
-            })
-        }
-        SymbolKind::Field => {
-            let (field_type, constant_value, initialized) = match &sym.signature {
-                Some(Signature::Field {
-                    field_type,
-                    constant_value,
-                    initialized,
-                }) => (
-                    field_type.clone(),
-                    constant_value.clone(),
-                    *initialized,
-                ),
-                _ => (crate::TypeRef::Unknown, None, false),
-            };
-            JvmNodePayload::Field(JvmFieldNode {
-                header,
-                owner: parent_fqn(sym),
-                field_type,
-                constant_value,
-                initialized,
-                enrichments: JvmEnrichments::default(),
-            })
-        }
-        SymbolKind::EnumConstant => JvmNodePayload::EnumConstant(JvmEnumConstantNode {
-            header,
-            enum_owner: parent_fqn(sym),
-        }),
-        SymbolKind::Parameter => JvmNodePayload::Parameter(JvmParameter {
-            name: sym.name.clone(),
-            param_type: crate::TypeRef::Unknown,
-            is_varargs: false,
-            enrichments: JvmEnrichments::default(),
-        }),
-        SymbolKind::Package => JvmNodePayload::Package(JvmPackageNode {
-            header,
-        }),
-        _ => JvmNodePayload::Type(JvmTypeNode {
-            header,
-            kind: JvmTypeKind::Class,
-            type_parameters: Vec::new(),
-            record_components: Vec::new(),
-            enrichments: JvmEnrichments::default(),
-        }),
-    };
-    NodePayload::Jvm(payload)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
 
     /// Per ADR-0005 the parse phase must be runnable on a rayon worker
     /// — meaning the parse output type has to be `Send`. Per ADR-0014
@@ -1090,450 +719,333 @@ mod tests {
         assert_send::<NodePayload>();
     }
 
-    fn parse(source: &str) -> Vec<Symbol> {
-        parse_java_file(Path::new("Test.java"), source)
+    fn parse(source: &str) -> ParsedJavaFile {
+        parse_java_to_graph(Path::new("Test.java"), source)
     }
 
-    fn find_by_name<'a>(symbols: &'a [Symbol], name: &str) -> &'a Symbol {
-        symbols
-            .iter()
-            .find(|s| s.name == name)
-            .unwrap_or_else(|| panic!("symbol '{}' not found", name))
+    /// Find a Java payload by simple name. Walks the plan in order so
+    /// the test asserts on the first hit (matches the walker's
+    /// declaration order).
+    fn find_java<'a>(plan: &'a [PendingNode], name: &str) -> &'a JavaNodePayload {
+        plan.iter()
+            .filter_map(|p| match &p.payload {
+                NodePayload::Java(j) => Some(j),
+                _ => None,
+            })
+            .find(|j| j.header().is_some_and(|h| h.name == name))
+            .unwrap_or_else(|| panic!("no Java payload named '{}'", name))
     }
 
     #[test]
-    fn test_parse_simple_class() {
+    fn simple_class() {
+        let parsed = parse("package com.example;\npublic class Dog {}\n");
+        let dog = find_java(&parsed.plan, "Dog");
+        if let JavaNodePayload::Type(t) = dog {
+            assert_eq!(t.header.fqn.as_str(), "com.example.Dog");
+            assert_eq!(t.kind, JavaTypeKind::Class);
+            assert!(t.header.modifiers.contains(&Modifier::Public));
+        } else {
+            panic!("expected Type payload");
+        }
+    }
+
+    #[test]
+    fn class_with_members_emits_pairs_in_topological_order() {
         let source = r#"
 package com.example;
-
 public class Dog {
-}
-"#;
-        let symbols = parse(source);
-        let dog = find_by_name(&symbols, "Dog");
-        assert_eq!(dog.fqn, "com.example.Dog");
-        assert_eq!(dog.kind, SymbolKind::Class);
-        assert!(dog.modifiers.contains(&Modifier::Public));
-    }
-
-    #[test]
-    fn test_parse_class_with_members() {
-        let source = r#"
-package com.example;
-
-public class Dog extends Animal implements Runnable {
     private String name;
-
-    public Dog(String name) {
-        this.name = name;
-    }
-
-    public String getName() {
-        return name;
-    }
+    public Dog(String name) { this.name = name; }
+    public String getName() { return name; }
 }
 "#;
-        let symbols = parse(source);
+        let parsed = parse(source);
 
-        let dog = find_by_name(&symbols, "Dog");
-        assert_eq!(dog.fqn, "com.example.Dog");
-        assert_eq!(dog.kind, SymbolKind::Class);
-        assert_eq!(dog.children.len(), 3); // field + constructor + method
+        // Plan layout: Dog(Java), Dog(Jvm), name(Java), name(Jvm),
+        // Dog ctor(Java), Dog ctor(Jvm), getName(Java), getName(Jvm).
+        // Each Java payload's parent points at its enclosing Java
+        // payload's plan index.
+        let dog_idx = 0;
+        assert_eq!(parsed.plan[dog_idx].parent, None);
+        assert_eq!(parsed.plan[dog_idx + 1].parent, Some(dog_idx));
 
-        let name_field = find_by_name(&symbols, "name");
-        assert_eq!(name_field.fqn, "com.example.Dog.name");
-        assert_eq!(name_field.kind, SymbolKind::Field);
-        assert!(name_field.modifiers.contains(&Modifier::Private));
-        if let Some(Signature::Field { ref field_type, .. }) = name_field.signature {
-            assert_eq!(field_type, "String");
-        } else {
-            panic!("expected Field signature");
+        // Members of Dog: their Java parent is `dog_idx`.
+        for member in parsed.plan.iter().skip(2) {
+            if let NodePayload::Java(_) = member.payload {
+                assert_eq!(member.parent, Some(dog_idx));
+            }
         }
 
-        // The class itself is also named Dog, so find the constructor specifically
-        let ctor = symbols
+        let name_field = find_java(&parsed.plan, "name");
+        if let JavaNodePayload::Field(f) = name_field {
+            assert_eq!(f.field_type.to_string(), "String");
+        } else {
+            panic!("expected Field");
+        }
+
+        let getter = find_java(&parsed.plan, "getName");
+        if let JavaNodePayload::Method(m) = getter {
+            assert_eq!(m.return_type.to_string(), "String");
+        } else {
+            panic!("expected Method");
+        }
+    }
+
+    #[test]
+    fn enum_constants_emit_as_enum_constant_not_field() {
+        let source = r#"
+package com.example;
+public enum Color { RED, GREEN, BLUE; public String label() { return name(); } }
+"#;
+        let parsed = parse(source);
+
+        let red = find_java(&parsed.plan, "RED");
+        assert!(matches!(red, JavaNodePayload::EnumConstant(_)));
+
+        // The `label` method should still be a Method.
+        let label = find_java(&parsed.plan, "label");
+        assert!(matches!(label, JavaNodePayload::Method(_)));
+    }
+
+    #[test]
+    fn jvm_method_keys_carry_erased_param_types() {
+        let source = r#"
+package com.example;
+public class Service {
+    public void process(java.util.List<String> items) {}
+}
+"#;
+        let parsed = parse(source);
+        // Find the JVM Method payload, check that the parameter type's
+        // erasure has been applied (parameterized type → raw).
+        let process_jvm = parsed
+            .plan
             .iter()
-            .find(|s| s.name == "Dog" && s.kind == SymbolKind::Constructor)
-            .expect("constructor not found");
-        assert_eq!(ctor.fqn, "com.example.Dog.Dog");
-        if let Some(Signature::Method { ref parameters, .. }) = ctor.signature {
-            assert_eq!(parameters.len(), 1);
-            assert_eq!(parameters[0].name, "name");
-            assert_eq!(parameters[0].param_type, "String");
-        } else {
-            panic!("expected Method signature on constructor");
-        }
-
-        let get_name = find_by_name(&symbols, "getName");
-        assert_eq!(get_name.fqn, "com.example.Dog.getName");
-        assert_eq!(get_name.kind, SymbolKind::Method);
-        if let Some(Signature::Method {
-            ref return_type, ..
-        }) = get_name.signature
-        {
-            assert_eq!(return_type, "String");
-        } else {
-            panic!("expected Method signature");
-        }
+            .filter_map(|p| match &p.payload {
+                NodePayload::Jvm(JvmNodePayload::Method(m)) if m.header.name == "process" => {
+                    Some(m)
+                }
+                _ => None,
+            })
+            .next()
+            .expect("JVM process method");
+        assert_eq!(process_jvm.parameters.len(), 1);
+        let erased = &process_jvm.parameters[0].param_type;
+        // Erasure of `java.util.List<String>` is `java.util.List`.
+        assert_eq!(erased.to_string(), "java.util.List");
     }
 
     #[test]
-    fn test_parse_interface() {
-        let source = r#"
-package com.example;
-
-public interface Repository {
-    void save(String item);
-    String findById(int id);
-}
-"#;
-        let symbols = parse(source);
-        let repo = find_by_name(&symbols, "Repository");
-        assert_eq!(repo.fqn, "com.example.Repository");
-        assert_eq!(repo.kind, SymbolKind::Interface);
-        assert_eq!(repo.children.len(), 2);
-
-        let save = find_by_name(&symbols, "save");
-        assert_eq!(save.kind, SymbolKind::Method);
-        if let Some(Signature::Method {
-            ref return_type,
-            ref parameters,
-            ..
-        }) = save.signature
-        {
-            assert_eq!(return_type, "void");
-            assert_eq!(parameters.len(), 1);
+    fn varargs_parameter_flagged() {
+        let parsed = parse(
+            "package com.example;\npublic class V { public void f(String... xs) {} }\n",
+        );
+        let f = find_java(&parsed.plan, "f");
+        if let JavaNodePayload::Method(m) = f {
+            assert_eq!(m.parameters.len(), 1);
+            assert!(m.parameters[0].is_varargs);
         } else {
-            panic!("expected Method signature");
+            panic!("expected Method payload");
         }
     }
 
     #[test]
-    fn test_parse_enum() {
+    fn nested_class_parent_points_at_outer() {
         let source = r#"
 package com.example;
-
-public enum Color {
-    RED,
-    GREEN,
-    BLUE;
-
-    public String displayName() {
-        return name().toLowerCase();
-    }
-}
-"#;
-        let symbols = parse(source);
-        let color = find_by_name(&symbols, "Color");
-        assert_eq!(color.fqn, "com.example.Color");
-        assert_eq!(color.kind, SymbolKind::Enum);
-
-        // Enum constants
-        let red = find_by_name(&symbols, "RED");
-        assert_eq!(red.kind, SymbolKind::Field);
-        assert_eq!(red.fqn, "com.example.Color.RED");
-
-        let green = find_by_name(&symbols, "GREEN");
-        assert_eq!(green.kind, SymbolKind::Field);
-
-        // Method
-        let display = find_by_name(&symbols, "displayName");
-        assert_eq!(display.kind, SymbolKind::Method);
-    }
-
-    #[test]
-    fn test_parse_nested_class() {
-        let source = r#"
-package com.example;
-
 public class Outer {
-    public class Inner {
-        private int value;
-    }
+    public class Inner { private int value; }
 }
 "#;
-        let symbols = parse(source);
+        let parsed = parse(source);
+        // Outer at plan_idx 0; Inner's Java payload should have
+        // parent == 0.
+        let outer_idx = 0;
+        let inner_idx = parsed
+            .plan
+            .iter()
+            .position(|p| matches!(&p.payload, NodePayload::Java(j) if j.header().is_some_and(|h| h.name == "Inner")))
+            .expect("inner not found");
+        assert_eq!(parsed.plan[inner_idx].parent, Some(outer_idx));
+        let value_idx = parsed
+            .plan
+            .iter()
+            .position(|p| matches!(&p.payload, NodePayload::Java(j) if j.header().is_some_and(|h| h.name == "value")))
+            .expect("value field not found");
+        // value's parent is Inner.
+        assert_eq!(parsed.plan[value_idx].parent, Some(inner_idx));
 
-        let outer = find_by_name(&symbols, "Outer");
-        assert_eq!(outer.fqn, "com.example.Outer");
-
-        let inner = find_by_name(&symbols, "Inner");
-        assert_eq!(inner.fqn, "com.example.Outer.Inner");
-        assert_eq!(inner.kind, SymbolKind::Class);
-        // Inner's parent should point to Outer's index
-        assert!(inner.parent.is_some());
-
-        let value = find_by_name(&symbols, "value");
-        assert_eq!(value.fqn, "com.example.Outer.Inner.value");
+        let inner = find_java(&parsed.plan, "Inner");
+        if let JavaNodePayload::Type(t) = inner {
+            assert_eq!(t.header.fqn.as_str(), "com.example.Outer.Inner");
+        }
     }
 
     #[test]
-    fn test_parse_modifiers() {
+    fn modifiers_propagate_through_pair() {
         let source = r#"
 package com.example;
-
 public abstract class Base {
     protected static final int MAX = 100;
     public abstract void doWork();
 }
 "#;
-        let symbols = parse(source);
+        let parsed = parse(source);
 
-        let base = find_by_name(&symbols, "Base");
-        assert!(base.modifiers.contains(&Modifier::Public));
-        assert!(base.modifiers.contains(&Modifier::Abstract));
+        let base = find_java(&parsed.plan, "Base");
+        let mods = match base {
+            JavaNodePayload::Type(t) => &t.header.modifiers,
+            _ => panic!(),
+        };
+        assert!(mods.contains(&Modifier::Public));
+        assert!(mods.contains(&Modifier::Abstract));
 
-        let max = find_by_name(&symbols, "MAX");
-        assert!(max.modifiers.contains(&Modifier::Protected));
-        assert!(max.modifiers.contains(&Modifier::Static));
-        assert!(max.modifiers.contains(&Modifier::Final));
-
-        let do_work = find_by_name(&symbols, "doWork");
-        assert!(do_work.modifiers.contains(&Modifier::Public));
-        assert!(do_work.modifiers.contains(&Modifier::Abstract));
+        let max = find_java(&parsed.plan, "MAX");
+        let mods = max.header().unwrap().modifiers.clone();
+        assert!(mods.contains(&Modifier::Protected));
+        assert!(mods.contains(&Modifier::Static));
+        assert!(mods.contains(&Modifier::Final));
     }
 
     #[test]
-    fn test_parse_generic_class() {
-        let source = r#"
-package com.example;
-
-public class Container<T> {
-    private T value;
-
-    public T getValue() {
-        return value;
+    fn package_extracted_into_parsed_file() {
+        let parsed = parse("package com.example;\npublic class Foo {}\n");
+        assert_eq!(parsed.package, "com.example");
     }
-}
-"#;
-        let symbols = parse(source);
 
-        let container = find_by_name(&symbols, "Container");
-        if let Some(Signature::Class {
-            ref type_parameters,
-        }) = container.signature
-        {
-            assert_eq!(type_parameters.len(), 1);
-            assert_eq!(type_parameters[0].name, "T");
-        } else {
-            panic!("expected Class signature with type parameters");
+    #[test]
+    fn no_package_yields_empty_string() {
+        let parsed = parse("public class Foo {}\n");
+        assert_eq!(parsed.package, "");
+        let foo = find_java(&parsed.plan, "Foo");
+        if let JavaNodePayload::Type(t) = foo {
+            assert_eq!(t.header.fqn.as_str(), "Foo");
         }
     }
 
     #[test]
-    fn test_parse_generic_method_params() {
-        let source = r#"
-package com.example;
+    fn multiple_field_declarators() {
+        let parsed = parse("package com.example;\npublic class M { private int a, b, c; }\n");
+        for n in &["a", "b", "c"] {
+            let f = find_java(&parsed.plan, n);
+            if let JavaNodePayload::Field(field) = f {
+                assert_eq!(field.header.fqn.as_str(), &format!("com.example.M.{n}"));
+            } else {
+                panic!("expected Field payload for {n}");
+            }
+        }
+    }
 
-public class Utils {
-    public void process(java.util.List<String> items) {}
-}
-"#;
-        let symbols = parse(source);
+    #[test]
+    fn annotation_type_parsed_as_annotation_kind() {
+        let parsed = parse(
+            "package com.example;\npublic @interface MyAnnotation { String value(); }\n",
+        );
+        let annot = find_java(&parsed.plan, "MyAnnotation");
+        if let JavaNodePayload::Type(t) = annot {
+            assert_eq!(t.kind, JavaTypeKind::Annotation);
+            assert_eq!(t.header.fqn.as_str(), "com.example.MyAnnotation");
+        } else {
+            panic!("expected Type payload");
+        }
+    }
 
-        let process = find_by_name(&symbols, "process");
-        if let Some(Signature::Method { ref parameters, .. }) = process.signature {
-            assert_eq!(parameters.len(), 1);
-            assert_eq!(parameters[0].name, "items");
-            // The type should contain the generic info
+    #[test]
+    fn interface_body_emits_methods_as_children() {
+        let parsed = parse(
+            "package com.example;\npublic interface Foo { void bar(); }\n",
+        );
+        let foo = find_java(&parsed.plan, "Foo");
+        match foo {
+            JavaNodePayload::Type(t) => assert_eq!(t.kind, JavaTypeKind::Interface),
+            _ => panic!("expected Type payload"),
+        }
+        let bar = find_java(&parsed.plan, "bar");
+        assert!(matches!(bar, JavaNodePayload::Method(_)));
+    }
+
+    #[test]
+    fn generic_class_carries_type_parameters() {
+        let parsed = parse("package com.example;\npublic class Box<T> { T value; }\n");
+        let boxed = find_java(&parsed.plan, "Box");
+        if let JavaNodePayload::Type(t) = boxed {
+            assert_eq!(t.type_parameters.len(), 1);
+            assert_eq!(t.type_parameters[0].name, "T");
+        } else {
+            panic!("expected Type payload");
+        }
+    }
+
+    #[test]
+    fn java_field_preserves_parameterized_type() {
+        // Java-side `field_type` keeps the parameterized form `List<String>`.
+        // The JVM-side erasure to `List` is covered by
+        // `jvm_method_keys_carry_erased_param_types`; this test pins the
+        // pre-erasure preservation.
+        let parsed = parse(
+            "package com.example;\npublic class C { java.util.List<String> xs; }\n",
+        );
+        let xs = find_java(&parsed.plan, "xs");
+        if let JavaNodePayload::Field(f) = xs {
+            let ty = f.field_type.to_string();
             assert!(
-                parameters[0].param_type.to_string().contains("List"),
-                "expected List in type, got: {}",
-                parameters[0].param_type
+                ty.contains("List") && ty.contains("String"),
+                "expected Java-side type to retain List<String>, got `{ty}`"
             );
         } else {
-            panic!("expected Method signature");
+            panic!("expected Field payload");
         }
     }
 
     #[test]
-    fn test_parse_no_package() {
-        let source = r#"
-public class Simple {
-    int x;
-}
-"#;
-        let symbols = parse(source);
-        let simple = find_by_name(&symbols, "Simple");
-        assert_eq!(simple.fqn, "Simple");
-
-        let x = find_by_name(&symbols, "x");
-        assert_eq!(x.fqn, "Simple.x");
-    }
-
-    #[test]
-    fn test_parse_multiple_field_declarators() {
-        let source = r#"
-package com.example;
-
-public class Multi {
-    private int a, b, c;
-}
-"#;
-        let symbols = parse(source);
-
-        let a = find_by_name(&symbols, "a");
-        assert_eq!(a.fqn, "com.example.Multi.a");
-        assert_eq!(a.kind, SymbolKind::Field);
-
-        let b = find_by_name(&symbols, "b");
-        assert_eq!(b.fqn, "com.example.Multi.b");
-
-        let c = find_by_name(&symbols, "c");
-        assert_eq!(c.fqn, "com.example.Multi.c");
-
-        // The class should have 3 field children
-        let multi = find_by_name(&symbols, "Multi");
-        assert_eq!(multi.children.len(), 3);
-    }
-
-    #[test]
-    fn test_parse_array_type() {
-        let source = r#"
-package com.example;
-
-public class Arrays {
-    private int[] numbers;
-    private String[][] grid;
-}
-"#;
-        let symbols = parse(source);
-
-        let numbers = find_by_name(&symbols, "numbers");
-        if let Some(Signature::Field { ref field_type, .. }) = numbers.signature {
-            assert_eq!(field_type, "int[]");
+    fn array_types_parse_through_fallback_chain() {
+        // `parse_type_ref`'s `array_type` branch tries
+        // `child_by_field_name("element")` first, then `node.child(0)`,
+        // then text-of-the-whole-node. This test exercises both nested
+        // array shapes so a regression in the fallback chain surfaces.
+        let parsed = parse(
+            "package com.example;\npublic class C { int[] a; String[][] b; }\n",
+        );
+        let a = find_java(&parsed.plan, "a");
+        if let JavaNodePayload::Field(f) = a {
+            let ty = f.field_type.to_string();
+            assert!(
+                ty.contains("[]"),
+                "expected `int[]` to render as an array shape, got `{ty}`"
+            );
         } else {
-            panic!("expected Field signature");
+            panic!("expected Field payload for `a`");
+        }
+        let b = find_java(&parsed.plan, "b");
+        if let JavaNodePayload::Field(f) = b {
+            let ty = f.field_type.to_string();
+            assert!(
+                ty.contains("[]"),
+                "expected `String[][]` to render as an array shape, got `{ty}`"
+            );
+        } else {
+            panic!("expected Field payload for `b`");
         }
     }
 
     #[test]
-    fn test_location_info() {
+    fn declaration_location_tracks_source_line() {
+        // Multi-line source with the class declaration on a known line.
+        // tree-sitter rows are 0-indexed; `package com.example;` is row 0,
+        // blank line is row 1, the class declaration spans starting at
+        // row 2.
         let source = "package com.example;\n\npublic class Foo {\n}\n";
-        let symbols = parse(source);
-        let foo = find_by_name(&symbols, "Foo");
-        let loc = foo.location.as_ref().unwrap();
-        assert_eq!(loc.file, Path::new("Test.java"));
-        assert_eq!(loc.start_line, 2); // 0-indexed line
-    }
-
-    #[test]
-    fn test_parse_annotation_type() {
-        let source = r#"
-package com.example;
-
-public @interface MyAnnotation {
-    String value();
-}
-"#;
-        let symbols = parse(source);
-        let annot = find_by_name(&symbols, "MyAnnotation");
-        assert_eq!(annot.kind, SymbolKind::Annotation);
-        assert_eq!(annot.fqn, "com.example.MyAnnotation");
-    }
-
-    #[test]
-    fn test_integration_parse_and_index() {
-        use crate::SymbolTable;
-
-        // A realistic multi-class Java file with interface, implementation, inner class, enum
-        let source = r#"
-package com.example.app;
-
-public interface Service {
-    void execute(String command);
-    String status();
-}
-
-public class ServiceImpl implements Service {
-    private final String name;
-    private State currentState;
-
-    public ServiceImpl(String name) {
-        this.name = name;
-        this.currentState = State.IDLE;
-    }
-
-    public void execute(String command) {
-        currentState = State.RUNNING;
-    }
-
-    public String status() {
-        return currentState.name();
-    }
-
-    public static class Config {
-        private int timeout;
-        private boolean verbose;
-
-        public int getTimeout() {
-            return timeout;
+        let parsed = parse(source);
+        let foo = find_java(&parsed.plan, "Foo");
+        if let JavaNodePayload::Type(t) = foo {
+            let loc = t
+                .header
+                .location
+                .as_ref()
+                .expect("source-derived payloads carry locations");
+            assert_eq!(loc.start_line, 2, "Foo declaration should start on row 2");
+        } else {
+            panic!("expected Type payload");
         }
-    }
-
-    public enum State {
-        IDLE,
-        RUNNING,
-        STOPPED;
-    }
-}
-"#;
-        let symbols = parse_java_file(Path::new("src/com/example/app/Service.java"), source);
-
-        // Insert all parsed symbols into a SymbolTable
-        let mut table = SymbolTable::new();
-        for sym in &symbols {
-            table.insert(sym.clone());
-        }
-
-        // Verify FQN lookups
-        assert!(table.lookup_by_fqn("com.example.app.Service").is_some());
-        assert!(table.lookup_by_fqn("com.example.app.ServiceImpl").is_some());
-        assert!(table.lookup_by_fqn("com.example.app.ServiceImpl.execute").is_some());
-        assert!(table.lookup_by_fqn("com.example.app.ServiceImpl.status").is_some());
-        assert!(table.lookup_by_fqn("com.example.app.ServiceImpl.name").is_some());
-        assert!(table.lookup_by_fqn("com.example.app.ServiceImpl.Config").is_some());
-        assert!(table.lookup_by_fqn("com.example.app.ServiceImpl.Config.timeout").is_some());
-        assert!(table.lookup_by_fqn("com.example.app.ServiceImpl.Config.getTimeout").is_some());
-        assert!(table.lookup_by_fqn("com.example.app.ServiceImpl.State").is_some());
-        assert!(table.lookup_by_fqn("com.example.app.ServiceImpl.State.IDLE").is_some());
-        assert!(table.lookup_by_fqn("com.example.app.ServiceImpl.State.RUNNING").is_some());
-
-        // Verify package index
-        let pkg_symbols = table.lookup_by_package("com.example.app");
-        assert!(pkg_symbols.len() >= 2); // Service, ServiceImpl at minimum
-
-        // Verify kind index
-        let interfaces = table.lookup_by_kind(SymbolKind::Interface);
-        assert_eq!(interfaces.len(), 1);
-        let iface = table.get(interfaces[0]).unwrap();
-        assert_eq!(iface.name, "Service");
-
-        let enums = table.lookup_by_kind(SymbolKind::Enum);
-        assert_eq!(enums.len(), 1);
-        assert_eq!(table.get(enums[0]).unwrap().name, "State");
-
-        // Verify children of ServiceImpl
-        let impl_id = table.lookup_by_fqn("com.example.app.ServiceImpl").unwrap();
-        let impl_sym = table.get(impl_id).unwrap();
-        // name, currentState, constructor, execute, status, Config, State = 7 children
-        assert_eq!(impl_sym.children.len(), 7);
-
-        // Verify nested class parent
-        let config_id = table.lookup_by_fqn("com.example.app.ServiceImpl.Config").unwrap();
-        let config_sym = table.get(config_id).unwrap();
-        assert_eq!(config_sym.kind, SymbolKind::Class);
-        assert!(config_sym.modifiers.contains(&Modifier::Public));
-        assert!(config_sym.modifiers.contains(&Modifier::Static));
-        // Config has 3 children: timeout, verbose, getTimeout
-        assert_eq!(config_sym.children.len(), 3);
-
-        // Verify file index
-        let file_syms = table.lookup_by_file(Path::new("src/com/example/app/Service.java"));
-        assert_eq!(file_syms.len(), symbols.len());
-
-        // Verify name lookup
-        let executes = table.lookup_by_name("execute");
-        assert_eq!(executes.len(), 2); // interface method + impl method
     }
 }
