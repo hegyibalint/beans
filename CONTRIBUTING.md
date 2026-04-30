@@ -149,27 +149,34 @@ Test "what appears when the developer presses cmd+space here?"
 .complete("dot", |items| { ... })            // named cursor
 ```
 
-`CompletionItems` methods:
+`CompletionCandidates` (the value passed to the closure) is a thin
+wrapper around the candidate list. Per ADR-0020 it carries only the
+*neutral* shape — no LSP-formatted `detail` strings or wire-shaped
+parameter lists. LSP-shaped formatting lives in `beans-lsp`.
+
+`CompletionCandidates` query methods:
 
 | Method | Returns | Purpose |
 |--------|---------|---------|
-| `has(name, kind)` | `bool` | Is this item offered? |
-| `get(name, kind)` | `&CompletionItem` | Get item (panics if missing). |
-| `count(kind)` | `usize` | How many items of this kind? |
-| `names(kind)` | `Vec<&str>` | Sorted names of all items of this kind. |
+| `has(name, kind)` | `bool` | Is this candidate offered? |
+| `get(name, kind)` | `&CompletionCandidate` | Get the candidate (panics if missing). |
+| `count(kind)` | `usize` | How many candidates of this kind? |
+| `names(kind)` | `Vec<&str>` | Sorted names of all candidates of this kind. |
 | `iter()` | iterator | Full access for edge cases. |
 
-`CompletionItem` fields are all public — assert with `assert_eq!`:
+`CompletionCandidate` fields are all public — assert with `assert_eq!`:
 
 | Field | Type |
 |-------|------|
 | `name` | `String` |
 | `kind` | `SymbolKind` |
-| `return_type` | `String` |
-| `params` | `Vec<(String, String)>` |
-| `modifiers` | `Vec<Modifier>` |
-| `fqn` | `String` |
-| `detail` | `String` |
+| `fqn` | `Fqn` |
+| `node_id` | `NodeId` |
+
+Tests assert on `name`, `kind`, and `fqn` for stable identity; the
+`node_id` is the in-graph reference and is not stable across
+rebuilds (per ADR-0007), so don't compare it across separate
+fixture invocations.
 
 Examples:
 
@@ -185,10 +192,9 @@ Examples:
     // All names of a kind
     assert_eq!(items.names(Method), &["close", "execute", "isOpen"]);
 
-    // Deep inspection
+    // Deep inspection: identity-bearing fields only
     let exec = items.get("execute", Method);
-    assert_eq!(exec.return_type, "void");
-    assert_eq!(exec.params, &[("sql", "String")]);
+    assert_eq!(exec.fqn.as_str(), "com.example.Service.execute");
 })
 ```
 

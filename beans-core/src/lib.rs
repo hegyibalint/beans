@@ -15,9 +15,10 @@
 //!   that consumers run against the graph.
 //! - [`payload`] / [`registries`] — the cross-layer aggregations
 //!   ([`NodePayload`] union, [`Registries`] bag).
-//! - [`completion`] — the LSP-shaped completion result type. Per
-//!   backlog #025 step 8 of the migration moves this into `beans-lsp`
-//!   and replaces it with a neutral `CompletionCandidate` here.
+//! - [`completion`] — neutral completion result types
+//!   ([`CompletionCandidate`], [`CompletionCandidates`]). The
+//!   LSP-shaped item lives in `beans-lsp`; per ADR-0020 the core
+//!   stays free of LSP-protocol shapes.
 //!
 //! At the crate root the JVM types are re-exported (`Modifier`,
 //! `SymbolKind`, `TypeRef`, ...) so consumers write
@@ -33,9 +34,9 @@ pub mod payload;
 pub mod primitives;
 pub mod registries;
 
-// LSP-shaped completion result type. Per backlog #025 step 8 splits
-// this into a neutral `CompletionCandidate` in `beans-core` and an
-// LSP-shaped `CompletionItem` in `beans-lsp`.
+// Neutral completion result types. Per ADR-0020 the LSP-shaped
+// `CompletionItem` lives in `beans-lsp`; the core just names what
+// completed *at*.
 pub mod completion;
 
 // JVM model re-exports. Per ADR-0019 the JVM types live under `jvm/`;
@@ -50,4 +51,4 @@ pub use payload::NodePayload;
 pub use primitives::Location;
 pub use registries::Registries;
 
-pub use completion::{CompletionItem, CompletionItems};
+pub use completion::{CompletionCandidate, CompletionCandidates};
