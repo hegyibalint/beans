@@ -2,8 +2,12 @@
 //!
 //! Module layout (per ADR-0019 / ADR-0004):
 //!
-//! - [`graph`] — the generic graph engine (nodes, registries, hard /
-//!   dynamic links). Language- and JVM-agnostic.
+//! - [`graph`] — the generic graph engine (nodes, hard links, dynamic-link
+//!   edges, cache state). Pure structure and lifecycle; no indexing.
+//! - [`registry`] — typed-key index over `NodeId`s with subscription /
+//!   notification (ADR-0008/0013/0014/0015). Consumes `graph` for
+//!   `NodeId` and the `NodeHandle` marker; graph does not depend on
+//!   registry.
 //! - [`jvm`] — the JVM interop layer. Modifiers, type references, JVM
 //!   payload variants, registries, the typed keys.
 //! - [`languages`] — per-language modules, gated by Cargo features
@@ -33,6 +37,7 @@ pub mod languages;
 pub mod payload;
 pub mod primitives;
 pub mod registries;
+pub mod registry;
 
 // Neutral completion result types. Per ADR-0020 the LSP-shaped
 // `CompletionItem` lives in `beans-lsp`; the core just names what
