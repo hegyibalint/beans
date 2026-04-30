@@ -290,17 +290,52 @@ fn extract_formal_parameters(node: Node, source: &[u8]) -> Vec<(String, TypeRef,
     if let Some(params_node) = node.child_by_field_name("parameters") {
         for i in 0..params_node.child_count() {
             let child = params_node.child(i).unwrap();
-            let is_varargs = child.kind() == "spread_parameter";
-            if child.kind() == "formal_parameter" || is_varargs {
-                let name = child
-                    .child_by_field_name("name")
-                    .map(|n| node_text(n, source).to_string())
-                    .unwrap_or_default();
-                let ty = child
-                    .child_by_field_name("type")
-                    .map(|n| parse_type_ref(n, source).to_core())
-                    .unwrap_or_else(|| TypeRef::simple("unknown"));
-                params.push((name, ty, is_varargs));
+            match child.kind() {
+                "formal_parameter" => {
+                    // tree-sitter-java exposes `name` and `type` as
+                    // named fields on `formal_parameter`.
+                    let name = child
+                        .child_by_field_name("name")
+                        .map(|n| node_text(n, source).to_string())
+                        .unwrap_or_default();
+                    let ty = child
+                        .child_by_field_name("type")
+                        .map(|n| parse_type_ref(n, source).to_core())
+                        .unwrap_or_else(|| TypeRef::simple("unknown"));
+                    params.push((name, ty, false));
+                }
+                "spread_parameter" => {
+                    // tree-sitter-java models `String... xs` as a
+                    // `spread_parameter` whose children are the type
+                    // node, the `...` token, and a `variable_declarator`
+                    // carrying the name. The named `name`/`type`
+                    // fields aren't exposed; walk children manually.
+                    let mut name = String::new();
+                    let mut ty: Option<TypeRef> = None;
+                    for j in 0..child.child_count() {
+                        let part = child.child(j).unwrap();
+                        match part.kind() {
+                            "variable_declarator" => {
+                                if let Some(n) = part.child_by_field_name("name") {
+                                    name = node_text(n, source).to_string();
+                                }
+                            }
+                            "..." | "modifiers" => {}
+                            _ => {
+                                // Anything else is the parameter type.
+                                if ty.is_none() {
+                                    ty = Some(parse_type_ref(part, source).to_core());
+                                }
+                            }
+                        }
+                    }
+                    params.push((
+                        name,
+                        ty.unwrap_or_else(|| TypeRef::simple("unknown")),
+                        true,
+                    ));
+                }
+                _ => {}
             }
         }
     }
