@@ -29,7 +29,7 @@ pub mod syntax;
 pub mod types;
 
 pub use keys::JavaSymbolKey;
-pub use parser::{integrate, parse_java_file, parse_java_to_graph, ParsedJavaFile};
+pub use parser::{integrate, parse_java_to_graph, ParsedJavaFile};
 pub use payload::{
     JavaAnnotationElementNode, JavaConstructorNode, JavaDeclHeader, JavaEnumConstantNode,
     JavaFieldNode, JavaMethodNode, JavaNodePayload, JavaPackageNode, JavaParameter,
@@ -37,4 +37,4 @@ pub use payload::{
 };
 pub use registries::JavaRegistries;
 pub use resolve::{lookup_fqn, resolve_compound_name, resolve_name, resolve_simple_name};
-pub use syntax::{extract_imports, extract_package, word_at_position};
+pub use syntax::{extract_imports, extract_package, word_at_position, Import};

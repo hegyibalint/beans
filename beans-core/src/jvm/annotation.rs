@@ -1,18 +1,21 @@
-//! Annotation instances attached to symbols.
+//! Annotation instances attached to declarations.
 //!
 //! An annotation is a compile-time-evaluated value attached to a
 //! declaration: `@Override`, `@Retention(RUNTIME)`,
 //! `@Target({TYPE, METHOD})`. Annotations are first-class on every
-//! [`Symbol`](crate::Symbol) that can carry them; diagnostic rules and JVM
-//! enrichments (e.g., promoting Kotlin nullability to the JVM projection)
-//! read them directly.
+//! payload variant that can carry them
+//! ([`crate::jvm::JvmDeclHeader::annotations`],
+//! [`crate::languages::java::JavaDeclHeader::annotations`]); diagnostic
+//! rules and JVM enrichments (e.g., promoting Kotlin nullability to the
+//! JVM projection) read them directly.
 //!
 //! The shape of an annotation value is constrained by JLS §9.6.1 — the
 //! [`AnnotationValue`] variants enumerate exactly what is permitted.
 
 use crate::{ConstantValue, TypeRef};
 
-/// An annotation applied to a symbol: `@Override`, `@Retention(RUNTIME)`, etc.
+/// An annotation applied to a declaration: `@Override`,
+/// `@Retention(RUNTIME)`, etc.
 /// (JLS §9.7).
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnnotationInstance {
