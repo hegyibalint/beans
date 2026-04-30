@@ -36,5 +36,5 @@ pub use payload::{
     JavaTypeKind, JavaTypeNode,
 };
 pub use registries::JavaRegistries;
-pub use resolve::{lookup_fqn, resolve_name, resolve_simple_name};
+pub use resolve::{lookup_fqn, resolve_compound_name, resolve_name, resolve_simple_name};
 pub use syntax::{extract_imports, extract_package, word_at_position};

@@ -17,3 +17,6 @@ serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 walkdir = "2"
+# Per ADR-0005: parallelism at the file-batch boundary. Workspace
+# parsing is the parallel phase; integration into the graph is serial.
+rayon = "1.10"

@@ -19,6 +19,7 @@
 //! They re-export through this file so existing consumers keep their
 //! imports unchanged for the duration of the migration.
 
+pub mod diagnostics;
 pub mod graph;
 pub mod jvm;
 pub mod languages;
@@ -42,6 +43,7 @@ pub use jvm::{
     RecordComponent, Relation, RelationKind, Signature, Symbol, TypeParam, TypeRef, WildcardBound,
 };
 
+pub use diagnostics::{compute_diagnostics, Diagnostic, DiagnosticSeverity};
 pub use payload::NodePayload;
 pub use primitives::Location;
 pub use registries::Registries;
