@@ -1,5 +1,6 @@
+mod actor;
 mod backend;
-mod resolve;
+mod hover;
 mod workspace;
 
 use tower_lsp::{LspService, Server};

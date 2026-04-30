@@ -354,7 +354,7 @@ fn fqn_round_trips_through_keys() {
 fn merge_all_returns_duplicates_when_same_node_hits_multiple_queries() {
     // Per ADR-0008 the MergeAll combine mode does NOT dedup. If the same
     // NodeId is registered under two queries on the link's list — for
-    // example a node that providers both a Java-side key and its JVM
+    // example a node that provides both a Java-side key and its JVM
     // projection key — `resolve_all` returns it once per hit, in
     // priority order. The consumer is responsible for collapsing
     // duplicates with knowledge of which language wins (ADR-0013: the
