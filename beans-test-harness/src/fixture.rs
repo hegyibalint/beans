@@ -322,6 +322,11 @@ impl Fixture {
         }
 
         // 2. Parse all files and integrate into one graph + registries.
+        // The graph is mutable when any language feature is on (so
+        // `integrate` can insert payloads). With every language feature
+        // off the harness can still strip markers but doesn't write to
+        // the graph.
+        #[cfg_attr(not(feature = "java"), allow(unused_mut))]
         let mut graph: Graph<NodePayload> = Graph::new();
         let registries = Registries::new();
         let mut file_imports: HashMap<PathBuf, Vec<Import>> = HashMap::new();
@@ -485,7 +490,7 @@ impl ParsedForFixture {
     }
 }
 
-fn parse_for_extension(path: &Path, source: &str) -> ParsedForFixture {
+fn parse_for_extension(path: &Path, #[allow(unused_variables)] source: &str) -> ParsedForFixture {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -711,13 +716,26 @@ fn resolve_at_cursor<'a>(
         .get(&cursor.file)
         .map(|s| s.as_str())
         .unwrap_or("");
-    let id = java::resolve_name(&word, imports, current_package, registries, graph)
-        .unwrap_or_else(|| {
-            panic!(
-                "[{}] could not resolve '{}' to any symbol",
-                cursor_display, word
-            );
-        });
+
+    // Per the team-lead's step 4+5 direction the harness dispatches by
+    // file extension. Java resolution is the only chain implemented
+    // today; when other languages land they'll add their own arms gated
+    // by their own features. Without any language feature the harness
+    // can still parse markers but won't resolve cursor positions.
+    #[cfg(feature = "java")]
+    let resolved =
+        java::resolve_name(&word, imports, current_package, registries, graph);
+    #[cfg(not(feature = "java"))]
+    let resolved: Option<NodeId> = {
+        let _ = (imports, current_package, registries, graph);
+        None
+    };
+    let id = resolved.unwrap_or_else(|| {
+        panic!(
+            "[{}] could not resolve '{}' to any symbol",
+            cursor_display, word
+        );
+    });
 
     ResolvedView::from_node(graph, id).unwrap_or_else(|| {
         panic!(
@@ -877,12 +895,18 @@ fn child_names(view: &ResolvedView<'_>, graph: &Graph<NodePayload>) -> Vec<Strin
             if matches!(child.payload, NodePayload::Jvm(_)) {
                 continue;
             }
-            if let Some(header) = match &child.payload {
+            // The match's arm types only unify when a language feature
+            // is on (the Java arm yields `Option<&JavaDeclHeader>`).
+            // With every language feature off the only arm is the JVM
+            // catch-all, and Rust can't infer the `Option<_>` element
+            // type. Annotate the match expression to keep it typed.
+            let header = match &child.payload {
                 #[cfg(feature = "java")]
-                NodePayload::Java(j) => j.header(),
-                NodePayload::Jvm(_) => None,
-            } {
-                out.push(header.name.clone());
+                NodePayload::Java(j) => j.header().map(|h| h.name.clone()),
+                NodePayload::Jvm(_) => Option::<String>::None,
+            };
+            if let Some(name) = header {
+                out.push(name);
             }
         }
     }
