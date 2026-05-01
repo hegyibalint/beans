@@ -4,7 +4,7 @@
 //! flat bag that bundles every registry visible to a [`crate::Beans`]
 //! instance — JVM-projection lookups and the per-language registries
 //! gated by their feature flags. Resolution code names the registry it
-//! is querying directly (e.g. `beans.registries.jvm_types.query(&key)`);
+//! is querying directly (e.g. `beans.registries.jvm_types.providers(&key)`);
 //! there is no generic `Registries::query(...)` entry point.
 //!
 //! Per ADR-0019 each language *module* still owns the typed key for its
