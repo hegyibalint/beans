@@ -46,8 +46,8 @@ use crate::graph::arena::NodeId;
 ///     type Ctx = Registries;
 ///     fn resolve(&self, ctx: &Self::Ctx) -> Vec<NodeId> {
 ///         match self {
-///             JavaQuery::Java(k) => ctx.java.symbols.query(k),
-///             JavaQuery::Jvm(k)  => ctx.jvm.types.query(k),
+///             JavaQuery::Java(k) => ctx.java_symbols.query(k),
+///             JavaQuery::Jvm(k)  => ctx.jvm_types.query(k),
 ///         }
 ///     }
 /// }
