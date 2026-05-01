@@ -37,6 +37,7 @@ pub mod jvm;
 pub mod languages;
 pub mod payload;
 pub mod primitives;
+pub mod query;
 pub mod registries;
 pub mod registry;
 
@@ -56,6 +57,7 @@ pub use beans::Beans;
 pub use diagnostics::{compute_diagnostics, Diagnostic, DiagnosticSeverity};
 pub use payload::NodePayload;
 pub use primitives::Location;
+pub use query::{all_matches, first_match, ByFqn, QueryResult, Queryable};
 pub use registries::Registries;
 
 pub use completion::{CompletionCandidate, CompletionCandidates};
