@@ -27,7 +27,7 @@ use beans_core::jvm::keys::{JvmMethodKey, JvmTypeKey};
 use beans_core::jvm::{Fqn, JvmNodePayload};
 use beans_core::languages::java::{integrate, parse_java_to_graph};
 use beans_core::payload::NodePayload;
-use beans_core::registries::Registries;
+use beans_core::registry::Registries;
 use beans_core::TypeRef;
 
 // =========================================================================
