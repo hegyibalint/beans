@@ -156,7 +156,12 @@ impl<K> Registry<K> {
 impl<K: Eq + Hash> Registry<K> {
     /// Return all providers currently registered for `key`. Order is
     /// insertion order; per ADR-0013 this carries no semantic weight.
-    pub fn query(&self, key: &K) -> Vec<NodeId> {
+    ///
+    /// This is the raw-access form. The
+    /// [`Queryable`](crate::Queryable) trait wraps this with the
+    /// cardinality-aware [`QueryResult`](crate::QueryResult) tri-state;
+    /// most consumers reach for that instead of inspecting a `Vec`.
+    pub fn providers(&self, key: &K) -> Vec<NodeId> {
         self.inner
             .borrow()
             .providers
@@ -336,11 +341,11 @@ mod tests {
             node.payload.provider = Some(registry.register(key.clone(), id));
         }
 
-        assert_eq!(registry.query(&key), vec![id]);
+        assert_eq!(registry.providers(&key), vec![id]);
 
         graph.destroy(id);
 
-        assert!(registry.query(&key).is_empty());
+        assert!(registry.providers(&key).is_empty());
     }
 
     #[test]
@@ -424,7 +429,7 @@ mod tests {
             key.clone(),
             Rc::new(move || {
                 // Re-enter: query the same registry from inside the callback.
-                let providers = registry_in_cb.query(&key_in_cb);
+                let providers = registry_in_cb.providers(&key_in_cb);
                 observed_in_cb.set(providers.len());
             }),
         );
@@ -470,13 +475,13 @@ mod tests {
         let h1 = registry.register(key.clone(), node);
         let h2 = registry.register(key.clone(), node);
 
-        assert_eq!(registry.query(&key), vec![node, node]);
+        assert_eq!(registry.providers(&key), vec![node, node]);
 
         drop(h1);
-        assert_eq!(registry.query(&key), vec![node]);
+        assert_eq!(registry.providers(&key), vec![node]);
 
         drop(h2);
-        assert!(registry.query(&key).is_empty());
+        assert!(registry.providers(&key).is_empty());
     }
 
     #[test]
@@ -511,18 +516,18 @@ mod tests {
         );
 
         // Before notify: secondary is empty.
-        assert!(secondary.query(&key_b).is_empty());
+        assert!(secondary.providers(&key_b).is_empty());
 
         primary.notify(&key_a);
 
         // After notify: secondary has the provider the callback registered,
         // and the primary's internals are still usable (re-entrancy didn't
         // wedge it).
-        assert_eq!(secondary.query(&key_b), vec![NodeId::placeholder(123)]);
+        assert_eq!(secondary.providers(&key_b), vec![NodeId::placeholder(123)]);
         let _ = primary.register(key_a.clone(), NodeId::placeholder(7));
 
         // Drop the derived handle — secondary cleans up.
         *derived_handle.borrow_mut() = None;
-        assert!(secondary.query(&key_b).is_empty());
+        assert!(secondary.providers(&key_b).is_empty());
     }
 }

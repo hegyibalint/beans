@@ -82,13 +82,13 @@ impl Env {
     fn types_at(&self, fqn: &str) -> Vec<NodeId> {
         self.registries
             .jvm_types
-            .query(&JvmTypeKey::new(Fqn::new(fqn)))
+            .providers(&JvmTypeKey::new(Fqn::new(fqn)))
     }
 
     fn methods_at(&self, owner: &str, name: &str, params: Vec<TypeRef>) -> Vec<NodeId> {
         self.registries
             .jvm_methods
-            .query(&JvmMethodKey::new(Fqn::new(owner), name, params))
+            .providers(&JvmMethodKey::new(Fqn::new(owner), name, params))
     }
 }
 
