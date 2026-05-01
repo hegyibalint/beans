@@ -30,7 +30,7 @@
 use crate::graph::NodeBehavior;
 use crate::graph::arena::{NodeHandle, NodeId};
 use crate::jvm::payload::JvmNodePayload;
-use crate::registries::Registries;
+use crate::registry::Registries;
 
 #[cfg(feature = "java")]
 use crate::languages::java::payload::JavaNodePayload;
