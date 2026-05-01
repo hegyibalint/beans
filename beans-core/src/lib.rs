@@ -30,6 +30,7 @@
 //! variants (`languages::kotlin::SymbolKind` etc.) are reachable via
 //! their owning module.
 
+pub mod beans;
 pub mod diagnostics;
 pub mod graph;
 pub mod jvm;
@@ -51,6 +52,7 @@ pub use jvm::{
     SymbolKind, TypeParam, TypeRef, WildcardBound,
 };
 
+pub use beans::Beans;
 pub use diagnostics::{compute_diagnostics, Diagnostic, DiagnosticSeverity};
 pub use payload::NodePayload;
 pub use primitives::Location;

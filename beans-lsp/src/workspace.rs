@@ -56,7 +56,7 @@ pub fn integrate_source(
     // refreshed graph stays consistent with the new source.
     if let Some(old_roots) = state.file_roots.remove(file) {
         for root in old_roots {
-            state.graph.destroy(root);
+            state.beans.graph.destroy(root);
         }
     }
 
@@ -72,8 +72,8 @@ pub fn integrate_source(
         state.file_packages.remove(file);
     }
 
-    let inserted = java::integrate(&mut state.graph, &state.registries, parsed);
-    let roots = collect_roots(&state.graph, &inserted);
+    let inserted = java::integrate(&mut state.beans.graph, &state.beans.registries, parsed);
+    let roots = collect_roots(&state.beans.graph, &inserted);
     state.file_roots.insert(file.to_path_buf(), roots);
     inserted
 }
@@ -103,7 +103,7 @@ pub fn index_workspace(root: &Path, state: &mut ServerState) {
     for (path, plan) in parsed {
         if let Some(old_roots) = state.file_roots.remove(&path) {
             for root in old_roots {
-                state.graph.destroy(root);
+                state.beans.graph.destroy(root);
             }
         }
         state
@@ -112,8 +112,8 @@ pub fn index_workspace(root: &Path, state: &mut ServerState) {
         if !plan.package.is_empty() {
             state.file_packages.insert(path.clone(), plan.package.clone());
         }
-        let inserted = java::integrate(&mut state.graph, &state.registries, plan);
-        let roots = collect_roots(&state.graph, &inserted);
+        let inserted = java::integrate(&mut state.beans.graph, &state.beans.registries, plan);
+        let roots = collect_roots(&state.beans.graph, &inserted);
         state.file_roots.insert(path, roots);
     }
 }
