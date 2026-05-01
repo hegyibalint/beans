@@ -221,7 +221,7 @@ fn reindex_and_diagnose(
 }
 
 fn diagnostics_for_path(state: &ServerState, path: &Path) -> Vec<Diagnostic> {
-    compute_diagnostics(&state.graph, &state.registries, path)
+    compute_diagnostics(&state.beans.graph, &state.beans.registries, path)
         .into_iter()
         .map(|d| Diagnostic {
             range: Range {
@@ -257,7 +257,7 @@ fn handle_goto_definition(
     let text = document_text(state, uri)?;
     let file = uri.to_file_path().ok()?;
     let id = resolve_at_cursor(state, &file, &text, pos)?;
-    let node = state.graph.get(id)?;
+    let node = state.beans.graph.get(id)?;
     let view = payload_view(&node.payload)?;
     let lsp_loc = view.location.and_then(location_to_lsp)?;
     Some(GotoDefinitionResponse::Scalar(lsp_loc))
@@ -274,7 +274,7 @@ fn handle_references(
     // Mirror prototype `find_references_by_name`: every Java payload
     // whose simple name matches.
     let mut locations = Vec::new();
-    for (_id, node) in state.graph.iter() {
+    for (_id, node) in state.beans.graph.iter() {
         let view = match payload_view(&node.payload) {
             Some(v) => v,
             None => continue,
@@ -296,7 +296,7 @@ fn handle_hover(state: &ServerState, uri: &Url, pos: Position) -> Option<Hover> 
     let text = document_text(state, uri)?;
     let file = uri.to_file_path().ok()?;
     let id = resolve_at_cursor(state, &file, &text, pos)?;
-    let payload = &state.graph.get(id)?.payload;
+    let payload = &state.beans.graph.get(id)?.payload;
     hover::build_hover_text(payload).map(|markdown| Hover {
         contents: HoverContents::Markup(MarkupContent {
             kind: MarkupKind::Markdown,
@@ -311,7 +311,7 @@ fn handle_document_symbol(state: &ServerState, uri: &Url) -> Option<DocumentSymb
     let roots = state.file_roots.get(&file)?.clone();
     let mut result = Vec::new();
     for root in roots {
-        if let Some(node) = state.graph.get(root)
+        if let Some(node) = state.beans.graph.get(root)
             && matches!(node.payload, NodePayload::Jvm(_))
         {
             // JVM projection siblings live alongside their Java
@@ -336,7 +336,7 @@ fn build_document_symbol(
     file: &Path,
     id: beans_core::graph::NodeId,
 ) -> Option<DocumentSymbol> {
-    let node = state.graph.get(id)?;
+    let node = state.beans.graph.get(id)?;
     let view = payload_view(&node.payload)?;
     let range = view
         .location
@@ -357,7 +357,7 @@ fn build_document_symbol(
         .iter()
         .copied()
         .filter_map(|child_id| {
-            let child = state.graph.get(child_id)?;
+            let child = state.beans.graph.get(child_id)?;
             if matches!(child.payload, NodePayload::Jvm(_)) {
                 return None;
             }
@@ -429,15 +429,15 @@ fn resolve_at_cursor(
             &compound,
             imports,
             pkg,
-            &state.registries,
-            &state.graph,
+            &state.beans.registries,
+            &state.beans.graph,
         )
     {
         return Some(id);
     }
 
     let word = word_at_position(text, pos.line, pos.character)?;
-    java::resolve_name(&word, imports, pkg, &state.registries, &state.graph)
+    java::resolve_name(&word, imports, pkg, &state.beans.registries, &state.beans.graph)
 }
 
 fn word_at_position(text: &str, line: u32, character: u32) -> Option<String> {
@@ -700,11 +700,11 @@ public class Dog {
             "Dog",
             &imports,
             &pkg,
-            &state.registries,
-            &state.graph,
+            &state.beans.registries,
+            &state.beans.graph,
         )
         .expect("Dog should resolve in com.example");
-        let dog_node = state.graph.get(dog_id).unwrap();
+        let dog_node = state.beans.graph.get(dog_id).unwrap();
         let dog_view = payload_view(&dog_node.payload).unwrap();
         assert_eq!(dog_view.fqn, "com.example.Dog");
         assert_eq!(dog_view.kind, SymbolKind::Class);
@@ -713,11 +713,11 @@ public class Dog {
             "Dog.getName",
             &imports,
             &pkg,
-            &state.registries,
-            &state.graph,
+            &state.beans.registries,
+            &state.beans.graph,
         )
         .expect("Dog.getName should resolve");
-        let getter_view = payload_view(&state.graph.get(getter_id).unwrap().payload).unwrap();
+        let getter_view = payload_view(&state.beans.graph.get(getter_id).unwrap().payload).unwrap();
         assert_eq!(getter_view.fqn, "com.example.Dog.getName");
         assert_eq!(getter_view.kind, SymbolKind::Method);
     }
@@ -745,11 +745,11 @@ public class Dog {
             "User",
             &imports,
             &pkg,
-            &state.registries,
-            &state.graph,
+            &state.beans.registries,
+            &state.beans.graph,
         )
         .expect("import-resolved User");
-        let view = payload_view(&state.graph.get(user_id).unwrap().payload).unwrap();
+        let view = payload_view(&state.beans.graph.get(user_id).unwrap().payload).unwrap();
         assert_eq!(view.fqn, "com.example.model.User");
     }
 
@@ -762,7 +762,7 @@ public class Dog {
             path,
             "package com.test;\npublic class Foo { public void oldMethod() {} }",
         );
-        assert!(java::lookup_fqn(&state.registries, "com.test.Foo.oldMethod").is_some());
+        assert!(java::lookup_fqn(&state.beans.registries, "com.test.Foo.oldMethod").is_some());
 
         workspace::integrate_source(
             &mut state,
@@ -770,10 +770,10 @@ public class Dog {
             "package com.test;\npublic class Foo { public void newMethod() {} }",
         );
         assert!(
-            java::lookup_fqn(&state.registries, "com.test.Foo.oldMethod").is_none(),
+            java::lookup_fqn(&state.beans.registries, "com.test.Foo.oldMethod").is_none(),
             "old method should be unregistered after reindex"
         );
-        assert!(java::lookup_fqn(&state.registries, "com.test.Foo.newMethod").is_some());
+        assert!(java::lookup_fqn(&state.beans.registries, "com.test.Foo.newMethod").is_some());
     }
 
     #[test]
@@ -844,7 +844,7 @@ public class Dog {
         let roots = state.file_roots.get(path).cloned().unwrap_or_default();
         let mut symbols = Vec::new();
         for root in roots {
-            if let Some(node) = state.graph.get(root)
+            if let Some(node) = state.beans.graph.get(root)
                 && matches!(node.payload, NodePayload::Jvm(_))
             {
                 continue;
