@@ -1,36 +1,46 @@
 //! Cross-layer registry aggregator.
 //!
-//! Per ADR-0012 each registry is its own typed slot; per ADR-0019 each
-//! language module owns its own registries. [`Registries`] is the bag
-//! that bundles every registry visible to a graph instance — JVM-projection
-//! lookups and the per-language registries gated by their feature flags.
-//! Resolution code names the registry it is querying (e.g.
-//! `ctx.jvm.types.query(&key)`); there is no generic
-//! `Registries::query(...)` entry point.
+//! Per ADR-0012 each registry is its own typed slot. [`Registries`] is the
+//! flat bag that bundles every registry visible to a [`crate::Beans`]
+//! instance — JVM-projection lookups and the per-language registries
+//! gated by their feature flags. Resolution code names the registry it
+//! is querying directly (e.g. `beans.registries.jvm_types.query(&key)`);
+//! there is no generic `Registries::query(...)` entry point.
 //!
-//! Cloning a [`Registries`] clones each inner registry; per ADR-0015 each
-//! [`Registry`](crate::registry::Registry) is internally `Rc<RefCell<_>>`,
-//! so the clones share state. This is the intended pattern: every node
-//! that needs to register receives a clone of [`Registries`] and runs
-//! [`Registry::register`](crate::registry::Registry::register) against
-//! the relevant slot.
+//! Per ADR-0019 each language *module* still owns the typed key for its
+//! own-language registry (e.g. [`crate::languages::java::JavaSymbolKey`]).
+//! What flattens here is the bag — there's no `JvmRegistries` /
+//! `JavaRegistries` middle struct any more, just direct named fields.
+//! Adding a new language registry adds one field on `Registries` (gated
+//! by the language's feature) and one variant in the future
+//! `Registration` enum used for cleanup.
+//!
+//! Not [`Clone`]. Per workspace there is exactly one [`Registries`],
+//! owned by [`crate::Beans`]. Code that needs read access threads
+//! `&beans.registries` through the call chain. The internal
+//! [`Registry<K>`](crate::registry::Registry) is `Rc<RefCell<...>>` for
+//! re-entrant subscription support — that sharing is *internal* to a
+//! single registry and doesn't bleed up to the bag.
 
-use crate::jvm::registries::JvmRegistries;
+use crate::jvm::{JvmConstructorKey, JvmFieldKey, JvmMethodKey, JvmTypeKey, PackageKey};
+use crate::registry::Registry;
 
 #[cfg(feature = "java")]
-use crate::languages::java::registries::JavaRegistries;
+use crate::languages::java::JavaSymbolKey;
 
-/// Cross-layer aggregator. Every graph instance owns one of these and
-/// passes it as the `Ctx` for
-/// [`RegistryQuery`](crate::graph::RegistryQuery) implementations
-/// (the trait still lives under `graph` because dynamic-link edges are a
-/// graph concept; only the indexing layer it consults moved out).
-#[derive(Clone, Default)]
+/// Cross-layer aggregator. Every [`crate::Beans`] instance owns one.
+/// Resolution code accesses each typed registry by its named field
+/// directly; per ADR-0012 there is no generic dispatch.
+#[derive(Default)]
 pub struct Registries {
-    pub jvm: JvmRegistries,
+    pub jvm_types: Registry<JvmTypeKey>,
+    pub jvm_methods: Registry<JvmMethodKey>,
+    pub jvm_fields: Registry<JvmFieldKey>,
+    pub jvm_constructors: Registry<JvmConstructorKey>,
+    pub jvm_packages: Registry<PackageKey>,
 
     #[cfg(feature = "java")]
-    pub java: JavaRegistries,
+    pub java_symbols: Registry<JavaSymbolKey>,
 }
 
 impl Registries {

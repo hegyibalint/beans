@@ -91,7 +91,7 @@ impl NodeBehavior for JavaTypeNode {
     type Ctx = Registries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        vec![Box::new(ctx.java.symbols.register(key, id))]
+        vec![Box::new(ctx.java_symbols.register(key, id))]
     }
 }
 
@@ -109,7 +109,7 @@ impl NodeBehavior for JavaMethodNode {
     type Ctx = Registries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        vec![Box::new(ctx.java.symbols.register(key, id))]
+        vec![Box::new(ctx.java_symbols.register(key, id))]
     }
 }
 
@@ -126,7 +126,7 @@ impl NodeBehavior for JavaConstructorNode {
     type Ctx = Registries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        vec![Box::new(ctx.java.symbols.register(key, id))]
+        vec![Box::new(ctx.java_symbols.register(key, id))]
     }
 }
 
@@ -143,7 +143,7 @@ impl NodeBehavior for JavaFieldNode {
     type Ctx = Registries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        vec![Box::new(ctx.java.symbols.register(key, id))]
+        vec![Box::new(ctx.java_symbols.register(key, id))]
     }
 }
 
@@ -158,7 +158,7 @@ impl NodeBehavior for JavaEnumConstantNode {
     type Ctx = Registries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        vec![Box::new(ctx.java.symbols.register(key, id))]
+        vec![Box::new(ctx.java_symbols.register(key, id))]
     }
 }
 
@@ -174,7 +174,7 @@ impl NodeBehavior for JavaAnnotationElementNode {
     type Ctx = Registries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        vec![Box::new(ctx.java.symbols.register(key, id))]
+        vec![Box::new(ctx.java_symbols.register(key, id))]
     }
 }
 
@@ -188,7 +188,7 @@ impl NodeBehavior for JavaPackageNode {
     type Ctx = Registries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        vec![Box::new(ctx.java.symbols.register(key, id))]
+        vec![Box::new(ctx.java_symbols.register(key, id))]
     }
 }
 
