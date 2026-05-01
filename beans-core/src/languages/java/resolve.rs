@@ -154,17 +154,17 @@ pub fn resolve_compound_name(
 /// the Java-side node is the source-level analogue).
 pub fn lookup_fqn(registries: &Registries, fqn: &str) -> Option<NodeId> {
     let java_key = JavaSymbolKey::new(Fqn::new(fqn));
-    if let Some(&id) = registries.java_symbols.query(&java_key).first() {
+    if let Some(&id) = registries.java_symbols.providers(&java_key).first() {
         return Some(id);
     }
 
     let type_key = JvmTypeKey::new(Fqn::new(fqn));
-    if let Some(&id) = registries.jvm_types.query(&type_key).first() {
+    if let Some(&id) = registries.jvm_types.providers(&type_key).first() {
         return Some(id);
     }
 
     let pkg_key = PackageKey::new(Fqn::new(fqn));
-    if let Some(&id) = registries.jvm_packages.query(&pkg_key).first() {
+    if let Some(&id) = registries.jvm_packages.providers(&pkg_key).first() {
         return Some(id);
     }
 
