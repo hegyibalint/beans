@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted (rev 2 — implementation shape clarified)
 
 ## Context
 
@@ -33,39 +33,62 @@ other-language definitions — surfaced in one merged list.
 
 ## Decision
 
-A dynamic link carries an **ordered list of registry queries** plus a
-mode that determines how the queries combine.
+A use-site stores **the question, not the answer**: an ordered list
+of registry queries that resolve to provider `NodeId`s on demand.
+Three layers cover the actual implementation, sized to their callers:
 
-- **`FirstMatch` mode (resolution).** The first query that returns a
-  hit provides the value. Lower-priority queries are not consulted.
-  This is what go-to-definition and type-checking use: a single
-  authoritative target.
+1. **`Queryable<M>` trait + `first_match` / `all_matches` helpers**
+   (`beans-core/src/query.rs`). For *stateless* one-shot queries.
+   `Queryable<M>` is the trait registries implement once per query
+   shape they answer (native key, plus cross-registry models like
+   `ByFqn`). `first_match(model, &[&dyn Queryable<M>])` walks a
+   priority list of registries and returns the first hit;
+   `all_matches` returns the union. No state, no cache, no
+   subscription — every call re-resolves.
 
-- **`MergeAll` mode (completion).** All queries fire and their
-  results union, with a deterministic dedup rule (language-specific
-  results win over generic JVM projections for the same symbol). This
-  is what completion uses: every plausible candidate.
+2. **Closed `RegistryQuery` enum** (`beans-core/src/multi_query.rs`).
+   For *heterogeneous* lists: each variant carries a typed key for one
+   registry. `RegistryQuery::providers(&beans)` and
+   `RegistryQuery::subscribe(&beans, cb)` dispatch through a closed
+   match — adding a new registry adds one variant and the compiler
+   flags every site that needs the new arm.
+
+3. **`MultiQuery`** (`beans-core/src/multi_query.rs`). For *stored,
+   subscription-backed* use-site queries. Holds a `Vec<RegistryQuery>`
+   plus a cache; subscribes to each underlying registry on
+   construction so any provider-set change flips the cache to `Stale`
+   and fires the MultiQuery's own subscribers (consumers reach
+   `MultiQuery::subscribe(cb)` with the same RAII shape as
+   `Registry::subscribe`).
 
 A typical Java-side reference to a method named `process` on a
-`Service` value carries queries like:
+`Service` value, expressed as a `MultiQuery`:
 
-```
-[
-  JavaRegistry("com.example.Service.process"),
-  JvmRegistry("com.example.Service.process"),
-]
+```rust
+let mq = MultiQuery::new(&beans, vec![
+    RegistryQuery::JavaSymbol(JavaSymbolKey::new("com.example.Service.process")),
+    RegistryQuery::JvmMethod(JvmMethodKey::new(owner, "process", erased_params)),
+]);
+let _watch = mq.subscribe(/* on-change callback */);
+// later: mq.query(&beans) -> QueryResult
 ```
 
-If the first query hits (Java-defined method), Kotlin's projection is
+If the first query hits (Java-defined method), the JVM projection is
 ignored. If it misses (Kotlin-defined method), the JVM projection is
-used. The use site is identical in both cases — only the active query
-index differs.
+used. The use site is identical in both cases.
 
-The link tracks subscriptions tiered by query position: the active
-query has a value-watch (fires on value change), higher-priority
-queries have existence-watches (fires if a hit appears that would
-override), lower-priority queries are ignored while a higher one is
-active.
+`MultiQuery::query` returns a [`QueryResult`] tri-state — `None`,
+`One(NodeId)`, or `Many(Vec<NodeId>)` — making cardinality explicit
+at every call site. `providers_all` covers the merge-all (completion)
+combine mode without caching, since completion answers change too
+often for a stale Vec to be useful.
+
+Per-query subscription tiering (value-watch on the active query,
+existence-watch on higher-priority queries that currently miss,
+unobserved lower-priority queries) is a future optimisation. The
+current implementation subscribes to *every* underlying registry and
+invalidates on any change. Coarse but correct; tiering lands when
+profiling shows it's load-bearing.
 
 ## Consequences
 
@@ -76,34 +99,52 @@ active.
   willing to consult, in priority order.
 - The registry layer is dumb. It maps `key → NodeId` and notifies on
   changes. It doesn't know about precedence, fallback, or language
-  pairs. All cross-language policy lives at the link, where the use
-  site knows what it's looking for.
+  pairs. All cross-language policy lives at the use site, where the
+  language is known.
 - Refactors that move a definition between languages just-work. The
-  use site's query list doesn't change; only the active index moves.
-- Adding a new language is local: add the language's registries and
+  use site's query list doesn't change; subscriptions trigger the
+  invalidation; the next read picks the new active answer.
+- Adding a new language is local: add the language's registries (one
+  field on `Registries`), add a `RegistryQuery` enum variant, and
   document which queries make sense at use sites in other languages.
-  No central routing table.
-- Completion gets the same machinery as resolution, just with a
-  different combine mode. We don't have two parallel pipelines.
+  Compiler flags every match site that needs the new arm. No central
+  routing table.
+- Completion gets the same machinery as resolution. The trait + helper
+  combo handles stateless one-shots; `MultiQuery::providers_all` covers
+  cached cross-registry merges.
+- The tri-state `QueryResult` makes cardinality explicit (caller never
+  has to inspect a Vec to ask "did anything match? exactly one
+  thing?"); the zero/one cases never allocate.
 
 **Negative.**
 
-- Each dynamic link is a small object (vector of queries, not a
-  pointer). At the scale of a real project this is millions of
-  links, each maybe a couple of allocations. We need to keep the
-  query objects compact (small string, small enum, small key) and
-  reuse them where possible.
+- Three layers feel like a lot for "do a registry lookup." The
+  layering is sized to caller need: a stateless lookup uses the
+  trait + helpers; a stored cached lookup uses `MultiQuery`. Pick the
+  smaller layer that fits.
+- The closed `RegistryQuery` enum has one variant per registry. When
+  registries proliferate (Kotlin, Scala, Groovy, Clojure each add at
+  least one), the enum + every match block grows in lockstep. This is
+  cohesive-not-extensible (ADR-0001) playing out as expected.
+- Each `MultiQuery` holds N subscription handles (one per consulted
+  registry). At the scale of "millions of use-sites" this is real
+  memory; revisit when profiling shows it. Coarse per-key
+  subscriptions today; tiered subscriptions later.
 - The use site decides the priority order. If a language's parser
-  picks a wrong order, lookups produce surprising answers ("why did
-  this resolve to the Java symbol when there's a Kotlin extension?").
-  This is parser-author responsibility; not a system flaw, but a
-  source of bugs that can be subtle.
-- Subscription tiering is correct but non-trivial: existence watches
-  on inactive higher-priority queries must be maintained and torn
-  down as the active index moves. The implementation must be careful
-  about leaks here.
+  picks a wrong order, lookups produce surprising answers. This is
+  parser-author responsibility; not a system flaw, but a subtle bug
+  source.
 
 ## Alternatives considered
+
+**`DynamicLink` as a single conflated abstraction.** Earlier revs of
+this ADR proposed `DynamicLink<Q>` — a generic struct holding queries,
+mode (FirstMatch/MergeAll), cached active index, and manual
+`invalidate()`. Implemented in step 3 of the migration; trimmed in a
+later commit (see the "Trim DynamicLink to RegistryQuery" commit) when
+review surfaced that it bundled three orthogonal concerns (cardinality,
+heterogeneity, caching) into one type for consumers that didn't yet
+exist. Replaced by the three-layer split above, sized to actual use.
 
 **One registry per source language; no fallback.** Java code only
 queries `JavaRegistry`. Kotlin code only queries `KotlinRegistry`.
@@ -135,5 +176,7 @@ to call the Java registry first or the Kotlin one, ad hoc. Rejected
 because we'd duplicate fallback logic in every rule, and small
 inconsistencies between rules would produce silent semantic drift
 ("why does completion show this but go-to-definition can't find it?").
-The link object centralizes this so rule authors get consistent
-behavior for free.
+Centralising this in `MultiQuery` (or its stateless siblings) means
+rule authors get consistent behavior for free.
+
+[`QueryResult`]: ../../beans-core/src/query.rs
