@@ -35,6 +35,7 @@ pub mod diagnostics;
 pub mod graph;
 pub mod jvm;
 pub mod languages;
+pub mod multi_query;
 pub mod payload;
 pub mod primitives;
 pub mod query;
@@ -55,6 +56,7 @@ pub use jvm::{
 
 pub use beans::Beans;
 pub use diagnostics::{compute_diagnostics, Diagnostic, DiagnosticSeverity};
+pub use multi_query::{MultiQuery, MultiSubscriptionHandle, RegistryQuery};
 pub use payload::NodePayload;
 pub use primitives::Location;
 pub use query::{all_matches, first_match, ByFqn, QueryResult, Queryable};
