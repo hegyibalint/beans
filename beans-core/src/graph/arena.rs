@@ -1,12 +1,15 @@
 //! Graph arena and `NodeData<P>`.
 //!
-//! Per ADR-0007: `NodeId` is a runtime arena index, not a stable external
-//! identity. It is preserved verbatim across snapshot save/load (the entire
-//! arena round-trips); it is *not* meaningful across rebuilds.
+//! Per ADR-0007: `NodeId` is a runtime-only identity. It's an opaque
+//! generational handle the engine mints from arena slots — *not* meaningful
+//! across rebuilds, snapshots, or any operation that doesn't preserve the
+//! arena byte-for-byte.
 //!
 //! Per ADR-0006: hard links are stored as `Vec<NodeId>` on the parent. When
 //! a node is destroyed, the GC walks its hard-link subtree post-order and
-//! frees every descendant.
+//! frees every descendant; each freed slot bumps its generation so any
+//! outstanding `NodeId` pointing at the old occupant gracefully resolves
+//! to `None` rather than silently aliasing a recycled neighbour.
 
 use crate::graph::cache_state::{CacheState, Generation};
 
@@ -25,28 +28,49 @@ use crate::graph::cache_state::{CacheState, Generation};
 /// types in their own module.
 pub trait NodeHandle {}
 
-/// Runtime arena index into a `Graph<P>`. Per ADR-0007 this is an internal
-/// identifier — external APIs speak in registry keys, not `NodeId`. The
-/// inner `u64` is `pub(crate)` so snapshot save/load and intra-crate tests
-/// can construct ids freely; consumers outside `beans-core` use `raw()` to
-/// observe the bits but cannot fabricate them.
+/// Opaque, generational arena handle. Pairs a slot index with the
+/// generation of that slot at the time the id was minted; the slot's
+/// generation bumps every time the slot is freed, so a stale id no
+/// longer matches its slot's current occupant. [`Graph::get`] returns
+/// `None` on a generation mismatch — consumers never observe a "wrong
+/// node at this id" outcome.
+///
+/// `Copy + Eq + Hash`. Stable across registry mutations (the registry
+/// stores `NodeId`s as values, not borrows). Not stable across rebuilds
+/// or snapshot reload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NodeId(pub(crate) u64);
+pub struct NodeId {
+    pub(crate) slot: u32,
+    pub(crate) generation: u32,
+}
 
 impl NodeId {
-    /// Observe the underlying `u64`. Useful for logging and snapshot
-    /// serialization; not a stable identity across rebuilds.
-    pub fn raw(self) -> u64 {
-        self.0
+    /// Construct a `NodeId` for use as a placeholder in tests inside
+    /// `beans-core`. Not exposed to external consumers — they receive
+    /// `NodeId`s only by inserting into a [`Graph`].
+    #[cfg(test)]
+    pub(crate) fn placeholder(slot: u32) -> Self {
+        Self { slot, generation: 0 }
     }
+}
 
-    #[allow(dead_code)] // symmetry with raw(); used by future snapshot loader.
-    pub(crate) fn from_raw(raw: u64) -> Self {
-        NodeId(raw)
-    }
+/// Per-slot arena cell. Tracks the slot's *current* generation alongside
+/// its (possibly absent) data; generation persists across `Some → None →
+/// Some` cycles so reused slots are observably distinct from their
+/// previous occupants.
+struct Slot<P> {
+    /// Bumps every time this slot is freed. A `NodeId` matches this slot
+    /// only when its `generation` field equals this value.
+    generation: u32,
+    data: Option<NodeData<P>>,
+}
 
-    fn slot(self) -> usize {
-        self.0 as usize
+impl<P: std::fmt::Debug> std::fmt::Debug for Slot<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Slot")
+            .field("generation", &self.generation)
+            .field("data", &self.data)
+            .finish()
     }
 }
 
@@ -70,9 +94,9 @@ pub struct NodeData<P> {
     pub payload: P,
     pub parent: Option<NodeId>,
     pub children: Vec<NodeId>,
-    /// RAII handles installed by [`NodeBehavior::on_created`](crate::graph::NodeBehavior::on_created)
-    /// after the node is in the arena. Stored as `Box<dyn NodeHandle>` because
-    /// the engine has no per-key knowledge; each impl drops itself.
+    /// RAII handles installed by `NodeBehavior::on_created` after the node
+    /// is in the arena. Stored as `Box<dyn NodeHandle>` because the engine
+    /// has no per-key knowledge; each impl drops itself.
     pub handles: Vec<Box<dyn NodeHandle>>,
 }
 
@@ -91,13 +115,14 @@ impl<P: std::fmt::Debug> std::fmt::Debug for NodeData<P> {
     }
 }
 
-/// Single-payload graph arena. Owns a flat `Vec<Option<NodeData<P>>>`.
-/// Free slots are tracked in a `Vec<usize>` and reused on the next insert.
+/// Single-payload graph arena. Owns a flat `Vec<Slot<P>>`; free slots are
+/// tracked in a `Vec<usize>` and reused on the next insert with their
+/// generation bumped.
 ///
 /// The engine is generic over `P` so the same machinery serves the JVM
 /// payload union, test payloads, and any future tagged variant.
 pub struct Graph<P> {
-    slots: Vec<Option<NodeData<P>>>,
+    slots: Vec<Slot<P>>,
     free: Vec<usize>,
     current_gen: Generation,
 }
@@ -127,8 +152,8 @@ impl<P> Graph<P> {
         }
     }
 
-    /// Allocate a new slot and store `payload` in it. If `parent` is set,
-    /// the new node is appended to the parent's `children` (a hard link).
+    /// Allocate a slot and store `payload` in it. If `parent` is set, the
+    /// new node is appended to the parent's `children` (a hard link).
     /// Initial state is `Stale` — the value has been *placed* but not yet
     /// validated by a `mark_fresh` call.
     pub fn insert(&mut self, payload: P, parent: Option<NodeId>) -> NodeId {
@@ -140,30 +165,33 @@ impl<P> Graph<P> {
             handles: Vec::new(),
         };
 
-        let slot_index = match self.free.pop() {
+        let (slot_index, generation) = match self.free.pop() {
             Some(idx) => {
-                debug_assert!(self.slots[idx].is_none());
-                self.slots[idx] = Some(data);
-                idx
+                debug_assert!(self.slots[idx].data.is_none());
+                self.slots[idx].data = Some(data);
+                (idx, self.slots[idx].generation)
             }
             None => {
                 let idx = self.slots.len();
-                self.slots.push(Some(data));
-                idx
+                self.slots.push(Slot {
+                    generation: 0,
+                    data: Some(data),
+                });
+                (idx, 0)
             }
         };
 
-        let id = NodeId(slot_index as u64);
+        let id = NodeId {
+            slot: slot_index as u32,
+            generation,
+        };
 
         if let Some(parent_id) = parent {
             // Parent must exist; treating a missing parent as a programmer error.
-            // Index via `get_mut` so an out-of-range parent NodeId surfaces
-            // through the same descriptive expect rather than the slice's
-            // bounds-check message.
-            self.slots
-                .get_mut(parent_id.slot())
-                .and_then(|s| s.as_mut())
-                .expect("insert: parent NodeId references an empty slot")
+            // Index via the same generation-validating get_mut so an out-of-range
+            // or stale parent NodeId surfaces through a descriptive expect.
+            self.get_mut(parent_id)
+                .expect("insert: parent NodeId references an empty or stale slot")
                 .children
                 .push(id);
         }
@@ -171,26 +199,44 @@ impl<P> Graph<P> {
         id
     }
 
+    /// Return the node referenced by `id`, or `None` if the slot is empty
+    /// or the slot's generation doesn't match. The generation check is
+    /// what makes stale ids (held across a destroy) safe to dereference.
     pub fn get(&self, id: NodeId) -> Option<&NodeData<P>> {
-        self.slots.get(id.slot()).and_then(|s| s.as_ref())
+        let slot = self.slots.get(id.slot as usize)?;
+        if slot.generation != id.generation {
+            return None;
+        }
+        slot.data.as_ref()
     }
 
+    /// Mutable variant of [`get`](Self::get) with the same generation
+    /// validation.
     pub fn get_mut(&mut self, id: NodeId) -> Option<&mut NodeData<P>> {
-        self.slots.get_mut(id.slot()).and_then(|s| s.as_mut())
+        let slot = self.slots.get_mut(id.slot as usize)?;
+        if slot.generation != id.generation {
+            return None;
+        }
+        slot.data.as_mut()
     }
 
-    /// True if the slot currently holds a node. False after `destroy`.
+    /// True if the slot currently holds a node and `id`'s generation
+    /// matches the slot's current generation. False after `destroy` *or*
+    /// if the slot has been reused with a fresh generation.
     pub fn contains(&self, id: NodeId) -> bool {
         self.get(id).is_some()
     }
 
-    /// Recursive, post-order destroy: every descendant is freed before the
-    /// node itself. Per ADR-0014 each [`NodeData`]'s [`handles`](NodeData::handles)
-    /// vec drops as the slot is freed, and each handle's `Drop` removes
-    /// its registry entry.
+    /// Recursive, post-order destroy: every descendant is freed before
+    /// the node itself. Per ADR-0014 each [`NodeData`]'s
+    /// [`handles`](NodeData::handles) vec drops as the slot is freed,
+    /// and each handle's `Drop` removes its registry entry. The slot's
+    /// generation bumps on free, so any outstanding `NodeId` pointing
+    /// at this node thereafter resolves to `None`.
     ///
     /// If `id` has a parent, it is also detached from the parent's
-    /// `children` list. Calling `destroy` on a non-existent slot is a no-op.
+    /// `children` list. Calling `destroy` on a non-existent or stale
+    /// slot is a no-op.
     pub fn destroy(&mut self, id: NodeId) {
         if !self.contains(id) {
             return;
@@ -220,12 +266,15 @@ impl<P> Graph<P> {
         }
 
         // Now drop the node itself; its `handles` vec drops here, and
-        // each contained `Box<dyn NodeHandle>` runs its `Drop` impl —
-        // ProviderHandle/SubscriptionHandle remove their registry
-        // entries via the snapshot-and-release pattern (ADR-0015).
-        let slot = id.slot();
-        self.slots[slot] = None;
-        self.free.push(slot);
+        // each contained `Box<dyn NodeHandle>` runs its `Drop` impl.
+        // Bumping the generation invalidates any outstanding `NodeId`
+        // pointing at this slot.
+        let slot_idx = id.slot as usize;
+        if let Some(slot) = self.slots.get_mut(slot_idx) {
+            slot.data = None;
+            slot.generation = slot.generation.wrapping_add(1);
+            self.free.push(slot_idx);
+        }
     }
 
     /// Bump the global generation counter and mark the given node `Stale`.
@@ -266,7 +315,17 @@ impl<P> Graph<P> {
         self.slots
             .iter()
             .enumerate()
-            .filter_map(|(idx, slot)| slot.as_ref().map(|n| (NodeId(idx as u64), n)))
+            .filter_map(|(idx, slot)| {
+                slot.data.as_ref().map(|n| {
+                    (
+                        NodeId {
+                            slot: idx as u32,
+                            generation: slot.generation,
+                        },
+                        n,
+                    )
+                })
+            })
     }
 }
 
@@ -296,7 +355,8 @@ mod tests {
 
         // NodeId stable within session — two reads return the same slot.
         assert_eq!(graph.get(id).unwrap().payload.name, "alpha");
-        assert_eq!(id, NodeId(0));
+        assert_eq!(id.slot, 0);
+        assert_eq!(id.generation, 0);
     }
 
     #[test]
@@ -318,24 +378,31 @@ mod tests {
     }
 
     #[test]
-    fn free_list_reuses_slots() {
+    fn free_list_reuses_slots_with_bumped_generation() {
         let mut graph: Graph<TestNode> = Graph::new();
 
         let a = graph.insert(TestNode::new("a"), None);
         let b = graph.insert(TestNode::new("b"), None);
         let c = graph.insert(TestNode::new("c"), None);
 
-        assert_eq!(a, NodeId(0));
-        assert_eq!(b, NodeId(1));
-        assert_eq!(c, NodeId(2));
+        assert_eq!((a.slot, a.generation), (0, 0));
+        assert_eq!((b.slot, b.generation), (1, 0));
+        assert_eq!((c.slot, c.generation), (2, 0));
 
         graph.destroy(b);
         assert!(!graph.contains(b));
 
-        // The next insert should land in slot 1, the freed one.
+        // Next insert reuses slot 1 — but with a bumped generation, so the
+        // old `b` NodeId no longer matches.
         let d = graph.insert(TestNode::new("d"), None);
-        assert_eq!(d, NodeId(1));
+        assert_eq!(d.slot, 1, "slot recycled");
+        assert_eq!(d.generation, 1, "generation bumped on reuse");
         assert_eq!(graph.get(d).unwrap().payload.name, "d");
+
+        // The old `b` NodeId still has generation 0; the slot is at
+        // generation 1; lookup returns None. This is the ABA fix: stale
+        // ids never silently resolve to their replacement.
+        assert!(graph.get(b).is_none(), "stale NodeId does not alias new occupant");
 
         // Original slots a and c are untouched.
         assert_eq!(graph.get(a).unwrap().payload.name, "a");
@@ -358,6 +425,23 @@ mod tests {
         assert!(graph.contains(parent));
         assert!(!graph.contains(child_a));
         assert_eq!(graph.get(parent).unwrap().children, vec![child_b]);
+    }
+
+    #[test]
+    fn stale_id_does_not_resolve_after_destroy() {
+        // ABA hazard regression test. Holding a NodeId across a destroy +
+        // re-insert at the same slot must not silently resolve to the new
+        // occupant.
+        let mut graph: Graph<TestNode> = Graph::new();
+        let stale = graph.insert(TestNode::new("first"), None);
+
+        graph.destroy(stale);
+        assert!(graph.get(stale).is_none());
+
+        let _replacement = graph.insert(TestNode::new("second"), None);
+        // The replacement landed in the same slot; the stale id has the
+        // old generation; `get` rejects it.
+        assert!(graph.get(stale).is_none(), "stale id must not resolve to replacement");
     }
 
     #[test]
