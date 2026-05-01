@@ -1,5 +1,9 @@
 //! `beans-core` — semantic graph engine, JVM model, and per-language modules.
 //!
+//! The top-level type is [`Beans`] — per workspace, exactly one. It owns
+//! the graph and the registries; consumers (LSP, future CLI, batch
+//! tools) construct one and operate the engine through it.
+//!
 //! Module layout (per ADR-0019 / ADR-0004):
 //!
 //! - [`graph`] — the generic graph engine (nodes, hard links, dynamic-link
@@ -9,7 +13,7 @@
 //!   `NodeId` and the `NodeHandle` marker; graph does not depend on
 //!   registry.
 //! - [`jvm`] — the JVM interop layer. Modifiers, type references, JVM
-//!   payload variants, registries, the typed keys.
+//!   payload variants, the typed keys.
 //! - [`languages`] — per-language modules, gated by Cargo features
 //!   (`java`, `kotlin`, `scala`, `groovy`, `clojure`). Each owns the
 //!   rich model that doesn't reduce to the JVM projection cleanly.
@@ -17,8 +21,10 @@
 //!   [`Location`]).
 //! - [`diagnostics`] — diagnostic value type and the engine plumbing
 //!   that consumers run against the graph.
-//! - [`payload`] / [`registries`] — the cross-layer aggregations
-//!   ([`NodePayload`] union, [`Registries`] bag).
+//! - [`payload`] — the cross-layer [`NodePayload`] union; the
+//!   [`Registries`] bag and the cross-registry query abstractions
+//!   ([`Queryable`], [`first_match`], [`all_matches`], [`MultiQuery`])
+//!   live under [`registry`].
 //! - [`completion`] — neutral completion result types
 //!   ([`CompletionCandidate`], [`CompletionCandidates`]). The
 //!   LSP-shaped item lives in `beans-lsp`; per ADR-0020 the core
@@ -30,16 +36,12 @@
 //! variants (`languages::kotlin::SymbolKind` etc.) are reachable via
 //! their owning module.
 
-pub mod beans;
 pub mod diagnostics;
 pub mod graph;
 pub mod jvm;
 pub mod languages;
-pub mod multi_query;
 pub mod payload;
 pub mod primitives;
-pub mod query;
-pub mod registries;
 pub mod registry;
 
 // Neutral completion result types. Per ADR-0020 the LSP-shaped
@@ -54,12 +56,43 @@ pub use jvm::{
     SymbolKind, TypeParam, TypeRef, WildcardBound,
 };
 
-pub use beans::Beans;
 pub use diagnostics::{compute_diagnostics, Diagnostic, DiagnosticSeverity};
-pub use multi_query::{MultiQuery, MultiSubscriptionHandle, RegistryQuery};
 pub use payload::NodePayload;
 pub use primitives::Location;
-pub use query::{all_matches, first_match, ByFqn, QueryResult, Queryable};
-pub use registries::Registries;
+pub use registry::{
+    all_matches, first_match, ByFqn, MultiQuery, MultiSubscriptionHandle, QueryResult,
+    Queryable, Registries, RegistryQuery,
+};
 
 pub use completion::{CompletionCandidate, CompletionCandidates};
+
+use crate::graph::Graph;
+
+/// The top-level engine instance. Per workspace, exactly one. Owns the
+/// graph + registries and any future engine-wide state. Not Clone;
+/// not constructed casually. Library consumers (LSP, CLI, batch tools)
+/// each own one and operate it through the methods below.
+///
+/// Today the struct is a thin wrapper. Engine-wide state that doesn't
+/// belong to either the graph or any single registry (workspace root,
+/// file → roots map, future generation counter, future snapshot
+/// metadata) lands here as the runtime grows.
+pub struct Beans {
+    pub graph: Graph<NodePayload>,
+    pub registries: Registries,
+}
+
+impl Beans {
+    pub fn new() -> Self {
+        Self {
+            graph: Graph::new(),
+            registries: Registries::new(),
+        }
+    }
+}
+
+impl Default for Beans {
+    fn default() -> Self {
+        Self::new()
+    }
+}

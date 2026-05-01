@@ -32,7 +32,7 @@ use crate::languages::java::syntax::Import;
 use crate::languages::java::types::TypeRef as ParsedTypeRef;
 use crate::payload::NodePayload;
 use crate::primitives::Location;
-use crate::registries::Registries;
+use crate::registry::Registries;
 use crate::{Modifier, TypeParam, TypeRef};
 
 // ---- Public surface ----

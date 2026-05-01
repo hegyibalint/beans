@@ -35,7 +35,7 @@ use crate::jvm::constant::ConstantValue;
 use crate::jvm::record::RecordComponent;
 use crate::jvm::type_ref::{TypeParam, TypeRef};
 use crate::primitives::Location;
-use crate::registries::Registries;
+use crate::registry::Registries;
 
 /// What category of JVM declaration a [`JvmTypeNode`] represents. Records
 /// and annotations have their own variants because their JVM projection

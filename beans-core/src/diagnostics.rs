@@ -17,7 +17,7 @@
 use crate::graph::arena::Graph;
 use crate::payload::NodePayload;
 use crate::primitives::Location;
-use crate::registries::Registries;
+use crate::registry::Registries;
 use std::path::Path;
 
 /// Severity tier of a diagnostic. Mirrors the classic LSP tiering;

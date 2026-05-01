@@ -29,7 +29,7 @@ use crate::jvm::record::RecordComponent;
 use crate::jvm::type_ref::{TypeParam, TypeRef};
 use crate::languages::java::keys::JavaSymbolKey;
 use crate::primitives::Location;
-use crate::registries::Registries;
+use crate::registry::Registries;
 
 /// What category of Java declaration a [`JavaTypeNode`] represents.
 /// Mirrors [`crate::jvm::JvmTypeKind`] one-for-one today; the split
