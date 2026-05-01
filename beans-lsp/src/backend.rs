@@ -10,9 +10,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use beans_core::Registries;
-use beans_core::graph::{Graph, NodeId};
-use beans_core::payload::NodePayload;
+use beans_core::Beans;
+use beans_core::graph::NodeId;
 use beans_core::languages::java::Import;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
@@ -23,11 +22,16 @@ use crate::actor::{Cmd, WorkerHandle, spawn_worker};
 /// Server-wide mutable state. Owned exclusively by the worker thread
 /// per ADR-0018; the LSP backend itself holds only a [`WorkerHandle`]
 /// and the [`Client`]. Per ADR-0014 RAII registration handles live on
-/// each [`beans_core::graph::NodeData`]'s `handles` vec; destroying a
-/// node frees its registry entries through `Drop`.
+/// each `NodeData`'s `handles` vec; destroying a node frees its registry
+/// entries through `Drop`.
+///
+/// `beans` is the engine instance (graph + registries). The other fields
+/// are LSP-specific bookkeeping that doesn't belong on the engine: open-
+/// file text, the per-file root-ids map (workaround for missing
+/// `file://` view nodes), and Java-side import/package state used by
+/// the resolution chain.
 pub struct ServerState {
-    pub graph: Graph<NodePayload>,
-    pub registries: Registries,
+    pub beans: Beans,
     pub file_imports: HashMap<PathBuf, Vec<Import>>,
     pub file_packages: HashMap<PathBuf, String>,
     /// Per-file root NodeIds. Each `did_change` destroys these roots
@@ -40,8 +44,7 @@ pub struct ServerState {
 impl ServerState {
     pub fn new() -> Self {
         Self {
-            graph: Graph::new(),
-            registries: Registries::new(),
+            beans: Beans::new(),
             file_imports: HashMap::new(),
             file_packages: HashMap::new(),
             file_roots: HashMap::new(),
