@@ -36,8 +36,8 @@ impl RegistryQuery for TypeQuery {
     type Ctx = Registries;
     fn resolve(&self, ctx: &Self::Ctx) -> Vec<NodeId> {
         match self {
-            TypeQuery::Java(k) => ctx.java_symbols.query(k),
-            TypeQuery::Jvm(k) => ctx.jvm_types.query(k),
+            TypeQuery::Java(k) => ctx.java_symbols.providers(k),
+            TypeQuery::Jvm(k) => ctx.jvm_types.providers(k),
         }
     }
 }
@@ -53,9 +53,9 @@ impl RegistryQuery for MemberQuery {
     type Ctx = Registries;
     fn resolve(&self, ctx: &Self::Ctx) -> Vec<NodeId> {
         match self {
-            MemberQuery::Java(k) => ctx.java_symbols.query(k),
-            MemberQuery::JvmMethod(k) => ctx.jvm_methods.query(k),
-            MemberQuery::JvmField(k) => ctx.jvm_fields.query(k),
+            MemberQuery::Java(k) => ctx.java_symbols.providers(k),
+            MemberQuery::JvmMethod(k) => ctx.jvm_methods.providers(k),
+            MemberQuery::JvmField(k) => ctx.jvm_fields.providers(k),
         }
     }
 }
@@ -217,8 +217,8 @@ fn method_overload_keys_distinguish_by_param_types() {
     let _hi = registries.jvm_methods.register(int_key.clone(), int_id);
     let _hs = registries.jvm_methods.register(str_key.clone(), str_id);
 
-    assert_eq!(registries.jvm_methods.query(&int_key), vec![int_id]);
-    assert_eq!(registries.jvm_methods.query(&str_key), vec![str_id]);
+    assert_eq!(registries.jvm_methods.providers(&int_key), vec![int_id]);
+    assert_eq!(registries.jvm_methods.providers(&str_key), vec![str_id]);
 }
 
 #[test]
@@ -294,11 +294,11 @@ fn package_registry_isolated_from_type_registry() {
     // No type with the dotted-FQN "com.example" — there shouldn't be one
     // (it's a package, not a type), and the type registry must reflect
     // that.
-    assert_eq!(registries.jvm_packages.query(&PackageKey::new("com.example")), vec![pkg_id]);
+    assert_eq!(registries.jvm_packages.providers(&PackageKey::new("com.example")), vec![pkg_id]);
     assert!(
         registries
             .jvm_types
-            .query(&JvmTypeKey::new("com.example"))
+            .providers(&JvmTypeKey::new("com.example"))
             .is_empty()
     );
 }
