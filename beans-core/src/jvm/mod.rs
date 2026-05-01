@@ -18,7 +18,6 @@ pub mod keys;
 pub mod modifier;
 pub mod payload;
 pub mod record;
-pub mod registries;
 pub mod symbol_kind;
 pub mod type_ref;
 
@@ -33,6 +32,5 @@ pub use payload::{
     JvmParameter, JvmTypeKind, JvmTypeNode, NullabilityInfo,
 };
 pub use record::RecordComponent;
-pub use registries::JvmRegistries;
 pub use symbol_kind::SymbolKind;
 pub use type_ref::{PrimitiveKind, TypeParam, TypeRef, WildcardBound};

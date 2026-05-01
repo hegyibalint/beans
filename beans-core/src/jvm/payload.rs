@@ -127,7 +127,7 @@ impl NodeBehavior for JvmTypeNode {
     type Ctx = Registries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JvmTypeKey::new(self.header.fqn.clone());
-        vec![Box::new(ctx.jvm.types.register(key, id))]
+        vec![Box::new(ctx.jvm_types.register(key, id))]
     }
 }
 
@@ -173,7 +173,7 @@ impl JvmMethodNode {
 impl NodeBehavior for JvmMethodNode {
     type Ctx = Registries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
-        vec![Box::new(ctx.jvm.methods.register(self.key(), id))]
+        vec![Box::new(ctx.jvm_methods.register(self.key(), id))]
     }
 }
 
@@ -209,7 +209,7 @@ impl JvmConstructorNode {
 impl NodeBehavior for JvmConstructorNode {
     type Ctx = Registries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
-        vec![Box::new(ctx.jvm.constructors.register(self.key(), id))]
+        vec![Box::new(ctx.jvm_constructors.register(self.key(), id))]
     }
 }
 
@@ -234,7 +234,7 @@ impl JvmFieldNode {
 impl NodeBehavior for JvmFieldNode {
     type Ctx = Registries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
-        vec![Box::new(ctx.jvm.fields.register(self.key(), id))]
+        vec![Box::new(ctx.jvm_fields.register(self.key(), id))]
     }
 }
 
@@ -261,7 +261,7 @@ impl JvmEnumConstantNode {
 impl NodeBehavior for JvmEnumConstantNode {
     type Ctx = Registries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
-        vec![Box::new(ctx.jvm.fields.register(self.key(), id))]
+        vec![Box::new(ctx.jvm_fields.register(self.key(), id))]
     }
 }
 
@@ -286,7 +286,7 @@ impl JvmAnnotationElementNode {
 impl NodeBehavior for JvmAnnotationElementNode {
     type Ctx = Registries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
-        vec![Box::new(ctx.jvm.methods.register(self.key(), id))]
+        vec![Box::new(ctx.jvm_methods.register(self.key(), id))]
     }
 }
 
@@ -307,7 +307,7 @@ impl JvmPackageNode {
 impl NodeBehavior for JvmPackageNode {
     type Ctx = Registries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
-        vec![Box::new(ctx.jvm.packages.register(self.key(), id))]
+        vec![Box::new(ctx.jvm_packages.register(self.key(), id))]
     }
 }
 
