@@ -36,8 +36,8 @@ impl RegistryQuery for TypeQuery {
     type Ctx = Registries;
     fn resolve(&self, ctx: &Self::Ctx) -> Vec<NodeId> {
         match self {
-            TypeQuery::Java(k) => ctx.java.symbols.query(k),
-            TypeQuery::Jvm(k) => ctx.jvm.types.query(k),
+            TypeQuery::Java(k) => ctx.java_symbols.query(k),
+            TypeQuery::Jvm(k) => ctx.jvm_types.query(k),
         }
     }
 }
@@ -53,9 +53,9 @@ impl RegistryQuery for MemberQuery {
     type Ctx = Registries;
     fn resolve(&self, ctx: &Self::Ctx) -> Vec<NodeId> {
         match self {
-            MemberQuery::Java(k) => ctx.java.symbols.query(k),
-            MemberQuery::JvmMethod(k) => ctx.jvm.methods.query(k),
-            MemberQuery::JvmField(k) => ctx.jvm.fields.query(k),
+            MemberQuery::Java(k) => ctx.java_symbols.query(k),
+            MemberQuery::JvmMethod(k) => ctx.jvm_methods.query(k),
+            MemberQuery::JvmField(k) => ctx.jvm_fields.query(k),
         }
     }
 }
@@ -126,8 +126,7 @@ fn java_type_resolves_through_java_registry_first() {
 
     let java_id = graph.insert(java_class("Service", "com.example.Service"), None);
     let _java_h = registries
-        .java
-        .symbols
+        .java_symbols
         .register(JavaSymbolKey::new("com.example.Service"), java_id);
 
     let jvm_id = graph.insert(
@@ -135,8 +134,7 @@ fn java_type_resolves_through_java_registry_first() {
         Some(java_id), // hard-linked projection child of Java node.
     );
     let _jvm_h = registries
-        .jvm
-        .types
+        .jvm_types
         .register(JvmTypeKey::new("com.example.Service"), jvm_id);
 
     let queries = [
@@ -162,8 +160,7 @@ fn falls_through_to_jvm_when_no_java_provider_exists() {
         None,
     );
     let _jvm_h = registries
-        .jvm
-        .types
+        .jvm_types
         .register(JvmTypeKey::new("com.example.Service"), jvm_id);
 
     let queries = [
@@ -217,11 +214,11 @@ fn method_overload_keys_distinguish_by_param_types() {
         vec![TypeRef::simple("java.lang.String")],
     );
 
-    let _hi = registries.jvm.methods.register(int_key.clone(), int_id);
-    let _hs = registries.jvm.methods.register(str_key.clone(), str_id);
+    let _hi = registries.jvm_methods.register(int_key.clone(), int_id);
+    let _hs = registries.jvm_methods.register(str_key.clone(), str_id);
 
-    assert_eq!(registries.jvm.methods.query(&int_key), vec![int_id]);
-    assert_eq!(registries.jvm.methods.query(&str_key), vec![str_id]);
+    assert_eq!(registries.jvm_methods.query(&int_key), vec![int_id]);
+    assert_eq!(registries.jvm_methods.query(&str_key), vec![str_id]);
 }
 
 #[test]
@@ -239,15 +236,14 @@ fn merge_all_unions_java_and_jvm_completions_in_priority_order() {
         None,
     );
     let _java_h = registries
-        .java
-        .symbols
+        .java_symbols
         .register(JavaSymbolKey::new("com.example.Service.process"), java_id);
 
     let jvm_method_id = graph.insert(
         jvm_method("process", "com.example.Service.process", owner, TypeRef::Void),
         Some(java_id),
     );
-    let _jvm_h = registries.jvm.methods.register(
+    let _jvm_h = registries.jvm_methods.register(
         JvmMethodKey::new(owner, "process", vec![]),
         jvm_method_id,
     );
@@ -262,8 +258,7 @@ fn merge_all_unions_java_and_jvm_completions_in_priority_order() {
         None,
     );
     let _field_h = registries
-        .jvm
-        .fields
+        .jvm_fields
         .register(JvmFieldKey::new(owner, "name"), field_id);
 
     let queries = [
@@ -293,18 +288,16 @@ fn package_registry_isolated_from_type_registry() {
         }));
     let pkg_id = graph.insert(pkg_payload, None);
     let _hp = registries
-        .jvm
-        .packages
+        .jvm_packages
         .register(PackageKey::new("com.example"), pkg_id);
 
     // No type with the dotted-FQN "com.example" — there shouldn't be one
     // (it's a package, not a type), and the type registry must reflect
     // that.
-    assert_eq!(registries.jvm.packages.query(&PackageKey::new("com.example")), vec![pkg_id]);
+    assert_eq!(registries.jvm_packages.query(&PackageKey::new("com.example")), vec![pkg_id]);
     assert!(
         registries
-            .jvm
-            .types
+            .jvm_types
             .query(&JvmTypeKey::new("com.example"))
             .is_empty()
     );
@@ -373,12 +366,10 @@ fn merge_all_returns_duplicates_when_same_node_hits_multiple_queries() {
         None,
     );
     let _hj = registries
-        .java
-        .symbols
+        .java_symbols
         .register(JavaSymbolKey::new("com.example.Shared"), id);
     let _ht = registries
-        .jvm
-        .types
+        .jvm_types
         .register(JvmTypeKey::new("com.example.Shared"), id);
 
     let queries = [

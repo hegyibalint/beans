@@ -5,8 +5,8 @@
 //! projection, so this module is mostly a thin Java-specific overlay on
 //! top of [`crate::jvm`]:
 //!
-//! - [`keys`] / [`registries`] — the single Java-side key (`JavaSymbolKey`)
-//!   and registry (`JavaRegistries`).
+//! - [`keys`] — the single Java-side key (`JavaSymbolKey`); the registry
+//!   itself lives directly on [`crate::Registries`] as `java_symbols`.
 //! - [`payload`] — the typed `JavaNodePayload` variants.
 //! - [`parser`] — the tree-sitter walker; per ADR-0021 the walker
 //!   structure is preserved verbatim while the layers above it are
@@ -23,7 +23,6 @@
 pub mod keys;
 pub mod parser;
 pub mod payload;
-pub mod registries;
 pub mod resolve;
 pub mod syntax;
 pub mod types;
@@ -35,6 +34,5 @@ pub use payload::{
     JavaFieldNode, JavaMethodNode, JavaNodePayload, JavaPackageNode, JavaParameter,
     JavaTypeKind, JavaTypeNode,
 };
-pub use registries::JavaRegistries;
 pub use resolve::{lookup_fqn, resolve_compound_name, resolve_name, resolve_simple_name};
 pub use syntax::{extract_imports, extract_package, word_at_position, Import};

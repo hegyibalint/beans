@@ -81,15 +81,13 @@ impl Env {
 
     fn types_at(&self, fqn: &str) -> Vec<NodeId> {
         self.registries
-            .jvm
-            .types
+            .jvm_types
             .query(&JvmTypeKey::new(Fqn::new(fqn)))
     }
 
     fn methods_at(&self, owner: &str, name: &str, params: Vec<TypeRef>) -> Vec<NodeId> {
         self.registries
-            .jvm
-            .methods
+            .jvm_methods
             .query(&JvmMethodKey::new(Fqn::new(owner), name, params))
     }
 }
@@ -284,7 +282,7 @@ fn registering_a_provider_fires_existing_subscribers() {
     let key = JvmTypeKey::new(Fqn::new("com.example.Service"));
     let counter = Rc::new(Cell::new(0u32));
     let cb_counter = counter.clone();
-    let _sub = env.registries.jvm.types.subscribe(
+    let _sub = env.registries.jvm_types.subscribe(
         key,
         Rc::new(move || cb_counter.set(cb_counter.get() + 1)),
     );
@@ -314,7 +312,7 @@ fn dropping_a_provider_fires_existing_subscribers() {
     let key = JvmTypeKey::new(Fqn::new("com.example.Service"));
     let counter = Rc::new(Cell::new(0u32));
     let cb_counter = counter.clone();
-    let _sub = env.registries.jvm.types.subscribe(
+    let _sub = env.registries.jvm_types.subscribe(
         key,
         Rc::new(move || cb_counter.set(cb_counter.get() + 1)),
     );
