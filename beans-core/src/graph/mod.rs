@@ -1,12 +1,9 @@
 //! Graph engine skeleton.
 //!
 //! Graph is structurally pure: nodes (arena) + hard links (containment
-//! tree) + cache state + behavior trait. It owns no indexing or
-//! notification machinery — that lives in [`crate::registry`] and is
-//! wired in via the [`NodeHandle`] marker trait. Cross-file lookup
-//! lives in [`crate::query`] (the [`Queryable`](crate::Queryable)
-//! trait + [`first_match`](crate::first_match) helpers) and
-//! [`crate::multi_query`] (subscription-backed cached queries).
+//! tree) + cache state + behavior trait. It owns no indexing,
+//! notification, or query machinery — that lives in [`crate::registry`]
+//! and is wired in via the [`NodeHandle`] marker trait.
 //!
 //! - `arena`: [`Graph<P>`], [`NodeData<P>`], [`NodeId`], the [`NodeHandle`]
 //!   marker. Flat arena with free-list slot reuse and recursive hard-link
