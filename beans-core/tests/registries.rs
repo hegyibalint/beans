@@ -2,28 +2,24 @@
 //!
 //! Build node payloads by hand (no parser), register them with the
 //! typed-key registries (ADR-0012 / ADR-0013), and prove the cross-
-//! language Java → JVM fallback shape ADR-0008 describes. Two flavours
-//! of cross-registry consumption are exercised:
+//! language Java → JVM fallback shape ADR-0008 describes works through
+//! [`FallbackSubscription`] — the concrete two-key watch with primary-
+//! then-fallback resolve semantics.
 //!
-//! - [`first_match`] / [`all_matches`] over `&[&dyn Queryable<M>]` for
-//!   stateless one-shot queries (this file's `TypeQuery`-shaped tests).
-//! - [`MultiQuery`] for stored, subscription-backed queries (the
-//!   merge-all completion case here is a one-shot use of the
-//!   underlying [`RegistryQuery`] enum; MultiQuery's own tests live in
-//!   `beans-core/src/multi_query.rs`).
+//! Multi-registry merge-all (the completion-style "show every match
+//! across N registries") is not exercised here; that pattern materializes
+//! as a separate concrete composition (e.g., a future `CompletionLookup`)
+//! when a real consumer needs it.
 
-use beans_core::graph::{Graph, NodeId};
+use beans_core::graph::Graph;
 use beans_core::jvm::{
-    Fqn, JvmDeclHeader, JvmEnrichments, JvmFieldKey, JvmFieldNode, JvmMethodKey, JvmMethodNode,
-    JvmNodePayload, JvmParameter, JvmTypeKey, JvmTypeKind, JvmTypeNode, NullabilityInfo,
-    PackageKey, TypeRef,
+    Fqn, JvmDeclHeader, JvmEnrichments, JvmMethodKey, JvmMethodNode, JvmNodePayload, JvmParameter,
+    JvmTypeKey, JvmTypeKind, JvmTypeNode, NullabilityInfo, PackageKey, TypeRef,
 };
 use beans_core::languages::java::{
-    JavaDeclHeader, JavaMethodNode, JavaNodePayload, JavaSymbolKey, JavaTypeKind, JavaTypeNode,
+    JavaDeclHeader, JavaNodePayload, JavaSymbolKey, JavaTypeKind, JavaTypeNode,
 };
-use beans_core::{
-    all_matches, first_match, ByFqn, NodePayload, Registries, RegistryQuery,
-};
+use beans_core::{FallbackSubscription, NodePayload, QueryResult, Registries};
 
 // --- Payload helpers ---
 
@@ -33,16 +29,6 @@ fn java_class(name: &str, fqn: &str) -> NodePayload {
         kind: JavaTypeKind::Class,
         type_parameters: vec![],
         record_components: vec![],
-    }))
-}
-
-fn java_method(name: &str, fqn: &str) -> NodePayload {
-    NodePayload::Java(JavaNodePayload::Method(JavaMethodNode {
-        header: JavaDeclHeader::new(name, fqn),
-        return_type: TypeRef::Void,
-        parameters: vec![],
-        type_parameters: vec![],
-        throws: vec![],
     }))
 }
 
@@ -68,24 +54,12 @@ fn jvm_method(name: &str, fqn: &str, owner: &str, return_type: TypeRef) -> NodeP
     }))
 }
 
-fn jvm_field(name: &str, fqn: &str, owner: &str, field_type: TypeRef) -> NodePayload {
-    NodePayload::Jvm(JvmNodePayload::Field(JvmFieldNode {
-        header: JvmDeclHeader::new(name, fqn),
-        owner: owner.into(),
-        field_type,
-        constant_value: None,
-        initialized: false,
-        enrichments: JvmEnrichments::default(),
-    }))
-}
-
 // --- Tests ---
 
 #[test]
 fn java_type_resolves_through_java_registry_first() {
     // Java side has the type; the JVM projection has it too. The
-    // priority-ordered first_match across [java_symbols, jvm_types]
-    // picks the Java node.
+    // FallbackSubscription's primary (Java) wins.
     let mut graph: Graph<NodePayload> = Graph::new();
     let registries = Registries::new();
 
@@ -102,18 +76,21 @@ fn java_type_resolves_through_java_registry_first() {
         .jvm_types
         .register(JvmTypeKey::new("com.example.Service"), jvm_id);
 
-    let resolved = first_match::<ByFqn>(
-        &ByFqn(Fqn::new("com.example.Service")),
-        &[&registries.java_symbols, &registries.jvm_types],
+    let fb: FallbackSubscription<JavaSymbolKey, JvmTypeKey> = FallbackSubscription::new(
+        &registries.java_symbols,
+        JavaSymbolKey::new("com.example.Service"),
+        &registries.jvm_types,
+        JvmTypeKey::new("com.example.Service"),
     );
-    assert_eq!(resolved, Some(java_id));
+
+    assert_eq!(fb.resolve().first(), Some(java_id));
 }
 
 #[test]
 fn falls_through_to_jvm_when_no_java_provider_exists() {
     // Cross-language case: the type is defined in Kotlin (modelled here
     // as "no Java provider, only a JVM projection"). The Java-side
-    // query misses; first_match falls through to the JVM query.
+    // primary misses; the FallbackSubscription falls through to JVM.
     let mut graph: Graph<NodePayload> = Graph::new();
     let registries = Registries::new();
 
@@ -125,22 +102,56 @@ fn falls_through_to_jvm_when_no_java_provider_exists() {
         .jvm_types
         .register(JvmTypeKey::new("com.example.Service"), jvm_id);
 
-    let resolved = first_match::<ByFqn>(
-        &ByFqn(Fqn::new("com.example.Service")),
-        &[&registries.java_symbols, &registries.jvm_types],
+    let fb: FallbackSubscription<JavaSymbolKey, JvmTypeKey> = FallbackSubscription::new(
+        &registries.java_symbols,
+        JavaSymbolKey::new("com.example.Service"),
+        &registries.jvm_types,
+        JvmTypeKey::new("com.example.Service"),
     );
-    assert_eq!(resolved, Some(jvm_id));
+
+    assert_eq!(fb.resolve().first(), Some(jvm_id));
 }
 
 #[test]
 fn unresolved_when_neither_registry_has_provider() {
     let registries = Registries::new();
 
-    let resolved = first_match::<ByFqn>(
-        &ByFqn(Fqn::new("missing.Type")),
-        &[&registries.java_symbols, &registries.jvm_types],
+    let fb: FallbackSubscription<JavaSymbolKey, JvmTypeKey> = FallbackSubscription::new(
+        &registries.java_symbols,
+        JavaSymbolKey::new("missing.Type"),
+        &registries.jvm_types,
+        JvmTypeKey::new("missing.Type"),
     );
-    assert_eq!(resolved, None);
+
+    assert!(matches!(fb.resolve(), QueryResult::None));
+}
+
+#[test]
+fn fallback_observes_jvm_projection_arriving_after_construction() {
+    // Tier-2 contract via FallbackSubscription: the cache invalidates
+    // when *either* underlying registry's provider set changes, and the
+    // fallback path picks up the new state on next resolve. No manual
+    // invalidate.
+    let registries = Registries::new();
+
+    let fb: FallbackSubscription<JavaSymbolKey, JvmTypeKey> = FallbackSubscription::new(
+        &registries.java_symbols,
+        JavaSymbolKey::new("com.example.Late"),
+        &registries.jvm_types,
+        JvmTypeKey::new("com.example.Late"),
+    );
+    assert!(fb.resolve().is_empty());
+
+    let mut graph: Graph<NodePayload> = Graph::new();
+    let late_id = graph.insert(
+        jvm_type("Late", "com.example.Late", JvmTypeKind::Class),
+        None,
+    );
+    let _h = registries
+        .jvm_types
+        .register(JvmTypeKey::new("com.example.Late"), late_id);
+
+    assert_eq!(fb.resolve().first(), Some(late_id));
 }
 
 #[test]
@@ -177,58 +188,6 @@ fn method_overload_keys_distinguish_by_param_types() {
 
     assert_eq!(registries.jvm_methods.providers(&int_key), vec![int_id]);
     assert_eq!(registries.jvm_methods.providers(&str_key), vec![str_id]);
-}
-
-#[test]
-fn merge_all_unions_java_and_jvm_completions_in_priority_order() {
-    // Completion at `service.<cur>` wants every plausible candidate:
-    // Java methods, JVM-projected methods, JVM-projected fields. These
-    // hit different registries with different key types, so the
-    // closed-enum `RegistryQuery` is the right shape — each variant
-    // carries its typed key.
-    use beans_core::Beans;
-
-    let mut beans = Beans::new();
-    let owner = "com.example.Service";
-
-    let java_id = beans
-        .graph
-        .insert(java_method("process", "com.example.Service.process"), None);
-    let _java_h = beans
-        .registries
-        .java_symbols
-        .register(JavaSymbolKey::new("com.example.Service.process"), java_id);
-
-    let jvm_method_id = beans.graph.insert(
-        jvm_method("process", "com.example.Service.process", owner, TypeRef::Void),
-        Some(java_id),
-    );
-    let _jvm_h = beans.registries.jvm_methods.register(
-        JvmMethodKey::new(owner, "process", vec![]),
-        jvm_method_id,
-    );
-
-    let field_id = beans.graph.insert(
-        jvm_field(
-            "name",
-            "com.example.Service.name",
-            owner,
-            TypeRef::simple("java.lang.String"),
-        ),
-        None,
-    );
-    let _field_h = beans
-        .registries
-        .jvm_fields
-        .register(JvmFieldKey::new(owner, "name"), field_id);
-
-    let queries = [
-        RegistryQuery::JavaSymbol(JavaSymbolKey::new("com.example.Service.process")),
-        RegistryQuery::JvmMethod(JvmMethodKey::new(owner, "process", vec![])),
-        RegistryQuery::JvmField(JvmFieldKey::new(owner, "name")),
-    ];
-    let results: Vec<NodeId> = queries.iter().flat_map(|q| q.providers(&beans)).collect();
-    assert_eq!(results, vec![java_id, jvm_method_id, field_id]);
 }
 
 #[test]
@@ -297,27 +256,31 @@ fn fqn_round_trips_through_keys() {
 }
 
 #[test]
-fn all_matches_returns_duplicates_when_same_node_hits_multiple_queries() {
-    // Per ADR-0008 the MergeAll combine mode does NOT dedup. If the same
-    // NodeId is registered under two queries — e.g. a node that provides
-    // both a Java-side key and its JVM projection key — `all_matches`
-    // returns it once per hit, in priority order. The consumer collapses
-    // duplicates with knowledge of which language wins (ADR-0013: the
-    // registry layer is dumb).
+fn registry_returns_all_providers_for_a_key() {
+    // ADR-0013: a registry stores *all* providers; a key with two
+    // registrations returns both via `providers`. (Registry::providers
+    // is the raw form; QueryResult::Many would model the same fact
+    // via Registry::query.)
     let mut graph: Graph<NodePayload> = Graph::new();
     let registries = Registries::new();
 
-    let id = graph.insert(java_class("Shared", "com.example.Shared"), None);
-    let _hj = registries
-        .java_symbols
-        .register(JavaSymbolKey::new("com.example.Shared"), id);
-    let _ht = registries
-        .jvm_types
-        .register(JvmTypeKey::new("com.example.Shared"), id);
-
-    let merged = all_matches::<ByFqn>(
-        &ByFqn(Fqn::new("com.example.Shared")),
-        &[&registries.java_symbols, &registries.jvm_types],
+    let id1 = graph.insert(
+        java_class("Shared", "com.example.Shared"),
+        None,
     );
-    assert_eq!(merged, vec![id, id]);
+    let id2 = graph.insert(
+        java_class("Shared", "com.example.Shared"),
+        None,
+    );
+    let _h1 = registries
+        .java_symbols
+        .register(JavaSymbolKey::new("com.example.Shared"), id1);
+    let _h2 = registries
+        .java_symbols
+        .register(JavaSymbolKey::new("com.example.Shared"), id2);
+
+    let providers = registries
+        .java_symbols
+        .providers(&JavaSymbolKey::new("com.example.Shared"));
+    assert_eq!(providers, vec![id1, id2]);
 }
