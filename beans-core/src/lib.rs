@@ -22,8 +22,8 @@
 //! - [`diagnostics`] — diagnostic value type and the engine plumbing
 //!   that consumers run against the graph.
 //! - [`payload`] — the cross-layer [`NodePayload`] union; the
-//!   [`Registries`] bag and the cross-registry query abstractions
-//!   ([`Queryable`], [`first_match`], [`all_matches`], [`MultiQuery`])
+//!   [`Registries`] bag and the query types ([`Query`],
+//!   [`Subscription`], [`FallbackSubscription`], [`QueryResult`])
 //!   live under [`registry`].
 //! - [`completion`] — neutral completion result types
 //!   ([`CompletionCandidate`], [`CompletionCandidates`]). The
@@ -60,8 +60,7 @@ pub use diagnostics::{compute_diagnostics, Diagnostic, DiagnosticSeverity};
 pub use payload::NodePayload;
 pub use primitives::Location;
 pub use registry::{
-    all_matches, first_match, ByFqn, MultiQuery, MultiSubscriptionHandle, QueryResult,
-    Queryable, Registries, RegistryQuery,
+    FallbackSubscription, Query, QueryResult, Registries, Subscription, Watch,
 };
 
 pub use completion::{CompletionCandidate, CompletionCandidates};
