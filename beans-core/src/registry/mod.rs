@@ -1,5 +1,5 @@
 //! The registry layer — typed-key indices over graph nodes, plus the
-//! cross-registry query abstractions that compose them.
+//! query types that compose them.
 //!
 //! This is one of the engine's two pillars (the other is [`graph`]).
 //! Graph owns nodes; registries index them. The two are orthogonal:
@@ -10,20 +10,28 @@
 //!
 //! - This file ([`mod.rs`]) carries the [`Registries`] bag (one per
 //!   [`crate::Beans`] instance, flat per-registry fields, not [`Clone`])
-//!   and the [`Registry<K>`] primitive itself plus its RAII handles
-//!   ([`ProviderHandle`], [`SubscriptionHandle`], [`Callback`],
-//!   [`SubscriptionId`]). Per ADR-0013 a registry stores *all*
-//!   providers for a key; per ADR-0014 RAII handles tie registration
-//!   lifetime to node lifetime; per ADR-0015 the inner state is
-//!   `Rc<RefCell<...>>` for re-entrant subscription support, with the
-//!   snapshot-and-release pattern for callback safety. Per ADR-0008
-//!   `register` and the provider drop path auto-fire subscribers — no
-//!   manual `notify` required for normal mutations.
-//! - [`query`] holds the cross-registry abstractions: the
-//!   [`Queryable<M>`] trait, the [`QueryResult`] tri-state, the
-//!   stateless [`first_match`] / [`all_matches`] helpers, and the
-//!   stored [`MultiQuery`] (subscription-backed cached lookup over a
-//!   heterogeneous list of [`RegistryQuery`] variants).
+//!   and the [`Registry<K>`] primitive itself plus its provider RAII
+//!   handle ([`ProviderHandle`], [`Callback`], [`SubscriptionId`]). Per
+//!   ADR-0013 a registry stores *all* providers for a key; per ADR-0014
+//!   RAII handles tie registration lifetime to node lifetime; per
+//!   ADR-0015 the inner state is `Rc<RefCell<...>>` for re-entrant
+//!   subscription support, with the snapshot-and-release pattern for
+//!   callback safety. Per ADR-0008 `register` and the provider drop
+//!   path auto-fire subscribers — no manual `notify` required for
+//!   normal mutations.
+//! - [`query`] holds the query types: [`QueryResult`] tri-state,
+//!   [`Query<K>`] (stateless one-shot), [`Subscription<K>`] (active
+//!   single-key watch — the RAII subscription, replacing the old
+//!   `SubscriptionHandle<K>`), [`FallbackSubscription<P, F>`] (the
+//!   cross-language two-key watch with primary-then-fallback resolve
+//!   semantics), and [`Watch`] (the consumer-side handle returned by
+//!   `FallbackSubscription::subscribe`).
+//!
+//! Subscriptions are constructed exclusively through
+//! [`Registry::query(key).subscribe(cb)`] — the registry's underlying
+//! `subscribe`/`remove_subscription` machinery is `pub(crate)`. This
+//! keeps the public surface narrow: `Registry<K>::query` is the entry
+//! point; everything else composes from there.
 //!
 //! Re-entrancy contract for subscription callbacks: callbacks may
 //! freely *query* the registry that fired them (snapshot-and-release
@@ -50,10 +58,7 @@ use crate::languages::java::JavaSymbolKey;
 
 pub mod query;
 
-pub use query::{
-    all_matches, first_match, ByFqn, MultiQuery, MultiSubscriptionHandle, Queryable, QueryResult,
-    RegistryQuery,
-};
+pub use query::{FallbackSubscription, Query, QueryResult, Subscription, Watch};
 
 // =========================================================================
 // Registries — the bag
@@ -89,8 +94,8 @@ impl Registries {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SubscriptionId(u64);
 
-/// Subscriber callback. `Rc<dyn Fn()>` so the registry can clone the list
-/// out under a borrow and release the borrow before invoking — see
+/// Subscriber callback. `Rc<dyn Fn()>` so the registry can clone the
+/// list out under a borrow and release the borrow before invoking — see
 /// [`Registry::notify`].
 pub type Callback = Rc<dyn Fn()>;
 
@@ -164,15 +169,16 @@ impl<K: Eq + Hash> RegistryInner<K> {
 }
 
 /// Multi-provider registry. Owns its inner state via `Rc<RefCell<_>>` so
-/// handles can carry a `Weak` back-reference and the registry can be torn
-/// down independently of outstanding handles.
+/// the registry's storage can be shared cheaply between the registry
+/// itself, the [`Query`]/[`Subscription`] objects it produces, and any
+/// provider handles outstanding.
 ///
 /// Cloning a `Registry` produces another strong reference to the same
 /// underlying state — the same registry, two handles to it. This is how
-/// nodes in the graph get a strong reference for registration while their
-/// stored handles only carry a `Weak`.
+/// nodes in the graph get a strong reference for registration and how
+/// `Query`s carry a registry reference for later resolution.
 pub struct Registry<K> {
-    inner: Rc<RefCell<RegistryInner<K>>>,
+    pub(crate) inner: Rc<RefCell<RegistryInner<K>>>,
 }
 
 impl<K> Default for Registry<K> {
@@ -201,9 +207,10 @@ impl<K: Eq + Hash> Registry<K> {
     /// Return all providers currently registered for `key`. Order is
     /// insertion order; per ADR-0013 this carries no semantic weight.
     ///
-    /// This is the raw-access form. The [`Queryable`] trait wraps this
-    /// with the cardinality-aware [`QueryResult`] tri-state; most
-    /// consumers reach for that instead of inspecting a `Vec`.
+    /// Most consumers use [`Registry::query`] and the [`QueryResult`]
+    /// tri-state instead of inspecting a `Vec`. `providers` is the
+    /// raw-access form, used internally by [`Query::resolve`] /
+    /// [`Subscription::resolve`].
     pub fn providers(&self, key: &K) -> Vec<NodeId> {
         self.inner
             .borrow()
@@ -214,14 +221,14 @@ impl<K: Eq + Hash> Registry<K> {
     }
 
     /// Fire all callbacks subscribed to `key`. Uses snapshot-and-release
-    /// (ADR-0015): clone the callback list under a short borrow, drop the
-    /// borrow, then invoke. Callbacks may freely re-enter the registry.
-    /// Subscribers added during a callback are picked up on the *next*
-    /// notification, not the current one.
+    /// (ADR-0015): clone the callback list under a short borrow, drop
+    /// the borrow, then invoke. Callbacks may freely re-enter the
+    /// registry. Subscribers added during a callback are picked up on
+    /// the *next* notification, not the current one.
     ///
     /// `register` and the [`ProviderHandle`] drop path call this
-    /// automatically per ADR-0008, so consumers rarely need to invoke it
-    /// manually. It remains public for non-mutation fan-outs.
+    /// automatically per ADR-0008, so consumers rarely need to invoke
+    /// it manually. It remains public for non-mutation fan-outs.
     pub fn notify(&self, key: &K) {
         let callbacks = self.inner.borrow().snapshot_subscribers(key);
         for cb in callbacks {
@@ -230,7 +237,15 @@ impl<K: Eq + Hash> Registry<K> {
     }
 }
 
-impl<K: Eq + Hash + Clone> Registry<K> {
+impl<K: Eq + Hash + Clone + 'static> Registry<K> {
+    /// Construct a [`Query<K>`] for this key. The returned `Query` is
+    /// stateless — it holds a (cheap) clone of this registry and the
+    /// key. Call `resolve()` to look up providers, or `subscribe(cb)`
+    /// to convert it into an active [`Subscription<K>`].
+    pub fn query(&self, key: K) -> Query<K> {
+        Query::new(self.clone(), key)
+    }
+
     /// Register `node` as a provider for `key`. The returned handle's
     /// `Drop` removes the registration; store it on the node to bind
     /// registration lifetime to node lifetime.
@@ -248,29 +263,34 @@ impl<K: Eq + Hash + Clone> Registry<K> {
         }
     }
 
-    /// Subscribe `cb` to notifications on `key`. The returned handle's
-    /// `Drop` unsubscribes.
-    pub fn subscribe(&self, key: K, cb: Callback) -> SubscriptionHandle<K> {
-        let id = {
-            let mut inner = self.inner.borrow_mut();
-            let id = inner.alloc_subscription_id();
-            inner.add_subscription(key.clone(), id, cb);
-            id
-        };
-        SubscriptionHandle {
-            inner: Rc::downgrade(&self.inner),
-            key,
-            id,
-        }
+    /// Subscribe `cb` to notifications on `key`, returning an opaque
+    /// [`SubscriptionId`]. The caller is responsible for pairing this
+    /// with a later [`Self::remove_subscription`] call when the
+    /// subscription should end. In practice this is wired through
+    /// [`Subscription::Drop`]; consumers of the registry construct
+    /// subscriptions via [`Self::query`] then `subscribe`, never call
+    /// this directly.
+    pub(crate) fn subscribe_internal(&self, key: K, cb: Callback) -> SubscriptionId {
+        let mut inner = self.inner.borrow_mut();
+        let id = inner.alloc_subscription_id();
+        inner.add_subscription(key, id, cb);
+        id
+    }
+
+    /// Remove the subscription identified by `(key, id)`. Called by
+    /// [`Subscription::Drop`].
+    pub(crate) fn remove_subscription(&self, key: &K, id: SubscriptionId) {
+        self.inner.borrow_mut().remove_subscription(key, id);
     }
 }
 
-// `NodeHandle` itself is defined in `crate::graph::arena` (next to its
-// consumer `NodeData::handles`); the registry layer just impls it for the
-// two RAII handle types it produces. This keeps `graph` free of any
-// dependency on `registry`.
+// `NodeHandle` is defined in `crate::graph::arena` (next to its
+// consumer `NodeData::handles`); the registry layer impls it for
+// [`ProviderHandle`] so the engine can store provider registrations on
+// nodes for cleanup. Subscriptions don't need this impl — they live
+// inside [`Query`]/[`Subscription`]/[`FallbackSubscription`] objects,
+// not on `NodeData::handles`.
 impl<K: Eq + Hash> NodeHandle for ProviderHandle<K> {}
-impl<K: Eq + Hash> NodeHandle for SubscriptionHandle<K> {}
 
 /// RAII registration. Drop unregisters this `(key, node)` from the registry.
 /// If the registry has already been dropped, the upgrade fails and Drop
@@ -307,23 +327,6 @@ impl<K: Eq + Hash> Drop for ProviderHandle<K> {
     }
 }
 
-/// RAII subscription. Drop removes this subscription from the registry.
-/// Same single-owner contract as [`ProviderHandle`]; not [`Clone`].
-#[derive(Debug)]
-pub struct SubscriptionHandle<K: Eq + Hash> {
-    inner: Weak<RefCell<RegistryInner<K>>>,
-    key: K,
-    id: SubscriptionId,
-}
-
-impl<K: Eq + Hash> Drop for SubscriptionHandle<K> {
-    fn drop(&mut self) {
-        if let Some(reg) = self.inner.upgrade() {
-            reg.borrow_mut().remove_subscription(&self.key, self.id);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     //! Two flavours of registry test:
@@ -334,11 +337,8 @@ mod tests {
     //!   stand-ins are used for slots since the registry treats `NodeId`s
     //!   as opaque values it stores and compares.
     //! * **Graph-integrated**: a `HandleNode` payload holds a real
-    //!   `ProviderHandle` / `SubscriptionHandle`; destroying the node drops
-    //!   the handles, and the test asserts on registry state. These pin
-    //!   the contract that makes registries useful with the graph: when
-    //!   the graph frees a node, its handles' `Drop` impls clean up the
-    //!   registry.
+    //!   `ProviderHandle` / `Subscription`; destroying the node drops
+    //!   the handles, and the test asserts on registry state.
 
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
@@ -355,7 +355,7 @@ mod tests {
     /// Minimal payload used by graph-integrated registry tests.
     struct HandleNode {
         provider: Option<ProviderHandle<TestKey>>,
-        subscription: Option<SubscriptionHandle<TestKey>>,
+        subscription: Option<Subscription<TestKey>>,
         notifications: Rc<Cell<u32>>,
     }
 
@@ -372,8 +372,7 @@ mod tests {
     #[test]
     fn provider_handle_drop_unregisters() {
         // Graph-integrated: a node holds a ProviderHandle; destroying the
-        // node drops the handle, which removes the registry entry. End-to-end
-        // RAII per ADR-0014.
+        // node drops the handle, which removes the registry entry.
         let mut graph: Graph<HandleNode> = Graph::new();
         let registry: Registry<TestKey> = Registry::new();
 
@@ -392,10 +391,10 @@ mod tests {
     }
 
     #[test]
-    fn subscription_handle_drop_unsubscribes() {
-        // Graph-integrated mirror: a node holds a SubscriptionHandle.
-        // Destroying the node drops it; later notifies do not reach the
-        // (now-dropped) callback.
+    fn subscription_drop_unsubscribes() {
+        // Graph-integrated mirror: a node holds a Subscription. Destroying
+        // the node drops it; later notifies do not reach the (now-dropped)
+        // callback.
         let mut graph: Graph<HandleNode> = Graph::new();
         let registry: Registry<TestKey> = Registry::new();
         let key = TestKey("watch-me");
@@ -408,7 +407,7 @@ mod tests {
                 cb_counter.set(cb_counter.get() + 1);
             });
             let node = graph.get_mut(id).unwrap();
-            node.payload.subscription = Some(registry.subscribe(key.clone(), cb));
+            node.payload.subscription = Some(registry.query(key.clone()).subscribe(cb));
         }
 
         // Sanity: callback fires while subscribed.
@@ -434,12 +433,9 @@ mod tests {
 
         let counter = Rc::new(Cell::new(0u32));
         let cb_counter = counter.clone();
-        let _sub = registry.subscribe(
-            key.clone(),
-            Rc::new(move || {
-                cb_counter.set(cb_counter.get() + 1);
-            }),
-        );
+        let _sub = registry.query(key.clone()).subscribe(Rc::new(move || {
+            cb_counter.set(cb_counter.get() + 1);
+        }));
 
         let provider = registry.register(key.clone(), NodeId::placeholder(42));
         assert_eq!(counter.get(), 1, "subscriber fires on provider registration");
@@ -468,14 +464,11 @@ mod tests {
         let observed_in_cb = observed.clone();
         let registry_in_cb = registry.clone();
         let key_in_cb = key.clone();
-        let _sub = registry.subscribe(
-            key.clone(),
-            Rc::new(move || {
-                // Re-enter: query the same registry from inside the callback.
-                let providers = registry_in_cb.providers(&key_in_cb);
-                observed_in_cb.set(providers.len());
-            }),
-        );
+        let _sub = registry.query(key.clone()).subscribe(Rc::new(move || {
+            // Re-enter: query the same registry from inside the callback.
+            let providers = registry_in_cb.providers(&key_in_cb);
+            observed_in_cb.set(providers.len());
+        }));
 
         registry.notify(&key);
 
@@ -483,27 +476,21 @@ mod tests {
     }
 
     #[test]
-    fn registry_outliving_handles_does_not_panic() {
-        // Drop order: registry first, then handles. Per ADR-0015 the handles'
-        // Drop should no-op via failed Weak::upgrade rather than panic.
+    fn provider_handle_outliving_registry_does_not_panic() {
+        // Per ADR-0015 the provider handle holds a Weak; if the registry
+        // is dropped first the handle's Drop no-ops via failed
+        // `Weak::upgrade`. (Subscriptions hold a strong Rc instead, so
+        // they keep the registry alive — that case is intentionally
+        // different and is exercised by `subscription_drop_unsubscribes`.)
         let registry: Registry<TestKey> = Registry::new();
         let key = TestKey("drop-order");
 
         let provider = registry.register(key.clone(), NodeId::placeholder(7));
-        let counter = Rc::new(Cell::new(0u32));
-        let cb_counter = counter.clone();
-        let subscription = registry.subscribe(
-            key.clone(),
-            Rc::new(move || cb_counter.set(cb_counter.get() + 1)),
-        );
 
         drop(registry);
-        // These drops happen here; if the Weak upgrade did not gracefully
-        // no-op we would either panic or borrow-mut a dangling cell.
+        // If the Weak upgrade did not gracefully no-op we would either
+        // panic or borrow-mut a dangling cell.
         drop(provider);
-        drop(subscription);
-
-        assert_eq!(counter.get(), 0);
     }
 
     #[test]
@@ -548,15 +535,12 @@ mod tests {
         let secondary_in_cb = secondary.clone();
         let key_b_in_cb = key_b.clone();
         let dh_in_cb = Rc::clone(&derived_handle);
-        let _sub = primary.subscribe(
-            key_a.clone(),
-            Rc::new(move || {
-                // Re-enter the *secondary* registry from inside the primary's
-                // notification path.
-                let h = secondary_in_cb.register(key_b_in_cb.clone(), NodeId::placeholder(123));
-                *dh_in_cb.borrow_mut() = Some(h);
-            }),
-        );
+        let _sub = primary.query(key_a.clone()).subscribe(Rc::new(move || {
+            // Re-enter the *secondary* registry from inside the primary's
+            // notification path.
+            let h = secondary_in_cb.register(key_b_in_cb.clone(), NodeId::placeholder(123));
+            *dh_in_cb.borrow_mut() = Some(h);
+        }));
 
         // Before notify: secondary is empty.
         assert!(secondary.providers(&key_b).is_empty());
@@ -566,7 +550,10 @@ mod tests {
         // After notify: secondary has the provider the callback registered,
         // and the primary's internals are still usable (re-entrancy didn't
         // wedge it).
-        assert_eq!(secondary.providers(&key_b), vec![NodeId::placeholder(123)]);
+        assert_eq!(
+            secondary.providers(&key_b),
+            vec![NodeId::placeholder(123)]
+        );
         let _ = primary.register(key_a.clone(), NodeId::placeholder(7));
 
         // Drop the derived handle — secondary cleans up.
