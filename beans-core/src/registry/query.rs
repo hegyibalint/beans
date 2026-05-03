@@ -1,59 +1,43 @@
-//! Cross-registry query abstractions — both stateless one-shots and
-//! stored, subscription-backed cached lookups.
+//! Query types — what consumers interact with to look things up across
+//! registries.
 //!
-//! Two layers, sized to caller need:
+//! Three layers, sized to caller need:
 //!
-//! ## Stateless: `Queryable<M>` + `first_match` / `all_matches`
+//! 1. [`QueryResult`] — tri-state owned value: `None`, `One(NodeId)`,
+//!    `Many(Vec<NodeId>)`. Cardinality at a glance; the zero/one cases
+//!    never allocate; pattern matches at the call site make the
+//!    cardinality explicit. Per ADR-0007 the `NodeId`s are generational
+//!    handles, safe to hold across mutations.
 //!
-//! [`Queryable<M>`] is the trait registries implement once per query
-//! shape they answer. The native case is trivial: each [`Registry<K>`]
-//! impls `Queryable<K>` returning a [`QueryResult`] by calling its own
-//! `providers`. Cross-registry query *models* (e.g. [`ByFqn`]) are
-//! separate types, with one `Queryable<M>` impl per registry that
-//! answers the model — translating the model into the registry's
-//! native key on the way through.
+//! 2. [`Query<K>`] / [`Subscription<K>`] — the typestate split for a
+//!    single-key lookup. `Query<K>` is stateless: just resolve. Calling
+//!    `Query::subscribe(cb)` consumes the query and returns a
+//!    `Subscription<K>` whose `Drop` unregisters automatically. The
+//!    type *is* the lifecycle: a `Subscription` is, by construction,
+//!    subscribed; a `Query` is, by construction, not.
 //!
-//! [`QueryResult`] is a tri-state owned value: `None`, `One(NodeId)`, or
-//! `Many(Vec<NodeId>)`. The variant tells the consumer the cardinality
-//! at a glance; the zero/one cases never allocate a Vec; pattern matches
-//! at the call site make the cardinality explicit. Per ADR-0007 the
-//! NodeIds inside are generational handles — safe to hold across
-//! registry mutations and to dereference later via the graph's
-//! generation-validated `get` (returns `None` if the slot was
-//! destroyed).
+//! 3. [`FallbackSubscription<P, F>`] — the cross-language watch. Two
+//!    typed `Subscription`s, primary-then-fallback resolve, cached
+//!    invalidation, consumer subscribers via [`Watch`]. The "JVM
+//!    fallback" pattern that recurs across every language module (per
+//!    ADR-0008) named directly. No `Box<dyn _>`, no generics over
+//!    arity — fixed two-Subscription shape, statically dispatched.
 //!
-//! Cross-registry consumption uses [`first_match`] / [`all_matches`]
-//! over a `&[&dyn Queryable<M>]` of the registries to consult, named
-//! by the caller (no hidden routing). This is the priority-list
-//! pattern from ADR-0008 — a Java-side caller might consult
-//! `[&beans.registries.java_symbols, &beans.registries.jvm_types]` so
-//! the language-native answer wins when present.
-//!
-//! ## Stored, push-based: `MultiQuery`
-//!
-//! [`MultiQuery`] holds a `Vec<RegistryQuery>` (one variant per
-//! registry, closed enum). Subscribes to each underlying registry on
-//! construction; underlying provider-set mutations flip the cached
-//! answer to `Stale` and fire any consumer subscribers (`MultiQuery`
-//! exposes the same `subscribe(cb) -> handle` shape as `Registry`).
-//! Reading via [`MultiQuery::query`] returns the cached answer, or
-//! recomputes from the underlying queries on `Stale`.
-//!
-//! Per-query subscription tiering (value-watch on active, existence-
-//! watch on higher-priority misses) is a future optimisation; today
-//! every consulted registry is subscribed uniformly.
+//! Why no generic `MultiQuery<N>`: we considered it. In practice every
+//! consulted-registries pattern in the project is fixed at construction
+//! time, language by language. Naming the *one* recurring pattern
+//! (`FallbackSubscription`) is more honest than abstracting over a
+//! generality we don't have. When a second pattern materializes (e.g.,
+//! completion's "merge across N JVM registries"), it gets its own named
+//! type — designed when we know what its real shape needs to be, not
+//! speculatively.
 
 use std::cell::{Cell, RefCell};
 use std::hash::Hash;
 use std::rc::Rc;
 
-use super::{Callback, Registry};
-use crate::Beans;
-use crate::graph::{NodeHandle, NodeId};
-use crate::jvm::{Fqn, JvmConstructorKey, JvmFieldKey, JvmMethodKey, JvmTypeKey, PackageKey};
-
-#[cfg(feature = "java")]
-use crate::languages::java::JavaSymbolKey;
+use super::{Callback, Registry, SubscriptionId};
+use crate::graph::NodeId;
 
 // =========================================================================
 // QueryResult
@@ -70,9 +54,9 @@ pub enum QueryResult {
 }
 
 impl QueryResult {
-    /// `Some(id)` if there is at least one match (`One` or first of
-    /// `Many`), `None` otherwise. Convenience for go-to-definition style
-    /// callers that want a single representative.
+    /// `Some(id)` if there is at least one match, `None` otherwise.
+    /// Convenience for go-to-definition style callers that want a
+    /// single representative.
     pub fn first(&self) -> Option<NodeId> {
         match self {
             QueryResult::None => None,
@@ -117,273 +101,240 @@ impl From<Vec<NodeId>> for QueryResult {
 }
 
 // =========================================================================
-// Queryable<M> + ByFqn
+// Query<K> — stateless one-shot
 // =========================================================================
 
-/// A registry that can answer a query of shape `M`.
+/// A stateless lookup: a registry handle plus a key. Constructed via
+/// [`Registry::query`]. Call [`resolve`](Self::resolve) for a one-shot
+/// lookup, or [`subscribe`](Self::subscribe) to convert into an active
+/// [`Subscription<K>`] that watches the key for changes.
 ///
-/// Each [`Registry<K>`] impls `Queryable<K>` for its own key (the native
-/// case). Cross-registry models like [`ByFqn`] are answered by every
-/// registry that can translate the model into its native key — so a
-/// caller can hand a `&[&dyn Queryable<ByFqn>]` to [`first_match`] and
-/// the right registries answer with no caller-side dispatch.
-pub trait Queryable<M> {
-    fn query(&self, model: &M) -> QueryResult;
+/// The typestate split is deliberate: a `Query` is, by construction,
+/// *not* subscribed; a `Subscription` is. There's no `Option<Id>` state
+/// machine in the struct, no "is this watching or not" ambiguity at
+/// every method call. The compiler enforces the lifecycle.
+pub struct Query<K: Eq + Hash + Clone + 'static> {
+    registry: Registry<K>,
+    key: K,
 }
 
-/// Native-key impl: every `Registry<K>` answers queries of its own key.
-impl<K: Eq + Hash + Clone> Queryable<K> for Registry<K> {
-    fn query(&self, key: &K) -> QueryResult {
-        QueryResult::from(self.providers(key))
-    }
-}
-
-/// Cross-registry "find me anything with this FQN" query model.
-/// Multiple registries answer this; each translates the FQN into its
-/// own native key.
-#[derive(Debug, Clone)]
-pub struct ByFqn(pub Fqn);
-
-impl Queryable<ByFqn> for Registry<JvmTypeKey> {
-    fn query(&self, m: &ByFqn) -> QueryResult {
-        QueryResult::from(self.providers(&JvmTypeKey::new(m.0.clone())))
-    }
-}
-
-#[cfg(feature = "java")]
-impl Queryable<ByFqn> for Registry<JavaSymbolKey> {
-    fn query(&self, m: &ByFqn) -> QueryResult {
-        QueryResult::from(self.providers(&JavaSymbolKey::new(m.0.clone())))
-    }
-}
-
-/// First-match across the given registries, in priority order. The
-/// caller names which registries to consult and in what order. Returns
-/// the first non-empty answer; subsequent registries are not consulted.
-///
-/// Resolution-style entry point (go-to-definition, type-checking).
-/// Callers that want every match across every consulted registry use
-/// [`all_matches`].
-pub fn first_match<M>(model: &M, consult: &[&dyn Queryable<M>]) -> Option<NodeId> {
-    consult.iter().find_map(|r| r.query(model).first())
-}
-
-/// Every match across the given registries, in query order, no dedup.
-/// Per ADR-0008 the cross-registry merge does not de-duplicate — a
-/// node registered under multiple keys appears once per hit. Consumers
-/// that want one entry per logical symbol (typical for completion)
-/// collapse downstream with knowledge of which language wins.
-pub fn all_matches<M>(model: &M, consult: &[&dyn Queryable<M>]) -> Vec<NodeId> {
-    consult.iter().flat_map(|r| r.query(model).all()).collect()
-}
-
-// =========================================================================
-// RegistryQuery + MultiQuery
-// =========================================================================
-
-/// One typed (registry, key) lookup. Closed enum: one variant per
-/// registry the project knows about. New registries add a variant; the
-/// compiler flags every match.
-#[derive(Debug, Clone)]
-pub enum RegistryQuery {
-    JvmType(JvmTypeKey),
-    JvmMethod(JvmMethodKey),
-    JvmField(JvmFieldKey),
-    JvmConstructor(JvmConstructorKey),
-    JvmPackage(PackageKey),
-    #[cfg(feature = "java")]
-    JavaSymbol(JavaSymbolKey),
-}
-
-impl RegistryQuery {
-    /// Resolve this query against `beans`'s registries. Returns the
-    /// providers (raw form). Used by [`MultiQuery`] for cache
-    /// recomputation; tests can use it directly to avoid having to
-    /// construct a full `MultiQuery` for one-shot lookups.
-    pub fn providers(&self, beans: &Beans) -> Vec<NodeId> {
-        match self {
-            RegistryQuery::JvmType(k) => beans.registries.jvm_types.providers(k),
-            RegistryQuery::JvmMethod(k) => beans.registries.jvm_methods.providers(k),
-            RegistryQuery::JvmField(k) => beans.registries.jvm_fields.providers(k),
-            RegistryQuery::JvmConstructor(k) => beans.registries.jvm_constructors.providers(k),
-            RegistryQuery::JvmPackage(k) => beans.registries.jvm_packages.providers(k),
-            #[cfg(feature = "java")]
-            RegistryQuery::JavaSymbol(k) => beans.registries.java_symbols.providers(k),
-        }
+impl<K: Eq + Hash + Clone + 'static> Query<K> {
+    pub(crate) fn new(registry: Registry<K>, key: K) -> Self {
+        Self { registry, key }
     }
 
-    /// Subscribe `cb` to the underlying registry's notifications for
-    /// this query's key. The returned handle's `Drop` unsubscribes.
-    /// Used by [`MultiQuery::new`] to wire push-based invalidation.
-    pub fn subscribe(&self, beans: &Beans, cb: Callback) -> Box<dyn NodeHandle> {
-        match self {
-            RegistryQuery::JvmType(k) => Box::new(beans.registries.jvm_types.subscribe(k.clone(), cb)),
-            RegistryQuery::JvmMethod(k) => Box::new(beans.registries.jvm_methods.subscribe(k.clone(), cb)),
-            RegistryQuery::JvmField(k) => Box::new(beans.registries.jvm_fields.subscribe(k.clone(), cb)),
-            RegistryQuery::JvmConstructor(k) => Box::new(beans.registries.jvm_constructors.subscribe(k.clone(), cb)),
-            RegistryQuery::JvmPackage(k) => Box::new(beans.registries.jvm_packages.subscribe(k.clone(), cb)),
-            #[cfg(feature = "java")]
-            RegistryQuery::JavaSymbol(k) => Box::new(beans.registries.java_symbols.subscribe(k.clone(), cb)),
+    /// One-shot lookup. Returns the current providers without
+    /// subscribing to changes.
+    pub fn resolve(&self) -> QueryResult {
+        QueryResult::from(self.registry.providers(&self.key))
+    }
+
+    /// Consume this query, register `cb` as a subscriber for its key,
+    /// and return an active [`Subscription<K>`]. The subscription's
+    /// `Drop` automatically removes the registration.
+    pub fn subscribe(self, cb: Callback) -> Subscription<K> {
+        let id = self.registry.subscribe_internal(self.key.clone(), cb);
+        Subscription {
+            registry: self.registry,
+            key: self.key,
+            id,
         }
     }
 }
 
-/// Cache state for `MultiQuery`. `Stale` means "next read should walk
-/// the queries fresh"; `Fresh` carries the last computed value.
+// =========================================================================
+// Subscription<K> — active single-key watch with RAII cleanup
+// =========================================================================
+
+/// An active subscription on one registry's key. Constructed by
+/// consuming a [`Query<K>`] via [`Query::subscribe`]. Holds a strong
+/// clone of the registry handle so the registry can't be torn down
+/// while a `Subscription` is alive; on `Drop` the registry's
+/// subscriber list entry is removed.
+///
+/// Replaces the older `SubscriptionHandle<K>` — the typestate split
+/// makes this struct itself the RAII anchor, no separate handle type
+/// needed.
+pub struct Subscription<K: Eq + Hash + Clone + 'static> {
+    registry: Registry<K>,
+    key: K,
+    id: SubscriptionId,
+}
+
+impl<K: Eq + Hash + Clone + 'static> Subscription<K> {
+    /// Look up providers for the watched key. Same shape as
+    /// [`Query::resolve`]; available on `Subscription` because once
+    /// you're watching, you'll usually want to read too.
+    pub fn resolve(&self) -> QueryResult {
+        QueryResult::from(self.registry.providers(&self.key))
+    }
+}
+
+impl<K: Eq + Hash + Clone + 'static> Drop for Subscription<K> {
+    fn drop(&mut self) {
+        // Strong Rc to the registry's inner — no Weak::upgrade dance,
+        // the registry is alive by construction (we own a clone).
+        self.registry.remove_subscription(&self.key, self.id);
+    }
+}
+
+// `Subscription` is deliberately not [`Clone`]: each instance owns
+// exactly one subscriber-list entry, and its `Drop` removes that one
+// entry. Cloning would let two values believe they own the same
+// subscription, and the second `Drop` would no-op on an already-empty
+// slot — no soundness problem, but a confusing footgun.
+
+// =========================================================================
+// FallbackSubscription<P, F> — the cross-language two-key watch
+// =========================================================================
+
+/// Cache state for a [`FallbackSubscription`]. `Stale` means the next
+/// `resolve` should walk the queries fresh; `Fresh` carries the last
+/// computed value.
 #[derive(Debug, Clone)]
 enum Cached {
     Stale,
     Fresh(QueryResult),
 }
 
-/// Subscriber entry on a `MultiQuery`. Liveness flag pattern: the
-/// `MultiSubscriptionHandle` returned by `MultiQuery::subscribe` holds
-/// an `Rc<Cell<bool>>` shared with this entry; on handle drop the flag
-/// flips to `false` and the next fire prunes the entry. Same pattern
-/// the underlying `Registry<K>` uses internally for subscriptions.
-struct MultiSubscriber {
+/// Subscriber entry on a `FallbackSubscription`. Liveness flag
+/// pattern: the [`Watch`] returned by `subscribe` shares an
+/// `Rc<Cell<bool>>` with this entry; on `Watch` drop the flag flips
+/// to `false` and the next fire prunes the entry.
+struct WatchSubscriber {
     callback: Callback,
     alive: Rc<Cell<bool>>,
 }
 
-/// RAII subscription handle for `MultiQuery::subscribe`. Drop flips
-/// the liveness flag to `false`; the MultiQuery prunes lazily on the
-/// next fire.
+/// Consumer-side handle for [`FallbackSubscription::subscribe`]. Drop
+/// stops further notifications; the entry on the parent
+/// `FallbackSubscription` is pruned on its next fire.
 #[derive(Debug)]
-pub struct MultiSubscriptionHandle {
+pub struct Watch {
     alive: Rc<Cell<bool>>,
 }
 
-impl Drop for MultiSubscriptionHandle {
+impl Drop for Watch {
     fn drop(&mut self) {
         self.alive.set(false);
     }
 }
 
-/// Subscription-backed, cached multi-registry lookup.
+/// Cross-language two-key watch with primary-then-fallback resolve.
 ///
-/// Construction subscribes to each underlying registry so any
-/// provider-set change auto-invalidates the cache and fires consumer
-/// subscribers. After construction, `query` is `&self` (read-only); the
-/// cache is invalidated through the subscription callbacks, not through
-/// the query call.
-pub struct MultiQuery {
-    queries: Vec<RegistryQuery>,
+/// The recurring pattern across every JVM language: a use-site looks
+/// for a definition first in its own language's registry, and falls
+/// back to the JVM projection if missing. Two typed [`Subscription`]s,
+/// fixed-arity, statically dispatched, no `Box<dyn _>`.
+///
+/// `P` is the primary (language-native) key type; `F` is the fallback
+/// (typically a JVM projection key) type. Both subscriptions are wired
+/// at construction; either's underlying provider-set change invalidates
+/// the cache and fires consumer subscribers registered via
+/// [`subscribe`](Self::subscribe).
+pub struct FallbackSubscription<P, F>
+where
+    P: Eq + Hash + Clone + 'static,
+    F: Eq + Hash + Clone + 'static,
+{
+    primary: Subscription<P>,
+    fallback: Subscription<F>,
     cached: Rc<RefCell<Cached>>,
-    /// Subscriptions on each underlying registry. RAII: dropped when the
-    /// MultiQuery drops, removing the registry-side entries. Stored as
-    /// `Box<dyn NodeHandle>` because each variant of `RegistryQuery`
-    /// produces a different `SubscriptionHandle<K>` type.
-    _internal_subs: Vec<Box<dyn NodeHandle>>,
-    /// Subscribers to *this* MultiQuery — consumers that registered via
-    /// [`subscribe`](Self::subscribe). Wrapping callbacks for the
-    /// internal subscriptions hold an `Rc` clone of this and fire each
-    /// live subscriber on every underlying mutation.
-    subscribers: Rc<RefCell<Vec<MultiSubscriber>>>,
+    consumer_subs: Rc<RefCell<Vec<WatchSubscriber>>>,
 }
 
-impl MultiQuery {
-    /// Construct a `MultiQuery` against the given list of priority-
-    /// ordered queries. Subscribes to each underlying registry so the
-    /// cache invalidates on any provider-set change.
-    pub fn new(beans: &Beans, queries: Vec<RegistryQuery>) -> Self {
+impl<P, F> FallbackSubscription<P, F>
+where
+    P: Eq + Hash + Clone + 'static,
+    F: Eq + Hash + Clone + 'static,
+{
+    /// Construct a fallback subscription. Subscribes to both registries
+    /// at construction; the cache is initially `Stale` so the first
+    /// `resolve` walks fresh.
+    pub fn new(
+        primary_registry: &Registry<P>,
+        primary_key: P,
+        fallback_registry: &Registry<F>,
+        fallback_key: F,
+    ) -> Self {
         let cached = Rc::new(RefCell::new(Cached::Stale));
-        let subscribers: Rc<RefCell<Vec<MultiSubscriber>>> =
+        let consumer_subs: Rc<RefCell<Vec<WatchSubscriber>>> =
             Rc::new(RefCell::new(Vec::new()));
 
-        // Wire each underlying subscription. The callback captures the
-        // cache + subscriber list and (a) flips cache to Stale, then
-        // (b) fires every live subscriber. Snapshot-and-release: clone
-        // out the live callback list under a brief borrow before
-        // invoking, so subscribers can re-enter (the RefCell on
-        // subscribers itself is the only re-entrancy concern).
-        let subs: Vec<Box<dyn NodeHandle>> = queries
-            .iter()
-            .map(|q| {
-                let cached_for_cb = Rc::clone(&cached);
-                let subscribers_for_cb = Rc::clone(&subscribers);
-                let cb: Callback = Rc::new(move || {
-                    *cached_for_cb.borrow_mut() = Cached::Stale;
-                    let to_fire: Vec<Callback> = {
-                        let mut list = subscribers_for_cb.borrow_mut();
-                        list.retain(|entry| entry.alive.get());
-                        list.iter().map(|e| Rc::clone(&e.callback)).collect()
-                    };
-                    for cb in to_fire {
-                        cb();
-                    }
-                });
-                q.subscribe(beans, cb)
-            })
-            .collect();
+        // The wrapping callback: invalidate own cache, then fire every
+        // live consumer subscriber. Snapshot-and-release: clone the
+        // live callback list under a brief borrow before invoking.
+        let cached_for_cb = Rc::clone(&cached);
+        let consumer_subs_for_cb = Rc::clone(&consumer_subs);
+        let invalidation_cb: Callback = Rc::new(move || {
+            *cached_for_cb.borrow_mut() = Cached::Stale;
+            let to_fire: Vec<Callback> = {
+                let mut list = consumer_subs_for_cb.borrow_mut();
+                list.retain(|entry| entry.alive.get());
+                list.iter().map(|e| Rc::clone(&e.callback)).collect()
+            };
+            for cb in to_fire {
+                cb();
+            }
+        });
+
+        let primary = primary_registry
+            .query(primary_key)
+            .subscribe(invalidation_cb.clone());
+        let fallback = fallback_registry
+            .query(fallback_key)
+            .subscribe(invalidation_cb);
 
         Self {
-            queries,
+            primary,
+            fallback,
             cached,
-            _internal_subs: subs,
-            subscribers,
+            consumer_subs,
         }
     }
 
-    /// Resolve this query against `beans`. Returns the cached result if
-    /// `Fresh`, otherwise walks the queries in priority order, takes
-    /// the first non-empty answer, caches it, and returns.
-    ///
-    /// First-match semantics: per ADR-0008's resolution mode, returns
-    /// the first registry's answer; subsequent registries are ignored.
-    /// Use [`providers_all`](Self::providers_all) for the merge-all
-    /// (completion) shape.
-    pub fn query(&self, beans: &Beans) -> QueryResult {
-        // Read cache under a short borrow; clone out if Fresh.
+    /// Resolve with primary-then-fallback semantics. Returns the cached
+    /// result if `Fresh`; otherwise walks the primary first, falls
+    /// through to the fallback if the primary returned `None`, caches
+    /// the result, and returns.
+    pub fn resolve(&self) -> QueryResult {
         if let Cached::Fresh(ref r) = *self.cached.borrow() {
             return r.clone();
         }
-        // Compute. Don't hold a borrow over `cached` during recompute —
-        // a subscription callback firing mid-walk could try to mutate
-        // `cached` (for nested MultiQueries, etc) and we want the
-        // RefCell free.
-        let mut result = QueryResult::None;
-        for q in &self.queries {
-            let providers = q.providers(beans);
-            if !providers.is_empty() {
-                result = QueryResult::from(providers);
-                break;
-            }
-        }
+        let result = match self.primary.resolve() {
+            QueryResult::None => self.fallback.resolve(),
+            hit => hit,
+        };
         *self.cached.borrow_mut() = Cached::Fresh(result.clone());
         result
     }
 
-    /// Resolve every underlying query and concatenate results in query
-    /// order. Per ADR-0008 the merge does not de-duplicate. Not cached
-    /// — completion answers change too often for a stale Vec to be
-    /// useful.
-    pub fn providers_all(&self, beans: &Beans) -> Vec<NodeId> {
-        self.queries.iter().flat_map(|q| q.providers(beans)).collect()
-    }
-
-    /// Subscribe to this MultiQuery's invalidations. The callback fires
-    /// after the cache has been flipped to `Stale`, so a subscriber
-    /// that re-reads via [`query`](Self::query) on its callback sees
-    /// the new value.
+    /// Subscribe to invalidation events on this fallback. The callback
+    /// fires after the cache has been flipped to `Stale`, so a
+    /// subscriber that re-reads via [`resolve`](Self::resolve) on its
+    /// callback observes the new value.
     ///
-    /// Returns a RAII handle; drop it to stop receiving notifications.
-    /// Same shape as `Registry::subscribe`.
-    pub fn subscribe(&self, cb: Callback) -> MultiSubscriptionHandle {
+    /// Returns a RAII [`Watch`]; drop it to stop receiving
+    /// notifications.
+    pub fn subscribe(&self, cb: Callback) -> Watch {
         let alive = Rc::new(Cell::new(true));
-        self.subscribers.borrow_mut().push(MultiSubscriber {
+        self.consumer_subs.borrow_mut().push(WatchSubscriber {
             callback: cb,
             alive: Rc::clone(&alive),
         });
-        MultiSubscriptionHandle { alive }
+        Watch { alive }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::jvm::{Fqn, JvmMethodKey, JvmTypeKey, TypeRef};
 
-    // ---- QueryResult / Queryable / first_match / all_matches ----
+    #[cfg(feature = "java")]
+    use crate::languages::java::JavaSymbolKey;
+
+    // ---- QueryResult ----
 
     #[test]
     fn query_result_from_vec() {
@@ -412,183 +363,236 @@ mod tests {
         assert_eq!(r.first(), Some(NodeId::placeholder(7)));
     }
 
+    // ---- Query<K> / Subscription<K> ----
+
     #[test]
-    fn registry_native_queryable() {
-        let r: Registry<JvmTypeKey> = Registry::new();
+    fn query_resolve_against_empty_and_filled_registry() {
+        let registry: Registry<JvmTypeKey> = Registry::new();
         let key = JvmTypeKey::new("com.example.Foo");
 
         // Empty: query returns None.
-        assert!(matches!(r.query(&key), QueryResult::None));
+        let q = registry.query(key.clone());
+        assert!(matches!(q.resolve(), QueryResult::None));
 
-        let _h = r.register(key.clone(), NodeId::placeholder(1));
-        assert!(matches!(r.query(&key), QueryResult::One(_)));
+        // After register: One.
+        let _h = registry.register(key.clone(), NodeId::placeholder(1));
+        let q = registry.query(key.clone());
+        assert!(matches!(q.resolve(), QueryResult::One(_)));
 
-        let _h2 = r.register(key.clone(), NodeId::placeholder(2));
-        assert!(matches!(r.query(&key), QueryResult::Many(_)));
+        // After second: Many.
+        let _h2 = registry.register(key.clone(), NodeId::placeholder(2));
+        let q = registry.query(key);
+        assert!(matches!(q.resolve(), QueryResult::Many(_)));
     }
 
     #[test]
-    fn first_match_walks_in_priority_order() {
-        let r1: Registry<JvmTypeKey> = Registry::new();
-        let r2: Registry<JvmTypeKey> = Registry::new();
-        let key = JvmTypeKey::new("com.example.Foo");
+    fn subscription_drop_unsubscribes_via_query() {
+        // Pin the contract: a Subscription's Drop removes the
+        // subscriber-list entry. Constructed via Query::subscribe, with
+        // the public API surface; no direct registry.subscribe().
+        let registry: Registry<JvmTypeKey> = Registry::new();
+        let key = JvmTypeKey::new("com.example.Watched");
 
-        let _h2 = r2.register(key.clone(), NodeId::placeholder(99));
+        let counter = Rc::new(Cell::new(0u32));
+        let cb_counter = Rc::clone(&counter);
+        let sub = registry.query(key.clone()).subscribe(Rc::new(move || {
+            cb_counter.set(cb_counter.get() + 1);
+        }));
 
-        // Only r2 has a provider; first_match falls through.
-        let result = first_match::<JvmTypeKey>(&key, &[&r1, &r2]);
-        assert_eq!(result, Some(NodeId::placeholder(99)));
+        // Trigger a notification — subscriber fires.
+        let _h = registry.register(key.clone(), NodeId::placeholder(1));
+        assert_eq!(counter.get(), 1);
 
-        // r1 gets a higher-priority provider.
-        let _h1 = r1.register(key.clone(), NodeId::placeholder(7));
-        let result = first_match::<JvmTypeKey>(&key, &[&r1, &r2]);
-        assert_eq!(result, Some(NodeId::placeholder(7)));
+        // Drop the subscription — its Drop removes the registry entry.
+        drop(sub);
+
+        // Another mutation. Counter must not advance.
+        let _h2 = registry.register(key.clone(), NodeId::placeholder(2));
+        assert_eq!(counter.get(), 1, "dropped Subscription stops receiving notifications");
     }
 
     #[test]
-    fn all_matches_concatenates_query_order() {
-        let r1: Registry<JvmTypeKey> = Registry::new();
-        let r2: Registry<JvmTypeKey> = Registry::new();
-        let key = JvmTypeKey::new("com.example.Foo");
+    fn subscription_resolve_reflects_current_state() {
+        // A Subscription can be queried for current providers without
+        // creating a fresh Query; it's the same lookup on the same key.
+        let registry: Registry<JvmTypeKey> = Registry::new();
+        let key = JvmTypeKey::new("com.example.X");
 
-        let _h1 = r1.register(key.clone(), NodeId::placeholder(1));
-        let _h2 = r2.register(key.clone(), NodeId::placeholder(2));
+        let sub = registry
+            .query(key.clone())
+            .subscribe(Rc::new(|| {}));
 
-        let results = all_matches::<JvmTypeKey>(&key, &[&r1, &r2]);
-        assert_eq!(
-            results,
-            vec![NodeId::placeholder(1), NodeId::placeholder(2)]
+        assert!(matches!(sub.resolve(), QueryResult::None));
+
+        let _h = registry.register(key, NodeId::placeholder(1));
+        assert!(matches!(sub.resolve(), QueryResult::One(_)));
+    }
+
+    // ---- FallbackSubscription<P, F> ----
+
+    #[test]
+    fn fallback_resolves_primary_when_present() {
+        let primary: Registry<JvmTypeKey> = Registry::new();
+        let fallback: Registry<JvmMethodKey> = Registry::new();
+        let primary_id = NodeId::placeholder(7);
+        let _h = primary.register(JvmTypeKey::new("com.example.Service"), primary_id);
+
+        let fb = FallbackSubscription::new(
+            &primary,
+            JvmTypeKey::new("com.example.Service"),
+            &fallback,
+            JvmMethodKey::new("com.example.Service", "process", vec![]),
         );
-    }
 
-    // ---- MultiQuery ----
-
-    #[test]
-    fn multi_query_returns_first_match() {
-        let beans = Beans::new();
-        let id = NodeId::placeholder(7);
-        let _h = beans
-            .registries
-            .jvm_types
-            .register(JvmTypeKey::new("com.example.Service"), id);
-
-        let mq = MultiQuery::new(
-            &beans,
-            vec![RegistryQuery::JvmType(JvmTypeKey::new(
-                "com.example.Service",
-            ))],
-        );
-
-        match mq.query(&beans) {
-            QueryResult::One(found) => assert_eq!(found, id),
-            other => panic!("expected One, got {:?}", other),
+        match fb.resolve() {
+            QueryResult::One(id) => assert_eq!(id, primary_id),
+            other => panic!("expected One from primary, got {:?}", other),
         }
     }
 
     #[test]
-    fn multi_query_falls_through_priority_order() {
-        let beans = Beans::new();
-        let kotlin_id = NodeId::placeholder(1);
-        // Only the JVM-types registry has a provider; the (hypothetical)
-        // higher-priority Java symbol misses, so the MultiQuery falls
-        // through.
-        let _h = beans
-            .registries
-            .jvm_types
-            .register(JvmTypeKey::new("com.example.Service"), kotlin_id);
+    fn fallback_falls_through_when_primary_misses() {
+        let primary: Registry<JvmTypeKey> = Registry::new();
+        let fallback: Registry<JvmMethodKey> = Registry::new();
+        let fallback_id = NodeId::placeholder(99);
+        let _h = fallback.register(
+            JvmMethodKey::new("com.example.Service", "process", vec![]),
+            fallback_id,
+        );
 
-        let queries = vec![
-            #[cfg(feature = "java")]
-            RegistryQuery::JavaSymbol(JavaSymbolKey::new("com.example.Service")),
-            RegistryQuery::JvmType(JvmTypeKey::new("com.example.Service")),
-        ];
-        let mq = MultiQuery::new(&beans, queries);
-        assert_eq!(mq.query(&beans).first(), Some(kotlin_id));
+        let fb = FallbackSubscription::new(
+            &primary,
+            JvmTypeKey::new("com.example.Service"),
+            &fallback,
+            JvmMethodKey::new("com.example.Service", "process", vec![]),
+        );
+
+        match fb.resolve() {
+            QueryResult::One(id) => assert_eq!(id, fallback_id),
+            other => panic!("expected One from fallback, got {:?}", other),
+        }
     }
 
     #[test]
-    fn multi_query_observes_provider_change() {
-        // The crucial Tier-2 contract: a MultiQuery kept across an edit
-        // observes the new state without manual invalidate. Auto-fired
-        // via the underlying Registry's subscription on register/drop.
-        let beans = Beans::new();
-        let mq = MultiQuery::new(
-            &beans,
-            vec![RegistryQuery::JvmType(JvmTypeKey::new(
-                "com.example.Service",
-            ))],
+    fn fallback_observes_primary_arrival_after_construction() {
+        // Tier-2 contract: the cache invalidates when an underlying
+        // provider set changes, without manual invalidate.
+        let primary: Registry<JvmTypeKey> = Registry::new();
+        let fallback: Registry<JvmMethodKey> = Registry::new();
+        let fb = FallbackSubscription::new(
+            &primary,
+            JvmTypeKey::new("com.example.Service"),
+            &fallback,
+            JvmMethodKey::new("com.example.Service", "process", vec![]),
         );
-        assert!(mq.query(&beans).is_empty());
+        assert!(fb.resolve().is_empty());
 
         let new_id = NodeId::placeholder(42);
-        let _h = beans
-            .registries
-            .jvm_types
-            .register(JvmTypeKey::new("com.example.Service"), new_id);
+        let _h = primary.register(JvmTypeKey::new("com.example.Service"), new_id);
 
         // Without manual invalidate, the cache flipped to Stale via the
-        // wrapping callback; next query recomputes.
-        match mq.query(&beans) {
+        // wrapping callback; next resolve recomputes and finds the new
+        // primary provider.
+        match fb.resolve() {
             QueryResult::One(id) => assert_eq!(id, new_id),
             other => panic!("expected One after registration, got {:?}", other),
         }
     }
 
     #[test]
-    fn multi_query_subscribe_fires_on_underlying_change() {
-        // Consumer subscribes to the MultiQuery; underlying registry
-        // mutates; consumer's callback fires.
-        let beans = Beans::new();
-        let mq = MultiQuery::new(
-            &beans,
-            vec![RegistryQuery::JvmType(JvmTypeKey::new(
-                "com.example.Service",
-            ))],
+    fn fallback_subscriber_fires_on_underlying_change() {
+        // Consumer subscribes to the FallbackSubscription; underlying
+        // registry mutates; consumer's callback fires.
+        let primary: Registry<JvmTypeKey> = Registry::new();
+        let fallback: Registry<JvmMethodKey> = Registry::new();
+        let fb = FallbackSubscription::new(
+            &primary,
+            JvmTypeKey::new("com.example.Service"),
+            &fallback,
+            JvmMethodKey::new("com.example.Service", "process", vec![]),
         );
 
         let counter = Rc::new(Cell::new(0u32));
         let cb_counter = Rc::clone(&counter);
-        let _watch = mq.subscribe(Rc::new(move || {
+        let _watch = fb.subscribe(Rc::new(move || {
             cb_counter.set(cb_counter.get() + 1);
         }));
 
-        let _h = beans
-            .registries
-            .jvm_types
-            .register(JvmTypeKey::new("com.example.Service"), NodeId::placeholder(1));
+        let _h = primary.register(
+            JvmTypeKey::new("com.example.Service"),
+            NodeId::placeholder(1),
+        );
         assert!(counter.get() > 0, "consumer's callback should fire");
     }
 
     #[test]
-    fn multi_query_subscribe_drop_stops_notifications() {
-        let beans = Beans::new();
-        let mq = MultiQuery::new(
-            &beans,
-            vec![RegistryQuery::JvmType(JvmTypeKey::new(
-                "com.example.Service",
-            ))],
+    fn fallback_watch_drop_stops_notifications() {
+        let primary: Registry<JvmTypeKey> = Registry::new();
+        let fallback: Registry<JvmMethodKey> = Registry::new();
+        let fb = FallbackSubscription::new(
+            &primary,
+            JvmTypeKey::new("com.example.Service"),
+            &fallback,
+            JvmMethodKey::new("com.example.Service", "process", vec![]),
         );
 
         let counter = Rc::new(Cell::new(0u32));
         let cb_counter = Rc::clone(&counter);
-        let watch = mq.subscribe(Rc::new(move || {
+        let watch = fb.subscribe(Rc::new(move || {
             cb_counter.set(cb_counter.get() + 1);
         }));
 
-        let _h = beans
-            .registries
-            .jvm_types
-            .register(JvmTypeKey::new("com.example.Service"), NodeId::placeholder(1));
+        let _h = primary.register(
+            JvmTypeKey::new("com.example.Service"),
+            NodeId::placeholder(1),
+        );
         let after_first = counter.get();
         assert!(after_first > 0);
 
         drop(watch);
 
-        // Another mutation. Counter must not advance — subscriber is dropped.
-        let _h2 = beans
-            .registries
-            .jvm_types
-            .register(JvmTypeKey::new("com.example.Service"), NodeId::placeholder(2));
-        assert_eq!(counter.get(), after_first, "dropped handle stops notifications");
+        // Another mutation. Counter must not advance — watch is dropped.
+        let _h2 = primary.register(
+            JvmTypeKey::new("com.example.Service"),
+            NodeId::placeholder(2),
+        );
+        assert_eq!(
+            counter.get(),
+            after_first,
+            "dropped Watch stops notifications"
+        );
+    }
+
+    #[cfg(feature = "java")]
+    #[test]
+    fn fallback_with_java_native_and_jvm_keys() {
+        // The canonical cross-language pattern: Java-side native first,
+        // JVM projection fallback.
+        let java: Registry<JavaSymbolKey> = Registry::new();
+        let jvm: Registry<JvmMethodKey> = Registry::new();
+
+        let java_id = NodeId::placeholder(1);
+        let jvm_id = NodeId::placeholder(2);
+        let _hj = java.register(
+            JavaSymbolKey::new(Fqn::new("com.example.Service.process")),
+            java_id,
+        );
+        let _hv = jvm.register(
+            JvmMethodKey::new("com.example.Service", "process", vec![TypeRef::Void]),
+            jvm_id,
+        );
+
+        let fb: FallbackSubscription<JavaSymbolKey, JvmMethodKey> = FallbackSubscription::new(
+            &java,
+            JavaSymbolKey::new(Fqn::new("com.example.Service.process")),
+            &jvm,
+            JvmMethodKey::new("com.example.Service", "process", vec![TypeRef::Void]),
+        );
+
+        // Java-side wins because it's the primary.
+        match fb.resolve() {
+            QueryResult::One(id) => assert_eq!(id, java_id, "primary (Java) wins"),
+            other => panic!("expected One, got {:?}", other),
+        }
     }
 }

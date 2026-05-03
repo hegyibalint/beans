@@ -282,10 +282,11 @@ fn registering_a_provider_fires_existing_subscribers() {
     let key = JvmTypeKey::new(Fqn::new("com.example.Service"));
     let counter = Rc::new(Cell::new(0u32));
     let cb_counter = counter.clone();
-    let _sub = env.registries.jvm_types.subscribe(
-        key,
-        Rc::new(move || cb_counter.set(cb_counter.get() + 1)),
-    );
+    let _sub = env
+        .registries
+        .jvm_types
+        .query(key)
+        .subscribe(Rc::new(move || cb_counter.set(cb_counter.get() + 1)));
 
     env.integrate(
         Path::new("Service.java"),
@@ -312,10 +313,11 @@ fn dropping_a_provider_fires_existing_subscribers() {
     let key = JvmTypeKey::new(Fqn::new("com.example.Service"));
     let counter = Rc::new(Cell::new(0u32));
     let cb_counter = counter.clone();
-    let _sub = env.registries.jvm_types.subscribe(
-        key,
-        Rc::new(move || cb_counter.set(cb_counter.get() + 1)),
-    );
+    let _sub = env
+        .registries
+        .jvm_types
+        .query(key)
+        .subscribe(Rc::new(move || cb_counter.set(cb_counter.get() + 1)));
 
     env.delete(Path::new("Service.java"));
 
