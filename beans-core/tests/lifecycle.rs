@@ -5,7 +5,7 @@
 //! file edits, deletes, re-introductions, and cross-file dependencies.
 //! Implementation is disposable; tests are the spec.
 //!
-//! Three tiers, ordered by how much of the architecture each test
+//! Two tiers, ordered by how much of the architecture each test
 //! anchors:
 //!
 //! * **Tier 1 — baseline.** What any consumer (LSP, CLI, batch tool)
@@ -13,9 +13,10 @@
 //! * **Tier 2 — running engine.** What makes the graph a graph, not a
 //!   static snapshot: subscribers fire on lifecycle changes, stale
 //!   `NodeId`s do not silently resolve to unrelated payloads.
-//! * **Tier 3 — lazy recomputation.** ADR-0009/0010's pull-on-demand
-//!   contract. All fail today (no pull function); informs the
-//!   path-A-vs-path-B decision documented in the audit.
+//!
+//! Per ADR-0027 lazy recomputation is a layer-2 consumer concern, not a
+//! layer-1 graph concern; tests for it land alongside the consumer when
+//! it is built.
 
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -376,49 +377,3 @@ fn stale_node_id_does_not_resolve_to_a_different_payload() {
     // If env.graph.get(stale_id) returns None, that's the safer outcome.
 }
 
-// =========================================================================
-// Tier 3 — Lazy recomputation
-//
-// ADR-0009/0010 promise: stale → pull → recompute. None of this exists
-// today. Tests document what the runtime owes the architecture; bodies
-// are sketches because the API isn't there to call.
-// =========================================================================
-
-#[test]
-#[ignore = "no Graph::pull function exists; ADR-0009/0010 not implemented"]
-fn pull_on_stale_node_recomputes_value() {
-    // Spec: a node marked stale, when pulled, transitions Stale →
-    // Computing → Fresh(g) and returns the recomputed value. Today: no
-    // pull function.
-    //
-    // Sketch:
-    //   let id = env.insert_some_computed_node();
-    //   env.graph.mark_stale(id);
-    //   let val = env.graph.pull(id);  // <-- doesn't exist
-    //   assert_eq!(env.graph.get(id).unwrap().state, CacheState::Fresh(_));
-    //   assert!(val.is_some());
-}
-
-#[test]
-#[ignore = "lazy recomputation not implemented; cannot measure unobserved-stale cost"]
-fn unobserved_stale_node_does_not_recompute() {
-    // Spec (ADR-0010): a stale node nobody pulls stays stale forever.
-    // The runtime tracks recompute count; the test asserts it stays at
-    // zero for stale nodes that no consumer queries.
-}
-
-#[test]
-#[ignore = "generation-based freshness comparison not implemented"]
-fn fresh_node_with_stale_dependency_recomputes_on_pull() {
-    // Spec: on pull, walk dependencies; if any dep was bumped since this
-    // node's `Fresh(g)` stamp, recompute even if our state says Fresh.
-    // Today the Generation field on `Fresh` is never compared.
-}
-
-#[test]
-#[ignore = "Computing-state cycle detection not exercised by any caller"]
-fn pull_on_self_referential_node_does_not_loop() {
-    // Spec: if the pull walk encounters a node already in `Computing`
-    // state, it returns a cycle marker rather than recursing. Today
-    // `Computing` is a CacheState variant nothing reads.
-}
