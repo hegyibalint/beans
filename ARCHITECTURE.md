@@ -18,9 +18,10 @@ fix it.
 ```
 beans-core/              # Library: graph engine, JVM model, language modules
   src/
-    graph/               # Nodes, registries, hard/dynamic links
+    graph/               # Layer-1 arena, hard-link forest, RAII handles
+    registry/            # Layer-1 typed registries, queries, subscriptions
     jvm/                 # JVM model + JMOD reader
-    lang/{java,kotlin,scala,groovy,clojure}/   # feature-gated submodules
+    languages/{java,kotlin,scala,groovy,clojure}/   # feature-gated submodules
 
 beans-lsp/               # LSP server: thin protocol shell over beans-core
 
@@ -125,56 +126,91 @@ rules and JVM enrichments (e.g., nullability) read these directly.
 
 ---
 
+## Layering
+
+Beans is structured as three layers
+([ADR-0027](docs/adr/0027-slim-graph-defer-recomputation-to-layer-2.md)):
+
+1. **Data layer** — `Graph<P>` and `Registries`. Storage and indexing of
+   typed nodes and the keys they're discoverable under. No analysis logic;
+   no recomputation; no lifecycle policy beyond RAII cleanup on destroy.
+2. **Analysis layer** — diagnostics, type resolution, dependency analysis.
+   Builds on the data layer; owns its own caching, subscription, and
+   recomputation patterns. Not yet implemented.
+3. **LSP layer** — `beans-lsp`. Builds on layers 1 and 2 to answer client
+   requests.
+
+Cross-cutting startup posture: stale-while-revalidate
+([ADR-0028](docs/adr/0028-stale-while-revalidate-posture.md)). Last-known
+artifacts (squiggles, document symbols, inlay hints) load from snapshot
+and display immediately; reconciliation runs in the background. The user
+is never gated on the engine catching up.
+
+---
+
 ## The semantic graph
 
-The semantic graph is the system's core computation engine
-([ADR-0006](docs/adr/0006-hard-links-and-dynamic-links.md)). Every artifact
-beans produces — diagnostics, completion candidates, hover content, document
-symbols — is a node in this graph or derived from one.
+The semantic graph is the layer-1 storage substrate. Every artifact beans
+produces — diagnostics, completion candidates, hover content, document
+symbols — is rooted in a node in this graph or derived from values
+ultimately reached through it. The graph itself does no analysis; it is a
+typed arena with a hard-link forest and RAII handles, and nothing more
+([ADR-0027](docs/adr/0027-slim-graph-defer-recomputation-to-layer-2.md)).
 
 ### Nodes
 
-A node is a slot in a flat arena, identified by a `NodeId` (a `u64`).
-`NodeId` is a runtime arena index; it is **not** stable across rebuilds,
-version upgrades, or any operation that doesn't preserve the arena
-byte-for-byte
-([ADR-0007](docs/adr/0007-nodeid-runtime-only-identity.md)). External APIs
-never speak in `NodeId`; semantic identity lives in registry keys.
+A node is a slot in a flat arena, identified by a generational `NodeId`
+([ADR-0007](docs/adr/0007-nodeid-runtime-only-identity.md)). The id pairs
+a slot index with the slot's generation at mint time; the slot's
+generation bumps every time the slot is freed, so a stale id no longer
+matches its slot's current occupant. `NodeId` is runtime-only; not stable
+across rebuilds, version upgrades, or any operation that doesn't preserve
+the arena byte-for-byte. External APIs never speak in `NodeId`; semantic
+identity lives in registry keys.
 
 ```rust
-struct NodeData {
-    state: CacheState,            // Fresh(generation) | Stale | Computing
-    payload: NodePayload,
+struct NodeData<P> {
+    payload: P,
     parent: Option<NodeId>,
-    children: Vec<NodeId>,        // hard links
-    dynamic_links: Vec<DynamicLink>,
-    providers: Vec<ProviderHandle>,
-    subscriptions: Vec<SubscriptionHandle>,
+    children: Vec<NodeId>,              // hard links
+    handles: Vec<Box<dyn NodeHandle>>,  // RAII anchors
 }
 ```
 
+There is no `state`, `dynamic_links`, or stability flag on `NodeData`.
+Cross-file dependency tracking is mediated by registry watches stored in
+`handles`; the graph layer has no per-key knowledge — each handle's `Drop`
+does its own cleanup
+([ADR-0014](docs/adr/0014-raii-handles-for-subscriptions-and-providers.md)).
+When a slot is freed the vec drops, every handle's `Drop` runs, registry
+entries vanish.
+
 Node payloads form a layered hierarchy:
 
-- `file://<path>` — a workspace path. Stable; persists through edits.
+- `file://<path>` — a workspace path.
 - `cst://<path>` — the tree-sitter parse tree of the file's content.
 - Language-model nodes (`java://...`, `kt://...`) — typed representations
-  produced by the language module's enrich path.
+  produced by each language module's enrich path.
 - JVM projection nodes (`jvm://...`) — the cross-language interop projection.
-- View nodes (`diagnostic://<path>`, `document_symbols://<path>`,
-  `inlay_hints://<path>`) — LSP-facing computed views.
 - External-resource nodes (`dependency://<coord>`, `jmod://<module>`).
+
+LSP-facing artifacts (`diagnostic://<path>`, `document_symbols://<path>`,
+`inlay_hints://<path>`) are *not* graph nodes. They are layer-2 consumer
+values held outside the graph; their lifetime is the consumer's
+subscription handle, not a graph slot.
 
 ### Hard links
 
-Hard links are ownership/containment edges within a file's subtree. A file
-hard-links its CST; a CST hard-links its language symbols; a Kotlin symbol
-hard-links its JVM projection. Hard links are stored as `Vec<NodeId>` on the
-parent. When the parent is destroyed, the GC walks the tree top-down and
-destroys every child. No registry is involved — hard links are private,
-deterministic, and never cross file boundaries.
+Hard links are ownership/containment edges within a file's subtree
+([ADR-0006](docs/adr/0006-hard-links-and-dynamic-links.md), hard-link half).
+A file hard-links its CST; a CST hard-links its language symbols; a Kotlin
+symbol hard-links its JVM projection. Hard links are stored as
+`Vec<NodeId>` on the parent and never cross file boundaries. The graph is
+a forest — multiple roots (one per file, plus per dependency, per JMOD),
+each rooting a tree of hard links.
 
 ```
-file://Service.kt
+file://Service.kt                                      [root]
   └── cst://Service.kt
        └── kt://com.example.Service
             ├── kt://com.example.Service.process
@@ -183,110 +219,53 @@ file://Service.kt
                  └── jvm://com.example.ServiceKt.toSlug
 ```
 
-### Dynamic links
+`Drop` is the GC mechanic. Destroying a node walks its hard-link subtree
+post-order, frees every descendant, and bumps each freed slot's generation
+so any outstanding `NodeId` resolves to `None` after the destroy. Hard-link
+traversal is acyclic by construction (parent set at insert; never
+mutated); cycle detection is unnecessary at the graph layer.
 
-Dynamic links are cross-file dependency edges, mediated by registries
-([ADR-0008](docs/adr/0008-fallback-queries-on-dynamic-links.md)). A use site
-in `App.java` referencing `Service.process` does not store a target `NodeId`;
-it stores an ordered list of registry queries plus a cached result for
-whichever query is currently active.
+### Dynamic dependencies via registry watches
 
-```rust
-struct DynamicLink {
-    queries: Vec<RegistryQuery>,    // ordered, first-match wins (or merge-all)
-    mode: LinkMode,                 // FirstMatch | MergeAll
-    active_index: Option<usize>,
-    cached_result: Option<NodeId>,
-}
-```
+Cross-file dependencies — a use site in `App.java` referencing
+`Service.process` defined in `Service.kt` — go through registries, not
+graph-level edge fields
+([ADR-0008](docs/adr/0008-fallback-queries-on-dynamic-links.md) rev 3). A
+use-site node owns a `FallbackSubscription<P, F>` (or a single
+`Subscription<K>` for non-fallback cases); its `Watch` lives in the node's
+`handles` vec. When the underlying registry's provider set changes, the
+watch fires its callback; in practice that callback marks the use-site
+stale (a layer-2 concern — the graph itself has no `mark_stale`).
 
-Two combine modes:
+The graph never inspects what its nodes depend on. Watches in `handles`
+are just RAII anchors that happen to fire user-supplied callbacks when
+invoked.
 
-- **`FirstMatch`** — go-to-definition, type-checking. The first query that
-  hits provides the value; lower-priority queries are not consulted.
-- **`MergeAll`** — completion. Every query fires and the results union, with
-  language-specific candidates winning over JVM projections for the same
-  symbol.
+### What the graph does not do
 
-Subscriptions are tiered by query position: the active query has a
-**value-watch**, higher-priority queries (currently missing) have
-**existence-watches** (fire if a hit appears that would supersede), and
-lower-priority queries are unobserved while a higher one is active.
+By design, the graph layer carries no machinery for:
 
-When the user moves a definition between languages, the use site's query
-list does not change; only the active index moves.
+- Per-node cache state (`Fresh`/`Stale`/`Computing`). A graph node holds
+  a value; "is the value up to date?" is not a question the graph
+  answers.
+- Push-stale propagation. Staleness is a layer-2 concept; it travels via
+  consumer-owned subscriptions, not via graph edges.
+- Pull-recompute orchestration. Layer 2 owns the recompute pattern.
+- A stable-vs-volatile node distinction. Stability is a property of
+  consumer-held watches: the registry survives volatile churn, so any
+  watch into the registry survives too.
+- Cycle detection. Hard links are acyclic; registries are O(1) lookups;
+  any layer-2 cycle is caught by `RefCell` re-entrancy panic for free.
 
-### Stable vs volatile nodes
-
-Nodes have lifecycles tied to different things
-([ADR-0011](docs/adr/0011-stable-vs-volatile-nodes.md)):
-
-- **Stable** — identity tied to an external resource that outlives content
-  snapshots. `file://`, `dependency://`, `jmod://`, and LSP view nodes
-  (`diagnostic://Service.kt`). `NodeId`s are preserved across content
-  changes; cached values may update but the slot persists. This is what
-  allows the LSP client to keep a long-lived subscription handle to
-  `diagnostic://Service.kt` across `Ctrl+A, Backspace, Ctrl+Z` without
-  re-registering.
-- **Volatile** — derived from content; recreated when content changes. CSTs,
-  language symbols, JVM projections. Destroyed by the hard-link GC walk.
-
-A stable file node hard-links volatile children (CST, language nodes) and
-stable view nodes (`diagnostic://`). When content clears, the volatile
-subtree is destroyed; the file and view nodes persist; the client's handle
-stays valid.
-
-### Push-stale, pull-recompute
-
-Invalidation is two-phase
-([ADR-0009](docs/adr/0009-push-stale-pull-recompute.md),
-[ADR-0010](docs/adr/0010-lazy-recomputation.md)):
-
-1. **Push (eager, cheap).** When a file changes, tree-sitter diffs identify
-   affected CST nodes. Registries notify subscribers, marking them stale.
-   Staleness propagates through dynamic links. Marking is a flag flip; no
-   value is computed.
-2. **Pull (lazy, on demand).** When something requests a value, the graph
-   walks down from the requested node. Fresh nodes return cached values.
-   Stale nodes recompute, recursively pulling dependencies. Only the actual
-   ancestor chain is touched.
-
-```
-pull(node):
-    match node.state:
-        Fresh(_)  -> return node.value
-        Computing -> cycle; return partial or error
-        Stale     -> node.state = Computing
-                     for dep in node.dependencies: pull(dep)
-                     node.value = recompute(node)
-                     node.state = Fresh(current_generation)
-                     return node.value
-```
-
-A stale node that nobody pulls stays stale forever. Closed-file
-diagnostics nobody reads cost nothing.
-
-### Snapshot save/load
-
-The arena, hard links, dynamic-link queries, and registry subscriber lists
-serialise to a binary snapshot. On startup the snapshot is deserialised
-(sub-second), files changed since are marked stale, and the LSP starts
-answering queries; the next pull on a stale node walks its chain and
-refreshes. 99% of the graph is immediately usable; re-parsing happens on
-demand rather than at startup. Missing dependencies (a JAR that was on the
-path last session but is gone now) mark dependents stale rather than
-crashing.
-
-The format is opaque (bincode or rkyv) and versioned; backward compatibility
-is not guaranteed. `NodeId`s round-trip verbatim because the entire arena
-is preserved.
+These were specified by earlier drafts (ADRs 0009/0010/0011); ADR-0027
+reverses those at the graph layer and defers them to layer-2 consumers.
 
 ---
 
 ## Registries
 
 Registries are the substrate for cross-file lookup, subscription, and
-invalidation. Every dynamic link goes through a registry.
+invalidation. Every cross-file dependency goes through one.
 
 ### Typed per-registry keys
 
@@ -296,31 +275,31 @@ Each registry has its own typed key struct
 Resolution code names the registry it is talking to.
 
 ```rust
-struct JvmMethodKey { owner: ClassFqn, name: String, params: Vec<JvmDescriptor> }
+struct JvmMethodKey { owner: Fqn, name: String, params: Vec<TypeRef> }
+struct JvmTypeKey   { fqn: Fqn }
+struct PackageKey   { name: String }
+struct JavaSymbolKey { fqn: Fqn }
 struct KotlinExtensionKey { receiver: TypeRef, name: String }
-struct ScalaImplicitKey { target: TypeRef }
 // ...
 
 struct Registries {
-    jvm_methods: Registry<JvmMethodKey>,
-    jvm_fields:  Registry<JvmFieldKey>,
-    packages:    Registry<PackageKey>,
-    modules:     Registry<ModuleKey>,
+    jvm_methods:  Registry<JvmMethodKey>,
+    jvm_types:    Registry<JvmTypeKey>,
+    jvm_packages: Registry<PackageKey>,
 
-    #[cfg(feature = "java")]    java: Registry<JavaSymbolKey>,
-    #[cfg(feature = "kotlin")]  kotlin: Registry<KotlinSymbolKey>,
-    #[cfg(feature = "kotlin")]  kotlin_extensions: Registry<KotlinExtensionKey>,
-    #[cfg(feature = "scala")]   scala_implicits: Registry<ScalaImplicitKey>,
-    // ... one field per registry, gated by the relevant language feature
+    #[cfg(feature = "java")]   java_symbols:      Registry<JavaSymbolKey>,
+    #[cfg(feature = "kotlin")] kotlin_symbols:    Registry<KotlinSymbolKey>,
+    #[cfg(feature = "kotlin")] kotlin_extensions: Registry<KotlinExtensionKey>,
+    // one field per registry, gated by the relevant language feature
 }
 ```
 
-Wrong-registry queries fail at compile time. A `JvmMethodKey` cannot be sent
-to `kotlin_extensions`; the types do not match.
+Wrong-registry queries fail at compile time — a `JvmMethodKey` cannot be
+sent to `kotlin_extensions`.
 
 ### Multi-provider, no built-in precedence
 
-Registries store **all providers** for each key, with no notion of a winner
+Registries store **all providers** for each key with no notion of a winner
 ([ADR-0013](docs/adr/0013-registries-store-all-providers.md)). Java's
 classpath shadowing, Kotlin's import precedence, and Clojure's `require`
 order are language-specific resolution rules — the registry knows none of
@@ -331,55 +310,103 @@ struct Registry<K> { inner: Rc<RefCell<RegistryInner<K>>> }
 
 struct RegistryInner<K> {
     providers:   HashMap<K, Vec<NodeId>>,
-    subscribers: HashMap<K, Vec<SubscriberEntry>>,
+    subscribers: HashMap<K, Vec<(SubscriptionId, Callback)>>,
 }
 ```
 
-`Registry::query(key)` returns the entire provider list. Picking a winner is
-a resolution-layer concern, implemented in the language module that knows
-the rules for the call site.
+Picking a winner is a use-site concern — encoded either in the language
+module's resolution code or, for the cross-language fallback case, in
+`FallbackSubscription`.
 
-### Fallback queries
+### Query and Subscription: typestate split
 
-Cross-language resolution uses fallback queries on dynamic links rather than
-registry-internal precedence. A Java reference to `process` on a `Service`
-value carries:
+Single-key lookups split into two stateful types so the watch/no-watch
+lifecycle is enforced at the type level
+([ADR-0008 rev 3](docs/adr/0008-fallback-queries-on-dynamic-links.md)):
 
+```rust
+// Stateless lookup; just resolve.
+struct Query<K> { /* registry handle + key */ }
+impl<K> Query<K> {
+    fn resolve(&self) -> QueryResult;
+    fn subscribe(self, cb: Callback) -> Subscription<K>;
+}
+
+// Active subscription; owns a registry entry. Drop unsubscribes.
+struct Subscription<K> { /* registry handle + key + id */ }
+impl<K> Subscription<K> { fn resolve(&self) -> QueryResult; }
+impl<K> Drop for Subscription<K> { /* removes the entry */ }
 ```
-[
-  java::JavaSymbolKey { owner: "com.example.Service", name: "process" },
-  jvm::JvmMethodKey   { owner: "com.example.Service", name: "process", params: [..] },
-]
+
+A `Query<K>` is, by construction, not subscribed; a `Subscription<K>` is,
+by construction, subscribed. There is no `Option<SubscriptionId>` state
+machine inside either type, and no public path that returns a subscribed
+handle without subscription enforcement.
+
+`QueryResult` is tri-state and owned. The `NodeId`s it carries are
+generational, so a held result is safe to re-check through `graph.get`
+after arbitrary mutations:
+
+```rust
+enum QueryResult { None, One(NodeId), Many(Vec<NodeId>) }
 ```
 
-If Java has the method, the first query wins. If a Kotlin-defined `Service`
-projects to JVM, the second wins. Subscriptions adjust automatically as
-files appear and disappear.
+### Cross-language fallback: `FallbackSubscription<P, F>`
+
+The recurring cross-language pattern across all five JVM languages is
+exactly two queries: language-native primary plus a JVM fallback. ADR-0008
+rev 3 names this directly:
+
+```rust
+struct FallbackSubscription<P, F> { /* primary Sub<P>, fallback Sub<F>, cached */ }
+
+impl<P, F> FallbackSubscription<P, F> {
+    fn new(reg_p: &Registry<P>, key_p: P,
+           reg_f: &Registry<F>, key_f: F) -> Self;
+    fn resolve(&self) -> QueryResult;             // primary first, then fallback
+    fn subscribe(&self, cb: Callback) -> Watch;   // cache invalidates on either side
+}
+```
+
+A typical Java-side reference to a method on a `Service` value:
+
+```rust
+let fb: FallbackSubscription<JavaSymbolKey, JvmMethodKey> = FallbackSubscription::new(
+    &registries.java_symbols, JavaSymbolKey::new("com.example.Service.process"),
+    &registries.jvm_methods,  JvmMethodKey::new(owner, "process", params),
+);
+let watch = fb.subscribe(Rc::new(move || /* mark_stale at use-site */));
+```
+
+If Java has the method, the primary wins. If Kotlin defined it (only the
+JVM projection exists), the fallback wins. The use site is identical in
+both cases.
+
+A future composition that needs a different shape (e.g., completion's
+"merge across N registries") gets its own concrete type, named for what
+its consumers do — not a generic `MultiQuery<N>`. ADR-0008 rev 3 documents
+the rejection.
 
 ### RAII handles
 
-Provider registrations and subscriptions are returned as owning handles
-whose `Drop` impl performs cleanup
+Provider registrations return `ProviderHandle<K>`; subscriptions return
+`Subscription<K>`; fallbacks return `Watch`. All three impl `NodeHandle`
+and live in `NodeData::handles`
 ([ADR-0014](docs/adr/0014-raii-handles-for-subscriptions-and-providers.md)).
-`NodeData` holds them in `Vec`s; when a node is dropped — for any reason, on
-any path — its handles drop, and each handle's `Drop` removes the registry
-entry. There is no separate `on_destroyed` cleanup the GC has to remember to
-call. Partial-construction failures clean up correctly.
+When the node drops, every handle drops, every registry entry vanishes.
+Partial-construction failures clean up correctly because the `Vec` is the
+only owner.
 
-### `Rc<RefCell<_>>` with `Weak` back-references
+### `Rc<RefCell<_>>` with snapshot-and-release notify
 
-Registries are `Rc<RefCell<RegistryInner<K>>>`; handles hold a
-`Weak<RefCell<RegistryInner<K>>>`
+Registries are `Rc<RefCell<RegistryInner<K>>>`
 ([ADR-0015](docs/adr/0015-rc-refcell-registry-with-weak-handles.md)). The
-graph engine is single-threaded and multi-instance (each LSP workspace has
-its own graph), so `Arc<Mutex<_>>` would pay atomic cost we do not need
-and `'static` singletons would forbid isolation. `Weak` back-references
-prevent reference cycles between the registry and node-owned handles; when
-the graph tears down, the registry can drop while handles still exist,
-and their `Drop` impls degrade gracefully via the failed `Weak::upgrade`.
+graph engine is single-threaded and per-workspace
+([ADR-0018](docs/adr/0018-single-threaded-graph-core.md)) — `Arc<Mutex<_>>`
+would pay atomic cost we do not need.
 
-Notifications follow the **snapshot-and-release** pattern to keep
-re-entrant callbacks safe under `RefCell`:
+Notifications use the snapshot-and-release pattern to keep re-entrant
+callbacks safe under `RefCell`:
 
 ```rust
 fn notify(&self, key: &K) {
@@ -392,8 +419,8 @@ fn notify(&self, key: &K) {
 }
 ```
 
-Subscribers added during a callback are picked up on the next notification,
-not the current one.
+Subscribers added during a callback are picked up on the next
+notification, not the current one.
 
 ---
 
@@ -463,10 +490,11 @@ register  provider in `kotlin_extensions` (receiver + name)
           provider in `jvm_methods` (owner + name + params)
           RAII handles stored on NodeData
 
-deletion  push-stale walks the file's volatile subtree
+deletion  Graph::destroy walks the file's hard-link subtree
           NodeData drops, ProviderHandles drop, registry entries removed
-          subscribers (e.g., a Java caller) notified → marked stale
-          next pull on the Java caller finds no provider; emits "unresolved"
+          registry watches fire callbacks at any subscribed use sites
+          (e.g., a Java caller's FallbackSubscription); the use-site's
+          layer-2 cache invalidates and re-resolves on next read
 ```
 
 ---
@@ -554,25 +582,30 @@ error to the client without killing the server.
 `beans-lsp` wires `beans-core`'s graph to the LSP protocol. It is a leaf in
 the dependency graph; nothing depends on it.
 
-The server creates one graph per workspace. On `initialize`, it discovers
-source roots, schedules initial parsing on the rayon pool, and integrates
-results. On `didChange`, tree-sitter performs an incremental re-parse, the
-diff is push-staled, and the next pull recomputes whatever the next
-request asks for.
+The server creates one graph per workspace. On `initialize`, it loads any
+available snapshot, displays last-known artifacts immediately
+([ADR-0028](docs/adr/0028-stale-while-revalidate-posture.md)), and queues
+revalidation in the background. On `didChange`, tree-sitter performs an
+incremental re-parse; the file's volatile subtree is destroyed and
+re-integrated; layer-2 caches whose subscriptions fired (squiggles for
+this file, dependents in other files) reconcile on next read.
 
-The LSP server **subscribes to view nodes** for open files:
+The LSP server holds **layer-2 subscriptions** for proactive artifacts on
+open files:
 
-- `diagnostic://<path>` — `textDocument/publishDiagnostics`.
-- `document_symbols://<path>` — `textDocument/documentSymbol`.
-- `inlay_hints://<path>` — `textDocument/inlayHint`.
+- diagnostics → `textDocument/publishDiagnostics`.
+- document symbols → `textDocument/documentSymbol`.
+- inlay hints → `textDocument/inlayHint`.
 
-View nodes are stable; the LSP's subscription handle survives content-
-clearing edits like `Ctrl+A, Backspace`.
+These subscriptions are RAII watches into the appropriate registries; the
+registries survive volatile churn, so the watches survive content-clearing
+edits like `Ctrl+A, Backspace`.
 
-Per-request handlers are short — look up a node, call `pull`, translate the
-result into LSP types. Translation lives in `beans-lsp`; formatting (e.g.,
-hover Markdown) lives in `beans-core` so a future `beans-cli` can render
-the same hover content. Request scheduling, debouncing, and cancellation
+Per-request handlers are short — look up the relevant nodes, read the
+current value (cached or freshly computed), translate into LSP types.
+Translation lives in `beans-lsp`; formatting (e.g., hover Markdown) lives
+in `beans-core` so a future `beans-cli` can render the same hover content.
+Request scheduling, debouncing, and cancellation
 live in `beans-lsp`. The graph itself does not know about LSP; it knows
 about pulls and stales.
 
@@ -630,22 +663,26 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for authoring conventions.
 
 ## Migration status
 
-The current code is a Java-first prototype that informs the architecture
-but does not constrain it
-([ADR-0003](docs/adr/0003-spec-drives-implementation.md)). Where the
-prototype's `SymbolTable`-based design diverges from the architecture
-described here, the implementation is the side that moves
-([ADR-0021](docs/adr/0021-preserve-tree-sitter-walker-rewrite-layers-above.md)):
+The current code began as a Java-first `SymbolTable`-based prototype that
+informs the architecture but does not constrain it
+([ADR-0003](docs/adr/0003-spec-drives-implementation.md)). Where prototype
+shape diverges from the architecture described here, the implementation
+is the side that moves
+([ADR-0021](docs/adr/0021-preserve-tree-sitter-walker-rewrite-layers-above.md)).
 
-- Tree-sitter integration in `beans-lang-java/src/parser.rs` and the Java
-  type-reference parser in `types.rs` are **preserved**. Grammar-quirk
-  knowledge does not become wrong when the model around it changes.
-- The output of the walker is **rewritten**. `Symbol`/`SymbolTable` emission
-  is replaced by typed node payloads with hard and dynamic links. The
-  walker's `extract_*` functions keep their tree-sitter signatures; only
-  the body that builds the result changes.
-- The `Language` trait is **removed**. Its place is taken by feature-gated
-  language modules in `beans-core`.
+Status today:
 
-The migration is incremental at the function-by-function level inside the
-walker, not at the module level.
+- Tree-sitter integration lives in `beans-core/src/languages/java/parser.rs`
+  and the Java type-reference parser in `types.rs`. Both are **preserved**;
+  grammar-quirk knowledge does not become wrong when the model around it
+  changes.
+- The walker's output is **rewritten** to emit typed node payloads,
+  registered through layer-1 registries, with cross-file dependencies
+  mediated by registry watches (per ADR-0008 rev 3, ADR-0027). The
+  `Symbol`/`SymbolTable` shape from the prototype is gone.
+- The `Language` trait is **removed**; languages live as feature-gated
+  modules in `beans-core/src/languages/`.
+
+The migration to layer-1 (graph + registries) is substantially complete.
+Layer-2 (analysis) and snapshot/fast-restart support remain to be built;
+see the backlog for sequencing.

@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted
+Accepted; partially superseded by
+[ADR-0027](0027-slim-graph-defer-recomputation-to-layer-2.md). The
+hard-link decision remains in force. The dynamic-link decision is
+reversed: cross-file dependencies are mediated by registry watches owned
+by the use-site node (per ADR-0008 rev 3), not by a `dynamic_links` field
+on `NodeData`.
 
 ## Context
 
