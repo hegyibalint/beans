@@ -110,6 +110,8 @@ by area.
 | [0024](0024-tests-start-expected-failure-and-prefer-negative-spec-violations.md) | Tests start as expected_failure and prefer negative spec violations | testing |
 | [0025](0025-dual-mode-check-real-engine-vs-empty-engine.md) | Dual-mode check (real engine vs empty engine) catches trivial-passers | testing |
 | [0026](0026-per-test-opt-out-for-absence-dependent-tests.md) | Per-test opt-out for absence-dependent tests in the dual-mode check | testing |
+| [0027](0027-slim-graph-defer-recomputation-to-layer-2.md) | Limit the graph to a hard-link forest; lazy recomputation lives in layer-2 consumers | graph |
+| [0028](0028-stale-while-revalidate-posture.md) | Stale-while-revalidate is the default posture | foundation |
 
 ## Authoring workflow
 

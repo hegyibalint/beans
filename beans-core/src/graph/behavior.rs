@@ -16,15 +16,17 @@
 //!    `Vec<Box<dyn NodeHandle>>` of registration handles.
 //! 4. Caller stores the returned vector into
 //!    `graph.get_mut(id).unwrap().handles`.
-//! 5. On destroy, `payload.on_destroyed(id, &ctx)` runs *before* the
-//!    slot is cleared. Most consumers leave this as the default no-op
-//!    and rely on the handles' RAII drop.
 //!
 //! Returning handles by value rather than mutating the engine through
 //! a context method keeps the trait simple — there is no
 //! "get-storage-then-push" surface to maintain — and matches the ADR
 //! intent that handles travel through the payload's hands once before
 //! settling on `NodeData`.
+//!
+//! Cleanup is RAII per ADR-0014: dropping `NodeData` drops `handles`,
+//! and each handle's `Drop` impl removes its registry entry. There is
+//! no `on_destroyed` hook; if a payload needs custom teardown, encode it
+//! in a `NodeHandle` impl whose `Drop` does the work.
 //!
 //! `Ctx` is the consumer's registry struct (e.g.
 //! [`Registries`](crate::Registries)). The engine never names specific
@@ -51,8 +53,4 @@ pub trait NodeBehavior {
     /// don't register anywhere — parameter nodes, leaf bookkeeping, and
     /// so on.
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>>;
-
-    /// Called before the node's slot is freed. Most consumers leave
-    /// this as the default no-op and rely on the handles' RAII drop.
-    fn on_destroyed(&self, _id: NodeId, _ctx: &Self::Ctx) {}
 }

@@ -1,17 +1,21 @@
 //! Graph arena and `NodeData<P>`.
 //!
-//! Per ADR-0007: `NodeId` is a runtime-only identity. It's an opaque
-//! generational handle the engine mints from arena slots — *not* meaningful
-//! across rebuilds, snapshots, or any operation that doesn't preserve the
-//! arena byte-for-byte.
+//! Per ADR-0027 the layer-1 graph is a typed arena with a hard-link
+//! forest and RAII handles, and nothing more. Lazy recomputation,
+//! push-stale propagation, and stable-vs-volatile lifecycle behavior
+//! are layer-2 consumer concerns.
 //!
-//! Per ADR-0006: hard links are stored as `Vec<NodeId>` on the parent. When
-//! a node is destroyed, the GC walks its hard-link subtree post-order and
-//! frees every descendant; each freed slot bumps its generation so any
-//! outstanding `NodeId` pointing at the old occupant gracefully resolves
-//! to `None` rather than silently aliasing a recycled neighbour.
-
-use crate::graph::cache_state::{CacheState, Generation};
+//! Per ADR-0007 `NodeId` is a runtime-only identity. It's an opaque
+//! generational handle the engine mints from arena slots — *not*
+//! meaningful across rebuilds, snapshots, or any operation that doesn't
+//! preserve the arena byte-for-byte.
+//!
+//! Per ADR-0006 (hard-link half) hard links are stored as `Vec<NodeId>`
+//! on the parent. When a node is destroyed, the GC walks its hard-link
+//! subtree post-order and frees every descendant; each freed slot bumps
+//! its generation so any outstanding `NodeId` pointing at the old
+//! occupant gracefully resolves to `None` rather than silently aliasing
+//! a recycled neighbour.
 
 /// Marker trait for type-erased RAII handles stored on
 /// [`NodeData::handles`]. Per ADR-0014 each handle is its own RAII anchor —
@@ -90,7 +94,6 @@ impl<P: std::fmt::Debug> std::fmt::Debug for Slot<P> {
 /// on a rayon worker per ADR-0005. The integrated node stays
 /// thread-local per ADR-0018, but its payload value can travel.
 pub struct NodeData<P> {
-    pub state: CacheState,
     pub payload: P,
     pub parent: Option<NodeId>,
     pub children: Vec<NodeId>,
@@ -106,7 +109,6 @@ pub struct NodeData<P> {
 impl<P: std::fmt::Debug> std::fmt::Debug for NodeData<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NodeData")
-            .field("state", &self.state)
             .field("payload", &self.payload)
             .field("parent", &self.parent)
             .field("children", &self.children)
@@ -124,7 +126,6 @@ impl<P: std::fmt::Debug> std::fmt::Debug for NodeData<P> {
 pub struct Graph<P> {
     slots: Vec<Slot<P>>,
     free: Vec<usize>,
-    current_gen: Generation,
 }
 
 impl<P: std::fmt::Debug> std::fmt::Debug for Graph<P> {
@@ -132,7 +133,6 @@ impl<P: std::fmt::Debug> std::fmt::Debug for Graph<P> {
         f.debug_struct("Graph")
             .field("slots", &self.slots)
             .field("free", &self.free)
-            .field("current_gen", &self.current_gen)
             .finish()
     }
 }
@@ -148,17 +148,13 @@ impl<P> Graph<P> {
         Self {
             slots: Vec::new(),
             free: Vec::new(),
-            current_gen: Generation::ZERO,
         }
     }
 
     /// Allocate a slot and store `payload` in it. If `parent` is set, the
     /// new node is appended to the parent's `children` (a hard link).
-    /// Initial state is `Stale` — the value has been *placed* but not yet
-    /// validated by a `mark_fresh` call.
     pub fn insert(&mut self, payload: P, parent: Option<NodeId>) -> NodeId {
         let data = NodeData {
-            state: CacheState::Stale,
             payload,
             parent,
             children: Vec::new(),
@@ -275,27 +271,6 @@ impl<P> Graph<P> {
             slot.generation = slot.generation.wrapping_add(1);
             self.free.push(slot_idx);
         }
-    }
-
-    /// Bump the global generation counter and mark the given node `Stale`.
-    /// Bumps the counter even if the node was already stale — staleness
-    /// is a per-node fact but the generation is the engine-wide clock.
-    pub fn mark_stale(&mut self, id: NodeId) {
-        self.current_gen = self.current_gen.bump();
-        if let Some(node) = self.get_mut(id) {
-            node.state = CacheState::Stale;
-        }
-    }
-
-    /// Record a freshly-computed value at the given generation.
-    pub fn mark_fresh(&mut self, id: NodeId, generation: Generation) {
-        if let Some(node) = self.get_mut(id) {
-            node.state = CacheState::Fresh(generation);
-        }
-    }
-
-    pub fn current_generation(&self) -> Generation {
-        self.current_gen
     }
 
     /// Iterate over every occupied node in the arena, yielding
@@ -442,40 +417,5 @@ mod tests {
         // The replacement landed in the same slot; the stale id has the
         // old generation; `get` rejects it.
         assert!(graph.get(stale).is_none(), "stale id must not resolve to replacement");
-    }
-
-    #[test]
-    fn generation_is_monotonic_across_mark_stale() {
-        // `mark_stale` lives on the arena (it owns `current_gen`), so its
-        // monotonicity test belongs here. The `Generation` value-type
-        // tests live in cache_state.
-        let mut graph: Graph<TestNode> = Graph::new();
-        let id = graph.insert(TestNode::new("gen"), None);
-
-        let g0 = graph.current_generation();
-
-        graph.mark_stale(id);
-        let g1 = graph.current_generation();
-        assert!(g1 > g0);
-        assert_eq!(graph.get(id).unwrap().state, CacheState::Stale);
-
-        graph.mark_fresh(id, g1);
-        assert_eq!(graph.get(id).unwrap().state, CacheState::Fresh(g1));
-        // mark_fresh does not touch the global counter.
-        assert_eq!(graph.current_generation(), g1);
-
-        graph.mark_stale(id);
-        let g2 = graph.current_generation();
-        assert!(g2 > g1);
-
-        graph.mark_stale(id);
-        let g3 = graph.current_generation();
-        assert!(g3 > g2);
-    }
-
-    #[test]
-    fn fresh_graph_starts_at_generation_zero() {
-        let graph: Graph<TestNode> = Graph::new();
-        assert_eq!(graph.current_generation(), Generation::ZERO);
     }
 }
