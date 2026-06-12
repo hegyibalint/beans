@@ -4,10 +4,10 @@ members = [
     "beans-core",
     "beans-lang-jvm",
     "beans-lang-java",
+    "beans-lang-java-test",
     "beans",
     "beans-lsp",
     "beans-test-harness",
-    "beans-test-java",
     "beans-test-jdks",
 ]
 

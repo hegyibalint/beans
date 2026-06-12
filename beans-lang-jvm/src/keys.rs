@@ -14,6 +14,8 @@
 //! It is the producer's responsibility to pre-erase — the registry layer
 //! is dumb (ADR-0013).
 
+use beans_core::registry::SimpleNamed;
+
 use crate::fqn::Fqn;
 use crate::type_ref::TypeRef;
 
@@ -27,6 +29,12 @@ pub struct JvmTypeKey {
 impl JvmTypeKey {
     pub fn new(fqn: impl Into<Fqn>) -> Self {
         Self { fqn: fqn.into() }
+    }
+}
+
+impl SimpleNamed for JvmTypeKey {
+    fn simple_name(&self) -> &str {
+        self.fqn.simple_name()
     }
 }
 
