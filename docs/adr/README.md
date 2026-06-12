@@ -112,6 +112,7 @@ by area.
 | [0026](0026-per-test-opt-out-for-absence-dependent-tests.md) | Per-test opt-out for absence-dependent tests in the dual-mode check | testing |
 | [0027](0027-slim-graph-defer-recomputation-to-layer-2.md) | Limit the graph to a hard-link forest; lazy recomputation lives in layer-2 consumers | graph |
 | [0028](0028-stale-while-revalidate-posture.md) | Stale-while-revalidate is the default posture | foundation |
+| [0029](0029-layer-1-ir-declarations-and-use-sites.md) | The layer-1 IR contains declarations and use sites, partitioned by modifiability | graph |
 
 ## Authoring workflow
 

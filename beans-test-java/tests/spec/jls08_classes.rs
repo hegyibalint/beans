@@ -1080,6 +1080,57 @@ mod jls_8_4_3_static_methods {
     }
 }
 
+// §8.4.3.1 — abstract Methods
+mod jls_8_4_3_1_abstract_methods {
+    use super::*;
+
+    #[test]
+    fn abstract_method_with_body_is_a_compile_error() {
+        // JLS §8.4.3.1: a method declared `abstract` may not be defined
+        // with a body. Rule `abstract-method-with-body` fires once for
+        // every such declaration; concrete methods and bodyless
+        // abstract methods are unaffected.
+        fixture()
+            .file("com/example/Shape.java", r#"
+                package com.example;
+                public abstract class Shape {
+                    public abstract double area();
+                    public abstract double bad() { return 0; }
+                    public String describe() { return ""; }
+                }
+            "#)
+            .diagnostics("com/example/Shape.java", |findings| {
+                assert_eq!(
+                    findings.count_code("abstract-method-with-body"),
+                    1,
+                    "expected exactly one abstract-method-with-body diagnostic; \
+                     got {} total: {:#?}",
+                    findings.count(),
+                    findings.iter().collect::<Vec<_>>()
+                );
+            })
+            .run();
+    }
+
+    #[test]
+    fn three_abstract_methods_with_bodies_emit_three_diagnostics() {
+        // Multi-fire sanity: three offending methods, three diagnostics.
+        fixture()
+            .file("com/example/Bad.java", r#"
+                package com.example;
+                public abstract class Bad {
+                    public abstract int a() { return 1; }
+                    public abstract int b() { return 2; }
+                    public abstract int c() { return 3; }
+                }
+            "#)
+            .diagnostics("com/example/Bad.java", |findings| {
+                assert_eq!(findings.count_code("abstract-method-with-body"), 3);
+            })
+            .run();
+    }
+}
+
 // §8.4.8 — Inheritance, Overriding, and Hiding
 mod jls_8_4_8_inheritance_overriding {
     use super::*;
