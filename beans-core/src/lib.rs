@@ -28,5 +28,5 @@ pub use diagnostics::{Diagnostic, DiagnosticSeverity};
 pub use fix::{Fix, SourceEdit};
 pub use primitives::Location;
 pub use registry::{
-    FallbackSubscription, Query, QueryResult, Registry, Subscription, Watch,
+    FallbackSubscription, Query, QueryResult, Registry, SimpleNamed, Subscription, Watch,
 };

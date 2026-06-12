@@ -661,7 +661,6 @@ mod jls_7_5_1_single_type_import {
                     "diagnostic should anchor on the use-site line"
                 );
             })
-            .expected_failure("missing-import rule not yet implemented")
             .run();
     }
 
@@ -709,7 +708,6 @@ mod jls_7_5_1_single_type_import {
                     d.message
                 );
             })
-            .expected_failure("missing-import rule not yet implemented")
             .run();
     }
 
@@ -744,7 +742,6 @@ mod jls_7_5_1_single_type_import {
                     "no diagnostic may mention the candidate-less `List`"
                 );
             })
-            .expected_failure("missing-import rule not yet implemented")
             .run();
     }
 
@@ -774,7 +771,6 @@ mod jls_7_5_1_single_type_import {
                     "each header occurrence gets its own diagnostic"
                 );
             })
-            .expected_failure("missing-import rule not yet implemented")
             .run();
     }
 
@@ -805,7 +801,6 @@ mod jls_7_5_1_single_type_import {
                     "ambiguity multiplies fixes, not diagnostics"
                 );
             })
-            .expected_failure("missing-import rule not yet implemented")
             .run();
     }
 
