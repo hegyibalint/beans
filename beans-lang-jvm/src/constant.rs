@@ -1,8 +1,8 @@
 //! Compile-time constant values.
 //!
-//! Used by `static final` field initializers ([`crate::jvm::JvmFieldNode::constant_value`])
+//! Used by `static final` field initializers ([`crate::JvmFieldNode::constant_value`])
 //! and annotation element defaults
-//! ([`crate::jvm::JvmAnnotationElementNode::default_value`]). The
+//! ([`crate::JvmAnnotationElementNode::default_value`]). The
 //! variants cover JLS §15.29 constant expression types plus `Null`
 //! (which is not technically a constant expression but is the only
 //! sensible representation of a null annotation default).

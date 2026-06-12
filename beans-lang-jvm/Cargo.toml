@@ -1,0 +1,16 @@
+[package]
+name = "beans-lang-jvm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+beans-core = { path = "../beans-core" }
+# Class container layer (jmod/jar reading) lives in this crate's
+# `container` module: zip for archive entries, std for classfile bytes.
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+# `container`'s tests provision a pinned Temurin rather than trusting
+# $JAVA_HOME.
+beans-test-jdks = { path = "../beans-test-jdks" }

@@ -14,8 +14,8 @@
 //! It is the producer's responsibility to pre-erase — the registry layer
 //! is dumb (ADR-0013).
 
-use crate::jvm::fqn::Fqn;
-use crate::jvm::type_ref::TypeRef;
+use crate::fqn::Fqn;
+use crate::type_ref::TypeRef;
 
 /// Key identifying a JVM type (class, interface, enum, record, annotation
 /// type) by its fully-qualified name.
@@ -60,7 +60,7 @@ impl JvmFieldKey {
 /// constructed with both:
 ///
 /// 1. **Erasure applied** — pre-erase via
-///    [`TypeRef::erasure`](crate::jvm::TypeRef::erasure) (JLS §4.6) so
+///    [`TypeRef::erasure`](crate::TypeRef::erasure) (JLS §4.6) so
 ///    `List<String>` and `List<Integer>` collapse to the same key.
 /// 2. **Fully-qualified `Simple` names** — `TypeRef::Simple { name:
 ///    "java.lang.String" }`, never `Simple { name: "String" }`. Two

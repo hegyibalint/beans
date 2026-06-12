@@ -25,13 +25,14 @@
 //! Hover, etc.) is the consumer's job — per ADR-0020 LSP types do not
 //! enter this layer.
 
-use crate::graph::arena::{Graph, NodeId};
-use crate::jvm::fqn::Fqn;
-use crate::jvm::keys::{JvmTypeKey, PackageKey};
-use crate::languages::java::keys::JavaSymbolKey;
-use crate::payload::NodePayload;
-use crate::registry::Registries;
-use crate::languages::java::syntax::Import;
+use beans_core::graph::arena::{Graph, NodeId};
+use beans_lang_jvm::fqn::Fqn;
+use beans_lang_jvm::keys::{JvmTypeKey, PackageKey};
+use beans_lang_jvm::registries::JvmRegistries;
+use crate::keys::JavaSymbolKey;
+use crate::payload::AsJava;
+use crate::registries::JavaRegistries;
+use crate::syntax::Import;
 
 /// Resolve a Java identifier at a use site.
 ///
@@ -45,15 +46,16 @@ use crate::languages::java::syntax::Import;
 /// FQN-keyed and have no name-only entry point. The expense of the
 /// fallback is acceptable because it only fires when the preceding
 /// five steps have already missed.
-pub fn resolve_name(
+pub fn resolve_name<P: AsJava>(
     name: &str,
     imports: &[Import],
     current_package: &str,
-    registries: &Registries,
-    graph: &Graph<NodePayload>,
+    java: &JavaRegistries,
+    jvm: &JvmRegistries,
+    graph: &Graph<P>,
 ) -> Option<NodeId> {
     // 1. Exact FQN.
-    if let Some(id) = lookup_fqn(registries, name) {
+    if let Some(id) = lookup_fqn(java, jvm, name) {
         return Some(id);
     }
 
@@ -61,7 +63,7 @@ pub fn resolve_name(
     for import in imports {
         if let Import::Single(fqn, _) = import
             && (fqn.ends_with(&format!(".{}", name)) || fqn == name)
-            && let Some(id) = lookup_fqn(registries, fqn)
+            && let Some(id) = lookup_fqn(java, jvm, fqn)
         {
             return Some(id);
         }
@@ -70,7 +72,7 @@ pub fn resolve_name(
     // 3. Same-package qualification.
     if !current_package.is_empty() {
         let candidate = format!("{}.{}", current_package, name);
-        if let Some(id) = lookup_fqn(registries, &candidate) {
+        if let Some(id) = lookup_fqn(java, jvm, &candidate) {
             return Some(id);
         }
     }
@@ -79,7 +81,7 @@ pub fn resolve_name(
     for import in imports {
         if let Import::Wildcard(package, _) = import {
             let candidate = format!("{}.{}", package, name);
-            if let Some(id) = lookup_fqn(registries, &candidate) {
+            if let Some(id) = lookup_fqn(java, jvm, &candidate) {
                 return Some(id);
             }
         }
@@ -89,7 +91,7 @@ pub fn resolve_name(
     for import in imports {
         if let Import::Static(fqn, _) = import
             && (fqn.ends_with(&format!(".{}", name)) || fqn == name)
-            && let Some(id) = lookup_fqn(registries, fqn)
+            && let Some(id) = lookup_fqn(java, jvm, fqn)
         {
             return Some(id);
         }
@@ -108,15 +110,16 @@ pub fn resolve_name(
 /// Returns `None` if either step fails. Caller-provided `name` is
 /// expected to be a dotted identifier (`A.b.c`) — the function does not
 /// itself parse expressions.
-pub fn resolve_compound_name(
+pub fn resolve_compound_name<P: AsJava>(
     name: &str,
     imports: &[Import],
     current_package: &str,
-    registries: &Registries,
-    graph: &Graph<NodePayload>,
+    java: &JavaRegistries,
+    jvm: &JvmRegistries,
+    graph: &Graph<P>,
 ) -> Option<NodeId> {
     // Try the whole thing as an FQN first.
-    if let Some(id) = lookup_fqn(registries, name) {
+    if let Some(id) = lookup_fqn(java, jvm, name) {
         return Some(id);
     }
 
@@ -126,7 +129,7 @@ pub fn resolve_compound_name(
         let member_part = &name[dot + 1..];
 
         if let Some(type_id) =
-            resolve_name(type_part, imports, current_package, registries, graph)
+            resolve_name(type_part, imports, current_package, java, jvm, graph)
         {
             // Walk the type's hard-link children, filtering for a Java
             // payload whose simple name matches (mirrors the
@@ -145,26 +148,26 @@ pub fn resolve_compound_name(
 
     // Fall back to the simple-name chain in case the caller passed an
     // unqualified compound that happened not to split helpfully.
-    resolve_name(name, imports, current_package, registries, graph)
+    resolve_name(name, imports, current_package, java, jvm, graph)
 }
 
 /// Resolve a fully-qualified name. Prefers the Java-side node when both
 /// the language-specific and JVM-projection providers exist (the
 /// prototype's `lookup_by_fqn` returned the single declaration node;
 /// the Java-side node is the source-level analogue).
-pub fn lookup_fqn(registries: &Registries, fqn: &str) -> Option<NodeId> {
+pub fn lookup_fqn(java: &JavaRegistries, jvm: &JvmRegistries, fqn: &str) -> Option<NodeId> {
     let java_key = JavaSymbolKey::new(Fqn::new(fqn));
-    if let Some(&id) = registries.java_symbols.providers(&java_key).first() {
+    if let Some(&id) = java.symbols.providers(&java_key).first() {
         return Some(id);
     }
 
     let type_key = JvmTypeKey::new(Fqn::new(fqn));
-    if let Some(&id) = registries.jvm_types.providers(&type_key).first() {
+    if let Some(&id) = jvm.types.providers(&type_key).first() {
         return Some(id);
     }
 
     let pkg_key = PackageKey::new(Fqn::new(fqn));
-    if let Some(&id) = registries.jvm_packages.providers(&pkg_key).first() {
+    if let Some(&id) = jvm.packages.providers(&pkg_key).first() {
         return Some(id);
     }
 
@@ -177,7 +180,7 @@ pub fn lookup_fqn(registries: &Registries, fqn: &str) -> Option<NodeId> {
 ///
 /// O(n) over the entire graph — only invoked as the last fallback in
 /// [`resolve_name`].
-pub fn resolve_simple_name(name: &str, graph: &Graph<NodePayload>) -> Option<NodeId> {
+pub fn resolve_simple_name<P: AsJava>(name: &str, graph: &Graph<P>) -> Option<NodeId> {
     let mut hits = Vec::new();
     for (id, node) in graph.iter() {
         if let Some(payload_name) = payload_simple_name(&node.payload)
@@ -196,9 +199,6 @@ pub fn resolve_simple_name(name: &str, graph: &Graph<NodePayload>) -> Option<Nod
 /// Borrow the simple name of a Java payload. JVM-projection nodes
 /// return `None` because they're hard-linked siblings of their Java
 /// counterparts; resolution always lands on the Java side.
-fn payload_simple_name(payload: &NodePayload) -> Option<&str> {
-    match payload {
-        NodePayload::Java(j) => j.header().map(|h| h.name.as_str()),
-        NodePayload::Jvm(_) => None,
-    }
+fn payload_simple_name<P: AsJava>(payload: &P) -> Option<&str> {
+    payload.as_java().and_then(|j| j.header()).map(|h| h.name.as_str())
 }

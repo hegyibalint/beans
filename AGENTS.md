@@ -15,18 +15,28 @@ Beans is a multi-language LSP for JVM languages (Java, Kotlin, Groovy, Scala, Cl
 ## Project Structure
 
 ```text
-beans-core/           # Shared JVM symbol model, symbol table, Language trait, resolution
-beans-lang-java/      # Java source parser (tree-sitter-java) + JavaLanguage impl
+beans-core/           # The symbolic engine: graph arena, Registry<K> + queries,
+                      # Location, neutral analysis values (Diagnostic, Fix)
+beans-lang-jvm/       # Shared JVM model + enrichments; JvmRegistries (the only
+                      # registry surface shared across language verticals)
+beans-lang-java/      # Java vertical: model, walker, resolve, rules, fixes,
+                      # JavaRegistries. Depends on core + jvm, never on other languages
+beans/                # Facade: NodePayload union, composed Registries, per-extension
+                      # dispatch, Beans instance. Languages are Cargo features here
 beans-lsp/            # LSP server (go-to-def, hover, references, document symbols)
 beans-test-harness/   # Fixture test framework (language-agnostic, no language deps)
-beans-test-java/      # Java spec tests (uses harness + JavaLanguage via prelude)
+beans-test-java/      # Java spec tests (uses harness + facade via prelude)
 ```
+
+Dependency direction: `beans-lang-<language>` → `beans-lang-jvm` → `beans-core`;
+the `beans` facade composes all of them; `beans-lsp` and test crates consume the
+facade. Verticals never import each other — cross-language visibility exists
+only through the JVM projection (ADR-0004, ADR-0030).
 
 ## Development
 
 - Language: Rust edition 2024.
 - Run tests: `cargo test --workspace`.
-- Run Java parser CLI: `cargo run -p beans-lang-java -- <file.java>`.
 
 ## Testing Policy
 

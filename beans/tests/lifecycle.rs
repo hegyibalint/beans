@@ -23,13 +23,13 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use beans_core::graph::{Graph, NodeId};
-use beans_core::jvm::keys::{JvmMethodKey, JvmTypeKey};
-use beans_core::jvm::{Fqn, JvmNodePayload};
-use beans_core::languages::java::{integrate, parse_java_to_graph};
-use beans_core::payload::NodePayload;
-use beans_core::registry::Registries;
-use beans_core::TypeRef;
+use beans::graph::{Graph, NodeId};
+use beans::jvm::keys::{JvmMethodKey, JvmTypeKey};
+use beans::jvm::{Fqn, JvmNodePayload};
+use beans::languages::java::{integrate, parse_java_to_graph};
+use beans::payload::NodePayload;
+use beans::Registries;
+use beans::TypeRef;
 
 // =========================================================================
 // Test environment
@@ -82,13 +82,13 @@ impl Env {
 
     fn types_at(&self, fqn: &str) -> Vec<NodeId> {
         self.registries
-            .jvm_types
+            .jvm.types
             .providers(&JvmTypeKey::new(Fqn::new(fqn)))
     }
 
     fn methods_at(&self, owner: &str, name: &str, params: Vec<TypeRef>) -> Vec<NodeId> {
         self.registries
-            .jvm_methods
+            .jvm.methods
             .providers(&JvmMethodKey::new(Fqn::new(owner), name, params))
     }
 }
@@ -285,7 +285,7 @@ fn registering_a_provider_fires_existing_subscribers() {
     let cb_counter = counter.clone();
     let _sub = env
         .registries
-        .jvm_types
+        .jvm.types
         .query(key)
         .subscribe(Rc::new(move || cb_counter.set(cb_counter.get() + 1)));
 
@@ -316,7 +316,7 @@ fn dropping_a_provider_fires_existing_subscribers() {
     let cb_counter = counter.clone();
     let _sub = env
         .registries
-        .jvm_types
+        .jvm.types
         .query(key)
         .subscribe(Rc::new(move || cb_counter.set(cb_counter.get() + 1)));
 

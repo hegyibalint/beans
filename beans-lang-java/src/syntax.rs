@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use crate::primitives::Location;
+use beans_core::primitives::Location;
 
 /// One Java `import` statement, paired with its source location.
 ///

@@ -4,22 +4,9 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 
-# Per ADR-0019, languages are feature-gated submodules of `beans-core`. All
-# five default on so existing consumers (the LSP, the test harness, the
-# spec-test crates) compile unchanged. A bytecode-only consumer can disable
-# them with `default-features = false` and turn on only what it needs.
-[features]
-default = ["java", "kotlin", "scala", "groovy", "clojure"]
-java = ["dep:tree-sitter", "dep:tree-sitter-java"]
-kotlin = []
-scala = []
-groovy = []
-clojure = []
+# The symbolic engine: graph arena, registry primitive, query types,
+# source primitives, and neutral analysis values (Diagnostic, Fix). No
+# language or JVM knowledge — those live in beans-lang-jvm and the
+# beans-lang-<language> vertical crates, composed by the `beans` facade.
 
 [dependencies]
-tree-sitter = { version = "0.25", optional = true }
-tree-sitter-java = { version = "0.23", optional = true }
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
-
-[dev-dependencies]
-beans-test-jdks = { path = "../beans-test-jdks" }

@@ -1,99 +1,32 @@
-//! `beans-core` — semantic graph engine, JVM model, and per-language modules.
+//! beans-core — the symbolic engine.
 //!
-//! The top-level type is [`Beans`] — per workspace, exactly one. It owns
-//! the graph and the registries; consumers (LSP, future CLI, batch
-//! tools) construct one and operate the engine through it.
+//! Storage and indexing machinery with no language and no JVM
+//! knowledge:
 //!
-//! Module layout (per ADR-0019 / ADR-0004):
+//! - [`graph`] — the typed arena: hard-link forest, generational
+//!   `NodeId`, RAII `handles` (ADR-0027).
+//! - [`registry`] — the `Registry<K>` primitive plus the query types
+//!   (`Query`, `Subscription`, `FallbackSubscription`; ADR-0008 rev 3).
+//! - [`primitives`] — source vocabulary shared by every layer
+//!   (`Location`).
+//! - [`diagnostics`] / [`fix`] — neutral analysis *value* types
+//!   (`Diagnostic`, `Fix`). The analyses that produce them live in the
+//!   vertical crates (`beans-lang-<language>`).
 //!
-//! - [`graph`] — the generic graph engine (nodes, hard links, dynamic-link
-//!   edges, cache state). Pure structure and lifecycle; no indexing.
-//! - [`registry`] — typed-key index over `NodeId`s with subscription /
-//!   notification (ADR-0008/0013/0014/0015). Consumes `graph` for
-//!   `NodeId` and the `NodeHandle` marker; graph does not depend on
-//!   registry.
-//! - [`jvm`] — the JVM interop layer. Modifiers, type references, JVM
-//!   payload variants, the typed keys.
-//! - [`languages`] — per-language modules, gated by Cargo features
-//!   (`java`, `kotlin`, `scala`, `groovy`, `clojure`). Each owns the
-//!   rich model that doesn't reduce to the JVM projection cleanly.
-//! - [`primitives`] — cross-cutting primitives (currently only
-//!   [`Location`]).
-//! - [`diagnostics`] — diagnostic value type and the engine plumbing
-//!   that consumers run against the graph.
-//! - [`payload`] — the cross-layer [`NodePayload`] union; the
-//!   [`Registries`] bag and the query types ([`Query`],
-//!   [`Subscription`], [`FallbackSubscription`], [`QueryResult`])
-//!   live under [`registry`].
-//! - [`completion`] — neutral completion result types
-//!   ([`CompletionCandidate`], [`CompletionCandidates`]). The
-//!   LSP-shaped item lives in `beans-lsp`; per ADR-0020 the core
-//!   stays free of LSP-protocol shapes.
-//!
-//! At the crate root the JVM types are re-exported (`Modifier`,
-//! `SymbolKind`, `TypeRef`, ...) so consumers write
-//! `beans_core::SymbolKind` and get the JVM-shaped enum. Per-language
-//! variants (`languages::kotlin::SymbolKind` etc.) are reachable via
-//! their owning module.
+//! The shared JVM model lives in `beans-lang-jvm`; language verticals
+//! depend on it and on this crate, never on each other. The `beans`
+//! facade composes the union payload and the registries bag for whole-
+//! world consumers. Per ADR-0020 the LSP stays a leaf above all of it.
 
 pub mod diagnostics;
 pub mod fix;
 pub mod graph;
-pub mod jvm;
-pub mod languages;
-pub mod payload;
 pub mod primitives;
 pub mod registry;
 
-// Neutral completion result types. Per ADR-0020 the LSP-shaped
-// `CompletionItem` lives in `beans-lsp`; the core just names what
-// completed *at*.
-pub mod completion;
-
-// JVM model re-exports. Per ADR-0019 the JVM types live under `jvm/`;
-// surfacing them at the crate root keeps consumer imports stable.
-pub use jvm::{
-    AnnotationInstance, AnnotationValue, ConstantValue, Modifier, PrimitiveKind, RecordComponent,
-    SymbolKind, TypeParam, TypeRef, WildcardBound,
-};
-
-pub use diagnostics::{compute_diagnostics, Diagnostic, DiagnosticSeverity, Rule, RuleContext};
+pub use diagnostics::{Diagnostic, DiagnosticSeverity};
 pub use fix::{Fix, SourceEdit};
-pub use payload::NodePayload;
 pub use primitives::Location;
 pub use registry::{
-    FallbackSubscription, Query, QueryResult, Registries, Subscription, Watch,
+    FallbackSubscription, Query, QueryResult, Registry, Subscription, Watch,
 };
-
-pub use completion::{CompletionCandidate, CompletionCandidates};
-
-use crate::graph::Graph;
-
-/// The top-level engine instance. Per workspace, exactly one. Owns the
-/// graph + registries and any future engine-wide state. Not Clone;
-/// not constructed casually. Library consumers (LSP, CLI, batch tools)
-/// each own one and operate it through the methods below.
-///
-/// Today the struct is a thin wrapper. Engine-wide state that doesn't
-/// belong to either the graph or any single registry (workspace root,
-/// file → roots map, future generation counter, future snapshot
-/// metadata) lands here as the runtime grows.
-pub struct Beans {
-    pub graph: Graph<NodePayload>,
-    pub registries: Registries,
-}
-
-impl Beans {
-    pub fn new() -> Self {
-        Self {
-            graph: Graph::new(),
-            registries: Registries::new(),
-        }
-    }
-}
-
-impl Default for Beans {
-    fn default() -> Self {
-        Self::new()
-    }
-}
