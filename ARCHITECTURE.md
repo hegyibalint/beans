@@ -19,10 +19,10 @@ the code wins; fix this file.
 | `beans-core` | The symbolic engine: graph arena, `Registry<K>` + query types, `Location`, neutral analysis values (`Diagnostic`, `Fix`). No language or JVM knowledge. | `src/lib.rs`, `src/graph/`, `src/registry/mod.rs` |
 | `beans-lang-jvm` | The shared JVM model every language projects into, plus `JvmRegistries` — the only registry surface verticals share. The `container` module reads class bytes out of `.jmod`/`.jar` archives (classfile decoding deferred to #012). | `src/lib.rs`, `src/container.rs` |
 | `beans-lang-java` | The Java vertical: model, tree-sitter walker, resolution, diagnostic rules, fixes, `JavaRegistries`. | `src/lib.rs`, `src/parser.rs` |
+| `beans-lang-java-test` | Java spec tests, organized by JLS chapter, plus fix-behavior tests. | `tests/spec/` |
 | `beans` | The facade: the `NodePayload` union, the composed `Registries`, per-extension dispatch, the `Beans` instance. Languages are Cargo features here. | `src/lib.rs` |
 | `beans-lsp` | The LSP rim: protocol envelopes over the facade, an actor bridging async tower-lsp to the single-threaded engine. | `src/actor.rs` |
 | `beans-test-harness` | Fixture framework: `<cur>` markers, `.resolve()` / `.complete()` / `.diagnostics()` / `.quick_fix()`. | `src/fixture.rs` |
-| `beans-lang-java-test` | Java spec tests, organized by JLS chapter, plus fix-behavior tests. | `tests/spec/` |
 | `beans-test-jdks` | Test-only JDK provisioning: download + cache a pinned Temurin so container/bytecode tests don't trust `$JAVA_HOME`. | `src/lib.rs` |
 
 ```
