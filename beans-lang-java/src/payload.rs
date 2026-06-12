@@ -3,7 +3,7 @@
 //! Per ADR-0004 each language has its own rich model and projects to JVM
 //! for cross-language interop. Java's source model is the closest to its
 //! JVM projection of any of the five JVM languages, so [`JavaNodePayload`]
-//! mirrors [`crate::jvm::JvmNodePayload`] structurally — at this stage
+//! mirrors [`beans_lang_jvm::JvmNodePayload`] structurally — at this stage
 //! the Java payload carries the same per-kind data. The split is still
 //! load-bearing: a Java node hard-links its JVM-projection child node
 //! (per ADR-0004's "each language-model node hard-links a JVM
@@ -11,28 +11,28 @@
 //! (when we add them) attach here, not on the JVM payload.
 //!
 //! Per ADR-0014 RAII registration handles live on
-//! [`NodeData::handles`](crate::graph::NodeData::handles), not on the
+//! [`NodeData::handles`](beans_core::graph::NodeData::handles), not on the
 //! payload variants. Each variant's [`NodeBehavior::on_created`] returns
 //! the registered handles boxed; the engine stores them on the node and
 //! drops them when the slot is freed. Per ADR-0012 every Java-side
-//! declaration shares one registry — `Registries::java.symbols`,
+//! declaration shares one registry — `JavaRegistries::symbols`,
 //! keyed by [`JavaSymbolKey`] (FQN-only). Method overload disambiguation
 //! happens at the JVM layer.
 
-use crate::graph::NodeBehavior;
-use crate::graph::arena::{NodeHandle, NodeId};
-use crate::jvm::annotation::AnnotationInstance;
-use crate::jvm::fqn::Fqn;
-use crate::jvm::modifier::Modifier;
-use crate::jvm::constant::ConstantValue;
-use crate::jvm::record::RecordComponent;
-use crate::jvm::type_ref::{TypeParam, TypeRef};
-use crate::languages::java::keys::JavaSymbolKey;
-use crate::primitives::Location;
-use crate::registry::Registries;
+use beans_core::graph::NodeBehavior;
+use beans_core::graph::arena::{NodeHandle, NodeId};
+use beans_lang_jvm::annotation::AnnotationInstance;
+use beans_lang_jvm::fqn::Fqn;
+use beans_lang_jvm::modifier::Modifier;
+use beans_lang_jvm::constant::ConstantValue;
+use beans_lang_jvm::record::RecordComponent;
+use beans_lang_jvm::type_ref::{TypeParam, TypeRef};
+use crate::keys::JavaSymbolKey;
+use beans_core::primitives::Location;
+use crate::registries::JavaRegistries;
 
 /// What category of Java declaration a [`JavaTypeNode`] represents.
-/// Mirrors [`crate::jvm::JvmTypeKind`] one-for-one today; the split
+/// Mirrors [`beans_lang_jvm::JvmTypeKind`] one-for-one today; the split
 /// exists so Java-specific kinds (none yet) can land here without
 /// touching the JVM enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -45,7 +45,7 @@ pub enum JavaTypeKind {
 }
 
 /// Common header for every named Java declaration. Symmetric with
-/// [`crate::jvm::JvmDeclHeader`]; duplicated rather than re-used so
+/// [`beans_lang_jvm::JvmDeclHeader`]; duplicated rather than re-used so
 /// that future Java-specific header fields don't ripple into the JVM
 /// projection.
 #[derive(Debug, Clone, PartialEq)]
@@ -110,10 +110,10 @@ pub struct JavaTypeNode {
 }
 
 impl NodeBehavior for JavaTypeNode {
-    type Ctx = Registries;
+    type Ctx = JavaRegistries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        vec![Box::new(ctx.java_symbols.register(key, id))]
+        vec![Box::new(ctx.symbols.register(key, id))]
     }
 }
 
@@ -133,10 +133,10 @@ pub struct JavaMethodNode {
 }
 
 impl NodeBehavior for JavaMethodNode {
-    type Ctx = Registries;
+    type Ctx = JavaRegistries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        vec![Box::new(ctx.java_symbols.register(key, id))]
+        vec![Box::new(ctx.symbols.register(key, id))]
     }
 }
 
@@ -150,10 +150,10 @@ pub struct JavaConstructorNode {
 }
 
 impl NodeBehavior for JavaConstructorNode {
-    type Ctx = Registries;
+    type Ctx = JavaRegistries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        vec![Box::new(ctx.java_symbols.register(key, id))]
+        vec![Box::new(ctx.symbols.register(key, id))]
     }
 }
 
@@ -167,10 +167,10 @@ pub struct JavaFieldNode {
 }
 
 impl NodeBehavior for JavaFieldNode {
-    type Ctx = Registries;
+    type Ctx = JavaRegistries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        vec![Box::new(ctx.java_symbols.register(key, id))]
+        vec![Box::new(ctx.symbols.register(key, id))]
     }
 }
 
@@ -182,10 +182,10 @@ pub struct JavaEnumConstantNode {
 }
 
 impl NodeBehavior for JavaEnumConstantNode {
-    type Ctx = Registries;
+    type Ctx = JavaRegistries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        vec![Box::new(ctx.java_symbols.register(key, id))]
+        vec![Box::new(ctx.symbols.register(key, id))]
     }
 }
 
@@ -198,10 +198,10 @@ pub struct JavaAnnotationElementNode {
 }
 
 impl NodeBehavior for JavaAnnotationElementNode {
-    type Ctx = Registries;
+    type Ctx = JavaRegistries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        vec![Box::new(ctx.java_symbols.register(key, id))]
+        vec![Box::new(ctx.symbols.register(key, id))]
     }
 }
 
@@ -212,10 +212,10 @@ pub struct JavaPackageNode {
 }
 
 impl NodeBehavior for JavaPackageNode {
-    type Ctx = Registries;
+    type Ctx = JavaRegistries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JavaSymbolKey::new(self.header.fqn.clone());
-        vec![Box::new(ctx.java_symbols.register(key, id))]
+        vec![Box::new(ctx.symbols.register(key, id))]
     }
 }
 
@@ -225,7 +225,7 @@ impl NodeBehavior for JavaPackageNode {
 /// because they participate in cross-file refactor flow — renaming a
 /// target FQN must invalidate every importing file, which is the
 /// graph + registry layer's job. The variants mirror
-/// [`crate::languages::java::syntax::Import`] but without carrying
+/// [`crate::syntax::Import`] but without carrying
 /// location data twice (the location lives on [`JavaImportNode`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JavaImportKind {
@@ -252,7 +252,7 @@ pub struct JavaImportNode {
 }
 
 impl NodeBehavior for JavaImportNode {
-    type Ctx = Registries;
+    type Ctx = JavaRegistries;
     fn on_created(&self, _id: NodeId, _ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         // Slice 1: no registry registration. The natural follow-up is
         // a `java_imports: Registry<JavaImportKey>` so that
@@ -283,7 +283,7 @@ pub struct JavaTypeUseNode {
 }
 
 impl NodeBehavior for JavaTypeUseNode {
-    type Ctx = Registries;
+    type Ctx = JavaRegistries;
     fn on_created(&self, _id: NodeId, _ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         // Slice 1: no registry subscription. Resolution is a per-rule
         // walk. ADR-0027 reserves the slot for a FallbackSubscription
@@ -337,7 +337,7 @@ impl JavaNodePayload {
 }
 
 impl NodeBehavior for JavaNodePayload {
-    type Ctx = Registries;
+    type Ctx = JavaRegistries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         match self {
             JavaNodePayload::Type(n) => n.on_created(id, ctx),
@@ -353,5 +353,21 @@ impl NodeBehavior for JavaNodePayload {
             // no registry registration until cross-file import rename lands.
             JavaNodePayload::Import(_) => Vec::new(),
         }
+    }
+}
+
+/// Payload projection: "does this payload carry a Java node?"
+///
+/// Vertical code is generic over the graph's payload type (the union
+/// lives in the `beans` facade, above every vertical). The facade
+/// implements this for its union; rules and resolution helpers bound
+/// on `P: AsJava` to match Java payloads without seeing the union.
+pub trait AsJava {
+    fn as_java(&self) -> Option<&JavaNodePayload>;
+}
+
+impl AsJava for JavaNodePayload {
+    fn as_java(&self) -> Option<&JavaNodePayload> {
+        Some(self)
     }
 }

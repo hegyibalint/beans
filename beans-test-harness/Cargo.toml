@@ -6,11 +6,11 @@ authors.workspace = true
 
 [features]
 default = ["java", "kotlin", "scala", "groovy", "clojure"]
-java = ["beans-core/java"]
-kotlin = ["beans-core/kotlin"]
-scala = ["beans-core/scala"]
-groovy = ["beans-core/groovy"]
-clojure = ["beans-core/clojure"]
+java = ["beans/java"]
+kotlin = ["beans/kotlin"]
+scala = ["beans/scala"]
+groovy = ["beans/groovy"]
+clojure = ["beans/clojure"]
 
 [dependencies]
-beans-core = { path = "../beans-core", default-features = false }
+beans = { path = "../beans", default-features = false }

@@ -15,7 +15,7 @@
 //! consumer per ADR-0017 (no central pipeline, utilities-on-demand).
 //!
 //! Per ADR-0014 RAII registration handles live on
-//! [`NodeData::handles`](crate::graph::NodeData::handles) — the
+//! [`NodeData::handles`](beans_core::graph::NodeData::handles) — the
 //! per-node `Vec<Box<dyn NodeHandle>>` — *not* on the payload variants
 //! themselves. Each variant's [`NodeBehavior::on_created`] returns the
 //! registered handles boxed; the engine stores them on the node and
@@ -23,19 +23,19 @@
 //! variants free of `Rc`-flavoured `!Send` types and lets parse output
 //! travel across rayon worker boundaries (ADR-0005).
 
-use crate::graph::NodeBehavior;
-use crate::graph::arena::{NodeHandle, NodeId};
-use crate::jvm::annotation::AnnotationInstance;
-use crate::jvm::fqn::Fqn;
-use crate::jvm::keys::{
+use beans_core::graph::NodeBehavior;
+use beans_core::graph::arena::{NodeHandle, NodeId};
+use crate::annotation::AnnotationInstance;
+use crate::fqn::Fqn;
+use crate::keys::{
     JvmConstructorKey, JvmFieldKey, JvmMethodKey, JvmTypeKey, PackageKey,
 };
-use crate::jvm::modifier::Modifier;
-use crate::jvm::constant::ConstantValue;
-use crate::jvm::record::RecordComponent;
-use crate::jvm::type_ref::{TypeParam, TypeRef};
-use crate::primitives::Location;
-use crate::registry::Registries;
+use crate::modifier::Modifier;
+use crate::constant::ConstantValue;
+use crate::record::RecordComponent;
+use crate::type_ref::{TypeParam, TypeRef};
+use beans_core::primitives::Location;
+use crate::registries::JvmRegistries;
 
 /// What category of JVM declaration a [`JvmTypeNode`] represents. Records
 /// and annotations have their own variants because their JVM projection
@@ -124,10 +124,10 @@ pub struct JvmTypeNode {
 }
 
 impl NodeBehavior for JvmTypeNode {
-    type Ctx = Registries;
+    type Ctx = JvmRegistries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         let key = JvmTypeKey::new(self.header.fqn.clone());
-        vec![Box::new(ctx.jvm_types.register(key, id))]
+        vec![Box::new(ctx.types.register(key, id))]
     }
 }
 
@@ -171,9 +171,9 @@ impl JvmMethodNode {
 }
 
 impl NodeBehavior for JvmMethodNode {
-    type Ctx = Registries;
+    type Ctx = JvmRegistries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
-        vec![Box::new(ctx.jvm_methods.register(self.key(), id))]
+        vec![Box::new(ctx.methods.register(self.key(), id))]
     }
 }
 
@@ -207,9 +207,9 @@ impl JvmConstructorNode {
 }
 
 impl NodeBehavior for JvmConstructorNode {
-    type Ctx = Registries;
+    type Ctx = JvmRegistries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
-        vec![Box::new(ctx.jvm_constructors.register(self.key(), id))]
+        vec![Box::new(ctx.constructors.register(self.key(), id))]
     }
 }
 
@@ -232,9 +232,9 @@ impl JvmFieldNode {
 }
 
 impl NodeBehavior for JvmFieldNode {
-    type Ctx = Registries;
+    type Ctx = JvmRegistries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
-        vec![Box::new(ctx.jvm_fields.register(self.key(), id))]
+        vec![Box::new(ctx.fields.register(self.key(), id))]
     }
 }
 
@@ -259,9 +259,9 @@ impl JvmEnumConstantNode {
 }
 
 impl NodeBehavior for JvmEnumConstantNode {
-    type Ctx = Registries;
+    type Ctx = JvmRegistries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
-        vec![Box::new(ctx.jvm_fields.register(self.key(), id))]
+        vec![Box::new(ctx.fields.register(self.key(), id))]
     }
 }
 
@@ -284,9 +284,9 @@ impl JvmAnnotationElementNode {
 }
 
 impl NodeBehavior for JvmAnnotationElementNode {
-    type Ctx = Registries;
+    type Ctx = JvmRegistries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
-        vec![Box::new(ctx.jvm_methods.register(self.key(), id))]
+        vec![Box::new(ctx.methods.register(self.key(), id))]
     }
 }
 
@@ -305,9 +305,9 @@ impl JvmPackageNode {
 }
 
 impl NodeBehavior for JvmPackageNode {
-    type Ctx = Registries;
+    type Ctx = JvmRegistries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
-        vec![Box::new(ctx.jvm_packages.register(self.key(), id))]
+        vec![Box::new(ctx.packages.register(self.key(), id))]
     }
 }
 
@@ -343,7 +343,7 @@ impl JvmNodePayload {
 }
 
 impl NodeBehavior for JvmNodePayload {
-    type Ctx = Registries;
+    type Ctx = JvmRegistries;
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         match self {
             JvmNodePayload::Type(n) => n.on_created(id, ctx),
@@ -357,5 +357,22 @@ impl NodeBehavior for JvmNodePayload {
             // they don't have their own registry slot.
             JvmNodePayload::Parameter(_) => Vec::new(),
         }
+    }
+}
+
+/// Payload projection: "does this payload carry a JVM node?"
+///
+/// Vertical code is generic over the graph's payload type (the union
+/// lives in the `beans` facade, above every vertical). This trait is
+/// the jvm-side projection the facade implements for its union so
+/// generic walkers and rules can match JVM payloads without seeing
+/// the union type.
+pub trait AsJvm {
+    fn as_jvm(&self) -> Option<&JvmNodePayload>;
+}
+
+impl AsJvm for JvmNodePayload {
+    fn as_jvm(&self) -> Option<&JvmNodePayload> {
+        Some(self)
     }
 }

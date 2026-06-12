@@ -2,9 +2,9 @@
 //!
 //! Per ADR-0019 / ADR-0004 each per-language module has its own
 //! [`SymbolKind`] that names the constructs *that language* produces
-//! ([`crate::languages::kotlin::SymbolKind`],
-//! [`crate::languages::scala::SymbolKind`],
-//! [`crate::languages::clojure::SymbolKind`]). This enum names the
+//! (`kotlin::SymbolKind`,
+//! `scala::SymbolKind`,
+//! `clojure::SymbolKind`). This enum names the
 //! constructs the JVM projection itself produces — every JVM language
 //! eventually reduces to one of these.
 //!

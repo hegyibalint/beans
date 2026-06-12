@@ -1,6 +1,6 @@
 //! Fully-qualified names.
 //!
-//! Per ADR-0007 the engine's [`NodeId`](crate::graph::NodeId) is a runtime
+//! Per ADR-0007 the engine's [`NodeId`](beans_core::graph::NodeId) is a runtime
 //! arena index, not a stable identity. Semantic identity lives in registry
 //! keys, and the keys lean on fully-qualified names. [`Fqn`] is the
 //! single source-of-truth wrapper for those — defined once here so that

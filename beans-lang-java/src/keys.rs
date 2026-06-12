@@ -8,7 +8,7 @@
 //! hard-linked off its Java parent), so the Java-side key does not need
 //! a parameter list.
 
-use crate::jvm::fqn::Fqn;
+use beans_lang_jvm::fqn::Fqn;
 
 /// Key identifying a Java-side declaration by its fully-qualified name.
 /// One key per Java type, method-overload group, field, or package.
