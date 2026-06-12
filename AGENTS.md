@@ -1,13 +1,11 @@
 # Beans
 
-This file is the canonical coding-agent guidance for this repository. Keep tool-specific instruction files as symlinks or thin pointers to `AGENTS.md` so instructions do not drift.
-
-Beans is a multi-language LSP for JVM languages (Java, Kotlin, Groovy, Scala, Clojure). See `README.md` for vision and project status, `ARCHITECTURE.md` for technical design, and `docs/adr/` for the design decisions behind it.
+@README.md
 
 ## Key Documents
 
 - `README.md` - Project intro, vision, build/test commands.
-- `ARCHITECTURE.md` - Current technical reference: data model, graph, registries, lifecycle, crate layout.
+- `ARCHITECTURE.md` - Crate map and cross-crate invariants. Details live in module docs; rationale in ADRs.
 - `CONTRIBUTING.md` - Development setup, fixture framework tutorial, spec test discipline.
 - `docs/adr/` - Architecture decision records. Read these before proposing structural changes.
 - `backlog/` - Pending and completed work items, one file per item.
