@@ -221,7 +221,12 @@ fn reindex_and_diagnose(
 }
 
 fn diagnostics_for_path(state: &ServerState, path: &Path) -> Vec<Diagnostic> {
-    compute_diagnostics(&state.beans.graph, &state.beans.registries, path)
+    let imports = state
+        .file_imports
+        .get(path)
+        .map(|v| v.as_slice())
+        .unwrap_or(&[]);
+    compute_diagnostics(&state.beans.graph, &state.beans.registries, path, imports)
         .into_iter()
         .map(|d| Diagnostic {
             range: Range {
@@ -618,6 +623,11 @@ fn payload_view(payload: &NodePayload) -> Option<PayloadView<'_>> {
             location: n.header.location.as_ref(),
             modifiers: &n.header.modifiers,
         },
+        // Use-site nodes are not declaration views; the cursor's
+        // resolution lands on the *target* declaration, not on the
+        // use site itself.
+        JavaNodePayload::TypeUse(_) => return None,
+        JavaNodePayload::Import(_) => return None,
     };
     Some(view)
 }
