@@ -58,7 +58,7 @@ Test crates mirror the spec structure
 ([ADR-0022](docs/adr/0022-per-language-test-crates-mirroring-spec-structure.md)):
 one per language, plus `beans-test-interop`. Each per-language crate
 organises tests by spec chapter
-(`beans-test-java/tests/spec/jls08_classes.rs`); opening a chapter file
+(`beans-lang-java-test/tests/spec/jls08_classes.rs`); opening a chapter file
 shows what beans claims about that chapter.
 
 The architecture is *cohesive, not extensible*

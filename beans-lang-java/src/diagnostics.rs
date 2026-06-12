@@ -23,6 +23,8 @@ use std::path::Path;
 
 use beans_core::diagnostics::{Diagnostic, DiagnosticSeverity};
 use beans_core::graph::Graph;
+use beans_lang_jvm::payload::AsJvm;
+use beans_lang_jvm::registries::JvmRegistries;
 use beans_lang_jvm::Modifier;
 
 use crate::keys::JavaSymbolKey;
@@ -38,25 +40,77 @@ use crate::syntax::Import;
 pub struct JavaRuleContext<'a, P> {
     pub graph: &'a Graph<P>,
     pub java: &'a JavaRegistries,
+    pub jvm: &'a JvmRegistries,
     pub file: &'a Path,
     pub imports: &'a [Import],
 }
 
 /// Run every Java rule against `file` and merge the findings.
-pub fn check_file<P: AsJava>(
+pub fn check_file<P: AsJava + AsJvm>(
     graph: &Graph<P>,
     java: &JavaRegistries,
+    jvm: &JvmRegistries,
     file: &Path,
     imports: &[Import],
 ) -> Vec<Diagnostic> {
     let ctx = JavaRuleContext {
         graph,
         java,
+        jvm,
         file,
         imports,
     };
     let mut out = abstract_method_with_body(&ctx);
     out.extend(unused_import(&ctx));
+    out.extend(missing_import(&ctx));
+    out
+}
+
+/// The dual of [`unused_import`]: a `JavaTypeUseNode` whose candidate
+/// chain misses entirely, but whose simple name matches at least one
+/// importable workspace type, warns at the use-site identifier.
+///
+/// Cause-framed and fix-gated: an unresolved name with no candidate
+/// (e.g. a JDK type before jmod loading lands) stays silent — this is
+/// "you forgot an import", not "reference not found". The gate widens
+/// into a true reference-not-found rule once the JDK universe exists.
+/// One diagnostic per occurrence (javac/IDE convention); applying the
+/// fix at any occurrence clears all of them on the next recompute.
+pub fn missing_import<P: AsJava + AsJvm>(ctx: &JavaRuleContext<'_, P>) -> Vec<Diagnostic> {
+    const CODE: &str = "missing-import";
+    let mut out = Vec::new();
+    for (_id, node) in ctx.graph.iter() {
+        let Some(JavaNodePayload::TypeUse(t)) = node.payload.as_java() else {
+            continue;
+        };
+        if t.header.location.file != ctx.file {
+            continue;
+        }
+        if crate::fixes::is_resolved(t, ctx.java) {
+            continue;
+        }
+        let candidates =
+            crate::fixes::import_candidates(&t.header.name, ctx.java, ctx.jvm, ctx.graph);
+        if candidates.is_empty() {
+            continue; // the gate: no fix, no diagnostic
+        }
+        let list = candidates
+            .iter()
+            .map(|f| format!("`{}`", f))
+            .collect::<Vec<_>>()
+            .join(", ");
+        out.push(Diagnostic {
+            location: t.header.location.clone(),
+            severity: DiagnosticSeverity::Warning,
+            message: format!(
+                "Type `{}` is unresolved; importable candidate{}: {}.",
+                t.header.name,
+                if candidates.len() == 1 { "" } else { "s" },
+                list
+            ),
+            code: Some(CODE.to_string()),
+        });
+    }
     out
 }
 
