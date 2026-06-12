@@ -1,0 +1,11 @@
+[package]
+name = "beans-lang-java"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+beans-core = { path = "../beans-core" }
+beans-lang-jvm = { path = "../beans-lang-jvm" }
+tree-sitter = "0.25"
+tree-sitter-java = "0.23"

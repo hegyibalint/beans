@@ -17,23 +17,21 @@ use std::path::{Path, PathBuf};
 
 use tree_sitter::{Node, Parser};
 
-use crate::graph::NodeBehavior;
-use crate::graph::arena::{Graph, NodeId};
-use crate::jvm::fqn::Fqn;
-use crate::jvm::payload::{
+use beans_core::graph::NodeBehavior;
+use beans_core::graph::arena::{Graph, NodeId};
+use beans_lang_jvm::fqn::Fqn;
+use beans_lang_jvm::payload::{
     JvmConstructorNode, JvmDeclHeader, JvmEnrichments, JvmEnumConstantNode, JvmFieldNode,
     JvmMethodNode, JvmNodePayload, JvmParameter, JvmTypeKind, JvmTypeNode,
 };
-use crate::languages::java::payload::{
+use crate::payload::{
     JavaConstructorNode, JavaDeclHeader, JavaEnumConstantNode, JavaFieldNode, JavaMethodNode,
     JavaNodePayload, JavaParameter, JavaTypeKind, JavaTypeNode, JavaTypeUseNode, JavaUseHeader,
 };
-use crate::languages::java::syntax::{extract_imports, Import};
-use crate::languages::java::types::TypeRef as ParsedTypeRef;
-use crate::payload::NodePayload;
-use crate::primitives::Location;
-use crate::registry::Registries;
-use crate::{Modifier, TypeParam, TypeRef};
+use crate::syntax::{extract_imports, Import};
+use crate::types::TypeRef as ParsedTypeRef;
+use beans_core::primitives::Location;
+use beans_lang_jvm::{Modifier, TypeParam, TypeRef};
 
 // ---- Public surface ----
 
@@ -58,8 +56,18 @@ pub struct ParsedJavaFile {
 /// integration can resolve indices linearly.
 #[derive(Debug)]
 pub(crate) struct PendingNode {
-    payload: NodePayload,
+    payload: JavaPlanPayload,
     parent: Option<usize>,
+}
+
+/// The two payload species this vertical emits: Java source nodes and
+/// their JVM projections. The facade's graph payload union is above
+/// this crate, so the plan carries a local enum; [`integrate`] converts
+/// at the boundary through the consumer's `From` impls.
+#[derive(Debug)]
+pub enum JavaPlanPayload {
+    Java(JavaNodePayload),
+    Jvm(JvmNodePayload),
 }
 
 /// Parse a Java source file into a self-contained [`ParsedJavaFile`].
@@ -135,18 +143,25 @@ pub fn parse_java_to_graph(path: &Path, source: &str) -> ParsedJavaFile {
 ///
 /// Hard-link parent/child relationships are reconstructed from the
 /// plan's `parent` indices. Per ADR-0014 the registration handles are
-/// stored on [`NodeData::handles`](crate::graph::NodeData::handles); the
+/// stored on [`NodeData::handles`](beans_core::graph::NodeData::handles); the
 /// engine drops them when [`Graph::destroy`] frees the slot, removing
 /// each registry entry as a side effect.
-pub fn integrate(
-    graph: &mut Graph<NodePayload>,
-    registries: &Registries,
+pub fn integrate<P, C>(
+    graph: &mut Graph<P>,
+    registries: &C,
     parsed: ParsedJavaFile,
-) -> Vec<NodeId> {
+) -> Vec<NodeId>
+where
+    P: From<JavaNodePayload> + From<JvmNodePayload> + NodeBehavior<Ctx = C>,
+{
     let mut inserted: Vec<NodeId> = Vec::with_capacity(parsed.plan.len());
     for pending in parsed.plan {
         let parent = pending.parent.and_then(|idx| inserted.get(idx).copied());
-        let id = graph.insert(pending.payload, parent);
+        let payload = match pending.payload {
+            JavaPlanPayload::Java(j) => P::from(j),
+            JavaPlanPayload::Jvm(v) => P::from(v),
+        };
+        let id = graph.insert(payload, parent);
         inserted.push(id);
     }
 
@@ -523,7 +538,7 @@ fn emit_type_use(
         },
     });
     ctx.plan.push(PendingNode {
-        payload: NodePayload::Java(payload),
+        payload: JavaPlanPayload::Java(payload),
         parent: Some(parent_plan_idx),
     });
 }
@@ -585,11 +600,11 @@ fn emit_pair(
     let parent = ctx.enclosing_stack.last().map(|f| f.java_idx);
     let java_idx = ctx.plan.len();
     ctx.plan.push(PendingNode {
-        payload: NodePayload::Java(java),
+        payload: JavaPlanPayload::Java(java),
         parent,
     });
     ctx.plan.push(PendingNode {
-        payload: NodePayload::Jvm(jvm),
+        payload: JavaPlanPayload::Jvm(jvm),
         parent: Some(java_idx),
     });
     java_idx
@@ -1009,7 +1024,7 @@ mod tests {
     /// Per ADR-0005 the parse phase must be runnable on a rayon worker
     /// — meaning the parse output type has to be `Send`. Per ADR-0014
     /// RAII registration handles live on
-    /// [`NodeData::handles`](crate::graph::NodeData::handles), not on
+    /// [`NodeData::handles`](beans_core::graph::NodeData::handles), not on
     /// the payload, which keeps every payload variant free of
     /// `Rc`-flavoured `!Send` taints. This is a static check that the
     /// invariant holds — a regression here would silently break
@@ -1017,7 +1032,7 @@ mod tests {
     fn _assert_parse_output_is_send() {
         fn assert_send<T: Send>() {}
         assert_send::<ParsedJavaFile>();
-        assert_send::<NodePayload>();
+        assert_send::<JavaPlanPayload>();
     }
 
     fn parse(source: &str) -> ParsedJavaFile {
@@ -1030,7 +1045,7 @@ mod tests {
     fn find_java<'a>(plan: &'a [PendingNode], name: &str) -> &'a JavaNodePayload {
         plan.iter()
             .filter_map(|p| match &p.payload {
-                NodePayload::Java(j) => Some(j),
+                JavaPlanPayload::Java(j) => Some(j),
                 _ => None,
             })
             .find(|j| j.header().is_some_and(|h| h.name == name))
@@ -1075,7 +1090,7 @@ public class Dog {
         // Use sites have their own (non-class) Java parents — the
         // declaration that contains them.
         for member in parsed.plan.iter().skip(2) {
-            if let NodePayload::Java(j) = &member.payload {
+            if let JavaPlanPayload::Java(j) = &member.payload {
                 if j.header().is_some() {
                     assert_eq!(member.parent, Some(dog_idx));
                 }
@@ -1101,7 +1116,7 @@ public class Dog {
     fn type_uses(plan: &[PendingNode]) -> Vec<&JavaTypeUseNode> {
         plan.iter()
             .filter_map(|p| match &p.payload {
-                NodePayload::Java(JavaNodePayload::TypeUse(t)) => Some(t),
+                JavaPlanPayload::Java(JavaNodePayload::TypeUse(t)) => Some(t),
                 _ => None,
             })
             .collect()
@@ -1251,7 +1266,7 @@ public class Service {
             .plan
             .iter()
             .filter_map(|p| match &p.payload {
-                NodePayload::Jvm(JvmNodePayload::Method(m)) if m.header.name == "process" => {
+                JavaPlanPayload::Jvm(JvmNodePayload::Method(m)) if m.header.name == "process" => {
                     Some(m)
                 }
                 _ => None,
@@ -1293,13 +1308,13 @@ public class Outer {
         let inner_idx = parsed
             .plan
             .iter()
-            .position(|p| matches!(&p.payload, NodePayload::Java(j) if j.header().is_some_and(|h| h.name == "Inner")))
+            .position(|p| matches!(&p.payload, JavaPlanPayload::Java(j) if j.header().is_some_and(|h| h.name == "Inner")))
             .expect("inner not found");
         assert_eq!(parsed.plan[inner_idx].parent, Some(outer_idx));
         let value_idx = parsed
             .plan
             .iter()
-            .position(|p| matches!(&p.payload, NodePayload::Java(j) if j.header().is_some_and(|h| h.name == "value")))
+            .position(|p| matches!(&p.payload, JavaPlanPayload::Java(j) if j.header().is_some_and(|h| h.name == "value")))
             .expect("value field not found");
         // value's parent is Inner.
         assert_eq!(parsed.plan[value_idx].parent, Some(inner_idx));
