@@ -59,7 +59,7 @@ pub fn resolve_name(
 
     // 2. Explicit imports.
     for import in imports {
-        if let Import::Single(fqn) = import
+        if let Import::Single(fqn, _) = import
             && (fqn.ends_with(&format!(".{}", name)) || fqn == name)
             && let Some(id) = lookup_fqn(registries, fqn)
         {
@@ -77,7 +77,7 @@ pub fn resolve_name(
 
     // 4. Wildcard imports.
     for import in imports {
-        if let Import::Wildcard(package) = import {
+        if let Import::Wildcard(package, _) = import {
             let candidate = format!("{}.{}", package, name);
             if let Some(id) = lookup_fqn(registries, &candidate) {
                 return Some(id);
@@ -87,7 +87,7 @@ pub fn resolve_name(
 
     // 5. Static imports.
     for import in imports {
-        if let Import::Static(fqn) = import
+        if let Import::Static(fqn, _) = import
             && (fqn.ends_with(&format!(".{}", name)) || fqn == name)
             && let Some(id) = lookup_fqn(registries, fqn)
         {

@@ -69,6 +69,28 @@ impl JavaDeclHeader {
     }
 }
 
+/// Header carried by every Java *use-site* node. Per ADR-0029 the IR's
+/// second half — references to declarations — is built around this
+/// shape, in symmetry with [`JavaDeclHeader`] for declarations.
+///
+/// `name` is the identifier text exactly as it appears in source. For
+/// `com.example.Service`, only `Service` is captured — the qualifier
+/// is structural and recoverable from context. `location` spans the
+/// identifier text only, never a surrounding expression. This is the
+/// load-bearing invariant for refactor-readiness: a rename rewrites
+/// `location.range` mechanically.
+///
+/// `candidate_fqns` are the resolution candidates the parser computed
+/// from imports + same-package + `java.lang` + same-file types, in
+/// priority order. Resolution at use time is "first FQN whose
+/// `JavaSymbolKey` has a provider in `java_symbols`."
+#[derive(Debug, Clone, PartialEq)]
+pub struct JavaUseHeader {
+    pub name: String,
+    pub location: Location,
+    pub candidate_fqns: Vec<Fqn>,
+}
+
 /// A Java parameter on a method or constructor.
 #[derive(Debug, Clone, PartialEq)]
 pub struct JavaParameter {
@@ -103,6 +125,11 @@ pub struct JavaMethodNode {
     pub parameters: Vec<JavaParameter>,
     pub type_parameters: Vec<TypeParam>,
     pub throws: Vec<TypeRef>,
+    /// True iff the method declaration carries a `{ ... }` body. False
+    /// for abstract methods, interface methods without `default`, and
+    /// `native` methods. Read by the `abstract-method-with-body` rule;
+    /// future flow-sensitive rules will read it too.
+    pub has_body: bool,
 }
 
 impl NodeBehavior for JavaMethodNode {
@@ -192,6 +219,79 @@ impl NodeBehavior for JavaPackageNode {
     }
 }
 
+/// What an `import` declaration introduces.
+///
+/// Per ADR-0029 (amended): imports are first-class graph citizens
+/// because they participate in cross-file refactor flow — renaming a
+/// target FQN must invalidate every importing file, which is the
+/// graph + registry layer's job. The variants mirror
+/// [`crate::languages::java::syntax::Import`] but without carrying
+/// location data twice (the location lives on [`JavaImportNode`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum JavaImportKind {
+    /// `import com.example.MyClass;`
+    Single,
+    /// `import com.example.*;`
+    Wildcard,
+    /// `import static com.example.Util.MAX;`
+    Static,
+}
+
+/// A Java `import` declaration as a graph node.
+///
+/// Hard-linked at the file root (parent: `None`), alongside the file's
+/// top-level type declarations. `target` is the FQN being imported for
+/// `Single`/`Static`, or the package prefix for `Wildcard`.
+/// `location` spans the whole `import …;` statement so unused-import
+/// can squiggle the right line.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JavaImportNode {
+    pub kind: JavaImportKind,
+    pub target: String,
+    pub location: Location,
+}
+
+impl NodeBehavior for JavaImportNode {
+    type Ctx = Registries;
+    fn on_created(&self, _id: NodeId, _ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
+        // Slice 1: no registry registration. The natural follow-up is
+        // a `java_imports: Registry<JavaImportKey>` so that
+        // "find all importers of FQN X" becomes O(1) — useful for
+        // cross-file rename refactors. Deferred until the second
+        // consumer (rename) lands.
+        Vec::new()
+    }
+}
+
+/// A Java type-use site: a named type reference in source position.
+///
+/// Per ADR-0029 every type identifier appearing in a declaration
+/// header — supertype, implements, field type, parameter type, return
+/// type, throws, type-bound — emits one [`JavaTypeUseNode`] hard-linked
+/// under the containing declaration. Multi-identifier expressions
+/// (`Repository<User>`, `Map.Entry`) emit one node per identifier with
+/// each node's `location` spanning only its identifier text.
+///
+/// `on_created` is a no-op for slice 1: resolution happens at rule-run
+/// time by trying each candidate FQN against `java_symbols`. A future
+/// `FallbackSubscription` per use site (when layer-2 caching needs
+/// precise invalidation) will install registry watches in
+/// `NodeData::handles`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JavaTypeUseNode {
+    pub header: JavaUseHeader,
+}
+
+impl NodeBehavior for JavaTypeUseNode {
+    type Ctx = Registries;
+    fn on_created(&self, _id: NodeId, _ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
+        // Slice 1: no registry subscription. Resolution is a per-rule
+        // walk. ADR-0027 reserves the slot for a FallbackSubscription
+        // when the layer-2 caching design has a real driver.
+        Vec::new()
+    }
+}
+
 /// Union of every Java-side node payload variant.
 #[derive(Debug, Clone, PartialEq)]
 pub enum JavaNodePayload {
@@ -203,6 +303,8 @@ pub enum JavaNodePayload {
     AnnotationElement(JavaAnnotationElementNode),
     Parameter(JavaParameter),
     Package(JavaPackageNode),
+    TypeUse(JavaTypeUseNode),
+    Import(JavaImportNode),
 }
 
 impl JavaNodePayload {
@@ -218,6 +320,18 @@ impl JavaNodePayload {
             JavaNodePayload::AnnotationElement(n) => Some(&n.header),
             JavaNodePayload::Package(n) => Some(&n.header),
             JavaNodePayload::Parameter(_) => None,
+            JavaNodePayload::TypeUse(_) => None,
+            JavaNodePayload::Import(_) => None,
+        }
+    }
+
+    /// Borrow the per-payload [`JavaUseHeader`] uniformly. `None` for
+    /// every declaration variant; `Some` only for use-site variants.
+    /// Symmetric with [`Self::header`].
+    pub fn use_header(&self) -> Option<&JavaUseHeader> {
+        match self {
+            JavaNodePayload::TypeUse(n) => Some(&n.header),
+            _ => None,
         }
     }
 }
@@ -234,6 +348,10 @@ impl NodeBehavior for JavaNodePayload {
             JavaNodePayload::AnnotationElement(n) => n.on_created(id, ctx),
             JavaNodePayload::Package(n) => n.on_created(id, ctx),
             JavaNodePayload::Parameter(_) => Vec::new(),
+            JavaNodePayload::TypeUse(n) => n.on_created(id, ctx),
+            // Slice 1 (ADR-0029): imports are passive location carriers;
+            // no registry registration until cross-file import rename lands.
+            JavaNodePayload::Import(_) => Vec::new(),
         }
     }
 }

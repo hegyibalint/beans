@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use beans_core::completion::CompletionCandidates;
 use beans_core::graph::{Graph, NodeId};
+use beans_core::{Diagnostic, Fix, SourceEdit};
 // `Import` is Java-syntactic data; lives behind the `java` feature.
 // Without any language feature the fixture parses markers but doesn't
 // resolve cursors, so the imports map is a no-op type alias.
@@ -61,6 +62,72 @@ struct PendingCompletion {
     cursor_name: Option<String>,
     check_fn: Box<dyn FnOnce(&CompletionCandidates) + Send>,
     mode: TestMode,
+}
+
+struct PendingDiagnostics {
+    file: PathBuf,
+    check_fn: Box<dyn FnOnce(&Findings<'_>) + Send>,
+    mode: TestMode,
+}
+
+/// A quick-fix assertion: at the cursor, a [`Fix`] labeled `apply_label`
+/// must be offered; applying its edits to the cursor's file must yield
+/// text containing every `expected_line_runs` entry as a consecutive
+/// run of (trimmed) lines. Declarative rather than closure-based so the
+/// harness owns the apply semantics — the same semantics a non-LSP
+/// consumer would use.
+struct PendingQuickFix {
+    cursor_name: Option<String>,
+    apply_label: Option<String>,
+    expected_line_runs: Vec<Vec<String>>,
+    mode: TestMode,
+}
+
+/// Findings returned by `.diagnostics(path, ...)`. Wraps the
+/// per-file `Vec<Diagnostic>` produced by
+/// [`beans_core::compute_diagnostics`] and offers small helpers spec
+/// tests typically reach for. Iteration over the underlying slice is
+/// available via [`Findings::iter`] for assertions the helpers don't
+/// cover.
+pub struct Findings<'a> {
+    diagnostics: &'a [Diagnostic],
+}
+
+impl<'a> Findings<'a> {
+    pub fn iter(&self) -> impl Iterator<Item = &Diagnostic> + '_ {
+        self.diagnostics.iter()
+    }
+
+    pub fn count(&self) -> usize {
+        self.diagnostics.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.diagnostics.is_empty()
+    }
+
+    /// True iff some diagnostic was emitted with the given rule code.
+    pub fn has_code(&self, code: &str) -> bool {
+        self.diagnostics
+            .iter()
+            .any(|d| d.code.as_deref() == Some(code))
+    }
+
+    /// Number of diagnostics emitted with the given rule code.
+    pub fn count_code(&self, code: &str) -> usize {
+        self.diagnostics
+            .iter()
+            .filter(|d| d.code.as_deref() == Some(code))
+            .count()
+    }
+
+    /// True iff some diagnostic with the given rule code is anchored at
+    /// `line` (0-indexed, matching tree-sitter).
+    pub fn has_code_at_line(&self, code: &str, line: u32) -> bool {
+        self.diagnostics.iter().any(|d| {
+            d.code.as_deref() == Some(code) && d.location.start_line == line
+        })
+    }
 }
 
 // --- CursorAssert builder ---
@@ -210,9 +277,134 @@ impl CompletionAssert {
         self.fixture.complete_default(check)
     }
 
+    pub fn diagnostics(
+        self,
+        file: &str,
+        check: impl FnOnce(&Findings<'_>) + Send + 'static,
+    ) -> DiagnosticsAssert {
+        self.fixture.diagnostics(file, check)
+    }
+
     #[doc(hidden)]
     pub fn assert_at(self, cursor_name: &str) -> CursorAssert {
         self.resolve(cursor_name)
+    }
+
+    pub fn run(self) {
+        self.fixture.run();
+    }
+}
+
+/// Builder returned by [`Fixture::diagnostics`]. Allows chaining further
+/// assertions or modifying the most recently added diagnostics check.
+pub struct DiagnosticsAssert {
+    fixture: Fixture,
+}
+
+impl DiagnosticsAssert {
+    pub fn expected_failure(mut self, reason: &str) -> Self {
+        if let Some(last) = self.fixture.diagnostics.last_mut() {
+            last.mode = TestMode::ExpectedFailure(reason.to_string());
+        }
+        self
+    }
+
+    pub fn resolve(self, cursor_name: &str) -> CursorAssert {
+        self.fixture.resolve(cursor_name)
+    }
+
+    pub fn resolve_default(self) -> CursorAssert {
+        self.fixture.resolve_default()
+    }
+
+    pub fn complete(self, cursor_name: &str, check: impl FnOnce(&CompletionCandidates) + Send + 'static) -> CompletionAssert {
+        self.fixture.complete(cursor_name, check)
+    }
+
+    pub fn complete_default(self, check: impl FnOnce(&CompletionCandidates) + Send + 'static) -> CompletionAssert {
+        self.fixture.complete_default(check)
+    }
+
+    pub fn diagnostics(
+        self,
+        file: &str,
+        check: impl FnOnce(&Findings<'_>) + Send + 'static,
+    ) -> DiagnosticsAssert {
+        self.fixture.diagnostics(file, check)
+    }
+
+    pub fn quick_fix(self, cursor_name: &str) -> QuickFixAssert {
+        self.fixture.quick_fix(cursor_name)
+    }
+
+    pub fn quick_fix_default(self) -> QuickFixAssert {
+        self.fixture.quick_fix_default()
+    }
+
+    pub fn run(self) {
+        self.fixture.run();
+    }
+}
+
+// --- QuickFixAssert builder ---
+
+/// Builder returned by [`Fixture::quick_fix`] /
+/// [`Fixture::quick_fix_default`].
+///
+/// `.apply(label)` selects which offered fix to apply (by its
+/// human-readable label). `.expect_lines(&[...])` asserts the applied
+/// file contains the given lines as one consecutive run, compared
+/// after trimming each line — fixture indentation is noise, adjacency
+/// is the anchor. Call `.expect_lines` more than once for multiple
+/// independent anchors.
+pub struct QuickFixAssert {
+    fixture: Fixture,
+}
+
+impl QuickFixAssert {
+    pub fn apply(mut self, label: &str) -> Self {
+        if let Some(last) = self.fixture.quick_fixes.last_mut() {
+            last.apply_label = Some(label.to_string());
+        }
+        self
+    }
+
+    pub fn expect_lines(mut self, lines: &[&str]) -> Self {
+        if let Some(last) = self.fixture.quick_fixes.last_mut() {
+            last.expected_line_runs
+                .push(lines.iter().map(|l| l.to_string()).collect());
+        }
+        self
+    }
+
+    pub fn skip(mut self, reason: &str) -> Self {
+        if let Some(last) = self.fixture.quick_fixes.last_mut() {
+            last.mode = TestMode::Skip(reason.to_string());
+        }
+        self
+    }
+
+    pub fn expected_failure(mut self, reason: &str) -> Self {
+        if let Some(last) = self.fixture.quick_fixes.last_mut() {
+            last.mode = TestMode::ExpectedFailure(reason.to_string());
+        }
+        self
+    }
+
+    pub fn quick_fix(self, cursor_name: &str) -> QuickFixAssert {
+        self.fixture.quick_fix(cursor_name)
+    }
+
+    pub fn quick_fix_default(self) -> QuickFixAssert {
+        self.fixture.quick_fix_default()
+    }
+
+    pub fn diagnostics(
+        self,
+        file: &str,
+        check: impl FnOnce(&Findings<'_>) + Send + 'static,
+    ) -> DiagnosticsAssert {
+        self.fixture.diagnostics(file, check)
     }
 
     pub fn run(self) {
@@ -232,6 +424,8 @@ pub struct Fixture {
     files: Vec<(PathBuf, String)>,
     assertions: Vec<PendingAssertion>,
     completions: Vec<PendingCompletion>,
+    diagnostics: Vec<PendingDiagnostics>,
+    quick_fixes: Vec<PendingQuickFix>,
 }
 
 impl Default for Fixture {
@@ -246,6 +440,8 @@ impl Fixture {
             files: Vec::new(),
             assertions: Vec::new(),
             completions: Vec::new(),
+            diagnostics: Vec::new(),
+            quick_fixes: Vec::new(),
         }
     }
 
@@ -288,6 +484,47 @@ impl Fixture {
             mode: TestMode::Normal,
         });
         CompletionAssert { fixture: self }
+    }
+
+    /// Run diagnostic rules over `file` and pass the resulting findings
+    /// to `check`. Per ADR-0029 diagnostics dispatch by file extension
+    /// to the per-language `diagnostics::rules()` function.
+    pub fn diagnostics(
+        mut self,
+        file: &str,
+        check: impl FnOnce(&Findings<'_>) + Send + 'static,
+    ) -> DiagnosticsAssert {
+        self.diagnostics.push(PendingDiagnostics {
+            file: PathBuf::from(file),
+            check_fn: Box::new(check),
+            mode: TestMode::Normal,
+        });
+        DiagnosticsAssert { fixture: self }
+    }
+
+    /// Request quick fixes at the named cursor, which must sit inside
+    /// an identifier with an offerable fix (e.g. an unresolved type
+    /// use). Chain `.apply(label)` to pick the fix and
+    /// `.expect_lines(&[...])` to assert on the applied result.
+    pub fn quick_fix(mut self, cursor_name: &str) -> QuickFixAssert {
+        self.quick_fixes.push(PendingQuickFix {
+            cursor_name: Some(cursor_name.to_string()),
+            apply_label: None,
+            expected_line_runs: Vec::new(),
+            mode: TestMode::Normal,
+        });
+        QuickFixAssert { fixture: self }
+    }
+
+    /// Request quick fixes at the anonymous `<cur>` cursor.
+    pub fn quick_fix_default(mut self) -> QuickFixAssert {
+        self.quick_fixes.push(PendingQuickFix {
+            cursor_name: None,
+            apply_label: None,
+            expected_line_runs: Vec::new(),
+            mode: TestMode::Normal,
+        });
+        QuickFixAssert { fixture: self }
     }
 
     #[doc(hidden)]
@@ -458,6 +695,97 @@ impl Fixture {
             }
         }
 
+        // 5. Run diagnostic assertions. Per ADR-0029 each diagnostic
+        //    pass dispatches by file extension to the per-language
+        //    `diagnostics::rules()` function.
+        for diag in self.diagnostics {
+            let file_display = diag.file.display().to_string();
+            let imports = file_imports
+                .get(&diag.file)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
+            let diagnostics = beans_core::compute_diagnostics(
+                &graph,
+                &registries,
+                &diag.file,
+                imports,
+            );
+            let findings = Findings {
+                diagnostics: &diagnostics,
+            };
+            match &diag.mode {
+                TestMode::Skip(reason) => {
+                    skipped.push(format!(
+                        "SKIP diagnostics [{}]: {}",
+                        file_display, reason
+                    ));
+                    continue;
+                }
+                TestMode::ExpectedFailure(reason) => {
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        (diag.check_fn)(&findings);
+                    }));
+                    if result.is_ok() {
+                        expected_failure_passed.push(format!(
+                            "EXPECTED_FAILURE PASSED [diagnostics {}]: \
+                             expected failure '{}' but checks passed — \
+                             promote this test!",
+                            file_display, reason
+                        ));
+                    }
+                    continue;
+                }
+                TestMode::Normal => {
+                    (diag.check_fn)(&findings);
+                }
+            }
+        }
+
+        // 6. Run quick-fix assertions. Stub: no fix synthesis exists
+        //    yet, so the computed list is always empty and every
+        //    assertion fails until the Java `missing-import` rule and
+        //    its `Fix` synthesis land (mirrors the completion stub in
+        //    step 4).
+        for qf in self.quick_fixes {
+            let cursor_display = qf.cursor_name.as_deref().unwrap_or("<default>");
+
+            let cursor = all_cursors
+                .iter()
+                .find(|c| c.name == qf.cursor_name)
+                .unwrap_or_else(|| {
+                    panic!("cursor '{}' not found in any file", cursor_display);
+                });
+
+            let fixes: Vec<Fix> = Vec::new();
+
+            match &qf.mode {
+                TestMode::Skip(reason) => {
+                    skipped.push(format!(
+                        "SKIP quick_fix [{}]: {}",
+                        cursor_display, reason
+                    ));
+                    continue;
+                }
+                TestMode::ExpectedFailure(reason) => {
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        run_quick_fix_checks(&qf, &fixes, &cursor.file, &file_sources, cursor_display);
+                    }));
+                    if result.is_ok() {
+                        expected_failure_passed.push(format!(
+                            "EXPECTED_FAILURE PASSED [quick_fix {}]: \
+                             expected failure '{}' but checks passed — \
+                             promote this test!",
+                            cursor_display, reason
+                        ));
+                    }
+                    continue;
+                }
+                TestMode::Normal => {
+                    run_quick_fix_checks(&qf, &fixes, &cursor.file, &file_sources, cursor_display);
+                }
+            }
+        }
+
         if !skipped.is_empty() {
             eprintln!("--- Skipped assertions ---");
             for msg in &skipped {
@@ -557,7 +885,7 @@ impl<'a> ResolvedView<'a> {
 fn view_fields(payload: &NodePayload) -> Option<(String, String, SymbolKind, Vec<Modifier>)> {
     match payload {
         #[cfg(feature = "java")]
-        NodePayload::Java(java_payload) => Some(java_view_fields(java_payload)),
+        NodePayload::Java(java_payload) => java_view_fields(java_payload),
         NodePayload::Jvm(jvm_payload) => Some(jvm_view_fields(jvm_payload)),
     }
 }
@@ -565,9 +893,9 @@ fn view_fields(payload: &NodePayload) -> Option<(String, String, SymbolKind, Vec
 #[cfg(feature = "java")]
 fn java_view_fields(
     payload: &beans_core::languages::java::JavaNodePayload,
-) -> (String, String, SymbolKind, Vec<Modifier>) {
+) -> Option<(String, String, SymbolKind, Vec<Modifier>)> {
     use beans_core::languages::java::{JavaNodePayload, JavaTypeKind};
-    match payload {
+    let view = match payload {
         JavaNodePayload::Type(n) => {
             let kind = match n.kind {
                 JavaTypeKind::Class => SymbolKind::Class,
@@ -627,7 +955,14 @@ fn java_view_fields(
             SymbolKind::Package,
             n.header.modifiers.clone(),
         ),
-    }
+        // Use-site nodes are not declaration views; resolution at a
+        // cursor lands on the use site's *target*, not on the use
+        // itself. Cursor assertions never see a TypeUse here.
+        JavaNodePayload::TypeUse(_) => return None,
+        // Imports are location carriers, not declarations (ADR-0029).
+        JavaNodePayload::Import(_) => return None,
+    };
+    Some(view)
 }
 
 fn jvm_view_fields(
@@ -1084,4 +1419,98 @@ fn run_checks(
             }
         }
     }
+}
+
+// --- Quick-fix helpers ---
+
+/// Execute a single pending quick-fix assertion against the offered
+/// `fixes`. Panics (assertion-style) on any unmet expectation; the
+/// caller wraps in `catch_unwind` for `expected_failure` handling.
+fn run_quick_fix_checks(
+    qf: &PendingQuickFix,
+    fixes: &[Fix],
+    cursor_file: &Path,
+    file_sources: &HashMap<PathBuf, String>,
+    cursor_display: &str,
+) {
+    let label = qf.apply_label.as_deref().unwrap_or_else(|| {
+        panic!(
+            "quick_fix [{}]: call .apply(label) before .run()",
+            cursor_display
+        )
+    });
+    let fix = fixes.iter().find(|f| f.label == label).unwrap_or_else(|| {
+        panic!(
+            "quick_fix [{}]: no fix labeled `{}` was offered; available: {:?}",
+            cursor_display,
+            label,
+            fixes.iter().map(|f| f.label.as_str()).collect::<Vec<_>>()
+        )
+    });
+
+    let source = file_sources.get(cursor_file).unwrap_or_else(|| {
+        panic!(
+            "quick_fix [{}]: no source recorded for {}",
+            cursor_display,
+            cursor_file.display()
+        )
+    });
+    let edited = apply_edits(source, &fix.edits, cursor_file);
+
+    for run in &qf.expected_line_runs {
+        assert!(
+            contains_trimmed_run(&edited, run),
+            "quick_fix [{}]: applied source lacks the expected consecutive \
+             lines {:?}\n--- applied source ---\n{}",
+            cursor_display,
+            run,
+            edited
+        );
+    }
+}
+
+/// Apply the subset of `edits` that targets `file` to `source`,
+/// bottom-up so earlier offsets stay valid. Columns are interpreted as
+/// byte offsets within the line — fixture sources are ASCII, where
+/// bytes, chars, and UTF-16 units coincide.
+fn apply_edits(source: &str, edits: &[SourceEdit], file: &Path) -> String {
+    let mut relevant: Vec<&SourceEdit> = edits
+        .iter()
+        .filter(|e| e.location.file == file)
+        .collect();
+    relevant.sort_by_key(|e| (e.location.start_line, e.location.start_col));
+
+    let mut out = source.to_string();
+    for edit in relevant.iter().rev() {
+        let start = byte_offset(&out, edit.location.start_line, edit.location.start_col);
+        let end = byte_offset(&out, edit.location.end_line, edit.location.end_col);
+        out.replace_range(start..end, &edit.new_text);
+    }
+    out
+}
+
+/// Byte offset of (zero-based `line`, `col`) in `source`.
+fn byte_offset(source: &str, line: u32, col: u32) -> usize {
+    let mut offset = 0;
+    for _ in 0..line {
+        let nl = source[offset..]
+            .find('\n')
+            .unwrap_or_else(|| panic!("line {} out of bounds for edit target", line));
+        offset += nl + 1;
+    }
+    offset + col as usize
+}
+
+/// True iff `expected` occurs in `text` as one consecutive run of
+/// lines, with each line compared after trimming.
+fn contains_trimmed_run(text: &str, expected: &[String]) -> bool {
+    if expected.is_empty() {
+        return true;
+    }
+    let lines: Vec<&str> = text.lines().map(str::trim).collect();
+    let needle: Vec<&str> = expected.iter().map(|s| s.trim()).collect();
+    if lines.len() < needle.len() {
+        return false;
+    }
+    lines.windows(needle.len()).any(|w| w == needle.as_slice())
 }
