@@ -4,8 +4,8 @@
 //! declaration: `@Override`, `@Retention(RUNTIME)`,
 //! `@Target({TYPE, METHOD})`. Annotations are first-class on every
 //! payload variant that can carry them
-//! ([`crate::jvm::JvmDeclHeader::annotations`],
-//! [`crate::languages::java::JavaDeclHeader::annotations`]); diagnostic
+//! ([`crate::JvmDeclHeader::annotations`],
+//! `JavaDeclHeader::annotations`); diagnostic
 //! rules and JVM enrichments (e.g., promoting Kotlin nullability to the
 //! JVM projection) read them directly.
 //!

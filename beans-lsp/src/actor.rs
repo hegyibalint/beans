@@ -26,10 +26,10 @@
 
 use std::path::{Path, PathBuf};
 
-use beans_core::diagnostics::compute_diagnostics;
-use beans_core::languages::java;
-use beans_core::payload::NodePayload;
-use beans_core::{Modifier, SymbolKind};
+use beans::compute_diagnostics;
+use beans::languages::java;
+use beans::payload::NodePayload;
+use beans::{Modifier, SymbolKind};
 use tokio::sync::{mpsc, oneshot};
 use tower_lsp::lsp_types::SymbolKind as LspSymbolKind;
 use tower_lsp::lsp_types::*;
@@ -240,12 +240,12 @@ fn diagnostics_for_path(state: &ServerState, path: &Path) -> Vec<Diagnostic> {
                 },
             },
             severity: Some(match d.severity {
-                beans_core::diagnostics::DiagnosticSeverity::Error => DiagnosticSeverity::ERROR,
-                beans_core::diagnostics::DiagnosticSeverity::Warning => DiagnosticSeverity::WARNING,
-                beans_core::diagnostics::DiagnosticSeverity::Information => {
+                beans::diagnostics::DiagnosticSeverity::Error => DiagnosticSeverity::ERROR,
+                beans::diagnostics::DiagnosticSeverity::Warning => DiagnosticSeverity::WARNING,
+                beans::diagnostics::DiagnosticSeverity::Information => {
                     DiagnosticSeverity::INFORMATION
                 }
-                beans_core::diagnostics::DiagnosticSeverity::Hint => DiagnosticSeverity::HINT,
+                beans::diagnostics::DiagnosticSeverity::Hint => DiagnosticSeverity::HINT,
             }),
             code: d.code.map(NumberOrString::String),
             message: d.message,
@@ -339,7 +339,7 @@ fn handle_document_symbol(state: &ServerState, uri: &Url) -> Option<DocumentSymb
 fn build_document_symbol(
     state: &ServerState,
     file: &Path,
-    id: beans_core::graph::NodeId,
+    id: beans::graph::NodeId,
 ) -> Option<DocumentSymbol> {
     let node = state.beans.graph.get(id)?;
     let view = payload_view(&node.payload)?;
@@ -417,7 +417,7 @@ fn resolve_at_cursor(
     file: &Path,
     text: &str,
     pos: Position,
-) -> Option<beans_core::graph::NodeId> {
+) -> Option<beans::graph::NodeId> {
     let imports = state
         .file_imports
         .get(file)
@@ -434,7 +434,8 @@ fn resolve_at_cursor(
             &compound,
             imports,
             pkg,
-            &state.beans.registries,
+            &state.beans.registries.java,
+            &state.beans.registries.jvm,
             &state.beans.graph,
         )
     {
@@ -442,7 +443,7 @@ fn resolve_at_cursor(
     }
 
     let word = word_at_position(text, pos.line, pos.character)?;
-    java::resolve_name(&word, imports, pkg, &state.beans.registries, &state.beans.graph)
+    java::resolve_name(&word, imports, pkg, &state.beans.registries.java, &state.beans.registries.jvm, &state.beans.graph)
 }
 
 fn word_at_position(text: &str, line: u32, character: u32) -> Option<String> {
@@ -496,7 +497,7 @@ fn is_identifier_char(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_' || b == b'$'
 }
 
-fn location_to_lsp(loc: &beans_core::Location) -> Option<Location> {
+fn location_to_lsp(loc: &beans::Location) -> Option<Location> {
     let uri = Url::from_file_path(&loc.file).ok()?;
     Some(Location {
         uri,
@@ -513,7 +514,7 @@ fn location_to_lsp(loc: &beans_core::Location) -> Option<Location> {
     })
 }
 
-/// Map a JVM-shaped `beans_core::SymbolKind` to the LSP wire's
+/// Map a JVM-shaped `beans::SymbolKind` to the LSP wire's
 /// `SymbolKind`. Per-language kinds (Kotlin's `Object`, Scala's
 /// `Trait`, Clojure's `Namespace`, etc.) live in their respective
 /// per-language enums (`crate::languages::<lang>::SymbolKind`); when
@@ -546,7 +547,7 @@ struct PayloadView<'a> {
     name: &'a str,
     #[allow(dead_code)] // not yet read by handlers; kept for symmetry.
     fqn: &'a str,
-    location: Option<&'a beans_core::Location>,
+    location: Option<&'a beans::Location>,
     #[allow(dead_code)] // not yet read by handlers; kept for symmetry.
     modifiers: &'a [Modifier],
 }
@@ -710,7 +711,8 @@ public class Dog {
             "Dog",
             &imports,
             &pkg,
-            &state.beans.registries,
+            &state.beans.registries.java,
+            &state.beans.registries.jvm,
             &state.beans.graph,
         )
         .expect("Dog should resolve in com.example");
@@ -723,7 +725,8 @@ public class Dog {
             "Dog.getName",
             &imports,
             &pkg,
-            &state.beans.registries,
+            &state.beans.registries.java,
+            &state.beans.registries.jvm,
             &state.beans.graph,
         )
         .expect("Dog.getName should resolve");
@@ -755,7 +758,8 @@ public class Dog {
             "User",
             &imports,
             &pkg,
-            &state.beans.registries,
+            &state.beans.registries.java,
+            &state.beans.registries.jvm,
             &state.beans.graph,
         )
         .expect("import-resolved User");
@@ -772,7 +776,7 @@ public class Dog {
             path,
             "package com.test;\npublic class Foo { public void oldMethod() {} }",
         );
-        assert!(java::lookup_fqn(&state.beans.registries, "com.test.Foo.oldMethod").is_some());
+        assert!(java::lookup_fqn(&state.beans.registries.java, &state.beans.registries.jvm, "com.test.Foo.oldMethod").is_some());
 
         workspace::integrate_source(
             &mut state,
@@ -780,10 +784,10 @@ public class Dog {
             "package com.test;\npublic class Foo { public void newMethod() {} }",
         );
         assert!(
-            java::lookup_fqn(&state.beans.registries, "com.test.Foo.oldMethod").is_none(),
+            java::lookup_fqn(&state.beans.registries.java, &state.beans.registries.jvm, "com.test.Foo.oldMethod").is_none(),
             "old method should be unregistered after reindex"
         );
-        assert!(java::lookup_fqn(&state.beans.registries, "com.test.Foo.newMethod").is_some());
+        assert!(java::lookup_fqn(&state.beans.registries.java, &state.beans.registries.jvm, "com.test.Foo.newMethod").is_some());
     }
 
     #[test]

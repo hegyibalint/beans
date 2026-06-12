@@ -1,6 +1,6 @@
 //! Quick-fix behavior tests — tier 1 (library fixtures).
 //!
-//! These pin *tool behavior* of analysis-layer [`beans_core::Fix`]
+//! These pin *tool behavior* of analysis-layer [`beans::Fix`]
 //! values — which fixes are offered and what applying them yields —
 //! not JLS claims, so they live outside the `spec/` tree. The spec
 //! facts they lean on (single-type-import semantics, the

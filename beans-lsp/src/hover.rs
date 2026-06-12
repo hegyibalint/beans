@@ -6,8 +6,8 @@
 //! LSP carries a fuller implementation here that targets the wire
 //! protocol.
 
-use beans_core::NodePayload;
-use beans_core::languages::java::{JavaNodePayload, JavaTypeKind};
+use beans::NodePayload;
+use beans::languages::java::{JavaNodePayload, JavaTypeKind};
 use std::fmt::Write;
 
 /// Build a markdown hover blob for a resolved Java payload. Returns

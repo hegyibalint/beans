@@ -9,9 +9,9 @@
 
 use std::path::{Path, PathBuf};
 
-use beans_core::graph::{Graph, NodeId};
-use beans_core::languages::java::{self, ParsedJavaFile};
-use beans_core::payload::NodePayload;
+use beans::graph::{Graph, NodeId};
+use beans::languages::java::{self, ParsedJavaFile};
+use beans::payload::NodePayload;
 use rayon::prelude::*;
 use walkdir::WalkDir;
 

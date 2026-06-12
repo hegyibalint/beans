@@ -329,10 +329,47 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::jvm::{Fqn, JvmMethodKey, JvmTypeKey, TypeRef};
 
-    #[cfg(feature = "java")]
-    use crate::languages::java::JavaSymbolKey;
+    // Local stand-in keys. The engine is key-agnostic; the real
+    // per-vertical keys live in the crates above (beans-lang-jvm,
+    // beans-lang-java). The names mirror them so the test bodies read
+    // like real call sites.
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    struct Fqn(String);
+    impl Fqn {
+        fn new(s: &str) -> Self {
+            Self(s.to_string())
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    enum TypeRef {
+        Void,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    struct JvmTypeKey(String);
+    impl JvmTypeKey {
+        fn new(s: &str) -> Self {
+            Self(s.to_string())
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    struct JvmMethodKey(String, String, Vec<TypeRef>);
+    impl JvmMethodKey {
+        fn new(owner: &str, name: &str, params: Vec<TypeRef>) -> Self {
+            Self(owner.to_string(), name.to_string(), params)
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    struct JavaSymbolKey(Fqn);
+    impl JavaSymbolKey {
+        fn new(f: Fqn) -> Self {
+            Self(f)
+        }
+    }
 
     // ---- QueryResult ----
 
@@ -563,7 +600,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "java")]
     #[test]
     fn fallback_with_java_native_and_jvm_keys() {
         // The canonical cross-language pattern: Java-side native first,

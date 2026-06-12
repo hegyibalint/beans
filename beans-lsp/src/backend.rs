@@ -10,9 +10,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use beans_core::Beans;
-use beans_core::graph::NodeId;
-use beans_core::languages::java::Import;
+use beans::Beans;
+use beans::graph::NodeId;
+use beans::languages::java::Import;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};

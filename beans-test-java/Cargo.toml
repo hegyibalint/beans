@@ -5,5 +5,5 @@ edition.workspace = true
 authors.workspace = true
 
 [dev-dependencies]
-beans-core = { path = "../beans-core", default-features = false, features = ["java"] }
+beans = { path = "../beans", default-features = false, features = ["java"] }
 beans-test-harness = { path = "../beans-test-harness", default-features = false, features = ["java"] }

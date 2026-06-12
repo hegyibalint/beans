@@ -1,0 +1,22 @@
+[package]
+name = "beans"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+# The facade composes the engine, the shared JVM model, and the language
+# verticals. Languages are Cargo features here — the union payload and
+# the composed registries bag gate their per-language arms on the same
+# flags. A bytecode-only consumer disables default features.
+[features]
+default = ["java", "kotlin", "scala", "groovy", "clojure"]
+java = ["dep:beans-lang-java"]
+kotlin = []
+scala = []
+groovy = []
+clojure = []
+
+[dependencies]
+beans-core = { path = "../beans-core" }
+beans-lang-jvm = { path = "../beans-lang-jvm" }
+beans-lang-java = { path = "../beans-lang-java", optional = true }
