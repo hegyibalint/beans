@@ -37,6 +37,7 @@
 //! their owning module.
 
 pub mod diagnostics;
+pub mod fix;
 pub mod graph;
 pub mod jvm;
 pub mod languages;
@@ -56,7 +57,8 @@ pub use jvm::{
     SymbolKind, TypeParam, TypeRef, WildcardBound,
 };
 
-pub use diagnostics::{compute_diagnostics, Diagnostic, DiagnosticSeverity};
+pub use diagnostics::{compute_diagnostics, Diagnostic, DiagnosticSeverity, Rule, RuleContext};
+pub use fix::{Fix, SourceEdit};
 pub use payload::NodePayload;
 pub use primitives::Location;
 pub use registry::{
