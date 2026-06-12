@@ -36,6 +36,15 @@ impl Fqn {
         self.0
     }
 
+    /// The last segment of the dotted form: `"com.example.Service"` →
+    /// `"Service"`. The whole name when there is no dot.
+    pub fn simple_name(&self) -> &str {
+        match self.0.rfind('.') {
+            Some(dot) => &self.0[dot + 1..],
+            None => &self.0,
+        }
+    }
+
     /// Split off the last segment: `"com.example.Service.process"` →
     /// `("com.example.Service", "process")`. Returns `None` for an
     /// unqualified name (no dot).

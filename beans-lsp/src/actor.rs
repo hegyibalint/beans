@@ -83,6 +83,11 @@ pub enum Cmd {
         pos: Position,
         reply: oneshot::Sender<Option<Hover>>,
     },
+    CodeAction {
+        uri: Url,
+        pos: Position,
+        reply: oneshot::Sender<Option<Vec<CodeActionOrCommand>>>,
+    },
     DocumentSymbol {
         uri: Url,
         reply: oneshot::Sender<Option<DocumentSymbolResponse>>,
@@ -191,6 +196,9 @@ fn handle(cmd: Cmd, state: &mut ServerState) {
         }
         Cmd::Hover { uri, pos, reply } => {
             let _ = reply.send(handle_hover(state, &uri, pos));
+        }
+        Cmd::CodeAction { uri, pos, reply } => {
+            let _ = reply.send(handle_code_action(state, &uri, pos));
         }
         Cmd::DocumentSymbol { uri, reply } => {
             let _ = reply.send(handle_document_symbol(state, &uri));
@@ -308,6 +316,66 @@ fn handle_hover(state: &ServerState, uri: &Url, pos: Position) -> Option<Hover> 
             value: markdown,
         }),
         range: None,
+    })
+}
+
+/// Pull half of auto-import: stateless request-time recompute. Locate
+/// the type use under the cursor in the *current* graph, re-derive
+/// candidates, and synthesize the fixes fresh — nothing is carried
+/// over from the diagnostic that made the lightbulb appear, so the
+/// action can never act on stale state (ADR-0028's rule, structural).
+fn handle_code_action(
+    state: &ServerState,
+    uri: &Url,
+    pos: Position,
+) -> Option<Vec<CodeActionOrCommand>> {
+    let path = uri.to_file_path().ok()?;
+    let text = document_text(state, uri)?;
+    let fixes = java::fixes::quick_fixes_at(
+        &state.beans.graph,
+        &state.beans.registries.java,
+        &state.beans.registries.jvm,
+        &path,
+        &text,
+        pos.line,
+        pos.character,
+    );
+    if fixes.is_empty() {
+        return None;
+    }
+    Some(fixes.into_iter().map(|f| fix_to_code_action(uri, f)).collect())
+}
+
+/// Map a domain [`beans::Fix`] onto the protocol envelope. The only
+/// LSP-aware step: SourceEdit spans become TextEdits in a
+/// WorkspaceEdit keyed by the document's URI.
+fn fix_to_code_action(uri: &Url, fix: beans::Fix) -> CodeActionOrCommand {
+    let edits: Vec<TextEdit> = fix
+        .edits
+        .iter()
+        .map(|e| TextEdit {
+            range: Range {
+                start: Position {
+                    line: e.location.start_line,
+                    character: e.location.start_col,
+                },
+                end: Position {
+                    line: e.location.end_line,
+                    character: e.location.end_col,
+                },
+            },
+            new_text: e.new_text.clone(),
+        })
+        .collect();
+    let changes = std::collections::HashMap::from([(uri.clone(), edits)]);
+    CodeActionOrCommand::CodeAction(CodeAction {
+        title: fix.label,
+        kind: Some(CodeActionKind::QUICKFIX),
+        edit: Some(WorkspaceEdit {
+            changes: Some(changes),
+            ..WorkspaceEdit::default()
+        }),
+        ..CodeAction::default()
     })
 }
 
@@ -825,6 +893,46 @@ public class Dog {
         let result = handle_references(&state, &uri, Position { line: 2, character: 16 });
         let locations = result.expect("references should hit");
         assert_eq!(locations.len(), 2, "two `process` methods expected");
+    }
+
+    #[test]
+    fn code_action_offers_import_fix_for_unresolved_type() {
+        // End-to-end through the handler: an unresolved `Service` use
+        // with a workspace candidate yields one quickfix CodeAction
+        // whose WorkspaceEdit inserts the import after the package
+        // statement.
+        let mut state = ServerState::new();
+        let model = std::path::Path::new("/tmp/beans-ca-test/Service.java");
+        let app = std::path::Path::new("/tmp/beans-ca-test/App.java");
+        workspace::integrate_source(
+            &mut state,
+            model,
+            "package com.example.model;\npublic class Service {}\n",
+        );
+        let app_text = "package com.example.app;\npublic class App {\n    private Service service;\n}\n";
+        workspace::integrate_source(&mut state, app, app_text);
+
+        let uri = Url::from_file_path(app).unwrap();
+        state.open_files.insert(uri.clone(), app_text.to_string());
+
+        // Cursor inside the `Service` identifier on line 2.
+        let actions = handle_code_action(&state, &uri, Position { line: 2, character: 14 })
+            .expect("an import fix should be offered");
+        assert_eq!(actions.len(), 1);
+        let CodeActionOrCommand::CodeAction(action) = &actions[0] else {
+            panic!("expected a CodeAction");
+        };
+        assert_eq!(action.title, "Import 'com.example.model.Service'");
+        assert_eq!(action.kind, Some(CodeActionKind::QUICKFIX));
+        let changes = action.edit.as_ref().unwrap().changes.as_ref().unwrap();
+        let edits = changes.get(&uri).unwrap();
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].range.start, Position { line: 1, character: 0 });
+        assert!(edits[0].new_text.contains("import com.example.model.Service;"));
+
+        // A resolved position (the class name declaration) offers nothing.
+        let none = handle_code_action(&state, &uri, Position { line: 1, character: 0 });
+        assert!(none.is_none());
     }
 
     #[test]

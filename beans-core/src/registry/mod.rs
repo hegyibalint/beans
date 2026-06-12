@@ -61,6 +61,19 @@ pub use query::{FallbackSubscription, Query, QueryResult, Subscription, Watch};
 // `JavaRegistries` in beans-lang-java, ...) and the `beans` facade
 // composes them. The engine provides only the `Registry<K>` primitive.
 
+/// Keys whose qualified name carries a meaningful last segment — the
+/// *source* simple name (`com.example.Service` → `Service`).
+///
+/// JVM naming is hierarchical everywhere, so most keys can answer
+/// this; implementing the trait opts a registry into
+/// [`Registry::query_simple_name`]. Implementations must return source
+/// simple names, not binary-name segments (a future Scala `Config$`
+/// projection answers `Config`) — consumers build user-facing edits
+/// (imports) from these.
+pub trait SimpleNamed {
+    fn simple_name(&self) -> &str;
+}
+
 // =========================================================================
 // Registry<K> — the typed multi-provider primitive
 // =========================================================================
@@ -194,6 +207,26 @@ impl<K: Eq + Hash> Registry<K> {
             .get(key)
             .cloned()
             .unwrap_or_default()
+    }
+
+    /// All keys whose [`SimpleNamed::simple_name`] equals `name`.
+    ///
+    /// Implemented as a scan over the key set — no secondary index.
+    /// Measured-first posture: at workspace scale (thousands of keys)
+    /// the scan is microseconds; an eager simple-name index is a local
+    /// upgrade if profiling ever shows this hot. Callers query the
+    /// returned keys for providers as usual.
+    pub fn query_simple_name(&self, name: &str) -> Vec<K>
+    where
+        K: SimpleNamed + Clone,
+    {
+        self.inner
+            .borrow()
+            .providers
+            .keys()
+            .filter(|k| k.simple_name() == name)
+            .cloned()
+            .collect()
     }
 
     /// Fire all callbacks subscribed to `key`. Uses snapshot-and-release

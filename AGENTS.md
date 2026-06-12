@@ -25,7 +25,7 @@ beans/                # Facade: NodePayload union, composed Registries, per-exte
                       # dispatch, Beans instance. Languages are Cargo features here
 beans-lsp/            # LSP server (go-to-def, hover, references, document symbols)
 beans-test-harness/   # Fixture test framework (language-agnostic, no language deps)
-beans-test-java/      # Java spec tests (uses harness + facade via prelude)
+beans-lang-java-test/ # Java spec tests (uses harness + facade via prelude)
 ```
 
 Dependency direction: `beans-lang-<language>` → `beans-lang-jvm` → `beans-core`;

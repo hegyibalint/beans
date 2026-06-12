@@ -104,6 +104,7 @@ impl LanguageServer for BeanBackend {
                 references_provider: Some(OneOf::Left(true)),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
+                code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
                 ..ServerCapabilities::default()
             },
             ..InitializeResult::default()
@@ -171,6 +172,16 @@ impl LanguageServer for BeanBackend {
         Ok(self
             .worker
             .send(move |reply| Cmd::GotoDefinition { uri, pos, reply })
+            .await
+            .flatten())
+    }
+
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        let uri = params.text_document.uri;
+        let pos = params.range.start;
+        Ok(self
+            .worker
+            .send(move |reply| Cmd::CodeAction { uri, pos, reply })
             .await
             .flatten())
     }

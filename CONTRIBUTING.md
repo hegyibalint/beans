@@ -29,9 +29,9 @@ Useful subsets:
 
 | Command | Purpose |
 |---------|---------|
-| `cargo test -p beans-test-java` | All Java spec tests. |
-| `cargo test -p beans-test-java jls_8` | One JLS chapter. |
-| `cargo test -p beans-test-java jls_7_5_1` | One JLS section. |
+| `cargo test -p beans-lang-java-test` | All Java spec tests. |
+| `cargo test -p beans-lang-java-test jls_8` | One JLS chapter. |
+| `cargo test -p beans-lang-java-test jls_7_5_1` | One JLS section. |
 | `cargo check --workspace` | Fast compile check. |
 | `cargo clippy --workspace` | Lints. |
 
@@ -43,7 +43,7 @@ beans-core/           Library: symbol model, symbol table, Language trait, resol
 beans-lang-java/      Java source parser (tree-sitter-java) + JavaLanguage impl.
 beans-lsp/            LSP server. Leaf consumer of beans-core (ADR-0020).
 beans-test-harness/   Fixture test framework. Language-agnostic, no language deps.
-beans-test-java/      Java spec tests. Uses harness + JavaLanguage via prelude.
+beans-lang-java-test/      Java spec tests. Uses harness + JavaLanguage via prelude.
 ```
 
 Two architectural rules to keep in mind:
@@ -268,7 +268,7 @@ End the chain with `.run()`.
 Java spec tests are organized by JLS chapter, with nested modules per section:
 
 ```
-beans-test-java/tests/
+beans-lang-java-test/tests/
     prelude.rs                      # fixture() with JavaLanguage
     spec.rs                         # module root
     spec/
@@ -293,7 +293,7 @@ mod jls_7_5_1_single_type_import {
 }
 ```
 
-This lets you run subsets: `cargo test -p beans-test-java jls_7` (chapter), `jls_7_5_1` (section).
+This lets you run subsets: `cargo test -p beans-lang-java-test jls_7` (chapter), `jls_7_5_1` (section).
 
 ## Spec test discipline
 
