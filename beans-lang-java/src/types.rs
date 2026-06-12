@@ -1,4 +1,4 @@
-use crate::PrimitiveKind;
+use beans_lang_jvm::PrimitiveKind;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeRef {
@@ -26,22 +26,22 @@ impl TypeRef {
     }
 
     /// Convert this parser-local TypeRef to the core TypeRef.
-    pub fn to_core(&self) -> crate::TypeRef {
+    pub fn to_core(&self) -> beans_lang_jvm::TypeRef {
         match self {
-            TypeRef::Void => crate::TypeRef::Void,
+            TypeRef::Void => beans_lang_jvm::TypeRef::Void,
             TypeRef::Primitive(s) => {
                 match PrimitiveKind::from_str(s) {
-                    Some(pk) => crate::TypeRef::Primitive(pk),
-                    None => crate::TypeRef::simple(s),
+                    Some(pk) => beans_lang_jvm::TypeRef::Primitive(pk),
+                    None => beans_lang_jvm::TypeRef::simple(s),
                 }
             }
-            TypeRef::Simple(s) | TypeRef::Qualified(s) => crate::TypeRef::simple(s),
-            TypeRef::Parameterized(name, args) => crate::TypeRef::parameterized(
-                crate::TypeRef::simple(name),
+            TypeRef::Simple(s) | TypeRef::Qualified(s) => beans_lang_jvm::TypeRef::simple(s),
+            TypeRef::Parameterized(name, args) => beans_lang_jvm::TypeRef::parameterized(
+                beans_lang_jvm::TypeRef::simple(name),
                 args.iter().map(|a| a.to_core()).collect(),
             ),
-            TypeRef::Array(inner) => crate::TypeRef::array(inner.to_core()),
-            TypeRef::Wildcard => crate::TypeRef::Wildcard { bound: None },
+            TypeRef::Array(inner) => beans_lang_jvm::TypeRef::array(inner.to_core()),
+            TypeRef::Wildcard => beans_lang_jvm::TypeRef::Wildcard { bound: None },
         }
     }
 }

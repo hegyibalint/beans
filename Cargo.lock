@@ -40,12 +40,34 @@ dependencies = [
 ]
 
 [[package]]
-name = "beans-core"
+name = "beans"
 version = "0.0.1"
 dependencies = [
- "beans-test-jdks",
+ "beans-core",
+ "beans-lang-java",
+ "beans-lang-jvm",
+]
+
+[[package]]
+name = "beans-core"
+version = "0.0.1"
+
+[[package]]
+name = "beans-lang-java"
+version = "0.0.1"
+dependencies = [
+ "beans-core",
+ "beans-lang-jvm",
  "tree-sitter",
  "tree-sitter-java",
+]
+
+[[package]]
+name = "beans-lang-jvm"
+version = "0.0.1"
+dependencies = [
+ "beans-core",
+ "beans-test-jdks",
  "zip",
 ]
 
@@ -53,7 +75,7 @@ dependencies = [
 name = "beans-lsp"
 version = "0.0.1"
 dependencies = [
- "beans-core",
+ "beans",
  "rayon",
  "serde",
  "serde_json",
@@ -68,14 +90,14 @@ dependencies = [
 name = "beans-test-harness"
 version = "0.0.1"
 dependencies = [
- "beans-core",
+ "beans",
 ]
 
 [[package]]
 name = "beans-test-java"
 version = "0.0.1"
 dependencies = [
- "beans-core",
+ "beans",
  "beans-test-harness",
 ]
 

@@ -1,4 +1,4 @@
-use beans_core::{Modifier, SymbolKind};
+use beans::{Modifier, SymbolKind};
 
 fn fixture() -> beans_test_harness::fixture::Fixture {
     crate::prelude::fixture()
@@ -518,7 +518,7 @@ mod jls_7_5_1_single_type_import {
             .diagnostics(
                 "com/example/service/UserService.java",
                 |findings| {
-                    let unused: Vec<&beans_core::Diagnostic> = findings
+                    let unused: Vec<&beans::Diagnostic> = findings
                         .iter()
                         .filter(|d| d.code.as_deref() == Some("unused-import"))
                         .collect();
@@ -592,7 +592,7 @@ mod jls_7_5_1_single_type_import {
                 }
             "#)
             .diagnostics("com/example/Bad.java", |findings| {
-                let unused: Vec<&beans_core::Diagnostic> = findings
+                let unused: Vec<&beans::Diagnostic> = findings
                     .iter()
                     .filter(|d| d.code.as_deref() == Some("unused-import"))
                     .collect();

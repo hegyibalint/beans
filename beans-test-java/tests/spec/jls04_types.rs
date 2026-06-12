@@ -1,4 +1,4 @@
-use beans_core::SymbolKind;
+use beans::SymbolKind;
 
 fn fixture() -> beans_test_harness::fixture::Fixture {
     crate::prelude::fixture()

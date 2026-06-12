@@ -51,39 +51,15 @@ use std::hash::Hash;
 use std::rc::{Rc, Weak};
 
 use crate::graph::{NodeHandle, NodeId};
-use crate::jvm::{JvmConstructorKey, JvmFieldKey, JvmMethodKey, JvmTypeKey, PackageKey};
-
-#[cfg(feature = "java")]
-use crate::languages::java::JavaSymbolKey;
 
 pub mod query;
 
 pub use query::{FallbackSubscription, Query, QueryResult, Subscription, Watch};
 
-// =========================================================================
-// Registries — the bag
-// =========================================================================
-
-/// Cross-layer registry aggregator. Every [`crate::Beans`] instance
-/// owns one. Resolution code accesses each typed registry by its named
-/// field directly; per ADR-0012 there is no generic dispatch.
-#[derive(Default)]
-pub struct Registries {
-    pub jvm_types: Registry<JvmTypeKey>,
-    pub jvm_methods: Registry<JvmMethodKey>,
-    pub jvm_fields: Registry<JvmFieldKey>,
-    pub jvm_constructors: Registry<JvmConstructorKey>,
-    pub jvm_packages: Registry<PackageKey>,
-
-    #[cfg(feature = "java")]
-    pub java_symbols: Registry<JavaSymbolKey>,
-}
-
-impl Registries {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
+// Note: there is no bag-of-registries here. Each vertical crate owns
+// its registry struct (`JvmRegistries` in beans-lang-jvm,
+// `JavaRegistries` in beans-lang-java, ...) and the `beans` facade
+// composes them. The engine provides only the `Registry<K>` primitive.
 
 // =========================================================================
 // Registry<K> — the typed multi-provider primitive
