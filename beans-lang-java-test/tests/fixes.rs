@@ -51,7 +51,6 @@ mod missing_import {
                 "",
                 "import com.example.model.Service;",
             ])
-            .expected_failure("import quick fix not yet implemented")
             .run();
     }
 
@@ -82,7 +81,6 @@ mod missing_import {
                 "",
                 "import com.alpha.Service;",
             ])
-            .expected_failure("import quick fix not yet implemented")
             .run();
     }
 
@@ -118,7 +116,6 @@ mod missing_import {
                 "import com.example.model.Service;",
             ])
             .expect_lines(&["import com.example.model.Existing;"])
-            .expected_failure("import quick fix not yet implemented")
             .run();
     }
 }

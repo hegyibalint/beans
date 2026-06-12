@@ -8,6 +8,7 @@
 //! hard-linked off its Java parent), so the Java-side key does not need
 //! a parameter list.
 
+use beans_core::registry::SimpleNamed;
 use beans_lang_jvm::fqn::Fqn;
 
 /// Key identifying a Java-side declaration by its fully-qualified name.
@@ -20,5 +21,11 @@ pub struct JavaSymbolKey {
 impl JavaSymbolKey {
     pub fn new(fqn: impl Into<Fqn>) -> Self {
         Self { fqn: fqn.into() }
+    }
+}
+
+impl SimpleNamed for JavaSymbolKey {
+    fn simple_name(&self) -> &str {
+        self.fqn.simple_name()
     }
 }

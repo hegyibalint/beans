@@ -90,6 +90,7 @@ pub fn compute_diagnostics(
         "java" => beans_lang_java::diagnostics::check_file(
             graph,
             &registries.java,
+            &registries.jvm,
             file,
             java_imports,
         ),

@@ -741,11 +741,10 @@ impl Fixture {
             }
         }
 
-        // 6. Run quick-fix assertions. Stub: no fix synthesis exists
-        //    yet, so the computed list is always empty and every
-        //    assertion fails until the Java `missing-import` rule and
-        //    its `Fix` synthesis land (mirrors the completion stub in
-        //    step 4).
+        // 6. Run quick-fix assertions. Mirrors the LSP's stateless
+        //    request-time recompute: locate the use site at the cursor,
+        //    re-derive candidates, synthesize fixes against the live
+        //    graph.
         for qf in self.quick_fixes {
             let cursor_display = qf.cursor_name.as_deref().unwrap_or("<default>");
 
@@ -756,6 +755,23 @@ impl Fixture {
                     panic!("cursor '{}' not found in any file", cursor_display);
                 });
 
+            #[cfg(feature = "java")]
+            let fixes: Vec<Fix> = {
+                let source = file_sources
+                    .get(&cursor.file)
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
+                java::fixes::quick_fixes_at(
+                    &graph,
+                    &registries.java,
+                    &registries.jvm,
+                    &cursor.file,
+                    source,
+                    cursor.line,
+                    cursor.col,
+                )
+            };
+            #[cfg(not(feature = "java"))]
             let fixes: Vec<Fix> = Vec::new();
 
             match &qf.mode {

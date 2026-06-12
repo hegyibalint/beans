@@ -36,7 +36,7 @@ The project does not yet have a stable release or installable artifact. If you w
 | `beans-lang-java` | Java source parser (tree-sitter-java) and `JavaLanguage` impl. |
 | `beans-lsp` | LSP server. The only crate that knows about JSON-RPC. |
 | `beans-test-harness` | Fixture-based test framework, language-agnostic. |
-| `beans-test-java` | Java spec tests built on the harness. |
+| `beans-lang-java-test` | Java spec tests built on the harness. |
 
 ## Getting started
 
