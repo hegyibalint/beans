@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted (rev 2 — revisit posture relaxed; ADRs inform, they do not veto)
 
 ## Context
 
@@ -70,9 +70,16 @@ Concretely:
 
 - We will throw away working code. That is wasteful in the short term.
 - There is a real risk of churning the architecture without shipping —
-  rewriting in pursuit of a perfect spec. We mitigate this by treating
-  ADRs as commitments, not drafts: once accepted, an ADR is not casually
-  revisited.
+  rewriting in pursuit of a perfect spec. Rev 1 mitigated this by
+  declaring accepted ADRs "not casually revisited" — and that clause
+  promptly got used as an argument from authority against a legitimate
+  design turn. Rev 2 deletes it: decisions are freely revisitable,
+  because nobody is right from the get-go. The discipline that remains
+  is the *record*, not the resistance — when a decision turns, write
+  the superseding ADR (or amend in place) so the reasoning survives.
+  An ADR is input to the next decision, never a veto on it. Churn
+  control comes from the cost of the turn being visible in the record,
+  not from procedural friction.
 - "The spec says X" can become an argument against legitimate
   implementation feedback. We mitigate this by making it easy to update
   the spec — a new ADR is the right response to "the spec is wrong,"
