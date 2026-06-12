@@ -19,11 +19,11 @@ beans-lang-jvm/       # Shared JVM model + enrichments; JvmRegistries (the only
                       # registry surface shared across language verticals)
 beans-lang-java/      # Java vertical: model, walker, resolve, rules, fixes,
                       # JavaRegistries. Depends on core + jvm, never on other languages
+beans-lang-java-test/ # Java spec tests (uses harness + facade via prelude)
 beans/                # Facade: NodePayload union, composed Registries, per-extension
                       # dispatch, Beans instance. Languages are Cargo features here
 beans-lsp/            # LSP server (go-to-def, hover, references, document symbols)
 beans-test-harness/   # Fixture test framework (language-agnostic, no language deps)
-beans-lang-java-test/ # Java spec tests (uses harness + facade via prelude)
 ```
 
 Dependency direction: `beans-lang-<language>` → `beans-lang-jvm` → `beans-core`;
