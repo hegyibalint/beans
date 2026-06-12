@@ -1,5 +1,5 @@
 //! LSP-shaped completion item and the adapter from the neutral
-//! `beans_core::CompletionCandidate`.
+//! `beans::CompletionCandidate`.
 //!
 //! Per ADR-0020 LSP-shaped output (formatted `detail` strings,
 //! parameter lists shaped like the LSP wire) lives in `beans-lsp`,
@@ -20,9 +20,9 @@
 //! these types when completion is implemented; the contract is
 //! already in place so the swap doesn't churn the consumer surface.
 
-use beans_core::languages::java::JavaNodePayload;
-use beans_core::payload::NodePayload;
-use beans_core::{CompletionCandidate, SymbolKind};
+use beans::languages::java::JavaNodePayload;
+use beans::payload::NodePayload;
+use beans::{CompletionCandidate, SymbolKind};
 
 /// One formal parameter rendered for a completion `detail`. Carries
 /// the source name, formatted type, and the varargs flag so
@@ -155,18 +155,18 @@ fn build_detail(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use beans_core::Registries;
-    use beans_core::graph::Graph;
-    use beans_core::jvm::Fqn;
-    use beans_core::languages::java;
-    use beans_core::payload::NodePayload;
+    use beans::Registries;
+    use beans::graph::Graph;
+    use beans::jvm::Fqn;
+    use beans::languages::java;
+    use beans::payload::NodePayload;
 
     /// Helper: parse `source`, integrate, and return both the graph
     /// and the inserted NodeIds so individual tests can pluck the
     /// payload they care about.
     fn fixture(
         source: &str,
-    ) -> (Graph<NodePayload>, Vec<beans_core::graph::NodeId>) {
+    ) -> (Graph<NodePayload>, Vec<beans::graph::NodeId>) {
         let mut graph: Graph<NodePayload> = Graph::new();
         let registries = Registries::new();
         let parsed =
@@ -177,9 +177,9 @@ mod tests {
 
     fn find_named<'g>(
         graph: &'g Graph<NodePayload>,
-        ids: &[beans_core::graph::NodeId],
+        ids: &[beans::graph::NodeId],
         name: &str,
-    ) -> (beans_core::graph::NodeId, &'g NodePayload) {
+    ) -> (beans::graph::NodeId, &'g NodePayload) {
         let id = ids
             .iter()
             .copied()

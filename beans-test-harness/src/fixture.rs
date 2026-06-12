@@ -10,20 +10,20 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use beans_core::completion::CompletionCandidates;
-use beans_core::graph::{Graph, NodeId};
-use beans_core::{Diagnostic, Fix, SourceEdit};
+use beans::completion::CompletionCandidates;
+use beans::graph::{Graph, NodeId};
+use beans::{Diagnostic, Fix, SourceEdit};
 // `Import` is Java-syntactic data; lives behind the `java` feature.
 // Without any language feature the fixture parses markers but doesn't
 // resolve cursors, so the imports map is a no-op type alias.
 #[cfg(feature = "java")]
-use beans_core::languages::java::Import;
+use beans::languages::java::Import;
 #[cfg(not(feature = "java"))]
 type Import = std::convert::Infallible;
-use beans_core::{Modifier, NodePayload, Registries, SymbolKind};
+use beans::{Modifier, NodePayload, Registries, SymbolKind};
 
 #[cfg(feature = "java")]
-use beans_core::languages::java;
+use beans::languages::java;
 
 use crate::markers::{strip_markers, CursorPosition};
 
@@ -85,7 +85,7 @@ struct PendingQuickFix {
 
 /// Findings returned by `.diagnostics(path, ...)`. Wraps the
 /// per-file `Vec<Diagnostic>` produced by
-/// [`beans_core::compute_diagnostics`] and offers small helpers spec
+/// [`beans::compute_diagnostics`] and offers small helpers spec
 /// tests typically reach for. Iteration over the underlying slice is
 /// available via [`Findings::iter`] for assertions the helpers don't
 /// cover.
@@ -704,7 +704,7 @@ impl Fixture {
                 .get(&diag.file)
                 .map(|v| v.as_slice())
                 .unwrap_or(&[]);
-            let diagnostics = beans_core::compute_diagnostics(
+            let diagnostics = beans::compute_diagnostics(
                 &graph,
                 &registries,
                 &diag.file,
@@ -892,9 +892,9 @@ fn view_fields(payload: &NodePayload) -> Option<(String, String, SymbolKind, Vec
 
 #[cfg(feature = "java")]
 fn java_view_fields(
-    payload: &beans_core::languages::java::JavaNodePayload,
+    payload: &beans::languages::java::JavaNodePayload,
 ) -> Option<(String, String, SymbolKind, Vec<Modifier>)> {
-    use beans_core::languages::java::{JavaNodePayload, JavaTypeKind};
+    use beans::languages::java::{JavaNodePayload, JavaTypeKind};
     let view = match payload {
         JavaNodePayload::Type(n) => {
             let kind = match n.kind {
@@ -966,9 +966,9 @@ fn java_view_fields(
 }
 
 fn jvm_view_fields(
-    payload: &beans_core::jvm::JvmNodePayload,
+    payload: &beans::jvm::JvmNodePayload,
 ) -> (String, String, SymbolKind, Vec<Modifier>) {
-    use beans_core::jvm::{JvmNodePayload, JvmTypeKind};
+    use beans::jvm::{JvmNodePayload, JvmTypeKind};
     match payload {
         JvmNodePayload::Type(n) => {
             let kind = match n.kind {
@@ -1065,7 +1065,7 @@ fn resolve_at_cursor<'a>(
     // can still parse markers but won't resolve cursor positions.
     #[cfg(feature = "java")]
     let resolved =
-        java::resolve_name(&word, imports, current_package, registries, graph);
+        java::resolve_name(&word, imports, current_package, &registries.java, &registries.jvm, graph);
     #[cfg(not(feature = "java"))]
     let resolved: Option<NodeId> = {
         let _ = (imports, current_package, registries, graph);
@@ -1097,7 +1097,7 @@ fn word_at(source: &str, line: u32, col: u32, file: &Path) -> Option<String> {
 }
 
 // Resolution helpers (FQN chain + simple-name fallback) live in
-// `beans_core::languages::java::resolve` so the LSP and the fixture
+// `beans::languages::java::resolve` so the LSP and the fixture
 // share one implementation. Per ADR-0012 / ADR-0020 they return raw
 // `NodeId`; LSP-shaped output formatting belongs in `beans-lsp`.
 
@@ -1129,7 +1129,7 @@ fn build_hover(view: &ResolvedView<'_>) -> String {
 
     match view.payload {
         #[cfg(feature = "java")]
-        NodePayload::Java(beans_core::languages::java::JavaNodePayload::Method(m)) => {
+        NodePayload::Java(beans::languages::java::JavaNodePayload::Method(m)) => {
             let tp = if m.type_parameters.is_empty() {
                 String::new()
             } else {
@@ -1153,7 +1153,7 @@ fn build_hover(view: &ResolvedView<'_>) -> String {
             );
         }
         #[cfg(feature = "java")]
-        NodePayload::Java(beans_core::languages::java::JavaNodePayload::Field(f)) => {
+        NodePayload::Java(beans::languages::java::JavaNodePayload::Field(f)) => {
             let _ = write!(
                 s,
                 "```java\n{} {}\n```\n\n{} `{}`",
@@ -1161,7 +1161,7 @@ fn build_hover(view: &ResolvedView<'_>) -> String {
             );
         }
         #[cfg(feature = "java")]
-        NodePayload::Java(beans_core::languages::java::JavaNodePayload::Type(t)) => {
+        NodePayload::Java(beans::languages::java::JavaNodePayload::Type(t)) => {
             let tp = if t.type_parameters.is_empty() {
                 String::new()
             } else {
@@ -1169,7 +1169,7 @@ fn build_hover(view: &ResolvedView<'_>) -> String {
                 format!("<{}>", names.join(", "))
             };
             let header = match t.kind {
-                beans_core::languages::java::JavaTypeKind::Record => format!("record {}{}", t.header.name, tp),
+                beans::languages::java::JavaTypeKind::Record => format!("record {}{}", t.header.name, tp),
                 _ => format!("{} {}{}", kind_str, t.header.name, tp),
             };
             let _ = write!(s, "```java\n{}\n```\n\n`{}`", header, t.header.fqn);
@@ -1185,7 +1185,7 @@ fn build_hover(view: &ResolvedView<'_>) -> String {
 fn signature_return_type(view: &ResolvedView<'_>) -> Option<String> {
     match view.payload {
         #[cfg(feature = "java")]
-        NodePayload::Java(beans_core::languages::java::JavaNodePayload::Method(m)) => {
+        NodePayload::Java(beans::languages::java::JavaNodePayload::Method(m)) => {
             Some(m.return_type.to_string())
         }
         _ => None,
@@ -1195,14 +1195,14 @@ fn signature_return_type(view: &ResolvedView<'_>) -> Option<String> {
 fn signature_params(view: &ResolvedView<'_>) -> Option<Vec<(String, String)>> {
     match view.payload {
         #[cfg(feature = "java")]
-        NodePayload::Java(beans_core::languages::java::JavaNodePayload::Method(m)) => Some(
+        NodePayload::Java(beans::languages::java::JavaNodePayload::Method(m)) => Some(
             m.parameters
                 .iter()
                 .map(|p| (p.name.clone(), p.param_type.to_string()))
                 .collect(),
         ),
         #[cfg(feature = "java")]
-        NodePayload::Java(beans_core::languages::java::JavaNodePayload::Constructor(c)) => Some(
+        NodePayload::Java(beans::languages::java::JavaNodePayload::Constructor(c)) => Some(
             c.parameters
                 .iter()
                 .map(|p| (p.name.clone(), p.param_type.to_string()))
