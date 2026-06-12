@@ -5,6 +5,7 @@ members = [
     "beans-lang-jvm",
     "beans-lang-java",
     "beans-lang-java-test",
+    "beans-toolchains",
     "beans",
     "beans-lsp",
     "beans-test-harness",
