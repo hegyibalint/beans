@@ -107,6 +107,11 @@ pub fn build_hover_text(payload: &NodePayload) -> Option<String> {
             let _ = write!(out, "```java\npackage {}\n```", p.header.fqn);
         }
         JavaNodePayload::Parameter(_) => return None,
+        // Use-site nodes are not hover targets; resolution at a cursor
+        // lands on the declaration the use site refers to, not on the
+        // use site itself.
+        JavaNodePayload::TypeUse(_) => return None,
+        JavaNodePayload::Import(_) => return None,
     }
 
     Some(out)

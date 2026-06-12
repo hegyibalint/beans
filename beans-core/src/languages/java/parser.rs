@@ -26,9 +26,9 @@ use crate::jvm::payload::{
 };
 use crate::languages::java::payload::{
     JavaConstructorNode, JavaDeclHeader, JavaEnumConstantNode, JavaFieldNode, JavaMethodNode,
-    JavaNodePayload, JavaParameter, JavaTypeKind, JavaTypeNode,
+    JavaNodePayload, JavaParameter, JavaTypeKind, JavaTypeNode, JavaTypeUseNode, JavaUseHeader,
 };
-use crate::languages::java::syntax::Import;
+use crate::languages::java::syntax::{extract_imports, Import};
 use crate::languages::java::types::TypeRef as ParsedTypeRef;
 use crate::payload::NodePayload;
 use crate::primitives::Location;
@@ -89,16 +89,25 @@ pub fn parse_java_to_graph(path: &Path, source: &str) -> ParsedJavaFile {
     let root = tree.root_node();
     let source_bytes = source.as_bytes();
 
+    // Imports are captured before the symbol pass so the walker can
+    // resolve `JavaTypeUseNode::candidate_fqns` per ADR-0029. The
+    // line-based `extract_imports` is robust to malformed surrounding
+    // code; tree-sitter would do the same job but we preserve the
+    // existing line-based path for now.
+    let imports = extract_imports(path, source);
+
     let mut ctx = ParseContext {
         path,
         source: source_bytes,
         plan: Vec::new(),
         package: String::new(),
         enclosing_stack: Vec::new(),
+        imports: imports.clone(),
     };
 
     // First pass: find the package declaration so `build_fqn` works for
-    // every following symbol.
+    // every following symbol, and so use-site candidate FQNs can include
+    // the same-package candidate.
     for i in 0..root.child_count() {
         let child = root.child(i).unwrap();
         if child.kind() == "package_declaration" {
@@ -111,8 +120,6 @@ pub fn parse_java_to_graph(path: &Path, source: &str) -> ParsedJavaFile {
         let child = root.child(i).unwrap();
         extract_symbol(&mut ctx, child);
     }
-
-    let imports = crate::languages::java::syntax::extract_imports(source);
 
     ParsedJavaFile {
         path: path.to_path_buf(),
@@ -172,6 +179,10 @@ struct ParseContext<'a> {
     /// payloads). The walker pushes/pops as it descends/ascends class
     /// bodies.
     enclosing_stack: Vec<EnclosingFrame>,
+    /// File-level imports. Per ADR-0029 the walker computes
+    /// `JavaUseHeader::candidate_fqns` for each use site at parse time,
+    /// using `imports + same-package + java.lang` in priority order.
+    imports: Vec<Import>,
 }
 
 struct EnclosingFrame {
@@ -398,6 +409,168 @@ fn parse_type_ref(node: Node, source: &[u8]) -> ParsedTypeRef {
     }
 }
 
+// ---- Type-use emission (ADR-0029) ----
+
+/// Walk a tree-sitter type expression and emit one
+/// [`JavaTypeUseNode`] per named identifier, hard-linked under
+/// `parent_plan_idx`. Per ADR-0029 the use-site's `location` spans
+/// the identifier text only — for `com.example.Service` the span is
+/// `Service`, not the qualifier prefix; for `Repository<User>` the
+/// outer raw type and each type argument emit one flat node each.
+///
+/// Primitive types (`int`, `boolean`, ...) and `void` produce no use
+/// sites — they don't need resolution.
+fn emit_type_use_sites(ctx: &mut ParseContext, type_node: Node, parent_plan_idx: usize) {
+    match type_node.kind() {
+        "void_type" | "integral_type" | "floating_point_type" | "boolean_type" => {
+            // Primitive: no use site.
+        }
+        "type_identifier" => {
+            let name = node_text(type_node, ctx.source).to_string();
+            let location = make_location(ctx, type_node);
+            emit_type_use(ctx, name, location, parent_plan_idx);
+        }
+        "scoped_type_identifier" => {
+            // Span the rightmost identifier only — that's the
+            // refactor-meaningful token. The qualifier is recoverable
+            // from context if any consumer needs it.
+            let ident = rightmost_type_identifier(type_node);
+            let name = node_text(ident, ctx.source).to_string();
+            let location = make_location(ctx, ident);
+            emit_type_use(ctx, name, location, parent_plan_idx);
+        }
+        "generic_type" => {
+            // Outer raw type (first child): one use site.
+            // Type arguments (children of `arguments` field): one each.
+            if let Some(base) = type_node.child(0) {
+                emit_type_use_sites(ctx, base, parent_plan_idx);
+            }
+            let args_node = type_node.child_by_field_name("arguments").or_else(|| {
+                (0..type_node.child_count())
+                    .filter_map(|i| type_node.child(i))
+                    .find(|c| c.kind() == "type_arguments")
+            });
+            if let Some(args) = args_node {
+                for i in 0..args.child_count() {
+                    let arg = args.child(i).unwrap();
+                    if matches!(arg.kind(), "<" | ">" | ",") {
+                        continue;
+                    }
+                    emit_type_use_sites(ctx, arg, parent_plan_idx);
+                }
+            }
+        }
+        "array_type" => {
+            let elem = type_node
+                .child_by_field_name("element")
+                .or_else(|| type_node.child(0));
+            if let Some(elem) = elem {
+                emit_type_use_sites(ctx, elem, parent_plan_idx);
+            }
+        }
+        "wildcard" => {
+            // `?`, `? extends T`, `? super T` — the bound (when present)
+            // is a type identifier we want.
+            for i in 0..type_node.child_count() {
+                let child = type_node.child(i).unwrap();
+                if matches!(child.kind(), "?" | "extends" | "super") {
+                    continue;
+                }
+                emit_type_use_sites(ctx, child, parent_plan_idx);
+            }
+        }
+        _ => {
+            // Unknown type-position node kind. Skip silently rather
+            // than panic; tree-sitter-java may surface annotated_type
+            // and other shapes we'll add as they appear in tests.
+        }
+    }
+}
+
+/// Descend a `scoped_type_identifier` to the rightmost `type_identifier`
+/// child. For `com.example.Service`, returns the `Service` token. For
+/// a plain `type_identifier`, returns it unchanged.
+fn rightmost_type_identifier(node: Node<'_>) -> Node<'_> {
+    if node.kind() != "scoped_type_identifier" {
+        return node;
+    }
+    for i in (0..node.child_count()).rev() {
+        let child = match node.child(i) {
+            Some(c) => c,
+            None => continue,
+        };
+        match child.kind() {
+            "type_identifier" => return child,
+            "scoped_type_identifier" => return rightmost_type_identifier(child),
+            _ => {}
+        }
+    }
+    node
+}
+
+fn emit_type_use(
+    ctx: &mut ParseContext,
+    name: String,
+    location: Location,
+    parent_plan_idx: usize,
+) {
+    let candidate_fqns = build_candidate_fqns(ctx, &name);
+    let payload = JavaNodePayload::TypeUse(JavaTypeUseNode {
+        header: JavaUseHeader {
+            name,
+            location,
+            candidate_fqns,
+        },
+    });
+    ctx.plan.push(PendingNode {
+        payload: NodePayload::Java(payload),
+        parent: Some(parent_plan_idx),
+    });
+}
+
+/// Compute the priority-ordered FQN candidates for a simple type name,
+/// per ADR-0029 / Java's classpath shadowing rules.
+///
+/// Order: explicit single-imports → same-package → `java.lang` →
+/// wildcard imports. Static imports do not contribute (they bind
+/// member names, not type names).
+fn build_candidate_fqns(ctx: &ParseContext, simple_name: &str) -> Vec<Fqn> {
+    let mut out: Vec<Fqn> = Vec::new();
+
+    for imp in &ctx.imports {
+        if let Import::Single(fqn, _) = imp {
+            if fqn.rsplit('.').next() == Some(simple_name) {
+                out.push(Fqn::new(fqn.clone()));
+            }
+        }
+    }
+
+    let same_pkg_fqn = if ctx.package.is_empty() {
+        simple_name.to_string()
+    } else {
+        format!("{}.{}", ctx.package, simple_name)
+    };
+    if !out.iter().any(|f| f.as_str() == same_pkg_fqn) {
+        out.push(Fqn::new(same_pkg_fqn));
+    }
+
+    let java_lang = format!("java.lang.{}", simple_name);
+    if !out.iter().any(|f| f.as_str() == java_lang) {
+        out.push(Fqn::new(java_lang));
+    }
+
+    for imp in &ctx.imports {
+        if let Import::Wildcard(pkg, _) = imp {
+            let candidate = format!("{}.{}", pkg, simple_name);
+            if !out.iter().any(|f| f.as_str() == candidate) {
+                out.push(Fqn::new(candidate));
+            }
+        }
+    }
+
+    out
+}
+
 // ---- Plan emission helpers ----
 
 /// Push a (Java, JVM) pair into the plan. Returns the Java plan index;
@@ -491,10 +664,90 @@ fn extract_class_like(
         enrichments: JvmEnrichments::default(),
     });
     let java_idx = emit_pair(ctx, java_payload, jvm_payload);
+    emit_class_extends_implements(ctx, node, java_idx);
 
     ctx.enclosing_stack.push(EnclosingFrame { java_idx, name });
     extract_body_members(ctx, node);
     ctx.enclosing_stack.pop();
+}
+
+/// Walk a class-like declaration's `superclass` and `interfaces` fields
+/// and emit one [`JavaTypeUseNode`] per named supertype identifier,
+/// hard-linked under the class declaration.
+fn emit_class_extends_implements(ctx: &mut ParseContext, node: Node, parent_idx: usize) {
+    if let Some(sc) = node.child_by_field_name("superclass") {
+        for i in 0..sc.child_count() {
+            let child = sc.child(i).unwrap();
+            if child.kind() == "extends" {
+                continue;
+            }
+            emit_type_use_sites(ctx, child, parent_idx);
+        }
+    }
+    if let Some(impls) = node.child_by_field_name("interfaces") {
+        for i in 0..impls.child_count() {
+            let child = impls.child(i).unwrap();
+            if child.kind() == "type_list" {
+                for j in 0..child.child_count() {
+                    let t = child.child(j).unwrap();
+                    if matches!(t.kind(), "," | "implements" | "extends") {
+                        continue;
+                    }
+                    emit_type_use_sites(ctx, t, parent_idx);
+                }
+            }
+        }
+    }
+}
+
+/// Walk a method or constructor's signature (return type, parameter
+/// types, throws clause) and emit type-use nodes hard-linked under
+/// `parent_idx`.
+fn emit_method_signature_uses(ctx: &mut ParseContext, node: Node, parent_idx: usize) {
+    if let Some(t) = node.child_by_field_name("type") {
+        emit_type_use_sites(ctx, t, parent_idx);
+    }
+    if let Some(params) = node.child_by_field_name("parameters") {
+        for i in 0..params.child_count() {
+            let p = params.child(i).unwrap();
+            match p.kind() {
+                "formal_parameter" => {
+                    if let Some(t) = p.child_by_field_name("type") {
+                        emit_type_use_sites(ctx, t, parent_idx);
+                    }
+                }
+                "spread_parameter" => {
+                    // tree-sitter-java's `spread_parameter` doesn't
+                    // expose a `type` field; the type is the first
+                    // child that isn't modifiers/`...`/declarator.
+                    for j in 0..p.child_count() {
+                        let part = p.child(j).unwrap();
+                        if matches!(
+                            part.kind(),
+                            "..." | "modifiers" | "variable_declarator"
+                        ) {
+                            continue;
+                        }
+                        emit_type_use_sites(ctx, part, parent_idx);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    for i in 0..node.child_count() {
+        let child = node.child(i).unwrap();
+        if child.kind() == "throws" {
+            for j in 0..child.child_count() {
+                let t = child.child(j).unwrap();
+                if matches!(t.kind(), "throws" | ",") {
+                    continue;
+                }
+                emit_type_use_sites(ctx, t, parent_idx);
+            }
+        }
+    }
 }
 
 fn extract_enum(ctx: &mut ParseContext, node: Node) {
@@ -636,12 +889,15 @@ fn extract_method(ctx: &mut ParseContext, node: Node) {
         })
         .collect();
 
+    let has_body = node.child_by_field_name("body").is_some();
+
     let java_payload = JavaNodePayload::Method(JavaMethodNode {
         header: java_header(ctx, &name, node, modifiers.clone()),
         return_type: return_type.clone(),
         parameters: java_parameters,
         type_parameters: type_parameters.clone(),
         throws: Vec::new(),
+        has_body,
     });
     let jvm_payload = JvmNodePayload::Method(JvmMethodNode {
         header: jvm_header(ctx, &name, node, modifiers),
@@ -652,7 +908,8 @@ fn extract_method(ctx: &mut ParseContext, node: Node) {
         throws: Vec::new(),
         enrichments: JvmEnrichments::default(),
     });
-    emit_pair(ctx, java_payload, jvm_payload);
+    let java_idx = emit_pair(ctx, java_payload, jvm_payload);
+    emit_method_signature_uses(ctx, node, java_idx);
 }
 
 fn extract_constructor(ctx: &mut ParseContext, node: Node) {
@@ -697,18 +954,24 @@ fn extract_constructor(ctx: &mut ParseContext, node: Node) {
         type_parameters,
         throws: Vec::new(),
     });
-    emit_pair(ctx, java_payload, jvm_payload);
+    let java_idx = emit_pair(ctx, java_payload, jvm_payload);
+    emit_method_signature_uses(ctx, node, java_idx);
 }
 
 fn extract_fields(ctx: &mut ParseContext, node: Node) {
     let modifiers = extract_modifiers(node, ctx.source);
-    let field_type = node
-        .child_by_field_name("type")
+    let type_node = node.child_by_field_name("type");
+    let field_type = type_node
         .map(|n| parse_type_ref(n, ctx.source).to_core())
         .unwrap_or_else(|| TypeRef::simple("unknown"));
     let owner = parent_owner_fqn(ctx);
 
     // Field declarations can have multiple declarators: `int a, b, c;`
+    // Each declarator emits its own JavaFieldNode + JvmFieldNode pair.
+    // Per ADR-0029 each field also gets one JavaTypeUseNode per named
+    // identifier in its type, hard-linked under the field. With shared
+    // declarators each declarator gets an independent set of use-site
+    // children — the use sites are field-local, not declaration-shared.
     for i in 0..node.child_count() {
         let child = node.child(i).unwrap();
         if child.kind() == "variable_declarator" {
@@ -731,7 +994,10 @@ fn extract_fields(ctx: &mut ParseContext, node: Node) {
                 initialized: false,
                 enrichments: JvmEnrichments::default(),
             });
-            emit_pair(ctx, java_payload, jvm_payload);
+            let java_idx = emit_pair(ctx, java_payload, jvm_payload);
+            if let Some(t) = type_node {
+                emit_type_use_sites(ctx, t, java_idx);
+            }
         }
     }
 }
@@ -796,18 +1062,23 @@ public class Dog {
 "#;
         let parsed = parse(source);
 
-        // Plan layout: Dog(Java), Dog(Jvm), name(Java), name(Jvm),
-        // Dog ctor(Java), Dog ctor(Jvm), getName(Java), getName(Jvm).
-        // Each Java payload's parent points at its enclosing Java
-        // payload's plan index.
+        // Plan layout (declarations only): Dog(Java), Dog(Jvm),
+        // name(Java), name(Jvm), Dog ctor(Java), Dog ctor(Jvm),
+        // getName(Java), getName(Jvm). Per ADR-0029 use-site nodes
+        // (`JavaTypeUseNode`) interleave under their containing
+        // declaration; their parent is the declaration, not the class.
         let dog_idx = 0;
         assert_eq!(parsed.plan[dog_idx].parent, None);
         assert_eq!(parsed.plan[dog_idx + 1].parent, Some(dog_idx));
 
-        // Members of Dog: their Java parent is `dog_idx`.
+        // Every *declaration* Java payload has the class as parent.
+        // Use sites have their own (non-class) Java parents — the
+        // declaration that contains them.
         for member in parsed.plan.iter().skip(2) {
-            if let NodePayload::Java(_) = member.payload {
-                assert_eq!(member.parent, Some(dog_idx));
+            if let NodePayload::Java(j) = &member.payload {
+                if j.header().is_some() {
+                    assert_eq!(member.parent, Some(dog_idx));
+                }
             }
         }
 
@@ -824,6 +1095,129 @@ public class Dog {
         } else {
             panic!("expected Method");
         }
+    }
+
+    /// Collect every JavaTypeUseNode in the plan.
+    fn type_uses(plan: &[PendingNode]) -> Vec<&JavaTypeUseNode> {
+        plan.iter()
+            .filter_map(|p| match &p.payload {
+                NodePayload::Java(JavaNodePayload::TypeUse(t)) => Some(t),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn type_uses_emit_for_supertype_and_field_and_method_signatures() {
+        // Per ADR-0029 every named type identifier in a declaration
+        // header emits one JavaTypeUseNode hard-linked under the
+        // containing declaration. This test pins:
+        //   1. Supertype + implements emit one use site each.
+        //   2. Field type emits one use site.
+        //   3. Method return type and parameter types emit one each.
+        //   4. Throws clauses emit one per thrown type.
+        //   5. Generic type arguments emit flat sibling use sites
+        //      (Repository<User> → 2 nodes).
+        let source = r#"
+package com.example;
+public class UserService extends BaseService implements Auditable {
+    private Repository<User> users;
+    public UserService(Repository<User> users) {}
+    public Optional<User> findById(long id) throws NotFoundException { return null; }
+}
+"#;
+        let parsed = parse(source);
+        let names: Vec<&str> = type_uses(&parsed.plan)
+            .iter()
+            .map(|t| t.header.name.as_str())
+            .collect();
+
+        // Slice 1 is signatures-only — no body content. The expected
+        // multiset:
+        //   class header:        BaseService, Auditable
+        //   field:               Repository, User
+        //   constructor params:  Repository, User
+        //   method return type:  Optional, User
+        //   method param:        (none — `long` is primitive)
+        //   method throws:       NotFoundException
+        let mut sorted = names.clone();
+        sorted.sort();
+        assert_eq!(
+            sorted,
+            vec![
+                "Auditable",
+                "BaseService",
+                "NotFoundException",
+                "Optional",
+                "Repository",
+                "Repository",
+                "User",
+                "User",
+                "User",
+            ],
+            "unexpected use-site name multiset; full list: {:?}",
+            names
+        );
+    }
+
+    #[test]
+    fn type_use_span_is_identifier_only_for_scoped_types() {
+        // Per ADR-0029 the load-bearing invariant: a JavaTypeUseNode's
+        // `location` spans the identifier text only — for
+        // `com.example.Service`, the span is `Service`, never the full
+        // qualified expression. Mechanical rename rewrites the span.
+        let source = "package com.example;\npublic class A extends com.other.Base {}\n";
+        let parsed = parse(source);
+
+        let uses = type_uses(&parsed.plan);
+        let base = uses
+            .iter()
+            .find(|t| t.header.name == "Base")
+            .expect("Base use site emitted");
+
+        // The span text on the source must be exactly "Base", not
+        // "com.other.Base". Use the location's row/col to extract.
+        let loc = &base.header.location;
+        assert_eq!(loc.start_line, 1, "Base is on the second source line (0-indexed)");
+        let line: &str = source.lines().nth(loc.start_line as usize).unwrap();
+        let span_text = &line[loc.start_col as usize..loc.end_col as usize];
+        assert_eq!(span_text, "Base", "span must cover only the rightmost identifier");
+    }
+
+    #[test]
+    fn type_use_candidate_fqns_prefer_explicit_imports() {
+        // Per ADR-0029 candidate FQN order: explicit single-imports
+        // first, then same-package, then java.lang, then wildcard
+        // imports.
+        let source = r#"
+package com.example;
+import com.other.Service;
+import java.util.*;
+public class App {
+    private Service svc;
+    private List<String> items;
+}
+"#;
+        let parsed = parse(source);
+        let uses = type_uses(&parsed.plan);
+
+        let svc = uses
+            .iter()
+            .find(|t| t.header.name == "Service")
+            .expect("Service use site emitted");
+        let svc_fqns: Vec<&str> = svc.header.candidate_fqns.iter().map(|f| f.as_str()).collect();
+        assert_eq!(svc_fqns[0], "com.other.Service", "explicit import wins");
+
+        let list = uses
+            .iter()
+            .find(|t| t.header.name == "List")
+            .expect("List use site emitted");
+        let list_fqns: Vec<&str> = list.header.candidate_fqns.iter().map(|f| f.as_str()).collect();
+        // No explicit import for List → same-package, then java.lang,
+        // then wildcard import (java.util.*).
+        assert_eq!(list_fqns[0], "com.example.List");
+        assert_eq!(list_fqns[1], "java.lang.List");
+        assert_eq!(list_fqns[2], "java.util.List");
     }
 
     #[test]
