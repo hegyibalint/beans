@@ -25,6 +25,7 @@
 //!   `compute_diagnostics`.
 
 pub mod diagnostics;
+pub mod fixes;
 pub mod keys;
 pub mod parser;
 pub mod payload;
@@ -40,6 +41,7 @@ pub use payload::{
     JavaFieldNode, JavaImportNode, JavaImportKind, JavaMethodNode, JavaNodePayload,
     JavaPackageNode, JavaParameter, JavaTypeKind, JavaTypeNode, JavaTypeUseNode, JavaUseHeader,
 };
+pub use fixes::{add_import_fix, import_candidates, quick_fixes_at, type_use_at};
 pub use registries::JavaRegistries;
 pub use resolve::{lookup_fqn, resolve_compound_name, resolve_name, resolve_simple_name};
 pub use syntax::{extract_imports, extract_package, word_at_position, Import};
