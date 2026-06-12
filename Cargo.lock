@@ -94,6 +94,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "beans-toolchains"
+version = "0.0.1"
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
