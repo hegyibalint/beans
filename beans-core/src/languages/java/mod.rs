@@ -20,6 +20,7 @@
 //!   same-package → wildcard → static → simple-name fallback). Returns
 //!   `NodeId` so consumers can format their own result types.
 
+pub mod diagnostics;
 pub mod keys;
 pub mod parser;
 pub mod payload;
@@ -32,7 +33,7 @@ pub use parser::{integrate, parse_java_to_graph, ParsedJavaFile};
 pub use payload::{
     JavaAnnotationElementNode, JavaConstructorNode, JavaDeclHeader, JavaEnumConstantNode,
     JavaFieldNode, JavaMethodNode, JavaNodePayload, JavaPackageNode, JavaParameter,
-    JavaTypeKind, JavaTypeNode,
+    JavaTypeKind, JavaTypeNode, JavaTypeUseNode, JavaUseHeader,
 };
 pub use resolve::{lookup_fqn, resolve_compound_name, resolve_name, resolve_simple_name};
 pub use syntax::{extract_imports, extract_package, word_at_position, Import};

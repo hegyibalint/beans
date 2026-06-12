@@ -488,6 +488,327 @@ mod jls_7_5_1_single_type_import {
                 .kind(SymbolKind::Class)
             .run();
     }
+
+    // ----- unused-import diagnostic -----
+
+    #[test]
+    fn unused_single_import_is_flagged() {
+        // JLS §7.5.1 mandates that an imported name introduce a name
+        // into the compilation unit. The `unused-import` rule warns
+        // when a single-type-import's target FQN never appears in any
+        // use site. Here `Order` is imported but not referenced; the
+        // rule fires once with code "unused-import".
+        fixture()
+            .file("com/example/model/User.java", r#"
+                package com.example.model;
+                public class User {}
+            "#)
+            .file("com/example/model/Order.java", r#"
+                package com.example.model;
+                public class Order {}
+            "#)
+            .file("com/example/service/UserService.java", r#"
+                package com.example.service;
+                import com.example.model.User;
+                import com.example.model.Order;
+                public class UserService {
+                    private User currentUser;
+                }
+            "#)
+            .diagnostics(
+                "com/example/service/UserService.java",
+                |findings| {
+                    let unused: Vec<&beans_core::Diagnostic> = findings
+                        .iter()
+                        .filter(|d| d.code.as_deref() == Some("unused-import"))
+                        .collect();
+                    assert_eq!(
+                        unused.len(),
+                        1,
+                        "expected exactly one unused-import diagnostic, \
+                         got {:#?}",
+                        unused
+                    );
+                    assert!(
+                        unused[0].message.contains("com.example.model.Order"),
+                        "diagnostic message should name the unused import; got `{}`",
+                        unused[0].message
+                    );
+                },
+            )
+            .run();
+    }
+
+    #[test]
+    fn used_imports_are_not_flagged() {
+        // Negative shape: every single-import is referenced. Assert
+        // the rule fires *zero* times. (This is a presence-zero
+        // assertion that goes green against an empty engine — kept
+        // because the multi-rule test below pairs negative + positive
+        // in the same fixture.)
+        fixture()
+            .file("com/example/model/User.java", r#"
+                package com.example.model;
+                public class User {}
+            "#)
+            .file("com/example/service/UserService.java", r#"
+                package com.example.service;
+                import com.example.model.User;
+                public class UserService {
+                    private User currentUser;
+                }
+            "#)
+            .diagnostics(
+                "com/example/service/UserService.java",
+                |findings| {
+                    assert_eq!(findings.count_code("unused-import"), 0);
+                },
+            )
+            .run();
+    }
+
+    #[test]
+    fn unused_import_squiggle_lands_on_the_import_line() {
+        // Per ADR-0029 the diagnostic's `Location` spans the unused
+        // import statement. Tree-sitter row indices are 0-based; the
+        // offending `import com.example.model.Order;` is the third
+        // line of the source block (after the leading blank line and
+        // the package declaration).
+        fixture()
+            .file("com/example/model/User.java", r#"
+                package com.example.model;
+                public class User {}
+            "#)
+            .file("com/example/model/Order.java", r#"
+                package com.example.model;
+                public class Order {}
+            "#)
+            .file("com/example/Bad.java", r#"
+                package com.example;
+                import com.example.model.User;
+                import com.example.model.Order;
+                public class Bad {
+                    private User u;
+                }
+            "#)
+            .diagnostics("com/example/Bad.java", |findings| {
+                let unused: Vec<&beans_core::Diagnostic> = findings
+                    .iter()
+                    .filter(|d| d.code.as_deref() == Some("unused-import"))
+                    .collect();
+                assert_eq!(unused.len(), 1);
+                let line = unused[0].location.start_line;
+                assert_eq!(
+                    line, 3,
+                    "expected diagnostic on line 3 (Order import); \
+                     got line {}",
+                    line
+                );
+            })
+            .run();
+    }
+
+    // ----- missing-import diagnostic -----
+    //
+    // The `missing-import` rule is the dual of `unused-import`: a
+    // JavaTypeUseNode whose candidate FQNs all miss `java_symbols`,
+    // but whose simple name matches at least one importable workspace
+    // type, warns at the use-site identifier (JLS §7.5.1 supplies the
+    // single-type-import the offered fix inserts).
+    //
+    // The diagnostic is gated on a fix existing: an unresolved name
+    // with no workspace candidate (e.g. a JDK type before jmod
+    // loading lands) stays silent. The gate widens into a true
+    // reference-not-found rule once the JDK universe exists.
+    //
+    // The fix side — offered actions and applied-edit behavior — is
+    // tool behavior, not a spec claim; those tests live in
+    // `tests/fixes.rs`.
+
+    #[test]
+    fn unresolved_type_with_workspace_candidate_is_flagged() {
+        // `Service` is declared in another package and not imported;
+        // the rule fires once, names the importable candidate, and
+        // anchors on the use-site identifier's line.
+        fixture()
+            .file("com/example/model/Service.java", r#"
+                package com.example.model;
+                public class Service {}
+            "#)
+            .file("com/example/app/App.java", r#"
+                package com.example.app;
+                public class App {
+                    private Service service;
+                }
+            "#)
+            .diagnostics("com/example/app/App.java", |findings| {
+                assert_eq!(
+                    findings.count_code("missing-import"),
+                    1,
+                    "expected exactly one missing-import diagnostic"
+                );
+                let d = findings
+                    .iter()
+                    .find(|d| d.code.as_deref() == Some("missing-import"))
+                    .unwrap();
+                assert!(
+                    d.message.contains("com.example.model.Service"),
+                    "diagnostic should name the importable candidate; got `{}`",
+                    d.message
+                );
+                assert!(
+                    findings.has_code_at_line("missing-import", 3),
+                    "diagnostic should anchor on the use-site line"
+                );
+            })
+            .expected_failure("missing-import rule not yet implemented")
+            .run();
+    }
+
+    #[test]
+    fn resolved_uses_are_not_flagged() {
+        // Pairs negatives with one positive so the test cannot pass
+        // trivially: `Service` resolves via its import, `Config` via
+        // same-package, and only the genuinely unimported `Repository`
+        // fires.
+        fixture()
+            .file("com/example/model/Service.java", r#"
+                package com.example.model;
+                public class Service {}
+            "#)
+            .file("com/example/model/Repository.java", r#"
+                package com.example.model;
+                public class Repository {}
+            "#)
+            .file("com/example/app/Config.java", r#"
+                package com.example.app;
+                public class Config {}
+            "#)
+            .file("com/example/app/App.java", r#"
+                package com.example.app;
+                import com.example.model.Service;
+                public class App {
+                    private Service service;
+                    private Config config;
+                    private Repository repository;
+                }
+            "#)
+            .diagnostics("com/example/app/App.java", |findings| {
+                assert_eq!(
+                    findings.count_code("missing-import"),
+                    1,
+                    "only the unimported `Repository` use should fire"
+                );
+                let d = findings
+                    .iter()
+                    .find(|d| d.code.as_deref() == Some("missing-import"))
+                    .unwrap();
+                assert!(
+                    d.message.contains("com.example.model.Repository"),
+                    "diagnostic should target Repository; got `{}`",
+                    d.message
+                );
+            })
+            .expected_failure("missing-import rule not yet implemented")
+            .run();
+    }
+
+    #[test]
+    fn names_without_workspace_candidates_stay_silent() {
+        // The gate: `List` has no workspace declaration (no JDK index
+        // yet), so no fix exists and the rule must not flag it.
+        // `Service` keeps the assertion positive — exactly one
+        // diagnostic, and it is not List's.
+        fixture()
+            .file("com/example/model/Service.java", r#"
+                package com.example.model;
+                public class Service {}
+            "#)
+            .file("com/example/app/App.java", r#"
+                package com.example.app;
+                public class App {
+                    private List items;
+                    private Service service;
+                }
+            "#)
+            .diagnostics("com/example/app/App.java", |findings| {
+                assert_eq!(
+                    findings.count_code("missing-import"),
+                    1,
+                    "List has no candidate and must stay silent"
+                );
+                assert!(
+                    !findings
+                        .iter()
+                        .any(|d| d.message.contains("List")),
+                    "no diagnostic may mention the candidate-less `List`"
+                );
+            })
+            .expected_failure("missing-import rule not yet implemented")
+            .run();
+    }
+
+    #[test]
+    fn each_unresolved_occurrence_is_marked() {
+        // Per-occurrence marking (cause-level dedup was considered and
+        // rejected): `Service` appears in three declaration-header
+        // positions — field type, return type, parameter type — and
+        // the rule fires for each.
+        fixture()
+            .file("com/example/model/Service.java", r#"
+                package com.example.model;
+                public class Service {}
+            "#)
+            .file("com/example/app/App.java", r#"
+                package com.example.app;
+                public class App {
+                    private Service service;
+                    Service make() { return null; }
+                    void take(Service s) {}
+                }
+            "#)
+            .diagnostics("com/example/app/App.java", |findings| {
+                assert_eq!(
+                    findings.count_code("missing-import"),
+                    3,
+                    "each header occurrence gets its own diagnostic"
+                );
+            })
+            .expected_failure("missing-import rule not yet implemented")
+            .run();
+    }
+
+    #[test]
+    fn ambiguous_simple_name_yields_one_diagnostic_per_use() {
+        // Two packages declare `Service`. The use site still gets one
+        // diagnostic — candidate enumeration is the fix list's job
+        // (see quick_fix_offers_one_action_per_candidate).
+        fixture()
+            .file("com/alpha/Service.java", r#"
+                package com.alpha;
+                public class Service {}
+            "#)
+            .file("com/beta/Service.java", r#"
+                package com.beta;
+                public class Service {}
+            "#)
+            .file("com/example/app/App.java", r#"
+                package com.example.app;
+                public class App {
+                    private Service service;
+                }
+            "#)
+            .diagnostics("com/example/app/App.java", |findings| {
+                assert_eq!(
+                    findings.count_code("missing-import"),
+                    1,
+                    "ambiguity multiplies fixes, not diagnostics"
+                );
+            })
+            .expected_failure("missing-import rule not yet implemented")
+            .run();
+    }
+
 }
 
 // §7.5.2 — Type-Import-on-Demand Declarations

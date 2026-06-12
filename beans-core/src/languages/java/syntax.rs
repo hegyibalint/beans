@@ -6,43 +6,82 @@
 //! to via a `match ext { "java" => ..., "kt" => ..., ... }` at the
 //! consumer's edge. No central registry.
 
-/// One Java `import` statement.
+use std::path::Path;
+
+use crate::primitives::Location;
+
+/// One Java `import` statement, paired with its source location.
 ///
 /// Lives here rather than in a generic `Import` because Java's import
 /// shapes (single, wildcard, static) are language-specific. Other JVM
 /// languages (Kotlin, Scala) have different import syntax and will
 /// surface their own `Import` shapes when their parsers land.
+///
+/// Per ADR-0029 each variant carries a [`Location`] so diagnostics —
+/// notably `unused-import` — can squiggle the offending statement.
+/// The location spans the whole `import …;` line.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Import {
     /// `import com.example.MyClass;`
-    Single(String),
+    Single(String, Location),
     /// `import com.example.*;`
-    Wildcard(String),
+    Wildcard(String, Location),
     /// `import static com.example.Utils.MAX;`
-    Static(String),
+    Static(String, Location),
+}
+
+impl Import {
+    /// Source location of the whole import statement. Used by
+    /// diagnostic rules to anchor squiggles.
+    pub fn location(&self) -> &Location {
+        match self {
+            Import::Single(_, loc) | Import::Wildcard(_, loc) | Import::Static(_, loc) => loc,
+        }
+    }
 }
 
 /// Extract `import` statements from a Java source. Recognises:
 /// - `import com.example.Foo;` → [`Import::Single`]
 /// - `import com.example.*;` → [`Import::Wildcard`]
-/// - `import static com.example.Util.MAX;` → [`Import::Static`]
+/// - `import static com.example.Utils.MAX;` → [`Import::Static`]
 ///
-/// Line-based, not parser-based — robust to malformed surrounding code,
-/// matches the pre-migration implementation.
-pub fn extract_imports(source: &str) -> Vec<Import> {
+/// Line-based, not parser-based — robust to malformed surrounding code.
+/// Each returned `Import` carries a [`Location`] spanning its line so
+/// diagnostic rules can squiggle the right place.
+pub fn extract_imports(file: &Path, source: &str) -> Vec<Import> {
     let mut imports = Vec::new();
-    for line in source.lines() {
+    for (line_idx, line) in source.lines().enumerate() {
         let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("import ") {
-            let rest = rest.trim_end_matches(';').trim();
-            if let Some(fqn) = rest.strip_prefix("static ") {
-                imports.push(Import::Static(fqn.trim().to_string()));
-            } else if rest.ends_with(".*") {
-                let package = rest.trim_end_matches(".*");
-                imports.push(Import::Wildcard(package.to_string()));
-            } else {
-                imports.push(Import::Single(rest.to_string()));
-            }
+        let Some(rest) = trimmed.strip_prefix("import ") else {
+            continue;
+        };
+        let rest = rest.trim_end_matches(';').trim();
+
+        // The "whole import statement" span: from the leading `import`
+        // keyword to the trailing `;` (or end-of-line if `;` missing).
+        // Computed in code-unit (byte) columns to match what tree-sitter
+        // produces elsewhere; ASCII-only Java import statements make
+        // this safe for the cases we care about.
+        let start_col = line.find("import").unwrap_or(0) as u32;
+        let end_col = line
+            .rfind(';')
+            .map(|i| (i + 1) as u32)
+            .unwrap_or(line.len() as u32);
+        let location = Location {
+            file: file.to_path_buf(),
+            start_line: line_idx as u32,
+            start_col,
+            end_line: line_idx as u32,
+            end_col,
+        };
+
+        if let Some(fqn) = rest.strip_prefix("static ") {
+            imports.push(Import::Static(fqn.trim().to_string(), location));
+        } else if rest.ends_with(".*") {
+            let package = rest.trim_end_matches(".*");
+            imports.push(Import::Wildcard(package.to_string(), location));
+        } else {
+            imports.push(Import::Single(rest.to_string(), location));
         }
     }
     imports
