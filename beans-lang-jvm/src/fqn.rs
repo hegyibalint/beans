@@ -14,16 +14,29 @@
 //! intern table without changing the public API.
 
 use std::fmt;
+use std::sync::Arc;
+
+use beans_core::Interner;
 
 /// A dotted, fully-qualified name as it appears in cross-file lookups:
 /// `com.example.Service`, `java.util.List`, `com.example.Service.process`.
+///
+/// Backed by `Arc<str>` (backlog #037): equality and hashing are
+/// content-based, so interned and uninterned values mix freely —
+/// cloning is a pointer bump either way, and [`Fqn::intern_in`]
+/// collapses identical text onto one buffer at the integrate boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Fqn(String);
+pub struct Fqn(Arc<str>);
 
 impl Fqn {
     /// Construct an [`Fqn`] from any owned-or-borrowed string.
     pub fn new(name: impl Into<String>) -> Self {
-        Fqn(name.into())
+        Fqn(Arc::from(name.into()))
+    }
+
+    /// Re-key onto the workspace's canonical buffer for this text.
+    pub fn intern_in(&mut self, interner: &Interner) {
+        self.0 = interner.intern(&self.0);
     }
 
     /// Borrow the dotted form.
@@ -31,9 +44,9 @@ impl Fqn {
         &self.0
     }
 
-    /// Consume into the inner [`String`].
+    /// Copy out as an owned [`String`].
     pub fn into_string(self) -> String {
-        self.0
+        self.0.as_ref().to_string()
     }
 
     /// The last segment of the dotted form: `"com.example.Service"` →
@@ -70,7 +83,7 @@ impl From<&str> for Fqn {
 
 impl From<String> for Fqn {
     fn from(value: String) -> Self {
-        Fqn(value)
+        Fqn(Arc::from(value))
     }
 }
 

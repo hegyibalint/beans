@@ -1,8 +1,23 @@
 # 037 — Intern FQN strings
 
-Status: pending
+Status: partially delivered (see Results)
 Priority: high (sequence before #012 — JDK indexing multiplies the
 string population ~10×)
+
+## Results so far
+
+- `Interner` (per-workspace, `Arc<str>`, RefCell/single-threaded) in
+  beans-core; `Fqn` re-backed by `Arc<str>`; `ParsedJavaFile::intern`
+  re-keys plans at the serial integrate boundary. **581 → 539 MB.**
+- `Location.file` re-backed by `Arc<Path>` — producers mint one Arc
+  per file, clone per location (no table needed). **539 → 493 MB.**
+- Diagnostics/query latencies unchanged (28µs/file, ~2µs lookups);
+  parse throughput unchanged; integrate +~45ms (the intern pass).
+
+Remaining headroom (un-measured shares — the original prep step still
+applies before going further): payload enum width × 368k arena slots,
+`TypeRef` trees, per-header `name: String` allocations, boxed RAII
+handles, hash-map capacity overhead.
 
 ## Motivation (measured)
 
