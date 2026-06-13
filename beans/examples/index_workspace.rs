@@ -86,6 +86,7 @@ fn main() {
     let integrate_elapsed = t_integrate.elapsed();
 
     let nodes = beans.graph.iter().count();
+    memory_anatomy(&beans);
     println!(
         "parse:     {parse_elapsed:.2?}  ({:.1} MB, {skipped} skipped, {:.0} files/s)",
         bytes as f64 / 1e6,
@@ -130,6 +131,115 @@ fn main() {
             t.elapsed()
         );
     }
+}
+
+/// Approximate per-category heap anatomy of the graph — the share
+/// measurement gating backlog #037's strong-form design.
+fn memory_anatomy(beans: &Beans) {
+    use beans::jvm::{JvmNodePayload, TypeRef};
+    use beans::languages::java::JavaNodePayload;
+    use beans::NodePayload;
+    use std::collections::HashSet;
+
+    fn typeref_stats(t: &TypeRef, count: &mut u64, text: &mut u64) {
+        *count += 1;
+        match t {
+            TypeRef::Simple { name } => *text += name.capacity() as u64,
+            TypeRef::TypeVariable { name } => *text += name.capacity() as u64,
+            TypeRef::Parameterized { raw, args } => {
+                typeref_stats(raw, count, text);
+                args.iter().for_each(|a| typeref_stats(a, count, text));
+            }
+            TypeRef::Array { element } => typeref_stats(element, count, text),
+            TypeRef::Wildcard { .. } | TypeRef::Intersection { .. } => {}
+            _ => {}
+        }
+    }
+
+    let mut fqn_refs: u64 = 0;
+    let mut fqn_buffers: HashSet<*const u8> = HashSet::new();
+    let mut fqn_buffer_bytes: u64 = 0;
+    let mut name_bytes: u64 = 0;
+    let mut candidate_refs: u64 = 0;
+    let mut tr_count: u64 = 0;
+    let mut tr_text: u64 = 0;
+    let mut handle_count: u64 = 0;
+    let mut locations: u64 = 0;
+
+    let mut see_fqn = |f: &beans::Fqn| {
+        fqn_refs += 1;
+        let ptr = f.as_str().as_ptr();
+        if fqn_buffers.insert(ptr) {
+            fqn_buffer_bytes += f.as_str().len() as u64;
+        }
+    };
+
+    for (_id, node) in beans.graph.iter() {
+        handle_count += node.handles.len() as u64;
+        match &node.payload {
+            NodePayload::Java(j) => {
+                if let Some(h) = j.header() {
+                    see_fqn(&h.fqn);
+                    name_bytes += h.name.capacity() as u64;
+                    if h.location.is_some() {
+                        locations += 1;
+                    }
+                }
+                match j {
+                    JavaNodePayload::TypeUse(t) => {
+                        locations += 1;
+                        for f in &t.header.candidate_fqns {
+                            candidate_refs += 1;
+                            see_fqn(f);
+                        }
+                        name_bytes += t.header.name.capacity() as u64;
+                    }
+                    JavaNodePayload::Method(m) => {
+                        typeref_stats(&m.return_type, &mut tr_count, &mut tr_text);
+                        for p in &m.parameters {
+                            typeref_stats(&p.param_type, &mut tr_count, &mut tr_text);
+                            name_bytes += p.name.capacity() as u64;
+                        }
+                    }
+                    JavaNodePayload::Field(f) => {
+                        typeref_stats(&f.field_type, &mut tr_count, &mut tr_text);
+                    }
+                    _ => {}
+                }
+            }
+            NodePayload::Jvm(v) => {
+                if let Some(h) = v.header() {
+                    see_fqn(&h.fqn);
+                    name_bytes += h.name.capacity() as u64;
+                }
+                if let JvmNodePayload::Method(m) = v {
+                    see_fqn(&m.owner);
+                    typeref_stats(&m.return_type, &mut tr_count, &mut tr_text);
+                    for p in &m.parameters {
+                        typeref_stats(&p.param_type, &mut tr_count, &mut tr_text);
+                        name_bytes += p.name.capacity() as u64;
+                    }
+                }
+            }
+        }
+    }
+
+    let slots = beans.graph.iter().count() as u64;
+    let payload_width = std::mem::size_of::<NodePayload>() as u64;
+    println!("
+-- memory anatomy (approx, heap-categories) --");
+    println!("  payload enum width:    {} B x {} slots = {:.0} MB (arena floor)",
+        payload_width, slots, (payload_width * slots) as f64 / 1e6);
+    println!("  fqn references:        {} ({} distinct buffers, {:.1} MB text)",
+        fqn_refs, fqn_buffers.len(), fqn_buffer_bytes as f64 / 1e6);
+    println!("    of which candidates: {}", candidate_refs);
+    println!("  name field text:       {:.1} MB", name_bytes as f64 / 1e6);
+    println!("  TypeRef nodes:         {} ({:.1} MB text, ~{:.0} MB structs)",
+        tr_count, tr_text as f64 / 1e6,
+        (tr_count * std::mem::size_of::<TypeRef>() as u64) as f64 / 1e6);
+    println!("  RAII handles:          {} (~{:.0} MB boxed)",
+        handle_count, (handle_count * 88) as f64 / 1e6);
+    println!("  locations:             {}", locations);
 }
 
 fn collect_roots(value: &serde_json::Value, out: &mut Vec<PathBuf>) {
