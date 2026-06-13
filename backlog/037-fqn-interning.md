@@ -1,23 +1,56 @@
-# 037 — Intern FQN strings
+# 037 — Reduce graph memory (string interning + layout)
 
-Status: partially delivered (see Results)
-Priority: high (sequence before #012 — JDK indexing multiplies the
-string population ~10×)
+Status: largely delivered; remaining slices parked (see below)
+Priority: was high (pre-#012); the load-bearing slice is now done
 
-## Results so far
+## Results
 
-- `Interner` (per-workspace, `Arc<str>`, RefCell/single-threaded) in
-  beans-core; `Fqn` re-backed by `Arc<str>`; `ParsedJavaFile::intern`
-  re-keys plans at the serial integrate boundary. **581 → 539 MB.**
-- `Location.file` re-backed by `Arc<Path>` — producers mint one Arc
-  per file, clone per location (no table needed). **539 → 493 MB.**
-- Diagnostics/query latencies unchanged (28µs/file, ~2µs lookups);
-  parse throughput unchanged; integrate +~45ms (the intern pass).
+Measured on gradle/master (10,187 files, 34 MB source; arena floor is
+the exact metric, RSS via `ps` is noisier):
 
-Remaining headroom (un-measured shares — the original prep step still
-applies before going further): payload enum width × 368k arena slots,
-`TypeRef` trees, per-header `name: String` allocations, boxed RAII
-handles, hash-map capacity overhead.
+- `Interner` (per-workspace, `Arc<str>`, RefCell/single-threaded);
+  `Fqn` re-backed by `Arc<str>`; `ParsedJavaFile::intern` re-keys
+  plans at the serial integrate boundary. **581 → 539 MB.**
+- `Location.file` re-backed by `Arc<Path>`, one buffer per file. **539
+  → 493 MB.**
+- `Interner::purge()` (GC: retain entries with `strong_count > 1`),
+  wired into the LSP reindex. Bounds name growth across an editing
+  session — the GC the `Arc` form allows and `Symbol(u32)` can't.
+- **Boxing the fat payload variants** (the big one): `JvmMethodNode`
+  (248 B) / `JavaMethodNode` (232 B) set the `NodePayload` width every
+  one of 368k slots paid, though most slots are 64–80 B use-sites.
+  Boxed all decl variants both sides; kept TypeUse/Parameter/Import
+  inline. **Arena floor 91 → 29 MB (width 248 → 80 B); RSS ~465 →
+  ~360 MB.** This is the slice that defuses the dependencies-make-it-GB
+  concern: #012's ~700k JDK decl nodes cost 80 B/slot in the slab, not
+  248 B.
+
+Latencies unchanged throughout (~30µs/file diagnostics, ~2µs lookups);
+parse throughput unchanged; integrate +~?? ms for the intern pass.
+
+## Parked (deferred to #012)
+
+- **Intern `name` / `TypeRef` strings (original "step 1").** Anatomy
+  shows only 6 MB name text + 2.3 MB TypeRef text — ~13 MB ceiling
+  against a blast radius of hundreds of sites (every `Display`,
+  `name == "lit"` comparison, construction). Confirmed *no* effect on
+  simple-name lookups: the index keys derive from the FQN slice, not
+  the `name` field, and lookup hashes the same bytes regardless of
+  representation. Its real value is #012-scale (JDK names like `get`/
+  `toString` repeat tens of thousands of times) and it belongs in the
+  bytecode loader's own integrate path.
+- **Better than interning `name`: delete it for decls.** `java_header`
+  builds `name` and `fqn` from the same token, so for declaration
+  nodes `header.name` is fully redundant with `fqn.simple_name()` (a
+  free slice of the already-interned FQN). Dropping it reclaims the
+  6 MB + 24 B × ~665k inline with no interner. Use-site headers keep
+  `name` (source token, no single FQN). Deferred — pair with #012.
+
+Other un-measured remaining headroom: boxed RAII handles (~18 MB
+measured, plus per-handle allocation overhead), registry hash-map
+capacity, per-node child/handle Vec backings. These are allocation-
+count costs, not string costs; revisit with a fresh anatomy if RSS
+becomes a problem at dependency scale.
 
 ## End-state: strong-form interning (`Symbol(u32)`)
 
