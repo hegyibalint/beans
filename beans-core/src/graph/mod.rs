@@ -15,5 +15,5 @@
 pub mod arena;
 pub mod behavior;
 
-pub use arena::{Graph, NodeData, NodeHandle, NodeId};
+pub use arena::{Descendants, Graph, NodeData, NodeHandle, NodeId};
 pub use behavior::NodeBehavior;
