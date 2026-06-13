@@ -20,3 +20,7 @@ clojure = []
 beans-core = { path = "../beans-core" }
 beans-lang-jvm = { path = "../beans-lang-jvm" }
 beans-lang-java = { path = "../beans-lang-java", optional = true }
+
+[dev-dependencies]
+# examples/index_workspace.rs reads a sidecar WorkspaceModel JSON.
+serde_json = "1"
