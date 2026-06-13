@@ -83,6 +83,7 @@ pub fn compute_diagnostics(
     registries: &Registries,
     file: &Path,
     #[cfg(feature = "java")] java_imports: &[beans_lang_java::Import],
+    roots: &[beans_core::graph::NodeId],
 ) -> Vec<Diagnostic> {
     let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
     match ext {
@@ -93,6 +94,7 @@ pub fn compute_diagnostics(
             &registries.jvm,
             file,
             java_imports,
+            roots,
         ),
         _ => Vec::new(),
     }

@@ -573,6 +573,8 @@ impl Fixture {
         let mut graph: Graph<NodePayload> = Graph::new();
         let registries = Registries::new();
         let mut file_imports: HashMap<PathBuf, Vec<Import>> = HashMap::new();
+        #[cfg_attr(not(feature = "java"), allow(unused_mut))]
+        let mut file_roots: HashMap<PathBuf, Vec<NodeId>> = HashMap::new();
         let mut file_packages: HashMap<PathBuf, String> = HashMap::new();
         let mut file_sources: HashMap<PathBuf, String> = HashMap::new();
 
@@ -584,7 +586,14 @@ impl Fixture {
             }
             file_sources.insert(path.clone(), clean_source.clone());
             #[cfg(feature = "java")]
-            java::integrate(&mut graph, &registries, parsed.into_java());
+            {
+                let inserted = java::integrate(&mut graph, &registries, parsed.into_java());
+                let roots: Vec<NodeId> = inserted
+                    .into_iter()
+                    .filter(|&id| graph.get(id).is_some_and(|n| n.parent.is_none()))
+                    .collect();
+                file_roots.insert(path.clone(), roots);
+            }
             #[cfg(not(feature = "java"))]
             drop(parsed);
         }
@@ -704,11 +713,16 @@ impl Fixture {
                 .get(&diag.file)
                 .map(|v| v.as_slice())
                 .unwrap_or(&[]);
+            let roots = file_roots
+                .get(&diag.file)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
             let diagnostics = beans::compute_diagnostics(
                 &graph,
                 &registries,
                 &diag.file,
                 imports,
+                roots,
             );
             let findings = Findings {
                 diagnostics: &diagnostics,

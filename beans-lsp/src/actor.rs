@@ -234,7 +234,12 @@ fn diagnostics_for_path(state: &ServerState, path: &Path) -> Vec<Diagnostic> {
         .get(path)
         .map(|v| v.as_slice())
         .unwrap_or(&[]);
-    compute_diagnostics(&state.beans.graph, &state.beans.registries, path, imports)
+    let roots = state
+        .file_roots
+        .get(path)
+        .map(|v| v.as_slice())
+        .unwrap_or(&[]);
+    compute_diagnostics(&state.beans.graph, &state.beans.registries, path, imports, roots)
         .into_iter()
         .map(|d| Diagnostic {
             range: Range {

@@ -71,8 +71,16 @@ fn main() {
     let parse_elapsed = t_parse.elapsed();
 
     let t_integrate = Instant::now();
+    let mut file_roots: std::collections::HashMap<PathBuf, Vec<beans::graph::NodeId>> =
+        std::collections::HashMap::new();
     for parsed in parsed_files {
-        java::integrate(&mut beans.graph, &beans.registries, parsed);
+        let path = parsed.path.clone();
+        let inserted = java::integrate(&mut beans.graph, &beans.registries, parsed);
+        let roots: Vec<_> = inserted
+            .into_iter()
+            .filter(|&id| beans.graph.get(id).is_some_and(|n| n.parent.is_none()))
+            .collect();
+        file_roots.insert(path, roots);
     }
     let integrate_elapsed = t_integrate.elapsed();
 
@@ -110,8 +118,10 @@ fn main() {
     );
 
     if let Some(file) = files.first() {
+        let roots = file_roots.get(file).map(|v| v.as_slice()).unwrap_or(&[]);
         let t = Instant::now();
-        let diags = beans::compute_diagnostics(&beans.graph, &beans.registries, file, &[]);
+        let diags =
+            beans::compute_diagnostics(&beans.graph, &beans.registries, file, &[], roots);
         println!(
             "compute_diagnostics({}): {} findings in {:.2?}",
             file.file_name().unwrap().to_string_lossy(),
