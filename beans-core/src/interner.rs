@@ -42,6 +42,22 @@ impl Interner {
         arc
     }
 
+    /// Drop table entries no external value still references. The table
+    /// holds a strong `Arc` per string, so an interned name outlives the
+    /// last payload that used it unless swept: `strong_count == 1` means
+    /// *only the table* holds it — garbage. Without this, a long editing
+    /// session that deletes files accumulates dead names unboundedly.
+    ///
+    /// O(table); call it where the population shrinks (after file
+    /// destroys / reindex), not on the hot path. This is the GC the
+    /// `Arc` form can do and a `Symbol(u32)` table fundamentally cannot
+    /// (nothing tracks references to an integer).
+    pub fn purge(&self) {
+        self.strings
+            .borrow_mut()
+            .retain(|s| Arc::strong_count(s) > 1);
+    }
+
     /// Distinct strings interned so far (diagnostics/measurement).
     pub fn len(&self) -> usize {
         self.strings.borrow().len()
@@ -66,5 +82,20 @@ mod tests {
         assert!(Arc::ptr_eq(&a, &b), "same text shares one buffer");
         assert!(!Arc::ptr_eq(&a, &c));
         assert_eq!(interner.len(), 2);
+    }
+
+    #[test]
+    fn purge_drops_only_unreferenced_entries() {
+        let interner = Interner::new();
+        let kept = interner.intern("com.example.Live");
+        interner.intern("com.example.Dead"); // returned Arc dropped immediately
+
+        assert_eq!(interner.len(), 2);
+        interner.purge();
+        assert_eq!(interner.len(), 1, "the unreferenced entry is collected");
+
+        // The live one survived and still interns to the same buffer.
+        let again = interner.intern("com.example.Live");
+        assert!(Arc::ptr_eq(&kept, &again));
     }
 }
