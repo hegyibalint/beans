@@ -13,6 +13,7 @@
 
 pub mod annotation;
 pub mod constant;
+pub mod container;
 pub mod fqn;
 pub mod keys;
 pub mod modifier;
@@ -23,6 +24,7 @@ pub mod type_ref;
 
 pub use annotation::{AnnotationInstance, AnnotationValue};
 pub use constant::ConstantValue;
+pub use container::{ContainerError, Jar, Jmod};
 pub use fqn::Fqn;
 pub use keys::{JvmConstructorKey, JvmFieldKey, JvmMethodKey, JvmTypeKey, PackageKey};
 pub use modifier::Modifier;
