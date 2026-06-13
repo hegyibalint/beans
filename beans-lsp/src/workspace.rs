@@ -76,6 +76,9 @@ pub fn integrate_source(
     let inserted = java::integrate(&mut state.beans.graph, &state.beans.registries, parsed);
     let roots = collect_roots(&state.beans.graph, &inserted);
     state.file_roots.insert(file.to_path_buf(), roots);
+    // A reindex destroys the file's old nodes; sweep names they were the
+    // last to reference (backlog #037).
+    state.beans.interner.purge();
     inserted
 }
 
