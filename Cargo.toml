@@ -5,6 +5,7 @@ members = [
     "beans-lsp",
     "beans-test-harness",
     "beans-test-java",
+    "beans-test-jdks",
 ]
 
 [workspace.package]

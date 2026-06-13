@@ -19,3 +19,7 @@ clojure = []
 [dependencies]
 tree-sitter = { version = "0.25", optional = true }
 tree-sitter-java = { version = "0.23", optional = true }
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+beans-test-jdks = { path = "../beans-test-jdks" }
