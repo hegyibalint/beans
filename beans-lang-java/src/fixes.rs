@@ -38,21 +38,21 @@ pub fn import_candidates<P: AsJava + AsJvm>(
 ) -> Vec<Fqn> {
     let mut out: BTreeSet<String> = BTreeSet::new();
 
-    for key in java.symbols.query_simple_name(name) {
-        let is_type = java.symbols.providers(&key).iter().any(|&id| {
-            graph
-                .get(id)
-                .and_then(|n| n.payload.as_java())
-                .is_some_and(|j| matches!(j, JavaNodePayload::Type(_)))
-        });
-        if is_type {
-            out.insert(key.fqn.as_str().to_string());
+    for id in java.symbols.query_simple_name(name) {
+        // java.symbols holds every declaration kind; only type
+        // declarations are importable.
+        if let Some(JavaNodePayload::Type(t)) =
+            graph.get(id).and_then(|n| n.payload.as_java())
+        {
+            out.insert(t.header.fqn.as_str().to_string());
         }
     }
 
-    for key in jvm.types.query_simple_name(name) {
-        if !jvm.types.providers(&key).is_empty() {
-            out.insert(key.fqn.as_str().to_string());
+    for id in jvm.types.query_simple_name(name) {
+        if let Some(jvm_node) = graph.get(id).and_then(|n| n.payload.as_jvm()) {
+            if let Some(header) = jvm_node.header() {
+                out.insert(header.fqn.as_str().to_string());
+            }
         }
     }
 
