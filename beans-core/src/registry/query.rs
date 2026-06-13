@@ -36,7 +36,8 @@ use std::cell::{Cell, RefCell};
 use std::hash::Hash;
 use std::rc::Rc;
 
-use super::{Callback, Registry, SubscriptionId};
+use super::SimpleNamed;
+use super::{Callback, Registry, SubscriptionId, RegistryKey};
 use crate::graph::NodeId;
 
 // =========================================================================
@@ -113,12 +114,12 @@ impl From<Vec<NodeId>> for QueryResult {
 /// *not* subscribed; a `Subscription` is. There's no `Option<Id>` state
 /// machine in the struct, no "is this watching or not" ambiguity at
 /// every method call. The compiler enforces the lifecycle.
-pub struct Query<K: Eq + Hash + Clone + 'static> {
+pub struct Query<K: RegistryKey> {
     registry: Registry<K>,
     key: K,
 }
 
-impl<K: Eq + Hash + Clone + 'static> Query<K> {
+impl<K: RegistryKey> Query<K> {
     pub(crate) fn new(registry: Registry<K>, key: K) -> Self {
         Self { registry, key }
     }
@@ -155,13 +156,13 @@ impl<K: Eq + Hash + Clone + 'static> Query<K> {
 /// Replaces the older `SubscriptionHandle<K>` — the typestate split
 /// makes this struct itself the RAII anchor, no separate handle type
 /// needed.
-pub struct Subscription<K: Eq + Hash + Clone + 'static> {
+pub struct Subscription<K: RegistryKey> {
     registry: Registry<K>,
     key: K,
     id: SubscriptionId,
 }
 
-impl<K: Eq + Hash + Clone + 'static> Subscription<K> {
+impl<K: RegistryKey> Subscription<K> {
     /// Look up providers for the watched key. Same shape as
     /// [`Query::resolve`]; available on `Subscription` because once
     /// you're watching, you'll usually want to read too.
@@ -170,7 +171,7 @@ impl<K: Eq + Hash + Clone + 'static> Subscription<K> {
     }
 }
 
-impl<K: Eq + Hash + Clone + 'static> Drop for Subscription<K> {
+impl<K: RegistryKey> Drop for Subscription<K> {
     fn drop(&mut self) {
         // Strong Rc to the registry's inner — no Weak::upgrade dance,
         // the registry is alive by construction (we own a clone).
@@ -234,8 +235,8 @@ impl Drop for Watch {
 /// [`subscribe`](Self::subscribe).
 pub struct FallbackSubscription<P, F>
 where
-    P: Eq + Hash + Clone + 'static,
-    F: Eq + Hash + Clone + 'static,
+    P: RegistryKey,
+    F: RegistryKey,
 {
     primary: Subscription<P>,
     fallback: Subscription<F>,
@@ -245,8 +246,8 @@ where
 
 impl<P, F> FallbackSubscription<P, F>
 where
-    P: Eq + Hash + Clone + 'static,
-    F: Eq + Hash + Clone + 'static,
+    P: RegistryKey,
+    F: RegistryKey,
 {
     /// Construct a fallback subscription. Subscribes to both registries
     /// at construction; the cache is initially `Stale` so the first
@@ -354,6 +355,11 @@ mod tests {
             Self(s.to_string())
         }
     }
+    impl SimpleNamed for JvmTypeKey {
+        fn simple_name(&self) -> &str {
+            self.0.rsplit('.').next().unwrap_or(&self.0)
+        }
+    }
 
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     struct JvmMethodKey(String, String, Vec<TypeRef>);
@@ -362,12 +368,22 @@ mod tests {
             Self(owner.to_string(), name.to_string(), params)
         }
     }
+    impl SimpleNamed for JvmMethodKey {
+        fn simple_name(&self) -> &str {
+            &self.1
+        }
+    }
 
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     struct JavaSymbolKey(Fqn);
     impl JavaSymbolKey {
         fn new(f: Fqn) -> Self {
             Self(f)
+        }
+    }
+    impl SimpleNamed for JavaSymbolKey {
+        fn simple_name(&self) -> &str {
+            self.0 .0.rsplit('.').next().unwrap_or(&self.0 .0)
         }
     }
 
