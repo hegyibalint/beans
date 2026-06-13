@@ -1,5 +1,6 @@
-package dev.blnt.beans.sidecar;
+package dev.blnt.beans.sidecar.logging;
 
+import dev.blnt.beans.sidecar.protocol.StdioTransport;
 import org.slf4j.Marker;
 import org.slf4j.event.Level;
 import org.slf4j.helpers.LegacyAbstractLogger;
@@ -56,6 +57,6 @@ final class RpcLogger extends LegacyAbstractLogger {
             text = text + " (" + throwable.getClass().getSimpleName() + ": "
                     + throwable.getMessage() + ")";
         }
-        Main.notifyLog(level.toString().toLowerCase(), name, text);
+        StdioTransport.INSTANCE.log(level.toString().toLowerCase(), name, text);
     }
 }
