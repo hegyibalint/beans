@@ -1,33 +1,28 @@
 package dev.blnt.beans.sidecar;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import dev.blnt.beans.sidecar.gradle.GradleImport;
+import dev.blnt.beans.sidecar.gradle.GradleImportParams;
+import dev.blnt.beans.sidecar.protocol.InitializeResult;
+import dev.blnt.beans.sidecar.protocol.Request;
+import dev.blnt.beans.sidecar.protocol.StdioTransport;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 /**
  * The beans sidecar: a single long-lived JVM process serving JVM-bound
  * duties to the beans engine over a JSON-Lines stdio protocol
- * (ADR-0031).
- *
- * <p>Wire format: one JSON object per line. Requests carry
- * {@code {id, method, params}}; responses {@code {id, result}} or
- * {@code {id, error}}; id-less objects are notifications (progress,
- * log) the client renders but never awaits.
- *
- * <p>stdout is the protocol channel and nothing else; all writes go
- * through {@link #send(Object)} which synchronizes line emission.
- * Diagnostics that must not enter the protocol go to stderr.
+ * (ADR-0031). Duties are dispatched by method name, namespaced per
+ * build tool ({@code gradle/import}, later {@code maven/import},
+ * {@code ap/run}); the exact wire shapes live in
+ * {@link dev.blnt.beans.sidecar.protocol}.
  */
 public final class Main {
 
-    static final Gson GSON = new Gson();
-    private static final Object STDOUT_LOCK = new Object();
-
     public static void main(String[] args) throws Exception {
+        StdioTransport transport = StdioTransport.INSTANCE;
         BufferedReader in =
                 new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
         String line;
@@ -35,83 +30,41 @@ public final class Main {
             if (line.isBlank()) {
                 continue;
             }
-            JsonObject msg;
+            Request request;
             try {
-                msg = JsonParser.parseString(line).getAsJsonObject();
-            } catch (RuntimeException e) {
+                request = transport.parse(line);
+            } catch (Exception e) {
                 System.err.println("sidecar: unparseable line: " + e.getMessage());
                 continue;
             }
-            handle(msg);
+            handle(transport, request);
         }
         // stdin closed: the client is gone or asked us to wind down.
     }
 
-    private static void handle(JsonObject msg) {
-        String method = msg.has("method") ? msg.get("method").getAsString() : "";
-        Integer id = msg.has("id") ? msg.get("id").getAsInt() : null;
-        JsonObject params =
-                msg.has("params") ? msg.getAsJsonObject("params") : new JsonObject();
-
+    private static void handle(StdioTransport transport, Request request) {
         try {
-            switch (method) {
-                case "initialize" -> respond(id, Handshake.capabilities());
-                case "gradle/import" -> respond(id, GradleImport.run(params, Main::notifyProgress));
+            switch (request.method()) {
+                case "initialize" -> transport.respond(request.id(), InitializeResult.current());
+                case "gradle/import" -> transport.respond(
+                        request.id(),
+                        GradleImport.run(
+                                transport.bind(request.params(), GradleImportParams.class),
+                                transport::progress));
                 case "shutdown" -> {
-                    respond(id, new JsonObject());
+                    // Map.of(), not new Object(): Jackson refuses to
+                    // serialize property-less objects, and a throw here
+                    // would skip the exit (caught by the first
+                    // integration-test run).
+                    transport.respond(request.id(), Map.of());
                     System.exit(0);
                 }
-                default -> error(id, "unknown method: " + method);
+                default -> transport.respondError(
+                        request.id(), "unknown method: " + request.method());
             }
         } catch (Exception e) {
-            error(id, e.getClass().getSimpleName() + ": " + e.getMessage());
-        }
-    }
-
-    static void notifyLog(String level, String logger, String text) {
-        JsonObject note = new JsonObject();
-        note.addProperty("method", "log");
-        JsonObject params = new JsonObject();
-        params.addProperty("level", level);
-        params.addProperty("logger", logger);
-        params.addProperty("text", text);
-        note.add("params", params);
-        send(note);
-    }
-
-    static void notifyProgress(String text) {
-        JsonObject note = new JsonObject();
-        note.addProperty("method", "progress");
-        JsonObject params = new JsonObject();
-        params.addProperty("text", text);
-        note.add("params", params);
-        send(note);
-    }
-
-    private static void respond(Integer id, Object result) {
-        JsonObject out = new JsonObject();
-        if (id != null) {
-            out.addProperty("id", id);
-        }
-        out.add("result", GSON.toJsonTree(result));
-        send(out);
-    }
-
-    private static void error(Integer id, String message) {
-        JsonObject out = new JsonObject();
-        if (id != null) {
-            out.addProperty("id", id);
-        }
-        JsonObject err = new JsonObject();
-        err.addProperty("message", message);
-        out.add("error", err);
-        send(out);
-    }
-
-    private static void send(Object json) {
-        synchronized (STDOUT_LOCK) {
-            System.out.println(GSON.toJson(json));
-            System.out.flush();
+            transport.respondError(
+                    request.id(), e.getClass().getSimpleName() + ": " + e.getMessage());
         }
     }
 
