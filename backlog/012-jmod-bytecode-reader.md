@@ -4,22 +4,27 @@ area: core
 priority: high
 ---
 
-# Implement JMOD/JAR bytecode reader
+# Implement classfile decoder and JDK/jar graph materialization
 
 ## Description
 
-Read JVM bytecode from JDK `.jmod` files and project bytecode jars into the
-node/registry model so external library symbols (the JDK and dependency
-jars) participate in resolution alongside source symbols.
+Read JVM bytecode into the node/registry model so external library
+symbols (the JDK and dependency jars) participate in resolution
+alongside source symbols.
 
-Scope:
+Two slices were split out during planning:
+[037-class-container-layer](037-class-container-layer.md) (archive
+access — enumerate classes in `.jmod`/`.jar`, hand out raw bytes) and
+[038-jdk-locator](038-jdk-locator.md) (find JDK installs). This item is
+what remains:
 
-- Locate the active JDK and enumerate its `.jmod` files.
-- Read class files out of `.jmod` (zip with a JDK-specific layout) and out
-  of plain `.jar` archives.
-- Decode constant pools, class structure, methods, fields, attributes
-  (Signature for generics, RuntimeVisibleAnnotations for annotations,
-  PermittedSubclasses for sealed types, Record for record components).
+- Decode classfile bytes: constant pools, class structure, methods,
+  fields, attributes (Signature for generics,
+  RuntimeVisibleAnnotations for annotations, PermittedSubclasses for
+  sealed types, Record for record components).
+- The decoder takes bare `&[u8]` with no container coupling — class
+  bytes also arrive from loose files (build output directories), so
+  this layer must stand free of 037.
 - Materialize each class as node payloads with hard links for nested
   classes and dynamic links for type references resolved through registries.
 
