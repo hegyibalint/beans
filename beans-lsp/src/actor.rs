@@ -441,7 +441,7 @@ fn build_document_symbol(
             }
             if let Some(child_view) = payload_view(&child.payload)
                 && let Some(loc) = child_view.location
-                && loc.file != file
+                && loc.file.as_ref() != file
             {
                 return None;
             }
