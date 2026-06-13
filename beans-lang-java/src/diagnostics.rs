@@ -22,7 +22,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use beans_core::diagnostics::{Diagnostic, DiagnosticSeverity};
-use beans_core::graph::Graph;
+use beans_core::graph::{Graph, NodeId};
 use beans_lang_jvm::payload::AsJvm;
 use beans_lang_jvm::registries::JvmRegistries;
 use beans_lang_jvm::Modifier;
@@ -43,6 +43,10 @@ pub struct JavaRuleContext<'a, P> {
     pub jvm: &'a JvmRegistries,
     pub file: &'a Path,
     pub imports: &'a [Import],
+    /// The file's hard-link roots. Rules iterate this subtree
+    /// (`graph.descendants(roots)`), never the whole arena — per-file
+    /// cost must scale with the file, not the workspace.
+    pub roots: &'a [NodeId],
 }
 
 /// Run every Java rule against `file` and merge the findings.
@@ -52,6 +56,7 @@ pub fn check_file<P: AsJava + AsJvm>(
     jvm: &JvmRegistries,
     file: &Path,
     imports: &[Import],
+    roots: &[NodeId],
 ) -> Vec<Diagnostic> {
     let ctx = JavaRuleContext {
         graph,
@@ -59,6 +64,7 @@ pub fn check_file<P: AsJava + AsJvm>(
         jvm,
         file,
         imports,
+        roots,
     };
     let mut out = abstract_method_with_body(&ctx);
     out.extend(unused_import(&ctx));
@@ -79,13 +85,10 @@ pub fn check_file<P: AsJava + AsJvm>(
 pub fn missing_import<P: AsJava + AsJvm>(ctx: &JavaRuleContext<'_, P>) -> Vec<Diagnostic> {
     const CODE: &str = "missing-import";
     let mut out = Vec::new();
-    for (_id, node) in ctx.graph.iter() {
+    for (_id, node) in ctx.graph.descendants(ctx.roots) {
         let Some(JavaNodePayload::TypeUse(t)) = node.payload.as_java() else {
             continue;
         };
-        if t.header.location.file != ctx.file {
-            continue;
-        }
         if crate::fixes::is_resolved(t, ctx.java) {
             continue;
         }
@@ -121,16 +124,13 @@ pub fn missing_import<P: AsJava + AsJvm>(ctx: &JavaRuleContext<'_, P>) -> Vec<Di
 pub fn abstract_method_with_body<P: AsJava>(ctx: &JavaRuleContext<'_, P>) -> Vec<Diagnostic> {
     const CODE: &str = "abstract-method-with-body";
     let mut out = Vec::new();
-    for (_id, node) in ctx.graph.iter() {
+    for (_id, node) in ctx.graph.descendants(ctx.roots) {
         let Some(JavaNodePayload::Method(m)) = node.payload.as_java() else {
             continue;
         };
         let Some(loc) = m.header.location.as_ref() else {
             continue;
         };
-        if loc.file != ctx.file {
-            continue;
-        }
         if m.header.modifiers.contains(&Modifier::Abstract) && m.has_body {
             out.push(Diagnostic {
                 location: loc.clone(),
@@ -166,13 +166,10 @@ pub fn unused_import<P: AsJava>(ctx: &JavaRuleContext<'_, P>) -> Vec<Diagnostic>
     // resolves to. Resolution: try each candidate FQN against the
     // Java symbols; the first non-empty provider list wins.
     let mut used_fqns: HashSet<String> = HashSet::new();
-    for (_id, node) in ctx.graph.iter() {
+    for (_id, node) in ctx.graph.descendants(ctx.roots) {
         let Some(JavaNodePayload::TypeUse(t)) = node.payload.as_java() else {
             continue;
         };
-        if t.header.location.file != ctx.file {
-            continue;
-        }
         for fqn in &t.header.candidate_fqns {
             let key = JavaSymbolKey::new(fqn.clone());
             if !ctx.java.symbols.providers(&key).is_empty() {
