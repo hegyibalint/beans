@@ -293,18 +293,79 @@ impl NodeBehavior for JavaTypeUseNode {
 }
 
 /// Union of every Java-side node payload variant.
+/// The graph stores one `NodePayload` per slot, sized to its widest
+/// variant. Declaration nodes (method/type/field/...) are 130–250 B
+/// while the most *numerous* nodes — use sites — are ~80 B, so the
+/// decl variants are `Box`ed (backlog #037): the arena floor drops to
+/// the small inline variants' width, and a method's bytes live on the
+/// heap only for slots that are actually methods. `Box` derefs
+/// transparently, so accessors and traversals are unaffected;
+/// construction goes through the [`From`] impls below.
 #[derive(Debug, Clone, PartialEq)]
 pub enum JavaNodePayload {
-    Type(JavaTypeNode),
-    Method(JavaMethodNode),
-    Constructor(JavaConstructorNode),
-    Field(JavaFieldNode),
-    EnumConstant(JavaEnumConstantNode),
-    AnnotationElement(JavaAnnotationElementNode),
+    Type(Box<JavaTypeNode>),
+    Method(Box<JavaMethodNode>),
+    Constructor(Box<JavaConstructorNode>),
+    Field(Box<JavaFieldNode>),
+    EnumConstant(Box<JavaEnumConstantNode>),
+    AnnotationElement(Box<JavaAnnotationElementNode>),
+    Package(Box<JavaPackageNode>),
+    // Inline: small and/or numerous. TypeUse is the most common node;
+    // an extra allocation per use-site is not worth its ~80 B.
     Parameter(JavaParameter),
-    Package(JavaPackageNode),
     TypeUse(JavaTypeUseNode),
     Import(JavaImportNode),
+}
+
+impl From<JavaTypeNode> for JavaNodePayload {
+    fn from(n: JavaTypeNode) -> Self {
+        Self::Type(Box::new(n))
+    }
+}
+impl From<JavaMethodNode> for JavaNodePayload {
+    fn from(n: JavaMethodNode) -> Self {
+        Self::Method(Box::new(n))
+    }
+}
+impl From<JavaConstructorNode> for JavaNodePayload {
+    fn from(n: JavaConstructorNode) -> Self {
+        Self::Constructor(Box::new(n))
+    }
+}
+impl From<JavaFieldNode> for JavaNodePayload {
+    fn from(n: JavaFieldNode) -> Self {
+        Self::Field(Box::new(n))
+    }
+}
+impl From<JavaEnumConstantNode> for JavaNodePayload {
+    fn from(n: JavaEnumConstantNode) -> Self {
+        Self::EnumConstant(Box::new(n))
+    }
+}
+impl From<JavaAnnotationElementNode> for JavaNodePayload {
+    fn from(n: JavaAnnotationElementNode) -> Self {
+        Self::AnnotationElement(Box::new(n))
+    }
+}
+impl From<JavaPackageNode> for JavaNodePayload {
+    fn from(n: JavaPackageNode) -> Self {
+        Self::Package(Box::new(n))
+    }
+}
+impl From<JavaParameter> for JavaNodePayload {
+    fn from(n: JavaParameter) -> Self {
+        Self::Parameter(n)
+    }
+}
+impl From<JavaTypeUseNode> for JavaNodePayload {
+    fn from(n: JavaTypeUseNode) -> Self {
+        Self::TypeUse(n)
+    }
+}
+impl From<JavaImportNode> for JavaNodePayload {
+    fn from(n: JavaImportNode) -> Self {
+        Self::Import(n)
+    }
 }
 
 impl JavaNodePayload {
