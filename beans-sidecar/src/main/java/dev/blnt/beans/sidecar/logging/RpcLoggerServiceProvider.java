@@ -1,4 +1,4 @@
-package dev.blnt.beans.sidecar;
+package dev.blnt.beans.sidecar.logging;
 
 import org.slf4j.ILoggerFactory;
 import org.slf4j.IMarkerFactory;
