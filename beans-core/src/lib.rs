@@ -21,11 +21,13 @@
 pub mod diagnostics;
 pub mod fix;
 pub mod graph;
+pub mod interner;
 pub mod primitives;
 pub mod registry;
 
 pub use diagnostics::{Diagnostic, DiagnosticSeverity};
 pub use fix::{Fix, SourceEdit};
+pub use interner::Interner;
 pub use primitives::Location;
 pub use registry::{
     FallbackSubscription, Query, QueryResult, Registry, SimpleNamed, Subscription, Watch,

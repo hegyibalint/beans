@@ -6,7 +6,8 @@
 //! on disk that produced it. Go-to-definition, hover, and diagnostics
 //! all need to point back at a span in a file; this is that span.
 
-use std::path::PathBuf;
+use std::path::Path;
+use std::sync::Arc;
 
 /// A half-open source range inside a single file.
 ///
@@ -22,7 +23,10 @@ pub struct Location {
     /// Absolute path to the source file. Symbols loaded from compiled
     /// artifacts (jmod, JAR) currently have no `Location`; this field is
     /// only meaningful for source-derived symbols.
-    pub file: PathBuf,
+    /// `Arc<Path>` so the ~N-locations-per-file all share one buffer
+    /// (backlog #037): equality stays content-based; producers mint one
+    /// Arc per file and clone it per location.
+    pub file: Arc<Path>,
     /// Zero-based start line.
     pub start_line: u32,
     /// Zero-based start column, in UTF-16 code units.

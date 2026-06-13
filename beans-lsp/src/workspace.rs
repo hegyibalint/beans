@@ -60,7 +60,8 @@ pub fn integrate_source(
         }
     }
 
-    let parsed = java::parse_java_to_graph(file, source);
+    let mut parsed = java::parse_java_to_graph(file, source);
+    parsed.intern(&state.beans.interner);
     state
         .file_imports
         .insert(file.to_path_buf(), parsed.imports.clone());
@@ -100,7 +101,8 @@ pub fn index_workspace(root: &Path, state: &mut ServerState) {
     // before children. The plan order inside each `ParsedJavaFile` is
     // already topological; cross-file ordering doesn't matter for
     // hard-link parents (those are intra-file).
-    for (path, plan) in parsed {
+    for (path, mut plan) in parsed {
+        plan.intern(&state.beans.interner);
         if let Some(old_roots) = state.file_roots.remove(&path) {
             for root in old_roots {
                 state.beans.graph.destroy(root);
