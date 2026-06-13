@@ -70,10 +70,10 @@ through duty modules behind a single protocol.
   duty**: it is simulated as a `beans-lang-java` enrichment
   (synthesized member declarations per handler, delombok as the test
   oracle), the IntelliJ approach.
-- **Code layout**: `beans-sidecar/` in-repo as a standalone multi-module
-  Gradle project (`core` = stdio loop/dispatch/schema; `gradle` = TAPI
-  duty; future modules per tool) building one fat jar. Not a Cargo
-  member. Rust side: a `beans-sidecar` client crate (spawn, correlate,
+- **Code layout**: `beans-sidecar/` in-repo as a standalone
+  single-module Gradle project building one fat jar (split into
+  core + per-tool modules when a second build tool lands). Not a
+  Cargo member. Rust side: a `beans-sidecar` client crate (spawn, correlate,
   typed duties, workspace sniffing) consuming `beans-toolchains`. Jar
   discovery: setting → dev path (`beans-sidecar/build/libs/`) →
   alongside-binary.
