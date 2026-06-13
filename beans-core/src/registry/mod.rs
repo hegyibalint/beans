@@ -46,7 +46,7 @@
 //! [`graph`]: crate::graph
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::rc::{Rc, Weak};
 
@@ -61,18 +61,28 @@ pub use query::{FallbackSubscription, Query, QueryResult, Subscription, Watch};
 // `JavaRegistries` in beans-lang-java, ...) and the `beans` facade
 // composes them. The engine provides only the `Registry<K>` primitive.
 
-/// Keys whose qualified name carries a meaningful last segment — the
+/// The last meaningful segment of a key's qualified name — the
 /// *source* simple name (`com.example.Service` → `Service`).
 ///
-/// JVM naming is hierarchical everywhere, so most keys can answer
-/// this; implementing the trait opts a registry into
-/// [`Registry::query_simple_name`]. Implementations must return source
-/// simple names, not binary-name segments (a future Scala `Config$`
-/// projection answers `Config`) — consumers build user-facing edits
-/// (imports) from these.
+/// Part of the universal key contract: JVM naming is hierarchical
+/// everywhere, so every key can answer this, and the registry
+/// maintains an eager simple-name index on the back of it (measured
+/// in: the scan version cost 8ms per query at gradle/master scale,
+/// paid per unresolved name per diagnostics pass). Implementations
+/// must return source simple names, not binary-name segments (a
+/// future Scala `Config$` projection answers `Config`) — consumers
+/// build user-facing edits (imports) from these.
 pub trait SimpleNamed {
     fn simple_name(&self) -> &str;
 }
+
+/// The universal registry key contract: hashable, cloneable, owning,
+/// and simple-named (ADR-0012 typed keys + the eager simple-name
+/// index). Blanket-implemented — defining a key type means satisfying
+/// these bounds, nothing more.
+pub trait RegistryKey: Eq + Hash + Clone + SimpleNamed + 'static {}
+
+impl<T: Eq + Hash + Clone + SimpleNamed + 'static> RegistryKey for T {}
 
 // =========================================================================
 // Registry<K> — the typed multi-provider primitive
@@ -90,6 +100,10 @@ pub type Callback = Rc<dyn Fn()>;
 
 pub(crate) struct RegistryInner<K> {
     providers: HashMap<K, Vec<NodeId>>,
+    /// Eager reverse index: simple name → keys carrying it. Maintained
+    /// by add/remove_provider; queried by
+    /// [`Registry::query_simple_name`] in O(1).
+    by_simple_name: HashMap<String, HashSet<K>>,
     subscribers: HashMap<K, Vec<(SubscriptionId, Callback)>>,
     next_id: u64,
 }
@@ -98,6 +112,7 @@ impl<K> RegistryInner<K> {
     fn new() -> Self {
         Self {
             providers: HashMap::new(),
+            by_simple_name: HashMap::new(),
             subscribers: HashMap::new(),
             next_id: 0,
         }
@@ -110,8 +125,12 @@ impl<K> RegistryInner<K> {
     }
 }
 
-impl<K: Eq + Hash> RegistryInner<K> {
+impl<K: RegistryKey> RegistryInner<K> {
     fn add_provider(&mut self, key: K, node: NodeId) {
+        self.by_simple_name
+            .entry(key.simple_name().to_string())
+            .or_default()
+            .insert(key.clone());
         self.providers.entry(key).or_default().push(node);
     }
 
@@ -127,6 +146,12 @@ impl<K: Eq + Hash> RegistryInner<K> {
             }
             if list.is_empty() {
                 self.providers.remove(key);
+                if let Some(set) = self.by_simple_name.get_mut(key.simple_name()) {
+                    set.remove(key);
+                    if set.is_empty() {
+                        self.by_simple_name.remove(key.simple_name());
+                    }
+                }
             }
         }
     }
@@ -192,7 +217,7 @@ impl<K> Registry<K> {
     }
 }
 
-impl<K: Eq + Hash> Registry<K> {
+impl<K: RegistryKey> Registry<K> {
     /// Return all providers currently registered for `key`. Order is
     /// insertion order; per ADR-0013 this carries no semantic weight.
     ///
@@ -209,24 +234,21 @@ impl<K: Eq + Hash> Registry<K> {
             .unwrap_or_default()
     }
 
-    /// All keys whose [`SimpleNamed::simple_name`] equals `name`.
+    /// All keys whose [`SimpleNamed::simple_name`] equals `name` —
+    /// one hash lookup against the eager index `add_provider`/
+    /// `remove_provider` maintain.
     ///
-    /// Implemented as a scan over the key set — no secondary index.
-    /// Measured-first posture: at workspace scale (thousands of keys)
-    /// the scan is microseconds; an eager simple-name index is a local
-    /// upgrade if profiling ever shows this hot. Callers query the
-    /// returned keys for providers as usual.
-    pub fn query_simple_name(&self, name: &str) -> Vec<K>
-    where
-        K: SimpleNamed + Clone,
-    {
+    /// History: this began as a key-set scan (measured-first posture).
+    /// At gradle/master scale the scan cost 8ms per call and the
+    /// missing-import rule pays one call per unresolved name per
+    /// recompute — 233ms/file. The index was the measured upgrade.
+    pub fn query_simple_name(&self, name: &str) -> Vec<K> {
         self.inner
             .borrow()
-            .providers
-            .keys()
-            .filter(|k| k.simple_name() == name)
-            .cloned()
-            .collect()
+            .by_simple_name
+            .get(name)
+            .map(|set| set.iter().cloned().collect())
+            .unwrap_or_default()
     }
 
     /// Fire all callbacks subscribed to `key`. Uses snapshot-and-release
@@ -246,7 +268,7 @@ impl<K: Eq + Hash> Registry<K> {
     }
 }
 
-impl<K: Eq + Hash + Clone + 'static> Registry<K> {
+impl<K: RegistryKey> Registry<K> {
     /// Construct a [`Query<K>`] for this key. The returned `Query` is
     /// stateless — it holds a (cheap) clone of this registry and the
     /// key. Call `resolve()` to look up providers, or `subscribe(cb)`
@@ -299,7 +321,7 @@ impl<K: Eq + Hash + Clone + 'static> Registry<K> {
 // nodes for cleanup. Subscriptions don't need this impl — they live
 // inside [`Query`]/[`Subscription`]/[`FallbackSubscription`] objects,
 // not on `NodeData::handles`.
-impl<K: Eq + Hash> NodeHandle for ProviderHandle<K> {}
+impl<K: RegistryKey> NodeHandle for ProviderHandle<K> {}
 
 /// RAII registration. Drop unregisters this `(key, node)` from the registry.
 /// If the registry has already been dropped, the upgrade fails and Drop
@@ -311,13 +333,13 @@ impl<K: Eq + Hash> NodeHandle for ProviderHandle<K> {}
 /// registration, and dropping both would over-remove. Per ADR-0014 the
 /// handle is the *one* RAII anchor for its registration.
 #[derive(Debug)]
-pub struct ProviderHandle<K: Eq + Hash> {
+pub struct ProviderHandle<K: RegistryKey> {
     inner: Weak<RefCell<RegistryInner<K>>>,
     key: K,
     node: NodeId,
 }
 
-impl<K: Eq + Hash> Drop for ProviderHandle<K> {
+impl<K: RegistryKey> Drop for ProviderHandle<K> {
     fn drop(&mut self) {
         let Some(inner) = self.inner.upgrade() else {
             // Registry already torn down — nothing to remove and nobody
@@ -358,8 +380,42 @@ mod tests {
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     struct TestKey(&'static str);
 
+    impl SimpleNamed for TestKey {
+        fn simple_name(&self) -> &str {
+            self.0
+        }
+    }
+
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     struct OtherKey(&'static str);
+
+    impl SimpleNamed for OtherKey {
+        fn simple_name(&self) -> &str {
+            self.0
+        }
+    }
+
+    #[test]
+    fn simple_name_index_tracks_provider_lifecycle() {
+        let registry: Registry<TestKey> = Registry::new();
+        // TestKey's simple name is its whole string; two keys, same name
+        // is impossible here, so use two distinct names and assert
+        // bucket isolation plus RAII removal.
+        let a = TestKey("Service");
+        let b = TestKey("Repository");
+
+        let ha = registry.register(a.clone(), NodeId::placeholder(1));
+        let _hb = registry.register(b.clone(), NodeId::placeholder(2));
+
+        assert_eq!(registry.query_simple_name("Service"), vec![a.clone()]);
+        assert_eq!(registry.query_simple_name("Repository"), vec![b]);
+        assert!(registry.query_simple_name("Missing").is_empty());
+
+        // Dropping the provider handle must erase the index entry too —
+        // a stale index would offer imports for deleted types.
+        drop(ha);
+        assert!(registry.query_simple_name("Service").is_empty());
+    }
 
     /// Minimal payload used by graph-integrated registry tests.
     struct HandleNode {
