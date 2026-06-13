@@ -19,6 +19,27 @@ applies before going further): payload enum width × 368k arena slots,
 `TypeRef` trees, per-header `name: String` allocations, boxed RAII
 handles, hash-map capacity overhead.
 
+## End-state: strong-form interning (`Symbol(u32)`)
+
+The delivered slices are the weak form (shared buffers, content
+equality). The recorded end-state — owner's design — is compiler-style
+symbol interning: one central table owns all name bytes; `Fqn` becomes
+a `Copy` `u32` into it; deduplication is definitional, keys hash
+integers, `candidate_fqns` becomes `Vec<u32>`.
+
+Costs to accept when delivering it (the regime):
+- display requires table access everywhere (`as_str` not standalone) —
+  prefer a global sharded table, rustc-style; permanence accepted
+- the parallel parse phase mints symbols → the table must be `Sync`
+  (the one concurrent structure in the core, ADR-0018 exception) or
+  per-worker tables with a u32 remap at integrate
+- all-or-nothing migration: every construction site goes through the
+  table or doesn't compile (this is also the enforcement benefit)
+
+Gate: profile at #012 scale (millions of JDK/dependency keys) showing
+key-hashing/key-memory hot. The harness in
+`beans/examples/index_workspace.rs` is the measurement vehicle.
+
 ## Motivation (measured)
 
 gradle/master baseline (10,187 files, 34 MB source): **581 MB RSS** —
