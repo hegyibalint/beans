@@ -26,6 +26,17 @@ pub struct JvmMetadata {
     pub arch: Option<String>,
 }
 
+impl JvmMetadata {
+    /// Numeric segments of the version, for ordering: `25.0.10` >
+    /// `25.0.9`. Non-numeric tails rank as 0.
+    pub fn version_segments(&self) -> Vec<u32> {
+        self.version
+            .split(['.', '_', '+', '-'])
+            .map(|seg| seg.parse().unwrap_or(0))
+            .collect()
+    }
+}
+
 /// `"21.0.2"` → 21; `"1.8.0_392"` → 8 (pre-9 `1.x` scheme).
 fn major_of(version: &str) -> Option<u32> {
     let mut parts = version.split(['.', '_', '+', '-']);
@@ -133,5 +144,18 @@ mod tests {
         assert_eq!(major_of("1.8.0_392"), Some(8));
         assert_eq!(major_of("11.0.22+7"), Some(11));
         assert_eq!(major_of("nonsense"), None);
+    }
+
+    #[test]
+    fn version_segments_order_numerically_not_lexically() {
+        let meta = |v: &str| JvmMetadata {
+            major: 0,
+            version: v.to_string(),
+            vendor: None,
+            arch: None,
+        };
+        assert!(meta("25.0.10").version_segments() > meta("25.0.9").version_segments());
+        assert!(meta("21.0.2+13").version_segments() > meta("21.0.2").version_segments());
+        assert!(meta("1.8.0_392").version_segments() < meta("1.8.0_402").version_segments());
     }
 }
