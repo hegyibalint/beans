@@ -70,6 +70,64 @@ pub enum JavaPlanPayload {
     Jvm(JvmNodePayload),
 }
 
+impl ParsedJavaFile {
+    /// Re-key every qualified name in the plan onto the workspace's
+    /// canonical buffers (backlog #037). Runs at the serial integrate
+    /// boundary — parsing stays interner-free so it can fan out across
+    /// rayon workers with self-contained outputs (ADR-0005). Every
+    /// downstream copy (registry key, RAII handle, projection) clones
+    /// from these payloads, so one pass here collapses them all.
+    pub fn intern(&mut self, interner: &beans_core::Interner) {
+        for pending in &mut self.plan {
+            match &mut pending.payload {
+                JavaPlanPayload::Java(java) => match java {
+                    JavaNodePayload::Type(n) => n.header.fqn.intern_in(interner),
+                    JavaNodePayload::Method(n) => n.header.fqn.intern_in(interner),
+                    JavaNodePayload::Constructor(n) => n.header.fqn.intern_in(interner),
+                    JavaNodePayload::Field(n) => n.header.fqn.intern_in(interner),
+                    JavaNodePayload::EnumConstant(n) => {
+                        n.header.fqn.intern_in(interner);
+                        n.enum_owner.intern_in(interner);
+                    }
+                    JavaNodePayload::AnnotationElement(n) => n.header.fqn.intern_in(interner),
+                    JavaNodePayload::Package(n) => n.header.fqn.intern_in(interner),
+                    JavaNodePayload::TypeUse(n) => {
+                        for fqn in &mut n.header.candidate_fqns {
+                            fqn.intern_in(interner);
+                        }
+                    }
+                    JavaNodePayload::Parameter(_) | JavaNodePayload::Import(_) => {}
+                },
+                JavaPlanPayload::Jvm(jvm) => match jvm {
+                    JvmNodePayload::Type(n) => n.header.fqn.intern_in(interner),
+                    JvmNodePayload::Method(n) => {
+                        n.header.fqn.intern_in(interner);
+                        n.owner.intern_in(interner);
+                    }
+                    JvmNodePayload::Constructor(n) => {
+                        n.header.fqn.intern_in(interner);
+                        n.owner.intern_in(interner);
+                    }
+                    JvmNodePayload::Field(n) => {
+                        n.header.fqn.intern_in(interner);
+                        n.owner.intern_in(interner);
+                    }
+                    JvmNodePayload::EnumConstant(n) => {
+                        n.header.fqn.intern_in(interner);
+                        n.enum_owner.intern_in(interner);
+                    }
+                    JvmNodePayload::AnnotationElement(n) => {
+                        n.header.fqn.intern_in(interner);
+                        n.owner.intern_in(interner);
+                    }
+                    JvmNodePayload::Package(n) => n.header.fqn.intern_in(interner),
+                    JvmNodePayload::Parameter(_) => {}
+                },
+            }
+        }
+    }
+}
+
 /// Parse a Java source file into a self-contained [`ParsedJavaFile`].
 ///
 /// Performs no graph mutation — runs on its own thread, suitable for
@@ -106,6 +164,7 @@ pub fn parse_java_to_graph(path: &Path, source: &str) -> ParsedJavaFile {
 
     let mut ctx = ParseContext {
         path,
+        shared_path: std::sync::Arc::from(path),
         source: source_bytes,
         plan: Vec::new(),
         package: String::new(),
@@ -182,6 +241,10 @@ where
 
 struct ParseContext<'a> {
     path: &'a Path,
+    /// One shared buffer for this file's path; every emitted
+    /// [`Location`] clones it (pointer bump) instead of copying the
+    /// path text per node (backlog #037).
+    shared_path: std::sync::Arc<Path>,
     source: &'a [u8],
     /// The plan being built. Every [`emit_pair`] call pushes two
     /// entries — Java then JVM — and the JVM entry is hard-linked off
@@ -253,7 +316,7 @@ fn make_location(ctx: &ParseContext, node: Node) -> Location {
     let start = node.start_position();
     let end = node.end_position();
     Location {
-        file: ctx.path.to_path_buf(),
+        file: std::sync::Arc::clone(&ctx.shared_path),
         start_line: start.row as u32,
         start_col: start.column as u32,
         end_line: end.row as u32,
