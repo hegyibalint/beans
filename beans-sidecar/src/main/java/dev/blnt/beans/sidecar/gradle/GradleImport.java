@@ -1,6 +1,7 @@
-package dev.blnt.beans.sidecar;
+package dev.blnt.beans.sidecar.gradle;
 
-import com.google.gson.JsonObject;
+import dev.blnt.beans.sidecar.model.WorkspaceModel;
+import dev.blnt.beans.sidecar.model.WorkspaceModule;
 import org.gradle.tooling.GradleConnector;
 import org.gradle.tooling.ProjectConnection;
 import org.gradle.tooling.events.OperationType;
@@ -14,7 +15,9 @@ import org.gradle.tooling.model.idea.IdeaSingleEntryLibraryDependency;
 import org.gradle.tooling.model.idea.IdeaSourceDirectory;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
@@ -22,18 +25,14 @@ import java.util.function.Consumer;
  * through the Tooling API's stock {@link IdeaProject} model — no
  * injection into the user's build (ADR-0031; the custom tooling model
  * is the scheduled evolution when ap/run needs the processor path).
- *
- * <p>Params: {@code projectDir} (required); {@code gradleHome}
- * (optional — point at an installation instead of the project's
- * wrapper; used by tests and wrapper-less projects).
  */
-final class GradleImport {
+public final class GradleImport {
 
-    static WorkspaceModel run(JsonObject params, Consumer<String> progress) {
-        File projectDir = new File(params.get("projectDir").getAsString());
+    public static WorkspaceModel run(GradleImportParams params, Consumer<String> progress) {
+        File projectDir = new File(params.projectDir());
         GradleConnector connector = GradleConnector.newConnector().forProjectDirectory(projectDir);
-        if (params.has("gradleHome")) {
-            connector.useInstallation(new File(params.get("gradleHome").getAsString()));
+        if (params.gradleHome() != null) {
+            connector.useInstallation(new File(params.gradleHome()));
         }
 
         progress.accept("Connecting to Gradle build at " + projectDir);
@@ -52,50 +51,64 @@ final class GradleImport {
                                     progress.accept(event.getDescriptor().getDisplayName());
                                 }
                             },
-                            EnumSet.of(OperationType.PROJECT_CONFIGURATION, OperationType.BUILD_PHASE))
+                            EnumSet.of(
+                                    OperationType.PROJECT_CONFIGURATION,
+                                    OperationType.BUILD_PHASE))
                     .get();
             return toWorkspaceModel(idea);
         }
     }
 
     private static WorkspaceModel toWorkspaceModel(IdeaProject idea) {
-        WorkspaceModel model = new WorkspaceModel();
+        List<WorkspaceModule> modules = new ArrayList<>();
         for (IdeaModule ideaModule : idea.getModules()) {
-            WorkspaceModel.Module module = new WorkspaceModel.Module();
-            module.name = ideaModule.getName();
+            List<String> sourceRoots = new ArrayList<>();
+            List<String> testSourceRoots = new ArrayList<>();
+            List<String> generatedSourceRoots = new ArrayList<>();
+            List<String> compileClasspath = new ArrayList<>();
+            List<String> moduleDependencies = new ArrayList<>();
 
             for (IdeaContentRoot root : ideaModule.getContentRoots()) {
                 for (IdeaSourceDirectory src : root.getSourceDirectories()) {
-                    (src.isGenerated() ? module.generatedSourceRoots : module.sourceRoots)
+                    (src.isGenerated() ? generatedSourceRoots : sourceRoots)
                             .add(src.getDirectory().getAbsolutePath());
                 }
                 for (IdeaSourceDirectory test : root.getTestDirectories()) {
-                    (test.isGenerated() ? module.generatedSourceRoots : module.testSourceRoots)
+                    (test.isGenerated() ? generatedSourceRoots : testSourceRoots)
                             .add(test.getDirectory().getAbsolutePath());
                 }
             }
 
             for (IdeaDependency dep : ideaModule.getDependencies()) {
                 if (dep instanceof IdeaSingleEntryLibraryDependency lib) {
-                    module.compileClasspath.add(lib.getFile().getAbsolutePath());
+                    compileClasspath.add(lib.getFile().getAbsolutePath());
                 } else if (dep instanceof IdeaModuleDependency moduleDep) {
-                    module.moduleDependencies.add(moduleDep.getTargetModuleName());
+                    moduleDependencies.add(moduleDep.getTargetModuleName());
                 }
             }
 
-            if (ideaModule.getJavaLanguageSettings() != null
-                    && ideaModule.getJavaLanguageSettings().getJdk() != null) {
-                module.jdkHome =
-                        ideaModule.getJavaLanguageSettings().getJdk().getJavaHome().getAbsolutePath();
-            } else if (idea.getJavaLanguageSettings() != null
-                    && idea.getJavaLanguageSettings().getJdk() != null) {
-                module.jdkHome =
-                        idea.getJavaLanguageSettings().getJdk().getJavaHome().getAbsolutePath();
-            }
-
-            model.modules.add(module);
+            modules.add(new WorkspaceModule(
+                    ideaModule.getName(),
+                    sourceRoots,
+                    testSourceRoots,
+                    generatedSourceRoots,
+                    compileClasspath,
+                    moduleDependencies,
+                    jdkHome(idea, ideaModule)));
         }
-        return model;
+        return new WorkspaceModel(modules);
+    }
+
+    private static String jdkHome(IdeaProject idea, IdeaModule module) {
+        if (module.getJavaLanguageSettings() != null
+                && module.getJavaLanguageSettings().getJdk() != null) {
+            return module.getJavaLanguageSettings().getJdk().getJavaHome().getAbsolutePath();
+        }
+        if (idea.getJavaLanguageSettings() != null
+                && idea.getJavaLanguageSettings().getJdk() != null) {
+            return idea.getJavaLanguageSettings().getJdk().getJavaHome().getAbsolutePath();
+        }
+        return null;
     }
 
     private GradleImport() {}
