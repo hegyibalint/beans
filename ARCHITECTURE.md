@@ -26,6 +26,7 @@ beans-core/              # Library: graph engine, JVM model, language modules
 beans-lsp/               # LSP server: thin protocol shell over beans-core
 
 beans-test-harness/      # Fixture framework (language-agnostic)
+beans-test-jdks/         # Test-only JDK provisioning (download + cache Temurin)
 beans-test-{java,kotlin,scala,groovy,clojure}/   # Per-language spec tests
 beans-test-interop/      # Cross-language tests (planned)
 ```
@@ -38,8 +39,12 @@ that exists only to dodge the cycle. Consumers that need only JVM bytecode
 analysis disable the source-language features:
 
 ```toml
-beans-core = { default-features = false, features = ["jmod"] }
+beans-core = { default-features = false }
 ```
+
+There is no `jmod` feature: per ADR-0019 the JVM bytecode side (the
+`jvm/` module, including the class container layer) is unconditional —
+it serves all languages and survives `default-features = false`.
 
 `beans-lsp` is a leaf consumer
 ([ADR-0002](docs/adr/0002-library-first.md),
