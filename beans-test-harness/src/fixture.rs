@@ -572,6 +572,8 @@ impl Fixture {
         #[cfg_attr(not(feature = "java"), allow(unused_mut))]
         let mut graph: Graph<NodePayload> = Graph::new();
         let registries = Registries::new();
+        #[cfg(feature = "java")]
+        let interner = beans::Interner::new();
         let mut file_imports: HashMap<PathBuf, Vec<Import>> = HashMap::new();
         #[cfg_attr(not(feature = "java"), allow(unused_mut))]
         let mut file_roots: HashMap<PathBuf, Vec<NodeId>> = HashMap::new();
@@ -587,7 +589,9 @@ impl Fixture {
             file_sources.insert(path.clone(), clean_source.clone());
             #[cfg(feature = "java")]
             {
-                let inserted = java::integrate(&mut graph, &registries, parsed.into_java());
+                let mut java_parsed = parsed.into_java();
+                java_parsed.intern(&interner);
+                let inserted = java::integrate(&mut graph, &registries, java_parsed);
                 let roots: Vec<NodeId> = inserted
                     .into_iter()
                     .filter(|&id| graph.get(id).is_some_and(|n| n.parent.is_none()))
@@ -1506,7 +1510,7 @@ fn run_quick_fix_checks(
 fn apply_edits(source: &str, edits: &[SourceEdit], file: &Path) -> String {
     let mut relevant: Vec<&SourceEdit> = edits
         .iter()
-        .filter(|e| e.location.file == file)
+        .filter(|e| e.location.file.as_ref() == file)
         .collect();
     relevant.sort_by_key(|e| (e.location.start_line, e.location.start_col));
 

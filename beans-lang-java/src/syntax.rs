@@ -49,6 +49,7 @@ impl Import {
 /// Each returned `Import` carries a [`Location`] spanning its line so
 /// diagnostic rules can squiggle the right place.
 pub fn extract_imports(file: &Path, source: &str) -> Vec<Import> {
+    let shared_file: std::sync::Arc<Path> = std::sync::Arc::from(file);
     let mut imports = Vec::new();
     for (line_idx, line) in source.lines().enumerate() {
         let trimmed = line.trim();
@@ -68,7 +69,7 @@ pub fn extract_imports(file: &Path, source: &str) -> Vec<Import> {
             .map(|i| (i + 1) as u32)
             .unwrap_or(line.len() as u32);
         let location = Location {
-            file: file.to_path_buf(),
+            file: std::sync::Arc::clone(&shared_file),
             start_line: line_idx as u32,
             start_col,
             end_line: line_idx as u32,

@@ -85,7 +85,7 @@ pub fn type_use_at<'a, P: AsJava>(
             continue;
         };
         let loc = &t.header.location;
-        if loc.file != file || !span_contains(loc, line, col) {
+        if loc.file.as_ref() != file || !span_contains(loc, line, col) {
             continue;
         }
         return Some(t);
@@ -119,7 +119,7 @@ pub fn add_import_fix(file: &Path, source: &str, fqn: &Fqn) -> Fix {
         label: format!("Import '{}'", fqn),
         edits: vec![SourceEdit {
             location: Location {
-                file: file.to_path_buf(),
+                file: std::sync::Arc::from(file),
                 start_line: line,
                 start_col: 0,
                 end_line: line,

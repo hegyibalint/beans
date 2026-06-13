@@ -32,8 +32,8 @@ pub mod languages {
 // Engine and shared-model re-exports keep consumer imports stable:
 // `beans::Graph`, `beans::SymbolKind`, `beans::Diagnostic`, ...
 pub use beans_core::{
-    diagnostics, fix, graph, primitives, registry, Diagnostic, DiagnosticSeverity, Fix, Location,
-    SourceEdit,
+    diagnostics, fix, graph, primitives, registry, Diagnostic, DiagnosticSeverity, Fix,
+    Interner, Location, SourceEdit,
 };
 pub use beans_core::registry::{
     FallbackSubscription, Query, QueryResult, Registry, Subscription, Watch,
@@ -57,6 +57,10 @@ use std::path::Path;
 pub struct Beans {
     pub graph: Graph<NodePayload>,
     pub registries: Registries,
+    /// Workspace string interner (backlog #037). Parsed plans are
+    /// interned at the integrate boundary; see
+    /// `ParsedJavaFile::intern`.
+    pub interner: beans_core::Interner,
 }
 
 impl Beans {
@@ -64,6 +68,7 @@ impl Beans {
         Self {
             graph: Graph::new(),
             registries: Registries::new(),
+            interner: beans_core::Interner::new(),
         }
     }
 }
