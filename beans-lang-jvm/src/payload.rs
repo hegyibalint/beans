@@ -312,16 +312,61 @@ impl NodeBehavior for JvmPackageNode {
 }
 
 /// Union of every JVM-projection node payload variant.
+/// Decl variants are `Box`ed (backlog #037): `JvmMethodNode` is the
+/// widest payload in the whole graph at 248 B, and boxing the decls
+/// drops the arena floor to the inline `Parameter` width. `Box` derefs
+/// transparently; construction goes through the [`From`] impls below.
 #[derive(Debug, Clone, PartialEq)]
 pub enum JvmNodePayload {
-    Type(JvmTypeNode),
-    Method(JvmMethodNode),
-    Constructor(JvmConstructorNode),
-    Field(JvmFieldNode),
-    EnumConstant(JvmEnumConstantNode),
-    AnnotationElement(JvmAnnotationElementNode),
+    Type(Box<JvmTypeNode>),
+    Method(Box<JvmMethodNode>),
+    Constructor(Box<JvmConstructorNode>),
+    Field(Box<JvmFieldNode>),
+    EnumConstant(Box<JvmEnumConstantNode>),
+    AnnotationElement(Box<JvmAnnotationElementNode>),
+    Package(Box<JvmPackageNode>),
     Parameter(JvmParameter),
-    Package(JvmPackageNode),
+}
+
+impl From<JvmTypeNode> for JvmNodePayload {
+    fn from(n: JvmTypeNode) -> Self {
+        Self::Type(Box::new(n))
+    }
+}
+impl From<JvmMethodNode> for JvmNodePayload {
+    fn from(n: JvmMethodNode) -> Self {
+        Self::Method(Box::new(n))
+    }
+}
+impl From<JvmConstructorNode> for JvmNodePayload {
+    fn from(n: JvmConstructorNode) -> Self {
+        Self::Constructor(Box::new(n))
+    }
+}
+impl From<JvmFieldNode> for JvmNodePayload {
+    fn from(n: JvmFieldNode) -> Self {
+        Self::Field(Box::new(n))
+    }
+}
+impl From<JvmEnumConstantNode> for JvmNodePayload {
+    fn from(n: JvmEnumConstantNode) -> Self {
+        Self::EnumConstant(Box::new(n))
+    }
+}
+impl From<JvmAnnotationElementNode> for JvmNodePayload {
+    fn from(n: JvmAnnotationElementNode) -> Self {
+        Self::AnnotationElement(Box::new(n))
+    }
+}
+impl From<JvmPackageNode> for JvmNodePayload {
+    fn from(n: JvmPackageNode) -> Self {
+        Self::Package(Box::new(n))
+    }
+}
+impl From<JvmParameter> for JvmNodePayload {
+    fn from(n: JvmParameter) -> Self {
+        Self::Parameter(n)
+    }
 }
 
 impl JvmNodePayload {

@@ -593,7 +593,7 @@ fn emit_type_use(
     parent_plan_idx: usize,
 ) {
     let candidate_fqns = build_candidate_fqns(ctx, &name);
-    let payload = JavaNodePayload::TypeUse(JavaTypeUseNode {
+    let payload = JavaNodePayload::from(JavaTypeUseNode {
         header: JavaUseHeader {
             name,
             location,
@@ -728,13 +728,13 @@ fn extract_class_like(
     let modifiers = extract_modifiers(node, ctx.source);
     let type_parameters = extract_type_parameters(node, ctx.source);
 
-    let java_payload = JavaNodePayload::Type(JavaTypeNode {
+    let java_payload = JavaNodePayload::from(JavaTypeNode {
         header: java_header(ctx, &name, node, modifiers.clone()),
         kind: java_kind,
         type_parameters: type_parameters.clone(),
         record_components: Vec::new(),
     });
-    let jvm_payload = JvmNodePayload::Type(JvmTypeNode {
+    let jvm_payload = JvmNodePayload::from(JvmTypeNode {
         header: jvm_header(ctx, &name, node, modifiers),
         kind: jvm_kind,
         type_parameters,
@@ -836,13 +836,13 @@ fn extract_enum(ctx: &mut ParseContext, node: Node) {
 
     let modifiers = extract_modifiers(node, ctx.source);
 
-    let java_payload = JavaNodePayload::Type(JavaTypeNode {
+    let java_payload = JavaNodePayload::from(JavaTypeNode {
         header: java_header(ctx, &name, node, modifiers.clone()),
         kind: JavaTypeKind::Enum,
         type_parameters: Vec::new(),
         record_components: Vec::new(),
     });
-    let jvm_payload = JvmNodePayload::Type(JvmTypeNode {
+    let jvm_payload = JvmNodePayload::from(JvmTypeNode {
         header: jvm_header(ctx, &name, node, modifiers),
         kind: JvmTypeKind::Enum,
         type_parameters: Vec::new(),
@@ -882,11 +882,11 @@ fn extract_enum_constant(ctx: &mut ParseContext, node: Node) {
     let modifiers = vec![Modifier::Public, Modifier::Static, Modifier::Final];
     let enum_owner = parent_owner_fqn(ctx);
 
-    let java_payload = JavaNodePayload::EnumConstant(JavaEnumConstantNode {
+    let java_payload = JavaNodePayload::from(JavaEnumConstantNode {
         header: java_header(ctx, &name, node, modifiers.clone()),
         enum_owner: enum_owner.clone(),
     });
-    let jvm_payload = JvmNodePayload::EnumConstant(JvmEnumConstantNode {
+    let jvm_payload = JvmNodePayload::from(JvmEnumConstantNode {
         header: jvm_header(ctx, &name, node, modifiers),
         enum_owner,
     });
@@ -969,7 +969,7 @@ fn extract_method(ctx: &mut ParseContext, node: Node) {
 
     let has_body = node.child_by_field_name("body").is_some();
 
-    let java_payload = JavaNodePayload::Method(JavaMethodNode {
+    let java_payload = JavaNodePayload::from(JavaMethodNode {
         header: java_header(ctx, &name, node, modifiers.clone()),
         return_type: return_type.clone(),
         parameters: java_parameters,
@@ -977,7 +977,7 @@ fn extract_method(ctx: &mut ParseContext, node: Node) {
         throws: Vec::new(),
         has_body,
     });
-    let jvm_payload = JvmNodePayload::Method(JvmMethodNode {
+    let jvm_payload = JvmNodePayload::from(JvmMethodNode {
         header: jvm_header(ctx, &name, node, modifiers),
         owner,
         return_type: return_type.erasure(),
@@ -1019,13 +1019,13 @@ fn extract_constructor(ctx: &mut ParseContext, node: Node) {
         })
         .collect();
 
-    let java_payload = JavaNodePayload::Constructor(JavaConstructorNode {
+    let java_payload = JavaNodePayload::from(JavaConstructorNode {
         header: java_header(ctx, &name, node, modifiers.clone()),
         parameters: java_parameters,
         type_parameters: type_parameters.clone(),
         throws: Vec::new(),
     });
-    let jvm_payload = JvmNodePayload::Constructor(JvmConstructorNode {
+    let jvm_payload = JvmNodePayload::from(JvmConstructorNode {
         header: jvm_header(ctx, &name, node, modifiers),
         owner,
         parameters: jvm_parameters,
@@ -1058,13 +1058,13 @@ fn extract_fields(ctx: &mut ParseContext, node: Node) {
                 None => continue,
             };
 
-            let java_payload = JavaNodePayload::Field(JavaFieldNode {
+            let java_payload = JavaNodePayload::from(JavaFieldNode {
                 header: java_header(ctx, &name, child, modifiers.clone()),
                 field_type: field_type.clone(),
                 constant_value: None,
                 initialized: false,
             });
-            let jvm_payload = JvmNodePayload::Field(JvmFieldNode {
+            let jvm_payload = JvmNodePayload::from(JvmFieldNode {
                 header: jvm_header(ctx, &name, child, modifiers.clone()),
                 owner: owner.clone(),
                 field_type: field_type.clone(),

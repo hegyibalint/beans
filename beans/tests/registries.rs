@@ -24,7 +24,7 @@ use beans::{FallbackSubscription, NodePayload, QueryResult, Registries};
 // --- Payload helpers ---
 
 fn java_class(name: &str, fqn: &str) -> NodePayload {
-    NodePayload::Java(JavaNodePayload::Type(JavaTypeNode {
+    NodePayload::Java(JavaNodePayload::from(JavaTypeNode {
         header: JavaDeclHeader::new(name, fqn),
         kind: JavaTypeKind::Class,
         type_parameters: vec![],
@@ -33,7 +33,7 @@ fn java_class(name: &str, fqn: &str) -> NodePayload {
 }
 
 fn jvm_type(name: &str, fqn: &str, kind: JvmTypeKind) -> NodePayload {
-    NodePayload::Jvm(JvmNodePayload::Type(JvmTypeNode {
+    NodePayload::Jvm(JvmNodePayload::from(JvmTypeNode {
         header: JvmDeclHeader::new(name, fqn),
         kind,
         type_parameters: vec![],
@@ -43,7 +43,7 @@ fn jvm_type(name: &str, fqn: &str, kind: JvmTypeKind) -> NodePayload {
 }
 
 fn jvm_method(name: &str, fqn: &str, owner: &str, return_type: TypeRef) -> NodePayload {
-    NodePayload::Jvm(JvmNodePayload::Method(JvmMethodNode {
+    NodePayload::Jvm(JvmNodePayload::from(JvmMethodNode {
         header: JvmDeclHeader::new(name, fqn),
         owner: owner.into(),
         return_type,
@@ -199,7 +199,7 @@ fn package_registry_isolated_from_type_registry() {
     let registries = Registries::new();
 
     let pkg_payload =
-        NodePayload::Jvm(JvmNodePayload::Package(beans::jvm::JvmPackageNode {
+        NodePayload::Jvm(JvmNodePayload::from(beans::jvm::JvmPackageNode {
             header: JvmDeclHeader::new("com.example", "com.example"),
         }));
     let pkg_id = graph.insert(pkg_payload, None);
