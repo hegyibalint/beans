@@ -71,32 +71,13 @@ fn better(a: &JavaInstallation, b: &JavaInstallation) -> bool {
     (
         a.is_jdk(),
         ma.major,
-        version_key(&ma.version),
+        ma.version_segments(),
         std::cmp::Reverse(&a.java_home),
     ) > (
         b.is_jdk(),
         mb.major,
-        version_key(&mb.version),
+        mb.version_segments(),
         std::cmp::Reverse(&b.java_home),
     )
 }
 
-/// Numeric segments of a version string; non-numeric tails rank as 0.
-fn version_key(version: &str) -> Vec<u32> {
-    version
-        .split(['.', '_', '+', '-'])
-        .map(|seg| seg.parse().unwrap_or(0))
-        .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::version_key;
-
-    #[test]
-    fn version_key_orders_numerically_not_lexically() {
-        assert!(version_key("25.0.10") > version_key("25.0.9"));
-        assert!(version_key("21.0.2+13") > version_key("21.0.2"));
-        assert!(version_key("1.8.0_392") < version_key("1.8.0_402"));
-    }
-}
