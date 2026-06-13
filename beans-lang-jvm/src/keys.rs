@@ -38,6 +38,31 @@ impl SimpleNamed for JvmTypeKey {
     }
 }
 
+impl SimpleNamed for JvmMethodKey {
+    fn simple_name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl SimpleNamed for JvmFieldKey {
+    fn simple_name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl SimpleNamed for JvmConstructorKey {
+    // A constructor is found by its type's name (`new Service(...)`).
+    fn simple_name(&self) -> &str {
+        self.owner.simple_name()
+    }
+}
+
+impl SimpleNamed for PackageKey {
+    fn simple_name(&self) -> &str {
+        self.package.simple_name()
+    }
+}
+
 /// Key identifying a JVM field by its declaring type and simple name.
 ///
 /// Two fields cannot share a `(owner, name)` pair on the same class
