@@ -1,0 +1,60 @@
+# 037 — Intern FQN strings
+
+Status: pending
+Priority: high (sequence before #012 — JDK indexing multiplies the
+string population ~10×)
+
+## Motivation (measured)
+
+gradle/master baseline (10,187 files, 34 MB source): **581 MB RSS** —
+a ~17× blowup over source size, dominated by owned copies of
+overlapping qualified-name text. Per declaration the dotted string is
+owned by:
+
+1. the Java payload header (`JavaDeclHeader.fqn`)
+2. the `java.symbols` registry key (ADR-0007: identity lives in keys)
+3. the `ProviderHandle` (RAII removal needs its key)
+4. –6. the same three again for the JVM projection
+7. `JavaUseHeader.candidate_fqns` — 4–6 candidate clones per type-use
+8. every header's `name: String` — the last segment as its own
+   allocation
+
+Each copy is justified as a *field*; none is justified as a separate
+*buffer*. (History: the simple-name index briefly added a 9th copy at
++138 MB; fixed by storing `NodeId`s — see `912b904`.)
+
+## Approach
+
+`Fqn` keeps its API, swaps its representation for a shared buffer —
+`Arc<str>` via an intern table, or a symbol id into a per-`Beans`
+string table (decide against measured shares, see prep). All copies
+become pointer-width; equality/hash can become pointer/id-based as a
+bonus.
+
+Constraints:
+
+- **Intern at integrate time.** Parsing is data-parallel with
+  self-contained outputs (ADR-0005); a shared table must not be
+  touched from rayon workers. The serial integrate step re-keys
+  strings as payloads enter the graph — same place registration
+  already happens.
+- **Per-workspace table** (owned by `Beans`/registries side), not a
+  global — multiple workspaces per process (ADR-0015 rationale).
+- `name`/simple-name fields should become views into the interned
+  buffer (or derived on demand via `Fqn::simple_name()`) rather than
+  separate allocations.
+
+## Prep (first step)
+
+Extend `beans/examples/index_workspace.rs` to report string bytes by
+category (payload fqns, payload names, candidate_fqns, registry keys,
+handles) so the mechanism choice is made on shares, not guesses — and
+so the win is measurable after.
+
+## Acceptance
+
+- gradle/master RSS reduced substantially (target: order of one-third
+  off the 581 MB baseline; pin the real number after prep).
+- No measurable regression in parse throughput (interning must not
+  serialize the parallel phase) or lookup latency.
+- Suite green; no public API change to `Fqn` consumers.
