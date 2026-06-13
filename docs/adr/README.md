@@ -114,6 +114,7 @@ by area.
 | [0028](0028-stale-while-revalidate-posture.md) | Stale-while-revalidate is the default posture | foundation |
 | [0029](0029-layer-1-ir-declarations-and-use-sites.md) | The layer-1 IR contains declarations and use sites, partitioned by modifiability | graph |
 | [0030](0030-vertical-crates-engine-jvm-model-language-verticals.md) | Split the workspace into engine, shared JVM model, and per-language vertical crates | crates |
+| [0031](0031-one-jvm-sidecar-as-late-arriving-data-pipe.md) | One JVM sidecar as a late-arriving data pipe | tooling |
 
 ## Authoring workflow
 
