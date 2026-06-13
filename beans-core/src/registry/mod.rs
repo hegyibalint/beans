@@ -46,7 +46,7 @@
 //! [`graph`]: crate::graph
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::hash::Hash;
 use std::rc::{Rc, Weak};
 
@@ -100,10 +100,13 @@ pub type Callback = Rc<dyn Fn()>;
 
 pub(crate) struct RegistryInner<K> {
     providers: HashMap<K, Vec<NodeId>>,
-    /// Eager reverse index: simple name → keys carrying it. Maintained
+    /// Eager reverse index: simple name → provider nodes. Maintained
     /// by add/remove_provider; queried by
-    /// [`Registry::query_simple_name`] in O(1).
-    by_simple_name: HashMap<String, HashSet<K>>,
+    /// [`Registry::query_simple_name`] in O(1). Stores `NodeId`s, not
+    /// keys: consumers resolve through the graph anyway (kind filter,
+    /// FQN from the payload header), and cloned keys would duplicate
+    /// every FQN string a second time per registry.
+    by_simple_name: HashMap<String, Vec<NodeId>>,
     subscribers: HashMap<K, Vec<(SubscriptionId, Callback)>>,
     next_id: u64,
 }
@@ -127,10 +130,15 @@ impl<K> RegistryInner<K> {
 
 impl<K: RegistryKey> RegistryInner<K> {
     fn add_provider(&mut self, key: K, node: NodeId) {
-        self.by_simple_name
-            .entry(key.simple_name().to_string())
-            .or_default()
-            .insert(key.clone());
+        // get_mut-then-insert instead of entry(): the entry API would
+        // allocate the name String on every call, including the common
+        // bucket-exists case.
+        if let Some(bucket) = self.by_simple_name.get_mut(key.simple_name()) {
+            bucket.push(node);
+        } else {
+            self.by_simple_name
+                .insert(key.simple_name().to_string(), vec![node]);
+        }
         self.providers.entry(key).or_default().push(node);
     }
 
@@ -146,12 +154,14 @@ impl<K: RegistryKey> RegistryInner<K> {
             }
             if list.is_empty() {
                 self.providers.remove(key);
-                if let Some(set) = self.by_simple_name.get_mut(key.simple_name()) {
-                    set.remove(key);
-                    if set.is_empty() {
-                        self.by_simple_name.remove(key.simple_name());
-                    }
-                }
+            }
+        }
+        if let Some(bucket) = self.by_simple_name.get_mut(key.simple_name()) {
+            if let Some(pos) = bucket.iter().position(|n| *n == node) {
+                bucket.swap_remove(pos);
+            }
+            if bucket.is_empty() {
+                self.by_simple_name.remove(key.simple_name());
             }
         }
     }
@@ -234,20 +244,23 @@ impl<K: RegistryKey> Registry<K> {
             .unwrap_or_default()
     }
 
-    /// All keys whose [`SimpleNamed::simple_name`] equals `name` —
-    /// one hash lookup against the eager index `add_provider`/
-    /// `remove_provider` maintain.
+    /// Provider nodes of every key whose
+    /// [`SimpleNamed::simple_name`] equals `name` — one hash lookup
+    /// against the eager index `add_provider`/`remove_provider`
+    /// maintain. Returns `NodeId`s; callers filter and read FQNs
+    /// through the graph (which they need for kind checks anyway).
     ///
     /// History: this began as a key-set scan (measured-first posture).
     /// At gradle/master scale the scan cost 8ms per call and the
     /// missing-import rule pays one call per unresolved name per
-    /// recompute — 233ms/file. The index was the measured upgrade.
-    pub fn query_simple_name(&self, name: &str) -> Vec<K> {
+    /// recompute — 233ms/file. The index was the measured upgrade;
+    /// storing ids instead of cloned keys was the memory follow-up.
+    pub fn query_simple_name(&self, name: &str) -> Vec<NodeId> {
         self.inner
             .borrow()
             .by_simple_name
             .get(name)
-            .map(|set| set.iter().cloned().collect())
+            .cloned()
             .unwrap_or_default()
     }
 
@@ -404,11 +417,17 @@ mod tests {
         let a = TestKey("Service");
         let b = TestKey("Repository");
 
-        let ha = registry.register(a.clone(), NodeId::placeholder(1));
-        let _hb = registry.register(b.clone(), NodeId::placeholder(2));
+        let ha = registry.register(a, NodeId::placeholder(1));
+        let _hb = registry.register(b, NodeId::placeholder(2));
 
-        assert_eq!(registry.query_simple_name("Service"), vec![a.clone()]);
-        assert_eq!(registry.query_simple_name("Repository"), vec![b]);
+        assert_eq!(
+            registry.query_simple_name("Service"),
+            vec![NodeId::placeholder(1)]
+        );
+        assert_eq!(
+            registry.query_simple_name("Repository"),
+            vec![NodeId::placeholder(2)]
+        );
         assert!(registry.query_simple_name("Missing").is_empty());
 
         // Dropping the provider handle must erase the index entry too —
