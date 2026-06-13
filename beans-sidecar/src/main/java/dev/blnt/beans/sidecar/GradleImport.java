@@ -3,6 +3,8 @@ package dev.blnt.beans.sidecar;
 import com.google.gson.JsonObject;
 import org.gradle.tooling.GradleConnector;
 import org.gradle.tooling.ProjectConnection;
+import org.gradle.tooling.events.OperationType;
+import org.gradle.tooling.events.StartEvent;
 import org.gradle.tooling.model.idea.IdeaContentRoot;
 import org.gradle.tooling.model.idea.IdeaDependency;
 import org.gradle.tooling.model.idea.IdeaModule;
@@ -12,6 +14,7 @@ import org.gradle.tooling.model.idea.IdeaSingleEntryLibraryDependency;
 import org.gradle.tooling.model.idea.IdeaSourceDirectory;
 
 import java.io.File;
+import java.util.EnumSet;
 import java.util.function.Consumer;
 
 /**
@@ -37,9 +40,19 @@ final class GradleImport {
         try (ProjectConnection connection = connector.connect()) {
             IdeaProject idea = connection
                     .model(IdeaProject.class)
+                    // Quiet daemon logging; our progress narration comes
+                    // from typed events, not log output.
+                    .withArguments("--quiet")
+                    // Narrate only phase-level operations. The unfiltered
+                    // legacy listener fires for every dependency download
+                    // and inner operation — a firehose no UI wants.
                     .addProgressListener(
-                            (org.gradle.tooling.ProgressListener)
-                                    event -> progress.accept(event.getDescription()))
+                            event -> {
+                                if (event instanceof StartEvent) {
+                                    progress.accept(event.getDescriptor().getDisplayName());
+                                }
+                            },
+                            EnumSet.of(OperationType.PROJECT_CONFIGURATION, OperationType.BUILD_PHASE))
                     .get();
             return toWorkspaceModel(idea);
         }
