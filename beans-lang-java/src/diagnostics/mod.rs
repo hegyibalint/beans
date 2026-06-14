@@ -11,7 +11,7 @@
 //!
 //! - [`abstract_method_with_body`] — `abstract` method declarations may
 //!   not carry a `{ ... }` body (JLS §8.4.3.1). Reads the
-//!   [`JavaMethodNode::has_body`](crate::payload::JavaMethodNode::has_body)
+//!   [`JavaMethodNode::has_body`](crate::model::payload::JavaMethodNode::has_body)
 //!   flag the walker writes.
 //! - [`unused_import`] — single-type imports that no `JavaTypeUseNode`
 //!   in the file resolves to. Wildcard and static imports stay
@@ -24,13 +24,13 @@ use std::path::Path;
 use beans_core::diagnostics::{Diagnostic, DiagnosticSeverity};
 use beans_core::graph::{Graph, NodeId};
 use beans_lang_jvm::Modifier;
-use beans_lang_jvm::payload::AsJvm;
+use beans_lang_jvm::model::payload::AsJvm;
 use beans_lang_jvm::registries::JvmRegistries;
 
-use crate::keys::JavaSymbolKey;
-use crate::payload::{AsJava, JavaNodePayload};
-use crate::registries::JavaRegistries;
-use crate::syntax::Import;
+use crate::model::keys::JavaSymbolKey;
+use crate::model::payload::{AsJava, JavaNodePayload};
+use crate::model::registries::JavaRegistries;
+use crate::source::Import;
 
 /// Read-only view the Java rules see. Borrowed from the engine; lives
 /// only for the duration of the check call.

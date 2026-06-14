@@ -17,18 +17,18 @@ use std::path::{Path, PathBuf};
 
 use tree_sitter::{Node, Parser};
 
-use crate::payload::{
+use crate::model::payload::{
     JavaConstructorNode, JavaDeclHeader, JavaEnumConstantNode, JavaFieldNode, JavaMethodNode,
     JavaNodePayload, JavaParameter, JavaTypeKind, JavaTypeNode, JavaTypeUseNode, JavaUseHeader,
 };
-use crate::syntax::{Import, extract_imports};
-use crate::types::TypeRef as ParsedTypeRef;
+use crate::model::type_ref::TypeRef as ParsedTypeRef;
+use crate::source::{Import, extract_imports};
 use beans_core::Interner;
 use beans_core::graph::NodeBehavior;
 use beans_core::graph::arena::{Graph, NodeId};
 use beans_core::primitives::Location;
-use beans_lang_jvm::fqn::Fqn;
-use beans_lang_jvm::payload::{
+use beans_lang_jvm::model::fqn::Fqn;
+use beans_lang_jvm::model::payload::{
     JvmConstructorNode, JvmDeclHeader, JvmEnrichments, JvmEnumConstantNode, JvmFieldNode,
     JvmMethodNode, JvmNodePayload, JvmParameter, JvmTypeKind, JvmTypeNode,
 };
