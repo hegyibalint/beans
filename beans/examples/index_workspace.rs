@@ -1,5 +1,7 @@
-//! Index a sidecar-imported workspace into the beans engine and report
-//! what that costs — the real-world measurement harness.
+//! Index a sidecar-imported workspace through the [`beans::Workspace`]
+//! facade and report what that costs — the real-world measurement
+//! harness, and a worked example of a non-LSP consumer driving the
+//! facade directly.
 //!
 //! ```text
 //! cargo run --release -p beans --example index_workspace -- \
@@ -7,16 +9,18 @@
 //! ```
 //!
 //! Reads a `WorkspaceModel` JSON (the sidecar's `gradle/import` result),
-//! walks the source roots for `.java` files, parses and integrates them
-//! into one graph, then times a few engine queries at scale.
-//! Sequential on purpose: the numbers are a clean single-thread
-//! baseline (production parsing fans out per ADR-0005).
+//! indexes each source root through [`beans::Workspace::index_workspace`]
+//! — the production path: parallel parse, serial integrate, interner
+//! purge (ADR-0005) — then times a few engine queries at scale and
+//! exercises the facade's diagnostics/outline API. Bulk indexing does
+//! not retain source text, so the memory figures reflect the graph, not
+//! buffered source.
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use beans::Beans;
 use beans::languages::java;
+use beans::{Store, Workspace};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -43,64 +47,50 @@ fn main() {
     roots.sort();
     roots.dedup();
 
+    // Discover files up front for the count + byte total (metadata only,
+    // no reads — the facade does the reading during indexing).
     let mut files: Vec<PathBuf> = Vec::new();
     for root in &roots {
         walk_java(root, &mut files);
     }
+    let bytes: u64 = files
+        .iter()
+        .filter_map(|f| std::fs::metadata(f).ok())
+        .map(|m| m.len())
+        .sum();
     println!(
-        "{} roots ({}tests), {} .java files",
+        "{} roots ({}tests), {} .java files, {:.1} MB",
         roots.len(),
         if include_tests { "with " } else { "no " },
-        files.len()
+        files.len(),
+        bytes as f64 / 1e6
     );
 
-    let mut beans = Beans::new();
-    let mut parsed_files = Vec::with_capacity(files.len());
-    let mut bytes: u64 = 0;
-    let mut skipped = 0;
-
-    let t_parse = Instant::now();
-    for file in &files {
-        let Ok(source) = std::fs::read_to_string(file) else {
-            skipped += 1;
-            continue;
-        };
-        bytes += source.len() as u64;
-        parsed_files.push(java::parse_java_to_graph(file, &source));
+    // Index every source root through the facade. This is the same path
+    // the LSP drives on startup: parallel parse, serial integrate, and a
+    // post-pass interner purge.
+    let mut ws = Workspace::new();
+    let t_index = Instant::now();
+    let mut indexed = 0;
+    for root in &roots {
+        indexed = ws.index_workspace(root);
     }
-    let parse_elapsed = t_parse.elapsed();
+    let index_elapsed = t_index.elapsed();
 
-    let t_integrate = Instant::now();
-    let mut file_roots: std::collections::HashMap<PathBuf, Vec<beans::graph::NodeId>> =
-        std::collections::HashMap::new();
-    for parsed in parsed_files {
-        let path = parsed.path.clone();
-        let inserted =
-            java::integrate(&mut beans.graph, &beans.registries, &beans.interner, parsed);
-        let roots: Vec<_> = inserted
-            .into_iter()
-            .filter(|&id| beans.graph.get(id).is_some_and(|n| n.parent.is_none()))
-            .collect();
-        file_roots.insert(path, roots);
-    }
-    let integrate_elapsed = t_integrate.elapsed();
-
-    let nodes = beans.graph.iter().count();
-    memory_anatomy(&beans);
+    let nodes = ws.store().graph.iter().count();
+    memory_anatomy(ws.store());
     println!(
-        "parse:     {parse_elapsed:.2?}  ({:.1} MB, {skipped} skipped, {:.0} files/s)",
-        bytes as f64 / 1e6,
-        files.len() as f64 / parse_elapsed.as_secs_f64()
-    );
-    println!(
-        "integrate: {integrate_elapsed:.2?}  ({nodes} graph nodes, {:.0} nodes/ms)",
-        nodes as f64 / integrate_elapsed.as_millis().max(1) as f64
+        "index: {index_elapsed:.2?}  ({indexed} files indexed, {nodes} graph nodes, \
+         {:.0} files/s, {:.0} nodes/ms)",
+        indexed as f64 / index_elapsed.as_secs_f64().max(1e-6),
+        nodes as f64 / index_elapsed.as_millis().max(1) as f64
     );
     println!("rss:       {} MB", rss_mb());
 
-    // Engine queries at scale.
+    // Engine queries at scale, through the facade's storage handle.
+    let store = ws.store();
     let t = Instant::now();
-    let hits = beans.registries.java.symbols.query_simple_name("Project");
+    let hits = store.registries.java.symbols.query_simple_name("Project");
     println!(
         "query_simple_name(\"Project\"): {} keys in {:.2?}",
         hits.len(),
@@ -109,8 +99,8 @@ fn main() {
 
     let t = Instant::now();
     let resolved = java::lookup_fqn(
-        &beans.registries.java,
-        &beans.registries.jvm,
+        &store.registries.java,
+        &store.registries.jvm,
         "org.gradle.api.Project",
     );
     println!(
@@ -119,22 +109,27 @@ fn main() {
         t.elapsed()
     );
 
+    // Facade query API: diagnostics + outline for the first indexed file.
     if let Some(file) = files.first() {
-        let roots = file_roots.get(file).map(|v| v.as_slice()).unwrap_or(&[]);
+        let name = file.file_name().unwrap().to_string_lossy();
         let t = Instant::now();
-        let diags = beans::compute_diagnostics(&beans.graph, &beans.registries, file, &[], roots);
+        let diags = ws.diagnostics(file);
         println!(
-            "compute_diagnostics({}): {} findings in {:.2?}",
-            file.file_name().unwrap().to_string_lossy(),
+            "diagnostics({name}): {} findings in {:.2?}",
             diags.len(),
             t.elapsed()
+        );
+        let symbols = ws.document_symbols(file);
+        println!(
+            "document_symbols({name}): {} top-level symbols",
+            symbols.len()
         );
     }
 }
 
 /// Approximate per-category heap anatomy of the graph — the share
 /// measurement gating backlog #037's strong-form design.
-fn memory_anatomy(beans: &Beans) {
+fn memory_anatomy(store: &Store) {
     use beans::NodePayload;
     use beans::jvm::{JvmNodePayload, TypeRef};
     use beans::languages::java::JavaNodePayload;
@@ -173,7 +168,7 @@ fn memory_anatomy(beans: &Beans) {
         }
     };
 
-    for (_id, node) in beans.graph.iter() {
+    for (_id, node) in store.graph.iter() {
         handle_count += node.handles.len() as u64;
         match &node.payload {
             NodePayload::Java(j) => {
@@ -223,7 +218,7 @@ fn memory_anatomy(beans: &Beans) {
         }
     }
 
-    let slots = beans.graph.iter().count() as u64;
+    let slots = store.graph.iter().count() as u64;
     let payload_width = std::mem::size_of::<NodePayload>() as u64;
     println!(
         "
