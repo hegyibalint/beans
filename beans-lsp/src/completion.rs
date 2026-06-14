@@ -169,9 +169,10 @@ mod tests {
     ) -> (Graph<NodePayload>, Vec<beans::graph::NodeId>) {
         let mut graph: Graph<NodePayload> = Graph::new();
         let registries = Registries::new();
+        let interner = beans::Interner::new();
         let parsed =
             java::parse_java_to_graph(std::path::Path::new("Test.java"), source);
-        let inserted = java::integrate(&mut graph, &registries, parsed);
+        let inserted = java::integrate(&mut graph, &registries, &interner, parsed);
         (graph, inserted)
     }
 

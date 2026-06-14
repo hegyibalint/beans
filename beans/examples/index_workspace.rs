@@ -73,10 +73,10 @@ fn main() {
     let t_integrate = Instant::now();
     let mut file_roots: std::collections::HashMap<PathBuf, Vec<beans::graph::NodeId>> =
         std::collections::HashMap::new();
-    for mut parsed in parsed_files {
-        parsed.intern(&beans.interner);
+    for parsed in parsed_files {
         let path = parsed.path.clone();
-        let inserted = java::integrate(&mut beans.graph, &beans.registries, parsed);
+        let inserted =
+            java::integrate(&mut beans.graph, &beans.registries, &beans.interner, parsed);
         let roots: Vec<_> = inserted
             .into_iter()
             .filter(|&id| beans.graph.get(id).is_some_and(|n| n.parent.is_none()))
