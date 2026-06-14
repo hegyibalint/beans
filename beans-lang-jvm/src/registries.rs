@@ -8,7 +8,7 @@
 
 use beans_core::registry::Registry;
 
-use crate::keys::{JvmConstructorKey, JvmFieldKey, JvmMethodKey, JvmTypeKey, PackageKey};
+use crate::model::keys::{JvmConstructorKey, JvmFieldKey, JvmMethodKey, JvmTypeKey, PackageKey};
 
 /// Registries for the JVM projection layer. Populated by every
 /// vertical (each language registers its projections) and by bytecode
