@@ -7,7 +7,7 @@
 
 use beans_core::registry::Registry;
 
-use crate::keys::JavaSymbolKey;
+use crate::model::keys::JavaSymbolKey;
 
 #[derive(Default)]
 pub struct JavaRegistries {

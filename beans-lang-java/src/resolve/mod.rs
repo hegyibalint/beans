@@ -25,13 +25,13 @@
 //! Hover, etc.) is the consumer's job — per ADR-0020 LSP types do not
 //! enter this layer.
 
-use crate::keys::JavaSymbolKey;
-use crate::payload::AsJava;
-use crate::registries::JavaRegistries;
-use crate::syntax::Import;
+use crate::model::keys::JavaSymbolKey;
+use crate::model::payload::AsJava;
+use crate::model::registries::JavaRegistries;
+use crate::source::Import;
 use beans_core::graph::arena::{Graph, NodeId};
-use beans_lang_jvm::fqn::Fqn;
-use beans_lang_jvm::keys::{JvmTypeKey, PackageKey};
+use beans_lang_jvm::model::fqn::Fqn;
+use beans_lang_jvm::model::keys::{JvmTypeKey, PackageKey};
 use beans_lang_jvm::registries::JvmRegistries;
 
 /// Resolve a Java identifier at a use site.
