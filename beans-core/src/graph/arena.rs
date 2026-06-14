@@ -54,7 +54,10 @@ impl NodeId {
     /// `NodeId`s only by inserting into a [`Graph`].
     #[cfg(test)]
     pub(crate) fn placeholder(slot: u32) -> Self {
-        Self { slot, generation: 0 }
+        Self {
+            slot,
+            generation: 0,
+        }
     }
 }
 
@@ -287,20 +290,56 @@ impl<P> Graph<P> {
     /// certainly want a dedicated [`Registry`](crate::registry::Registry)
     /// keyed by whatever discriminator the query carries.
     pub fn iter(&self) -> impl Iterator<Item = (NodeId, &NodeData<P>)> {
-        self.slots
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, slot)| {
-                slot.data.as_ref().map(|n| {
-                    (
-                        NodeId {
-                            slot: idx as u32,
-                            generation: slot.generation,
-                        },
-                        n,
-                    )
-                })
+        self.slots.iter().enumerate().filter_map(|(idx, slot)| {
+            slot.data.as_ref().map(|n| {
+                (
+                    NodeId {
+                        slot: idx as u32,
+                        generation: slot.generation,
+                    },
+                    n,
+                )
             })
+        })
+    }
+}
+
+impl<P> Graph<P> {
+    /// Preorder traversal of the hard-link subtrees rooted at `roots` —
+    /// the sanctioned way to visit one file's nodes. Per ADR-0029 a
+    /// file's roots own every declaration and use site in the file, so
+    /// this is "iterate the file" without touching the rest of the
+    /// arena (which [`Graph::iter`]'s docs forbid on hot paths).
+    ///
+    /// Stale ids are skipped via the generational [`Graph::get`]. The
+    /// forest is acyclic by construction (parent set at insert, never
+    /// mutated), so no cycle guard is needed.
+    pub fn descendants<'a>(&'a self, roots: &[NodeId]) -> Descendants<'a, P> {
+        Descendants {
+            graph: self,
+            stack: roots.iter().rev().copied().collect(),
+        }
+    }
+}
+
+/// Iterator over a hard-link subtree in preorder. See
+/// [`Graph::descendants`].
+pub struct Descendants<'a, P> {
+    graph: &'a Graph<P>,
+    stack: Vec<NodeId>,
+}
+
+impl<'a, P> Iterator for Descendants<'a, P> {
+    type Item = (NodeId, &'a NodeData<P>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(id) = self.stack.pop() {
+            if let Some(node) = self.graph.get(id) {
+                self.stack.extend(node.children.iter().rev().copied());
+                return Some((id, node));
+            }
+        }
+        None
     }
 }
 
@@ -377,7 +416,10 @@ mod tests {
         // The old `b` NodeId still has generation 0; the slot is at
         // generation 1; lookup returns None. This is the ABA fix: stale
         // ids never silently resolve to their replacement.
-        assert!(graph.get(b).is_none(), "stale NodeId does not alias new occupant");
+        assert!(
+            graph.get(b).is_none(),
+            "stale NodeId does not alias new occupant"
+        );
 
         // Original slots a and c are untouched.
         assert_eq!(graph.get(a).unwrap().payload.name, "a");
@@ -416,45 +458,9 @@ mod tests {
         let _replacement = graph.insert(TestNode::new("second"), None);
         // The replacement landed in the same slot; the stale id has the
         // old generation; `get` rejects it.
-        assert!(graph.get(stale).is_none(), "stale id must not resolve to replacement");
-    }
-}
-
-impl<P> Graph<P> {
-    /// Preorder traversal of the hard-link subtrees rooted at `roots` —
-    /// the sanctioned way to visit one file's nodes. Per ADR-0029 a
-    /// file's roots own every declaration and use site in the file, so
-    /// this is "iterate the file" without touching the rest of the
-    /// arena (which [`Graph::iter`]'s docs forbid on hot paths).
-    ///
-    /// Stale ids are skipped via the generational [`Graph::get`]. The
-    /// forest is acyclic by construction (parent set at insert, never
-    /// mutated), so no cycle guard is needed.
-    pub fn descendants<'a>(&'a self, roots: &[NodeId]) -> Descendants<'a, P> {
-        Descendants {
-            graph: self,
-            stack: roots.iter().rev().copied().collect(),
-        }
-    }
-}
-
-/// Iterator over a hard-link subtree in preorder. See
-/// [`Graph::descendants`].
-pub struct Descendants<'a, P> {
-    graph: &'a Graph<P>,
-    stack: Vec<NodeId>,
-}
-
-impl<'a, P> Iterator for Descendants<'a, P> {
-    type Item = (NodeId, &'a NodeData<P>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while let Some(id) = self.stack.pop() {
-            if let Some(node) = self.graph.get(id) {
-                self.stack.extend(node.children.iter().rev().copied());
-                return Some((id, node));
-            }
-        }
-        None
+        assert!(
+            graph.get(stale).is_none(),
+            "stale id must not resolve to replacement"
+        );
     }
 }

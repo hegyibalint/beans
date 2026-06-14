@@ -114,10 +114,7 @@ impl WorkerHandle {
     /// worker has exited (e.g., during shutdown after the channel
     /// closes); LSP handlers treat that as "no result" rather than
     /// surfacing the error.
-    pub async fn send<R>(
-        &self,
-        build_cmd: impl FnOnce(oneshot::Sender<R>) -> Cmd,
-    ) -> Option<R> {
+    pub async fn send<R>(&self, build_cmd: impl FnOnce(oneshot::Sender<R>) -> Cmd) -> Option<R> {
         let (tx, rx) = oneshot::channel();
         let cmd = build_cmd(tx);
         if self.sender.send(cmd).await.is_err() {
@@ -183,10 +180,7 @@ fn handle(cmd: Cmd, state: &mut ServerState) {
         Cmd::DidSave { uri, reply } => {
             // No new text supplied; re-read from disk.
             let diagnostics = reindex_and_diagnose(state, &uri, None);
-            let _ = reply.send(DiagnosticsForFile {
-                uri,
-                diagnostics,
-            });
+            let _ = reply.send(DiagnosticsForFile { uri, diagnostics });
         }
         Cmd::GotoDefinition { uri, pos, reply } => {
             let _ = reply.send(handle_goto_definition(state, &uri, pos));
@@ -239,32 +233,36 @@ fn diagnostics_for_path(state: &ServerState, path: &Path) -> Vec<Diagnostic> {
         .get(path)
         .map(|v| v.as_slice())
         .unwrap_or(&[]);
-    compute_diagnostics(&state.beans.graph, &state.beans.registries, path, imports, roots)
-        .into_iter()
-        .map(|d| Diagnostic {
-            range: Range {
-                start: Position {
-                    line: d.location.start_line,
-                    character: d.location.start_col,
-                },
-                end: Position {
-                    line: d.location.end_line,
-                    character: d.location.end_col,
-                },
+    compute_diagnostics(
+        &state.beans.graph,
+        &state.beans.registries,
+        path,
+        imports,
+        roots,
+    )
+    .into_iter()
+    .map(|d| Diagnostic {
+        range: Range {
+            start: Position {
+                line: d.location.start_line,
+                character: d.location.start_col,
             },
-            severity: Some(match d.severity {
-                beans::diagnostics::DiagnosticSeverity::Error => DiagnosticSeverity::ERROR,
-                beans::diagnostics::DiagnosticSeverity::Warning => DiagnosticSeverity::WARNING,
-                beans::diagnostics::DiagnosticSeverity::Information => {
-                    DiagnosticSeverity::INFORMATION
-                }
-                beans::diagnostics::DiagnosticSeverity::Hint => DiagnosticSeverity::HINT,
-            }),
-            code: d.code.map(NumberOrString::String),
-            message: d.message,
-            ..Default::default()
-        })
-        .collect()
+            end: Position {
+                line: d.location.end_line,
+                character: d.location.end_col,
+            },
+        },
+        severity: Some(match d.severity {
+            beans::diagnostics::DiagnosticSeverity::Error => DiagnosticSeverity::ERROR,
+            beans::diagnostics::DiagnosticSeverity::Warning => DiagnosticSeverity::WARNING,
+            beans::diagnostics::DiagnosticSeverity::Information => DiagnosticSeverity::INFORMATION,
+            beans::diagnostics::DiagnosticSeverity::Hint => DiagnosticSeverity::HINT,
+        }),
+        code: d.code.map(NumberOrString::String),
+        message: d.message,
+        ..Default::default()
+    })
+    .collect()
 }
 
 fn handle_goto_definition(
@@ -281,11 +279,7 @@ fn handle_goto_definition(
     Some(GotoDefinitionResponse::Scalar(lsp_loc))
 }
 
-fn handle_references(
-    state: &ServerState,
-    uri: &Url,
-    pos: Position,
-) -> Option<Vec<Location>> {
+fn handle_references(state: &ServerState, uri: &Url, pos: Position) -> Option<Vec<Location>> {
     let text = document_text(state, uri)?;
     let word = word_at_position(&text, pos.line, pos.character)?;
 
@@ -348,7 +342,12 @@ fn handle_code_action(
     if fixes.is_empty() {
         return None;
     }
-    Some(fixes.into_iter().map(|f| fix_to_code_action(uri, f)).collect())
+    Some(
+        fixes
+            .into_iter()
+            .map(|f| fix_to_code_action(uri, f))
+            .collect(),
+    )
 }
 
 /// Map a domain [`beans::Fix`] onto the protocol envelope. The only
@@ -451,8 +450,11 @@ fn build_document_symbol(
 
     let detail = match &node.payload {
         NodePayload::Java(java::JavaNodePayload::Method(m)) => {
-            let params: Vec<String> =
-                m.parameters.iter().map(|p| p.param_type.to_string()).collect();
+            let params: Vec<String> = m
+                .parameters
+                .iter()
+                .map(|p| p.param_type.to_string())
+                .collect();
             Some(format!("({}) -> {}", params.join(", "), m.return_type))
         }
         NodePayload::Java(java::JavaNodePayload::Field(f)) => Some(f.field_type.to_string()),
@@ -516,7 +518,14 @@ fn resolve_at_cursor(
     }
 
     let word = word_at_position(text, pos.line, pos.character)?;
-    java::resolve_name(&word, imports, pkg, &state.beans.registries.java, &state.beans.registries.jvm, &state.beans.graph)
+    java::resolve_name(
+        &word,
+        imports,
+        pkg,
+        &state.beans.registries.java,
+        &state.beans.registries.jvm,
+        &state.beans.graph,
+    )
 }
 
 fn word_at_position(text: &str, line: u32, character: u32) -> Option<String> {
@@ -756,7 +765,10 @@ mod tests {
             symbol_kind_to_lsp(SymbolKind::Interface),
             LspSymbolKind::INTERFACE
         );
-        assert_eq!(symbol_kind_to_lsp(SymbolKind::Method), LspSymbolKind::METHOD);
+        assert_eq!(
+            symbol_kind_to_lsp(SymbolKind::Method),
+            LspSymbolKind::METHOD
+        );
         assert_eq!(symbol_kind_to_lsp(SymbolKind::Field), LspSymbolKind::FIELD);
         assert_eq!(
             symbol_kind_to_lsp(SymbolKind::Constructor),
@@ -849,7 +861,14 @@ public class Dog {
             path,
             "package com.test;\npublic class Foo { public void oldMethod() {} }",
         );
-        assert!(java::lookup_fqn(&state.beans.registries.java, &state.beans.registries.jvm, "com.test.Foo.oldMethod").is_some());
+        assert!(
+            java::lookup_fqn(
+                &state.beans.registries.java,
+                &state.beans.registries.jvm,
+                "com.test.Foo.oldMethod"
+            )
+            .is_some()
+        );
 
         workspace::integrate_source(
             &mut state,
@@ -857,10 +876,22 @@ public class Dog {
             "package com.test;\npublic class Foo { public void newMethod() {} }",
         );
         assert!(
-            java::lookup_fqn(&state.beans.registries.java, &state.beans.registries.jvm, "com.test.Foo.oldMethod").is_none(),
+            java::lookup_fqn(
+                &state.beans.registries.java,
+                &state.beans.registries.jvm,
+                "com.test.Foo.oldMethod"
+            )
+            .is_none(),
             "old method should be unregistered after reindex"
         );
-        assert!(java::lookup_fqn(&state.beans.registries.java, &state.beans.registries.jvm, "com.test.Foo.newMethod").is_some());
+        assert!(
+            java::lookup_fqn(
+                &state.beans.registries.java,
+                &state.beans.registries.jvm,
+                "com.test.Foo.newMethod"
+            )
+            .is_some()
+        );
     }
 
     #[test]
@@ -895,7 +926,14 @@ public class Dog {
         );
 
         // Cursor on the first `process` declaration.
-        let result = handle_references(&state, &uri, Position { line: 2, character: 16 });
+        let result = handle_references(
+            &state,
+            &uri,
+            Position {
+                line: 2,
+                character: 16,
+            },
+        );
         let locations = result.expect("references should hit");
         assert_eq!(locations.len(), 2, "two `process` methods expected");
     }
@@ -914,15 +952,23 @@ public class Dog {
             model,
             "package com.example.model;\npublic class Service {}\n",
         );
-        let app_text = "package com.example.app;\npublic class App {\n    private Service service;\n}\n";
+        let app_text =
+            "package com.example.app;\npublic class App {\n    private Service service;\n}\n";
         workspace::integrate_source(&mut state, app, app_text);
 
         let uri = Url::from_file_path(app).unwrap();
         state.open_files.insert(uri.clone(), app_text.to_string());
 
         // Cursor inside the `Service` identifier on line 2.
-        let actions = handle_code_action(&state, &uri, Position { line: 2, character: 14 })
-            .expect("an import fix should be offered");
+        let actions = handle_code_action(
+            &state,
+            &uri,
+            Position {
+                line: 2,
+                character: 14,
+            },
+        )
+        .expect("an import fix should be offered");
         assert_eq!(actions.len(), 1);
         let CodeActionOrCommand::CodeAction(action) = &actions[0] else {
             panic!("expected a CodeAction");
@@ -932,11 +978,28 @@ public class Dog {
         let changes = action.edit.as_ref().unwrap().changes.as_ref().unwrap();
         let edits = changes.get(&uri).unwrap();
         assert_eq!(edits.len(), 1);
-        assert_eq!(edits[0].range.start, Position { line: 1, character: 0 });
-        assert!(edits[0].new_text.contains("import com.example.model.Service;"));
+        assert_eq!(
+            edits[0].range.start,
+            Position {
+                line: 1,
+                character: 0
+            }
+        );
+        assert!(
+            edits[0]
+                .new_text
+                .contains("import com.example.model.Service;")
+        );
 
         // A resolved position (the class name declaration) offers nothing.
-        let none = handle_code_action(&state, &uri, Position { line: 1, character: 0 });
+        let none = handle_code_action(
+            &state,
+            &uri,
+            Position {
+                line: 1,
+                character: 0,
+            },
+        );
         assert!(none.is_none());
     }
 

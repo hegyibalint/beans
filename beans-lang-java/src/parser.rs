@@ -17,21 +17,21 @@ use std::path::{Path, PathBuf};
 
 use tree_sitter::{Node, Parser};
 
-use beans_core::graph::NodeBehavior;
+use crate::payload::{
+    JavaConstructorNode, JavaDeclHeader, JavaEnumConstantNode, JavaFieldNode, JavaMethodNode,
+    JavaNodePayload, JavaParameter, JavaTypeKind, JavaTypeNode, JavaTypeUseNode, JavaUseHeader,
+};
+use crate::syntax::{Import, extract_imports};
+use crate::types::TypeRef as ParsedTypeRef;
 use beans_core::Interner;
+use beans_core::graph::NodeBehavior;
 use beans_core::graph::arena::{Graph, NodeId};
+use beans_core::primitives::Location;
 use beans_lang_jvm::fqn::Fqn;
 use beans_lang_jvm::payload::{
     JvmConstructorNode, JvmDeclHeader, JvmEnrichments, JvmEnumConstantNode, JvmFieldNode,
     JvmMethodNode, JvmNodePayload, JvmParameter, JvmTypeKind, JvmTypeNode,
 };
-use crate::payload::{
-    JavaConstructorNode, JavaDeclHeader, JavaEnumConstantNode, JavaFieldNode, JavaMethodNode,
-    JavaNodePayload, JavaParameter, JavaTypeKind, JavaTypeNode, JavaTypeUseNode, JavaUseHeader,
-};
-use crate::syntax::{extract_imports, Import};
-use crate::types::TypeRef as ParsedTypeRef;
-use beans_core::primitives::Location;
 use beans_lang_jvm::{Modifier, TypeParam, TypeRef};
 
 // ---- Public surface ----
@@ -372,11 +372,7 @@ fn extract_formal_parameters(node: Node, source: &[u8]) -> Vec<(String, TypeRef,
                             }
                         }
                     }
-                    params.push((
-                        name,
-                        ty.unwrap_or_else(|| TypeRef::simple("unknown")),
-                        true,
-                    ));
+                    params.push((name, ty.unwrap_or_else(|| TypeRef::simple("unknown")), true));
                 }
                 _ => {}
             }
@@ -394,9 +390,7 @@ fn parse_type_ref(node: Node, source: &[u8]) -> ParsedTypeRef {
         "type_identifier" | "identifier" => {
             ParsedTypeRef::Simple(node_text(node, source).to_string())
         }
-        "scoped_type_identifier" => {
-            ParsedTypeRef::Qualified(node_text(node, source).to_string())
-        }
+        "scoped_type_identifier" => ParsedTypeRef::Qualified(node_text(node, source).to_string()),
         "generic_type" => {
             let base = node
                 .child(0)
@@ -540,12 +534,7 @@ fn rightmost_type_identifier(node: Node<'_>) -> Node<'_> {
     node
 }
 
-fn emit_type_use(
-    ctx: &mut ParseContext,
-    name: String,
-    location: Location,
-    parent_plan_idx: usize,
-) {
+fn emit_type_use(ctx: &mut ParseContext, name: String, location: Location, parent_plan_idx: usize) {
     let candidate_fqns = build_candidate_fqns(ctx, &name);
     let payload = JavaNodePayload::from(JavaTypeUseNode {
         header: JavaUseHeader {
@@ -570,10 +559,10 @@ fn build_candidate_fqns(ctx: &ParseContext, simple_name: &str) -> Vec<Fqn> {
     let mut out: Vec<Fqn> = Vec::new();
 
     for imp in &ctx.imports {
-        if let Import::Single(fqn, _) = imp {
-            if fqn.rsplit('.').next() == Some(simple_name) {
-                out.push(Fqn::new(fqn.clone()));
-            }
+        if let Import::Single(fqn, _) = imp
+            && fqn.rsplit('.').next() == Some(simple_name)
+        {
+            out.push(Fqn::new(fqn.clone()));
         }
     }
 
@@ -609,11 +598,7 @@ fn build_candidate_fqns(ctx: &ParseContext, simple_name: &str) -> Vec<Fqn> {
 /// the JVM projection sits at `index + 1` and is hard-linked off the
 /// Java node per ADR-0004 ("each language-model node hard-links a JVM
 /// projection — projections are leaves, not relays").
-fn emit_pair(
-    ctx: &mut ParseContext,
-    java: JavaNodePayload,
-    jvm: JvmNodePayload,
-) -> usize {
+fn emit_pair(ctx: &mut ParseContext, java: JavaNodePayload, jvm: JvmNodePayload) -> usize {
     let parent = ctx.enclosing_stack.last().map(|f| f.java_idx);
     let java_idx = ctx.plan.len();
     ctx.plan.push(PendingNode {
@@ -627,7 +612,12 @@ fn emit_pair(
     java_idx
 }
 
-fn java_header(ctx: &ParseContext, name: &str, node: Node, modifiers: Vec<Modifier>) -> JavaDeclHeader {
+fn java_header(
+    ctx: &ParseContext,
+    name: &str,
+    node: Node,
+    modifiers: Vec<Modifier>,
+) -> JavaDeclHeader {
     JavaDeclHeader {
         name: name.to_string(),
         fqn: Fqn::new(build_fqn(ctx, name)),
@@ -637,7 +627,12 @@ fn java_header(ctx: &ParseContext, name: &str, node: Node, modifiers: Vec<Modifi
     }
 }
 
-fn jvm_header(ctx: &ParseContext, name: &str, node: Node, modifiers: Vec<Modifier>) -> JvmDeclHeader {
+fn jvm_header(
+    ctx: &ParseContext,
+    name: &str,
+    node: Node,
+    modifiers: Vec<Modifier>,
+) -> JvmDeclHeader {
     JvmDeclHeader {
         name: name.to_string(),
         fqn: Fqn::new(build_fqn(ctx, name)),
@@ -655,12 +650,16 @@ fn jvm_header(ctx: &ParseContext, name: &str, node: Node, modifiers: Vec<Modifie
 
 fn extract_symbol(ctx: &mut ParseContext, node: Node) {
     match node.kind() {
-        "class_declaration" => extract_class_like(ctx, node, JavaTypeKind::Class, JvmTypeKind::Class),
+        "class_declaration" => {
+            extract_class_like(ctx, node, JavaTypeKind::Class, JvmTypeKind::Class)
+        }
         "interface_declaration" => {
             extract_class_like(ctx, node, JavaTypeKind::Interface, JvmTypeKind::Interface)
         }
         "enum_declaration" => extract_enum(ctx, node),
-        "record_declaration" => extract_class_like(ctx, node, JavaTypeKind::Record, JvmTypeKind::Record),
+        "record_declaration" => {
+            extract_class_like(ctx, node, JavaTypeKind::Record, JvmTypeKind::Record)
+        }
         "annotation_type_declaration" => {
             extract_class_like(ctx, node, JavaTypeKind::Annotation, JvmTypeKind::Annotation)
         }
@@ -754,10 +753,7 @@ fn emit_method_signature_uses(ctx: &mut ParseContext, node: Node, parent_idx: us
                     // child that isn't modifiers/`...`/declarator.
                     for j in 0..p.child_count() {
                         let part = p.child(j).unwrap();
-                        if matches!(
-                            part.kind(),
-                            "..." | "modifiers" | "variable_declarator"
-                        ) {
+                        if matches!(part.kind(), "..." | "modifiers" | "variable_declarator") {
                             continue;
                         }
                         emit_type_use_sites(ctx, part, parent_idx);
@@ -871,7 +867,9 @@ fn extract_body_member(ctx: &mut ParseContext, node: Node) {
         "method_declaration" => extract_method(ctx, node),
         "constructor_declaration" => extract_constructor(ctx, node),
         "field_declaration" => extract_fields(ctx, node),
-        "class_declaration" => extract_class_like(ctx, node, JavaTypeKind::Class, JvmTypeKind::Class),
+        "class_declaration" => {
+            extract_class_like(ctx, node, JavaTypeKind::Class, JvmTypeKind::Class)
+        }
         "interface_declaration" => {
             extract_class_like(ctx, node, JavaTypeKind::Interface, JvmTypeKind::Interface)
         }
@@ -1107,10 +1105,10 @@ public class Dog {
         // Use sites have their own (non-class) Java parents — the
         // declaration that contains them.
         for member in parsed.plan.iter().skip(2) {
-            if let JavaPlanPayload::Java(j) = &member.payload {
-                if j.header().is_some() {
-                    assert_eq!(member.parent, Some(dog_idx));
-                }
+            if let JavaPlanPayload::Java(j) = &member.payload
+                && j.header().is_some()
+            {
+                assert_eq!(member.parent, Some(dog_idx));
             }
         }
 
@@ -1210,10 +1208,16 @@ public class UserService extends BaseService implements Auditable {
         // The span text on the source must be exactly "Base", not
         // "com.other.Base". Use the location's row/col to extract.
         let loc = &base.header.location;
-        assert_eq!(loc.start_line, 1, "Base is on the second source line (0-indexed)");
+        assert_eq!(
+            loc.start_line, 1,
+            "Base is on the second source line (0-indexed)"
+        );
         let line: &str = source.lines().nth(loc.start_line as usize).unwrap();
         let span_text = &line[loc.start_col as usize..loc.end_col as usize];
-        assert_eq!(span_text, "Base", "span must cover only the rightmost identifier");
+        assert_eq!(
+            span_text, "Base",
+            "span must cover only the rightmost identifier"
+        );
     }
 
     #[test]
@@ -1237,14 +1241,24 @@ public class App {
             .iter()
             .find(|t| t.header.name == "Service")
             .expect("Service use site emitted");
-        let svc_fqns: Vec<&str> = svc.header.candidate_fqns.iter().map(|f| f.as_str()).collect();
+        let svc_fqns: Vec<&str> = svc
+            .header
+            .candidate_fqns
+            .iter()
+            .map(|f| f.as_str())
+            .collect();
         assert_eq!(svc_fqns[0], "com.other.Service", "explicit import wins");
 
         let list = uses
             .iter()
             .find(|t| t.header.name == "List")
             .expect("List use site emitted");
-        let list_fqns: Vec<&str> = list.header.candidate_fqns.iter().map(|f| f.as_str()).collect();
+        let list_fqns: Vec<&str> = list
+            .header
+            .candidate_fqns
+            .iter()
+            .map(|f| f.as_str())
+            .collect();
         // No explicit import for List → same-package, then java.lang,
         // then wildcard import (java.util.*).
         assert_eq!(list_fqns[0], "com.example.List");
@@ -1298,9 +1312,8 @@ public class Service {
 
     #[test]
     fn varargs_parameter_flagged() {
-        let parsed = parse(
-            "package com.example;\npublic class V { public void f(String... xs) {} }\n",
-        );
+        let parsed =
+            parse("package com.example;\npublic class V { public void f(String... xs) {} }\n");
         let f = find_java(&parsed.plan, "f");
         if let JavaNodePayload::Method(m) = f {
             assert_eq!(m.parameters.len(), 1);
@@ -1399,9 +1412,8 @@ public abstract class Base {
 
     #[test]
     fn annotation_type_parsed_as_annotation_kind() {
-        let parsed = parse(
-            "package com.example;\npublic @interface MyAnnotation { String value(); }\n",
-        );
+        let parsed =
+            parse("package com.example;\npublic @interface MyAnnotation { String value(); }\n");
         let annot = find_java(&parsed.plan, "MyAnnotation");
         if let JavaNodePayload::Type(t) = annot {
             assert_eq!(t.kind, JavaTypeKind::Annotation);
@@ -1413,9 +1425,7 @@ public abstract class Base {
 
     #[test]
     fn interface_body_emits_methods_as_children() {
-        let parsed = parse(
-            "package com.example;\npublic interface Foo { void bar(); }\n",
-        );
+        let parsed = parse("package com.example;\npublic interface Foo { void bar(); }\n");
         let foo = find_java(&parsed.plan, "Foo");
         match foo {
             JavaNodePayload::Type(t) => assert_eq!(t.kind, JavaTypeKind::Interface),
@@ -1443,9 +1453,7 @@ public abstract class Base {
         // The JVM-side erasure to `List` is covered by
         // `jvm_method_keys_carry_erased_param_types`; this test pins the
         // pre-erasure preservation.
-        let parsed = parse(
-            "package com.example;\npublic class C { java.util.List<String> xs; }\n",
-        );
+        let parsed = parse("package com.example;\npublic class C { java.util.List<String> xs; }\n");
         let xs = find_java(&parsed.plan, "xs");
         if let JavaNodePayload::Field(f) = xs {
             let ty = f.field_type.to_string();
@@ -1464,9 +1472,7 @@ public abstract class Base {
         // `child_by_field_name("element")` first, then `node.child(0)`,
         // then text-of-the-whole-node. This test exercises both nested
         // array shapes so a regression in the fallback chain surfaces.
-        let parsed = parse(
-            "package com.example;\npublic class C { int[] a; String[][] b; }\n",
-        );
+        let parsed = parse("package com.example;\npublic class C { int[] a; String[][] b; }\n");
         let a = find_java(&parsed.plan, "a");
         if let JavaNodePayload::Field(f) = a {
             let ty = f.field_type.to_string();

@@ -29,12 +29,10 @@ impl TypeRef {
     pub fn to_core(&self) -> beans_lang_jvm::TypeRef {
         match self {
             TypeRef::Void => beans_lang_jvm::TypeRef::Void,
-            TypeRef::Primitive(s) => {
-                match PrimitiveKind::from_str(s) {
-                    Some(pk) => beans_lang_jvm::TypeRef::Primitive(pk),
-                    None => beans_lang_jvm::TypeRef::simple(s),
-                }
-            }
+            TypeRef::Primitive(s) => match PrimitiveKind::from_name(s) {
+                Some(pk) => beans_lang_jvm::TypeRef::Primitive(pk),
+                None => beans_lang_jvm::TypeRef::simple(s),
+            },
             TypeRef::Simple(s) | TypeRef::Qualified(s) => beans_lang_jvm::TypeRef::simple(s),
             TypeRef::Parameterized(name, args) => beans_lang_jvm::TypeRef::parameterized(
                 beans_lang_jvm::TypeRef::simple(name),

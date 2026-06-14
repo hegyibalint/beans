@@ -13,21 +13,27 @@ mod jls_6_2_names_and_identifiers {
     #[test]
     fn simple_name_resolves_in_same_package() {
         fixture()
-            .file("com/example/Logger.java", r#"
+            .file(
+                "com/example/Logger.java",
+                r#"
                 package com.example;
                 public class Logger {
                     public void log(String msg) {}
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     private <cur:simple>Logger logger;
                 }
-            "#)
+            "#,
+            )
             .assert_at("simple")
-                .resolves_to("com.example.Logger")
-                .kind(SymbolKind::Class)
+            .resolves_to("com.example.Logger")
+            .kind(SymbolKind::Class)
             .run();
     }
 
@@ -36,13 +42,18 @@ mod jls_6_2_names_and_identifiers {
     #[test]
     fn qualified_name_via_import() {
         fixture()
-            .file("com/example/util/StringUtils.java", r#"
+            .file(
+                "com/example/util/StringUtils.java",
+                r#"
                 package com.example.util;
                 public class StringUtils {
                     public static String trim(String s) { return s.trim(); }
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 import com.example.util.StringUtils;
                 public class App {
@@ -50,10 +61,11 @@ mod jls_6_2_names_and_identifiers {
                         <cur:ref>StringUtils.trim("  hello  ");
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("ref")
-                .resolves_to("com.example.util.StringUtils")
-                .kind(SymbolKind::Class)
+            .resolves_to("com.example.util.StringUtils")
+            .kind(SymbolKind::Class)
             .run();
     }
 
@@ -62,24 +74,30 @@ mod jls_6_2_names_and_identifiers {
     #[test]
     fn qualified_field_access_via_class_name() {
         fixture()
-            .file("com/example/Constants.java", r#"
+            .file(
+                "com/example/Constants.java",
+                r#"
                 package com.example;
                 public class Constants {
                     public static final int <cur:decl>MAX_SIZE = 100;
                 }
-            "#)
-            .file("com/example/Processor.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Processor.java",
+                r#"
                 package com.example;
                 public class Processor {
                     private int limit = Constants.<cur:access>MAX_SIZE;
                 }
-            "#)
+            "#,
+            )
             .assert_at("decl")
-                .kind(SymbolKind::Field)
-                .fqn("com.example.Constants.MAX_SIZE")
+            .kind(SymbolKind::Field)
+            .fqn("com.example.Constants.MAX_SIZE")
             .assert_at("access")
-                .resolves_to("com.example.Constants.MAX_SIZE")
-                .kind(SymbolKind::Field)
+            .resolves_to("com.example.Constants.MAX_SIZE")
+            .kind(SymbolKind::Field)
             .run();
     }
 
@@ -89,13 +107,18 @@ mod jls_6_2_names_and_identifiers {
     #[test]
     fn member_access_hover_shows_field_info() {
         fixture()
-            .file("com/example/Address.java", r#"
+            .file(
+                "com/example/Address.java",
+                r#"
                 package com.example;
                 public class Address {
                     public String city;
                 }
-            "#)
-            .file("com/example/Person.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Person.java",
+                r#"
                 package com.example;
                 public class Person {
                     public Address address;
@@ -103,10 +126,11 @@ mod jls_6_2_names_and_identifiers {
                         String c = this.<cur:addr_ref>address;
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("addr_ref")
-                .resolves_to("com.example.Person.address")
-                .hover_contains("Address")
+            .resolves_to("com.example.Person.address")
+            .hover_contains("Address")
             .run();
     }
 }
@@ -120,7 +144,9 @@ mod jls_6_3_scope {
     #[test]
     fn field_visible_before_declaration() {
         fixture()
-            .file("com/example/Counter.java", r#"
+            .file(
+                "com/example/Counter.java",
+                r#"
                 package com.example;
                 public class Counter {
                     public int getCount() {
@@ -128,10 +154,11 @@ mod jls_6_3_scope {
                     }
                     private int count;
                 }
-            "#)
+            "#,
+            )
             .assert_at("forward_ref")
-                .resolves_to("com.example.Counter.count")
-                .kind(SymbolKind::Field)
+            .resolves_to("com.example.Counter.count")
+            .kind(SymbolKind::Field)
             .run();
     }
 
@@ -139,20 +166,29 @@ mod jls_6_3_scope {
     #[test]
     fn same_package_types_visible_without_import() {
         fixture()
-            .file("com/example/Logger.java", r#"
+            .file(
+                "com/example/Logger.java",
+                r#"
                 package com.example;
                 public class Logger {}
-            "#)
-            .file("com/example/Config.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Config.java",
+                r#"
                 package com.example;
                 public class Config {}
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     private <cur> field;
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("Logger", SymbolKind::Class));
                 assert!(items.has("Config", SymbolKind::Class));
@@ -165,17 +201,23 @@ mod jls_6_3_scope {
     #[test]
     fn imported_type_visible_in_type_position() {
         fixture()
-            .file("com/example/util/StringUtils.java", r#"
+            .file(
+                "com/example/util/StringUtils.java",
+                r#"
                 package com.example.util;
                 public class StringUtils {}
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 import com.example.util.StringUtils;
                 public class App {
                     private <cur> field;
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("StringUtils", SymbolKind::Class));
             })
@@ -188,16 +230,22 @@ mod jls_6_3_scope {
     #[test]
     fn forward_reference_same_package_type_visible() {
         fixture()
-            .file("com/example/First.java", r#"
+            .file(
+                "com/example/First.java",
+                r#"
                 package com.example;
                 public class First {
                     private <cur> ref;
                 }
-            "#)
-            .file("com/example/Second.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Second.java",
+                r#"
                 package com.example;
                 public class Second {}
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("Second", SymbolKind::Class));
             })
@@ -211,7 +259,9 @@ mod jls_6_3_scope {
     #[test]
     fn for_loop_variable_out_of_scope_after_loop() {
         fixture()
-            .file("com/example/App.java", r#"
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public int count;
@@ -223,7 +273,8 @@ mod jls_6_3_scope {
                         <cur:after_loop>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete("in_loop", |items| {
                 // Field is always in scope — positive anchor to drive expected_failure
                 assert!(items.has("count", SymbolKind::Field));
@@ -245,7 +296,9 @@ mod jls_6_3_scope {
     #[test]
     fn method_parameter_reference_in_body() {
         fixture()
-            .file("com/example/Calculator.java", r#"
+            .file(
+                "com/example/Calculator.java",
+                r#"
                 package com.example;
                 public class Calculator {
                     public int add(int a, int b) {
@@ -253,12 +306,13 @@ mod jls_6_3_scope {
                         return result;
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("a_ref")
-                .name("a")
-                .kind(SymbolKind::Parameter)
-                .parent_fqn("com.example.Calculator.add")
-                .expected_failure("parameter references in method body not yet resolved")
+            .name("a")
+            .kind(SymbolKind::Parameter)
+            .parent_fqn("com.example.Calculator.add")
+            .expected_failure("parameter references in method body not yet resolved")
             .run();
     }
 }
@@ -273,7 +327,9 @@ mod jls_6_4_shadowing {
     #[test]
     fn parameter_shadows_field_with_this_access() {
         fixture()
-            .file("com/example/Person.java", r#"
+            .file(
+                "com/example/Person.java",
+                r#"
                 package com.example;
                 public class Person {
                     private String name;
@@ -281,14 +337,15 @@ mod jls_6_4_shadowing {
                         this.<cur:this_field>name = name;
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("param")
-                .kind(SymbolKind::Parameter)
-                .name("name")
-                .expected_failure("parameters not yet indexed in symbol table")
+            .kind(SymbolKind::Parameter)
+            .name("name")
+            .expected_failure("parameters not yet indexed in symbol table")
             .assert_at("this_field")
-                .resolves_to("com.example.Person.name")
-                .kind(SymbolKind::Field)
+            .resolves_to("com.example.Person.name")
+            .kind(SymbolKind::Field)
             .run();
     }
 
@@ -297,7 +354,9 @@ mod jls_6_4_shadowing {
     #[test]
     fn this_dot_shows_field_when_parameter_shadows() {
         fixture()
-            .file("com/example/Person.java", r#"
+            .file(
+                "com/example/Person.java",
+                r#"
                 package com.example;
                 public class Person {
                     private String name;
@@ -305,7 +364,8 @@ mod jls_6_4_shadowing {
                         this.<cur:this_dot>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete("this_dot", |items| {
                 assert!(items.has("name", SymbolKind::Field));
             })
@@ -318,7 +378,9 @@ mod jls_6_4_shadowing {
     #[test]
     fn parameter_shadows_field_in_unqualified_completion() {
         fixture()
-            .file("com/example/Person.java", r#"
+            .file(
+                "com/example/Person.java",
+                r#"
                 package com.example;
                 public class Person {
                     private String name;
@@ -326,7 +388,8 @@ mod jls_6_4_shadowing {
                         <cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("name", SymbolKind::Parameter));
                 assert!(!items.has("name", SymbolKind::Field));
@@ -340,7 +403,9 @@ mod jls_6_4_shadowing {
     #[test]
     fn this_dot_shows_field_when_local_shadows() {
         fixture()
-            .file("com/example/Counter.java", r#"
+            .file(
+                "com/example/Counter.java",
+                r#"
                 package com.example;
                 public class Counter {
                     private int count = 0;
@@ -349,7 +414,8 @@ mod jls_6_4_shadowing {
                         this.<cur:this_dot>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete("this_dot", |items| {
                 assert!(items.has("count", SymbolKind::Field));
             })
@@ -362,7 +428,9 @@ mod jls_6_4_shadowing {
     #[test]
     fn inner_class_this_dot_shows_own_members() {
         fixture()
-            .file("com/example/Outer.java", r#"
+            .file(
+                "com/example/Outer.java",
+                r#"
                 package com.example;
                 public class Outer {
                     private int value = 1;
@@ -374,7 +442,8 @@ mod jls_6_4_shadowing {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .complete("inner_this", |items| {
                 assert!(items.has("value", SymbolKind::Field));
                 assert!(items.has("test", SymbolKind::Method));
@@ -389,14 +458,19 @@ mod jls_6_4_shadowing {
     #[test]
     fn local_class_shadows_imported_wildcard_type() {
         fixture()
-            .file("com/example/Vector.java", r#"
+            .file(
+                "com/example/Vector.java",
+                r#"
                 package com.example;
                 public class Vector {
                     public int x;
                     public int y;
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 import java.util.*;
                 public class App {
@@ -404,7 +478,8 @@ mod jls_6_4_shadowing {
                         v.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("x", SymbolKind::Field));
                 assert!(items.has("y", SymbolKind::Field));
@@ -421,20 +496,28 @@ mod jls_6_4_shadowing {
     #[test]
     fn single_static_import_shadows_on_demand_import() {
         fixture()
-            .file("com/example/Defaults.java", r#"
+            .file(
+                "com/example/Defaults.java",
+                r#"
                 package com.example;
                 public class Defaults {
                     public static final int MAX = 50;
                 }
-            "#)
-            .file("com/example/Limits.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Limits.java",
+                r#"
                 package com.example;
                 public class Limits {
                     public static final int MAX = 100;
                     public static final int MIN = 0;
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 import static com.example.Limits.MAX;
                 import static com.example.Defaults.*;
@@ -443,7 +526,8 @@ mod jls_6_4_shadowing {
                         int val = <cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("MAX", SymbolKind::Field));
                 assert!(!items.has("MIN", SymbolKind::Field));
@@ -458,7 +542,9 @@ mod jls_6_4_shadowing {
     #[test]
     fn variable_obscures_type_name_in_completion() {
         fixture()
-            .file("com/example/App.java", r#"
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void test() {
@@ -466,7 +552,8 @@ mod jls_6_4_shadowing {
                         String.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 // Object's instance methods should appear
                 assert!(items.has("hashCode", SymbolKind::Method));
@@ -484,7 +571,9 @@ mod jls_6_4_shadowing {
     #[test]
     fn inner_class_field_shadows_outer() {
         fixture()
-            .file("com/example/Outer.java", r#"
+            .file(
+                "com/example/Outer.java",
+                r#"
                 package com.example;
                 public class Outer {
                     private int value = 1;
@@ -495,11 +584,14 @@ mod jls_6_4_shadowing {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("inner_val")
-                .resolves_to("com.example.Outer.Inner.value")
-                .kind(SymbolKind::Field)
-                .expected_failure("unqualified field ref in inner class not yet scope-resolved to inner")
+            .resolves_to("com.example.Outer.Inner.value")
+            .kind(SymbolKind::Field)
+            .expected_failure(
+                "unqualified field ref in inner class not yet scope-resolved to inner",
+            )
             .run();
     }
 }
@@ -513,13 +605,18 @@ mod jls_6_5_meaning_of_names {
     #[test]
     fn name_in_return_type_context() {
         fixture()
-            .file("com/example/model/Invoice.java", r#"
+            .file(
+                "com/example/model/Invoice.java",
+                r#"
                 package com.example.model;
                 public class Invoice {
                     private double total;
                 }
-            "#)
-            .file("com/example/service/Billing.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/service/Billing.java",
+                r#"
                 package com.example.service;
                 import com.example.model.Invoice;
                 public class Billing {
@@ -527,10 +624,11 @@ mod jls_6_5_meaning_of_names {
                         return new Invoice();
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("ret_type")
-                .resolves_to("com.example.model.Invoice")
-                .kind(SymbolKind::Class)
+            .resolves_to("com.example.model.Invoice")
+            .kind(SymbolKind::Class)
             .run();
     }
 
@@ -539,7 +637,9 @@ mod jls_6_5_meaning_of_names {
     #[test]
     fn name_in_expression_context_as_parameter() {
         fixture()
-            .file("com/example/Greeter.java", r#"
+            .file(
+                "com/example/Greeter.java",
+                r#"
                 package com.example;
                 public class Greeter {
                     public String greet(String name) {
@@ -547,11 +647,12 @@ mod jls_6_5_meaning_of_names {
                         return greeting;
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("name_expr")
-                .name("name")
-                .kind(SymbolKind::Parameter)
-                .expected_failure("parameter references in expression context not yet resolved")
+            .name("name")
+            .kind(SymbolKind::Parameter)
+            .expected_failure("parameter references in expression context not yet resolved")
             .run();
     }
 
@@ -560,7 +661,9 @@ mod jls_6_5_meaning_of_names {
     #[test]
     fn unqualified_method_invocation() {
         fixture()
-            .file("com/example/Formatter.java", r#"
+            .file(
+                "com/example/Formatter.java",
+                r#"
                 package com.example;
                 public class Formatter {
                     public String format(String template) {
@@ -570,10 +673,11 @@ mod jls_6_5_meaning_of_names {
                         String result = <cur:invoke>format("  hello  ");
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("invoke")
-                .resolves_to("com.example.Formatter.format")
-                .kind(SymbolKind::Method)
+            .resolves_to("com.example.Formatter.format")
+            .kind(SymbolKind::Method)
             .run();
     }
 
@@ -582,27 +686,36 @@ mod jls_6_5_meaning_of_names {
     #[test]
     fn name_in_cast_context() {
         fixture()
-            .file("com/example/Animal.java", r#"
+            .file(
+                "com/example/Animal.java",
+                r#"
                 package com.example;
                 public class Animal {}
-            "#)
-            .file("com/example/Dog.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Dog.java",
+                r#"
                 package com.example;
                 public class Dog extends Animal {
                     public void bark() {}
                 }
-            "#)
-            .file("com/example/Kennel.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Kennel.java",
+                r#"
                 package com.example;
                 public class Kennel {
                     public void handle(Animal a) {
                         (<cur:cast_type>Dog) a;
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("cast_type")
-                .resolves_to("com.example.Dog")
-                .kind(SymbolKind::Class)
+            .resolves_to("com.example.Dog")
+            .kind(SymbolKind::Class)
             .run();
     }
 
@@ -611,17 +724,25 @@ mod jls_6_5_meaning_of_names {
     #[test]
     fn name_in_instanceof_context() {
         fixture()
-            .file("com/example/Shape.java", r#"
+            .file(
+                "com/example/Shape.java",
+                r#"
                 package com.example;
                 public class Shape {}
-            "#)
-            .file("com/example/Circle.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Circle.java",
+                r#"
                 package com.example;
                 public class Circle extends Shape {
                     public double radius;
                 }
-            "#)
-            .file("com/example/Renderer.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Renderer.java",
+                r#"
                 package com.example;
                 public class Renderer {
                     public void draw(Shape s) {
@@ -630,10 +751,11 @@ mod jls_6_5_meaning_of_names {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("instanceof_type")
-                .resolves_to("com.example.Circle")
-                .kind(SymbolKind::Class)
+            .resolves_to("com.example.Circle")
+            .kind(SymbolKind::Class)
             .run();
     }
 
@@ -641,7 +763,9 @@ mod jls_6_5_meaning_of_names {
     #[test]
     fn static_member_completion_via_class_name() {
         fixture()
-            .file("com/example/MathUtils.java", r#"
+            .file(
+                "com/example/MathUtils.java",
+                r#"
                 package com.example;
                 public class MathUtils {
                     public static int MAX = 100;
@@ -649,15 +773,19 @@ mod jls_6_5_meaning_of_names {
                     public int instanceField;
                     public void instanceMethod() {}
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run() {
                         MathUtils.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("MAX", SymbolKind::Field));
                 assert!(items.has("clamp", SymbolKind::Method));
@@ -672,7 +800,9 @@ mod jls_6_5_meaning_of_names {
     #[test]
     fn unqualified_method_completion_in_method_body() {
         fixture()
-            .file("com/example/Calculator.java", r#"
+            .file(
+                "com/example/Calculator.java",
+                r#"
                 package com.example;
                 public class Calculator {
                     public int add(int a, int b) { return a + b; }
@@ -681,7 +811,8 @@ mod jls_6_5_meaning_of_names {
                         <cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("add", SymbolKind::Method));
                 assert!(items.has("multiply", SymbolKind::Method));
@@ -696,20 +827,26 @@ mod jls_6_5_meaning_of_names {
     #[test]
     fn nested_class_visible_via_outer_dot_completion() {
         fixture()
-            .file("com/example/Container.java", r#"
+            .file(
+                "com/example/Container.java",
+                r#"
                 package com.example;
                 public class Container {
                     public static class Entry { public String key; }
                     private static class InternalEntry { public String data; }
                     public int size;
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     private Container.<cur> field;
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("Entry", SymbolKind::Class));
                 assert!(!items.has("InternalEntry", SymbolKind::Class));
@@ -724,14 +861,19 @@ mod jls_6_5_meaning_of_names {
     #[test]
     fn inherited_methods_visible_in_this_dot_completion() {
         fixture()
-            .file("com/example/Animal.java", r#"
+            .file(
+                "com/example/Animal.java",
+                r#"
                 package com.example;
                 public class Animal {
                     public void eat() {}
                     public String name() { return "animal"; }
                 }
-            "#)
-            .file("com/example/Dog.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Dog.java",
+                r#"
                 package com.example;
                 public class Dog extends Animal {
                     public void bark() {}
@@ -739,7 +881,8 @@ mod jls_6_5_meaning_of_names {
                         this.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("bark", SymbolKind::Method));
                 assert!(items.has("tricks", SymbolKind::Method));
@@ -756,13 +899,18 @@ mod jls_6_5_meaning_of_names {
     #[test]
     fn anonymous_class_this_dot_prefers_superclass_over_enclosing() {
         fixture()
-            .file("com/example/Base.java", r#"
+            .file(
+                "com/example/Base.java",
+                r#"
                 package com.example;
                 public class Base {
                     public void action(String s) {}
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     void action(int i) {}
@@ -774,7 +922,8 @@ mod jls_6_5_meaning_of_names {
                         };
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 // The anonymous class's supertype (Base) contributes `action(String)`
                 assert!(items.has("action", SymbolKind::Method));
@@ -789,23 +938,29 @@ mod jls_6_5_meaning_of_names {
     #[test]
     fn class_name_in_static_access() {
         fixture()
-            .file("com/example/AppConfig.java", r#"
+            .file(
+                "com/example/AppConfig.java",
+                r#"
                 package com.example;
                 public class AppConfig {
                     public static final String VERSION = "1.0";
                 }
-            "#)
-            .file("com/example/Main.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Main.java",
+                r#"
                 package com.example;
                 public class Main {
                     public void printVersion() {
                         String v = <cur:cls_ref>AppConfig.VERSION;
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("cls_ref")
-                .resolves_to("com.example.AppConfig")
-                .kind(SymbolKind::Class)
+            .resolves_to("com.example.AppConfig")
+            .kind(SymbolKind::Class)
             .run();
     }
 }
@@ -819,13 +974,18 @@ mod jls_6_6_access_control {
     #[test]
     fn protected_method_resolved_in_subclass() {
         fixture()
-            .file("com/example/base/Base.java", r#"
+            .file(
+                "com/example/base/Base.java",
+                r#"
                 package com.example.base;
                 public class Base {
                     protected void <cur:prot_method>init() {}
                 }
-            "#)
-            .file("com/example/impl/Derived.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/impl/Derived.java",
+                r#"
                 package com.example.impl;
                 import com.example.base.Base;
                 public class Derived extends Base {
@@ -833,13 +993,14 @@ mod jls_6_6_access_control {
                         <cur:prot_call>init();
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("prot_method")
-                .kind(SymbolKind::Method)
-                .modifiers(vec![Modifier::Protected])
-                .fqn("com.example.base.Base.init")
+            .kind(SymbolKind::Method)
+            .modifiers(vec![Modifier::Protected])
+            .fqn("com.example.base.Base.init")
             .assert_at("prot_call")
-                .resolves_to("com.example.base.Base.init")
+            .resolves_to("com.example.base.Base.init")
             .run();
     }
 
@@ -847,7 +1008,9 @@ mod jls_6_6_access_control {
     #[test]
     fn private_members_not_visible_from_another_class() {
         fixture()
-            .file("com/example/Secret.java", r#"
+            .file(
+                "com/example/Secret.java",
+                r#"
                 package com.example;
                 public class Secret {
                     public String publicData;
@@ -855,15 +1018,19 @@ mod jls_6_6_access_control {
                     public void publicMethod() {}
                     private void secretMethod() {}
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run(Secret s) {
                         s.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("publicData", SymbolKind::Field));
                 assert!(items.has("publicMethod", SymbolKind::Method));
@@ -878,7 +1045,9 @@ mod jls_6_6_access_control {
     #[test]
     fn package_private_access_control_completion() {
         fixture()
-            .file("com/example/internal/Helper.java", r#"
+            .file(
+                "com/example/internal/Helper.java",
+                r#"
                 package com.example.internal;
                 public class Helper {
                     public String publicField;
@@ -886,16 +1055,22 @@ mod jls_6_6_access_control {
                     public void publicMethod() {}
                     void packageMethod() {}
                 }
-            "#)
-            .file("com/example/internal/SamePackage.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/internal/SamePackage.java",
+                r#"
                 package com.example.internal;
                 public class SamePackage {
                     public void test(Helper h) {
                         h.<cur:same_pkg>
                     }
                 }
-            "#)
-            .file("com/example/other/DiffPackage.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/other/DiffPackage.java",
+                r#"
                 package com.example.other;
                 import com.example.internal.Helper;
                 public class DiffPackage {
@@ -903,7 +1078,8 @@ mod jls_6_6_access_control {
                         h.<cur:diff_pkg>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete("same_pkg", |items| {
                 assert!(items.has("publicField", SymbolKind::Field));
                 assert!(items.has("packageField", SymbolKind::Field));
@@ -925,15 +1101,20 @@ mod jls_6_6_access_control {
     #[test]
     fn protected_members_access_control_completion() {
         fixture()
-            .file("com/example/base/Base.java", r#"
+            .file(
+                "com/example/base/Base.java",
+                r#"
                 package com.example.base;
                 public class Base {
                     public void publicMethod() {}
                     protected void protectedMethod() {}
                     private void privateMethod() {}
                 }
-            "#)
-            .file("com/example/sub/Sub.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/sub/Sub.java",
+                r#"
                 package com.example.sub;
                 import com.example.base.Base;
                 public class Sub extends Base {
@@ -941,8 +1122,11 @@ mod jls_6_6_access_control {
                         this.<cur:sub_this>
                     }
                 }
-            "#)
-            .file("com/example/other/Unrelated.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/other/Unrelated.java",
+                r#"
                 package com.example.other;
                 import com.example.base.Base;
                 public class Unrelated {
@@ -950,7 +1134,8 @@ mod jls_6_6_access_control {
                         b.<cur:unrelated>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete("sub_this", |items| {
                 assert!(items.has("publicMethod", SymbolKind::Method));
                 assert!(items.has("protectedMethod", SymbolKind::Method));
@@ -972,7 +1157,9 @@ mod jls_6_6_access_control {
     #[test]
     fn private_members_of_enclosing_class_visible_in_nested() {
         fixture()
-            .file("com/example/Outer.java", r#"
+            .file(
+                "com/example/Outer.java",
+                r#"
                 package com.example;
                 public class Outer {
                     private int secretField;
@@ -984,7 +1171,8 @@ mod jls_6_6_access_control {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("secretField", SymbolKind::Field));
                 assert!(items.has("secretMethod", SymbolKind::Method));
@@ -1000,14 +1188,19 @@ mod jls_6_6_access_control {
     #[test]
     fn protected_access_this_vs_arbitrary_base_ref() {
         fixture()
-            .file("com/example/base/Base.java", r#"
+            .file(
+                "com/example/base/Base.java",
+                r#"
                 package com.example.base;
                 public class Base {
                     protected void init() {}
                     public void start() {}
                 }
-            "#)
-            .file("com/example/sub/Sub.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/sub/Sub.java",
+                r#"
                 package com.example.sub;
                 import com.example.base.Base;
                 public class Sub extends Base {
@@ -1016,7 +1209,8 @@ mod jls_6_6_access_control {
                         other.<cur:other_ref>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete("self", |items| {
                 // `this` has type Sub, so protected access is permitted
                 assert!(items.has("init", SymbolKind::Method));
@@ -1028,7 +1222,9 @@ mod jls_6_6_access_control {
                 assert!(items.has("start", SymbolKind::Method));
                 assert!(!items.has("init", SymbolKind::Method));
             })
-            .expected_failure("protected access filtering on arbitrary base ref not yet implemented")
+            .expected_failure(
+                "protected access filtering on arbitrary base ref not yet implemented",
+            )
             .run();
     }
 
@@ -1037,28 +1233,34 @@ mod jls_6_6_access_control {
     #[test]
     fn package_private_method_resolved_in_same_package() {
         fixture()
-            .file("com/example/internal/Helper.java", r#"
+            .file(
+                "com/example/internal/Helper.java",
+                r#"
                 package com.example.internal;
                 class Helper {
                     static String <cur:pkg_method>format(String s) {
                         return s.trim();
                     }
                 }
-            "#)
-            .file("com/example/internal/Service.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/internal/Service.java",
+                r#"
                 package com.example.internal;
                 public class Service {
                     public String process(String input) {
                         return Helper.<cur:pkg_call>format(input);
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("pkg_method")
-                .kind(SymbolKind::Method)
-                .modifiers(vec![Modifier::Static])
-                .fqn("com.example.internal.Helper.format")
+            .kind(SymbolKind::Method)
+            .modifiers(vec![Modifier::Static])
+            .fqn("com.example.internal.Helper.format")
             .assert_at("pkg_call")
-                .resolves_to("com.example.internal.Helper.format")
+            .resolves_to("com.example.internal.Helper.format")
             .run();
     }
 }
@@ -1073,7 +1275,9 @@ mod jls_6_7_fqn {
     #[test]
     fn builder_pattern_nested_class() {
         fixture()
-            .file("com/example/model/HttpRequest.java", r#"
+            .file(
+                "com/example/model/HttpRequest.java",
+                r#"
                 package com.example.model;
                 public class HttpRequest {
                     private final String url;
@@ -1096,19 +1300,20 @@ mod jls_6_7_fqn {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("builder")
-                .kind(SymbolKind::Class)
-                .fqn("com.example.model.HttpRequest.Builder")
-                .parent_fqn("com.example.model.HttpRequest")
-                .children_include(&["url", "method", "withUrl", "build"])
-                .children_count(4)
+            .kind(SymbolKind::Class)
+            .fqn("com.example.model.HttpRequest.Builder")
+            .parent_fqn("com.example.model.HttpRequest")
+            .children_include(&["url", "method", "withUrl", "build"])
+            .children_count(4)
             .assert_at("with_url")
-                .kind(SymbolKind::Method)
-                .fqn("com.example.model.HttpRequest.Builder.withUrl")
-                .parent_fqn("com.example.model.HttpRequest.Builder")
-                .signature_return("Builder")
-                .signature_params(&[("url", "String")])
+            .kind(SymbolKind::Method)
+            .fqn("com.example.model.HttpRequest.Builder.withUrl")
+            .parent_fqn("com.example.model.HttpRequest.Builder")
+            .signature_return("Builder")
+            .signature_params(&[("url", "String")])
             .run();
     }
 

@@ -9,7 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use beans_toolchains::suppliers::{self, Candidate};
-use beans_toolchains::{detect_from, select, ToolchainSpec};
+use beans_toolchains::{ToolchainSpec, detect_from, select};
 
 /// Unique temp dir per test; best-effort cleanup on drop.
 struct TempTree(PathBuf);
@@ -58,7 +58,11 @@ fn release(version: &str, vendor: &str) -> String {
 #[test]
 fn detects_probes_and_dedupes() {
     let t = TempTree::new("dedupe");
-    let jdk21 = t.fake_jdk("sdkman/21.0.2-tem", Some(&release("21.0.2", "Eclipse Adoptium")), true);
+    let jdk21 = t.fake_jdk(
+        "sdkman/21.0.2-tem",
+        Some(&release("21.0.2", "Eclipse Adoptium")),
+        true,
+    );
 
     // The same home reported by two suppliers, one via a symlink.
     let link = t.path("current");
@@ -85,8 +89,14 @@ fn detects_probes_and_dedupes() {
     let installs = detect_from(&raw);
     assert_eq!(installs.len(), 1, "symlink and direct path must dedupe");
     let inst = &installs[0];
-    assert_eq!(inst.sources, vec!["SDKMAN".to_string(), "JAVA_HOME".to_string()]);
-    let meta = inst.metadata.as_ref().expect("release file probed during detect");
+    assert_eq!(
+        inst.sources,
+        vec!["SDKMAN".to_string(), "JAVA_HOME".to_string()]
+    );
+    let meta = inst
+        .metadata
+        .as_ref()
+        .expect("release file probed during detect");
     assert_eq!(meta.major, 21);
     assert_eq!(meta.version, "21.0.2");
     assert_eq!(meta.vendor.as_deref(), Some("Eclipse Adoptium"));

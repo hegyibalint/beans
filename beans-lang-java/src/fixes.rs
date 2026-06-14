@@ -14,9 +14,9 @@ use std::path::Path;
 use beans_core::fix::{Fix, SourceEdit};
 use beans_core::graph::Graph;
 use beans_core::primitives::Location;
+use beans_lang_jvm::Fqn;
 use beans_lang_jvm::payload::AsJvm;
 use beans_lang_jvm::registries::JvmRegistries;
-use beans_lang_jvm::Fqn;
 
 use crate::keys::JavaSymbolKey;
 use crate::payload::{AsJava, JavaNodePayload, JavaTypeUseNode};
@@ -41,18 +41,16 @@ pub fn import_candidates<P: AsJava + AsJvm>(
     for id in java.symbols.query_simple_name(name) {
         // java.symbols holds every declaration kind; only type
         // declarations are importable.
-        if let Some(JavaNodePayload::Type(t)) =
-            graph.get(id).and_then(|n| n.payload.as_java())
-        {
+        if let Some(JavaNodePayload::Type(t)) = graph.get(id).and_then(|n| n.payload.as_java()) {
             out.insert(t.header.fqn.as_str().to_string());
         }
     }
 
     for id in jvm.types.query_simple_name(name) {
-        if let Some(jvm_node) = graph.get(id).and_then(|n| n.payload.as_jvm()) {
-            if let Some(header) = jvm_node.header() {
-                out.insert(header.fqn.as_str().to_string());
-            }
+        if let Some(jvm_node) = graph.get(id).and_then(|n| n.payload.as_jvm())
+            && let Some(header) = jvm_node.header()
+        {
+            out.insert(header.fqn.as_str().to_string());
         }
     }
 

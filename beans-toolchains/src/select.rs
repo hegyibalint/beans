@@ -80,4 +80,3 @@ fn better(a: &JavaInstallation, b: &JavaInstallation) -> bool {
         std::cmp::Reverse(&b.java_home),
     )
 }
-

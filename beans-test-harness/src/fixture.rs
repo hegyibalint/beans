@@ -25,7 +25,7 @@ use beans::{Modifier, NodePayload, Registries, SymbolKind};
 #[cfg(feature = "java")]
 use beans::languages::java;
 
-use crate::markers::{strip_markers, CursorPosition};
+use crate::markers::{CursorPosition, strip_markers};
 
 // --- Assertion types ---
 
@@ -124,9 +124,9 @@ impl<'a> Findings<'a> {
     /// True iff some diagnostic with the given rule code is anchored at
     /// `line` (0-indexed, matching tree-sitter).
     pub fn has_code_at_line(&self, code: &str, line: u32) -> bool {
-        self.diagnostics.iter().any(|d| {
-            d.code.as_deref() == Some(code) && d.location.start_line == line
-        })
+        self.diagnostics
+            .iter()
+            .any(|d| d.code.as_deref() == Some(code) && d.location.start_line == line)
     }
 }
 
@@ -162,18 +162,23 @@ impl CursorAssert {
     }
 
     pub fn hover_contains(mut self, text: &str) -> Self {
-        self.checks.push(AssertionKind::HoverContains(text.to_string()));
+        self.checks
+            .push(AssertionKind::HoverContains(text.to_string()));
         self
     }
 
     pub fn signature_return(mut self, ret: &str) -> Self {
-        self.checks.push(AssertionKind::SignatureReturn(ret.to_string()));
+        self.checks
+            .push(AssertionKind::SignatureReturn(ret.to_string()));
         self
     }
 
     pub fn signature_params(mut self, params: &[(&str, &str)]) -> Self {
         self.checks.push(AssertionKind::SignatureParams(
-            params.iter().map(|(n, t)| (n.to_string(), t.to_string())).collect(),
+            params
+                .iter()
+                .map(|(n, t)| (n.to_string(), t.to_string()))
+                .collect(),
         ));
         self
     }
@@ -269,11 +274,18 @@ impl CompletionAssert {
         self.fixture.resolve_default()
     }
 
-    pub fn complete(self, cursor_name: &str, check: impl FnOnce(&CompletionCandidates) + Send + 'static) -> CompletionAssert {
+    pub fn complete(
+        self,
+        cursor_name: &str,
+        check: impl FnOnce(&CompletionCandidates) + Send + 'static,
+    ) -> CompletionAssert {
         self.fixture.complete(cursor_name, check)
     }
 
-    pub fn complete_default(self, check: impl FnOnce(&CompletionCandidates) + Send + 'static) -> CompletionAssert {
+    pub fn complete_default(
+        self,
+        check: impl FnOnce(&CompletionCandidates) + Send + 'static,
+    ) -> CompletionAssert {
         self.fixture.complete_default(check)
     }
 
@@ -317,11 +329,18 @@ impl DiagnosticsAssert {
         self.fixture.resolve_default()
     }
 
-    pub fn complete(self, cursor_name: &str, check: impl FnOnce(&CompletionCandidates) + Send + 'static) -> CompletionAssert {
+    pub fn complete(
+        self,
+        cursor_name: &str,
+        check: impl FnOnce(&CompletionCandidates) + Send + 'static,
+    ) -> CompletionAssert {
         self.fixture.complete(cursor_name, check)
     }
 
-    pub fn complete_default(self, check: impl FnOnce(&CompletionCandidates) + Send + 'static) -> CompletionAssert {
+    pub fn complete_default(
+        self,
+        check: impl FnOnce(&CompletionCandidates) + Send + 'static,
+    ) -> CompletionAssert {
         self.fixture.complete_default(check)
     }
 
@@ -468,7 +487,11 @@ impl Fixture {
         }
     }
 
-    pub fn complete(mut self, cursor_name: &str, check: impl FnOnce(&CompletionCandidates) + Send + 'static) -> CompletionAssert {
+    pub fn complete(
+        mut self,
+        cursor_name: &str,
+        check: impl FnOnce(&CompletionCandidates) + Send + 'static,
+    ) -> CompletionAssert {
         self.completions.push(PendingCompletion {
             cursor_name: Some(cursor_name.to_string()),
             check_fn: Box::new(check),
@@ -477,7 +500,10 @@ impl Fixture {
         CompletionAssert { fixture: self }
     }
 
-    pub fn complete_default(mut self, check: impl FnOnce(&CompletionCandidates) + Send + 'static) -> CompletionAssert {
+    pub fn complete_default(
+        mut self,
+        check: impl FnOnce(&CompletionCandidates) + Send + 'static,
+    ) -> CompletionAssert {
         self.completions.push(PendingCompletion {
             cursor_name: None,
             check_fn: Box::new(check),
@@ -606,10 +632,7 @@ impl Fixture {
         let mut expected_failure_passed = Vec::new();
 
         for assertion in &self.assertions {
-            let cursor_display = assertion
-                .cursor_name
-                .as_deref()
-                .unwrap_or("<default>");
+            let cursor_display = assertion.cursor_name.as_deref().unwrap_or("<default>");
 
             let cursor = all_cursors
                 .iter()
@@ -628,11 +651,13 @@ impl Fixture {
                         run_checks(
                             &assertion.checks,
                             cursor,
-                            &graph,
-                            &registries,
-                            &file_imports,
-                            &file_packages,
-                            &file_sources,
+                            CheckCtx {
+                                graph: &graph,
+                                registries: &registries,
+                                file_imports: &file_imports,
+                                file_packages: &file_packages,
+                                file_sources: &file_sources,
+                            },
                             cursor_display,
                         );
                     }));
@@ -655,11 +680,13 @@ impl Fixture {
             run_checks(
                 &assertion.checks,
                 cursor,
-                &graph,
-                &registries,
-                &file_imports,
-                &file_packages,
-                &file_sources,
+                CheckCtx {
+                    graph: &graph,
+                    registries: &registries,
+                    file_imports: &file_imports,
+                    file_packages: &file_packages,
+                    file_sources: &file_sources,
+                },
                 cursor_display,
             );
         }
@@ -667,10 +694,7 @@ impl Fixture {
         // 4. Run completion assertions. Stub: empty until graph-driven
         //    completion lands per backlog #025 / #027.
         for completion in self.completions {
-            let cursor_display = completion
-                .cursor_name
-                .as_deref()
-                .unwrap_or("<default>");
+            let cursor_display = completion.cursor_name.as_deref().unwrap_or("<default>");
 
             let _cursor = all_cursors
                 .iter()
@@ -690,14 +714,11 @@ impl Fixture {
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         (completion.check_fn)(&items);
                     }));
-                    match result {
-                        Ok(()) => {
-                            expected_failure_passed.push(format!(
-                                "EXPECTED_FAILURE PASSED [completion {}]: expected failure '{}' but checks passed — promote this test!",
-                                cursor_display, reason
-                            ));
-                        }
-                        Err(_) => {}
+                    if let Ok(()) = result {
+                        expected_failure_passed.push(format!(
+                            "EXPECTED_FAILURE PASSED [completion {}]: expected failure '{}' but checks passed — promote this test!",
+                            cursor_display, reason
+                        ));
                     }
                     continue;
                 }
@@ -720,22 +741,14 @@ impl Fixture {
                 .get(&diag.file)
                 .map(|v| v.as_slice())
                 .unwrap_or(&[]);
-            let diagnostics = beans::compute_diagnostics(
-                &graph,
-                &registries,
-                &diag.file,
-                imports,
-                roots,
-            );
+            let diagnostics =
+                beans::compute_diagnostics(&graph, &registries, &diag.file, imports, roots);
             let findings = Findings {
                 diagnostics: &diagnostics,
             };
             match &diag.mode {
                 TestMode::Skip(reason) => {
-                    skipped.push(format!(
-                        "SKIP diagnostics [{}]: {}",
-                        file_display, reason
-                    ));
+                    skipped.push(format!("SKIP diagnostics [{}]: {}", file_display, reason));
                     continue;
                 }
                 TestMode::ExpectedFailure(reason) => {
@@ -793,15 +806,18 @@ impl Fixture {
 
             match &qf.mode {
                 TestMode::Skip(reason) => {
-                    skipped.push(format!(
-                        "SKIP quick_fix [{}]: {}",
-                        cursor_display, reason
-                    ));
+                    skipped.push(format!("SKIP quick_fix [{}]: {}", cursor_display, reason));
                     continue;
                 }
                 TestMode::ExpectedFailure(reason) => {
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        run_quick_fix_checks(&qf, &fixes, &cursor.file, &file_sources, cursor_display);
+                        run_quick_fix_checks(
+                            &qf,
+                            &fixes,
+                            &cursor.file,
+                            &file_sources,
+                            cursor_display,
+                        );
                     }));
                     if result.is_ok() {
                         expected_failure_passed.push(format!(
@@ -851,17 +867,13 @@ struct ParsedForFixture {
 impl ParsedForFixture {
     #[cfg(feature = "java")]
     fn into_java(self) -> java::ParsedJavaFile {
-        self.java.expect(
-            "ParsedForFixture::into_java called on non-Java parse — fixture dispatch bug",
-        )
+        self.java
+            .expect("ParsedForFixture::into_java called on non-Java parse — fixture dispatch bug")
     }
 }
 
 fn parse_for_extension(path: &Path, #[allow(unused_variables)] source: &str) -> ParsedForFixture {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match ext {
         #[cfg(feature = "java")]
@@ -1078,7 +1090,10 @@ fn resolve_at_cursor<'a>(
     let word = word_at(source, cursor.line, cursor.col, &cursor.file).unwrap_or_else(|| {
         panic!(
             "[{}] no word at cursor position ({}:{} in {})",
-            cursor_display, cursor.line, cursor.col, cursor.file.display()
+            cursor_display,
+            cursor.line,
+            cursor.col,
+            cursor.file.display()
         );
     });
 
@@ -1097,8 +1112,14 @@ fn resolve_at_cursor<'a>(
     // by their own features. Without any language feature the harness
     // can still parse markers but won't resolve cursor positions.
     #[cfg(feature = "java")]
-    let resolved =
-        java::resolve_name(&word, imports, current_package, &registries.java, &registries.jvm, graph);
+    let resolved = java::resolve_name(
+        &word,
+        imports,
+        current_package,
+        &registries.java,
+        &registries.jvm,
+        graph,
+    );
     #[cfg(not(feature = "java"))]
     let resolved: Option<NodeId> = {
         let _ = (imports, current_package, registries, graph);
@@ -1202,13 +1223,19 @@ fn build_hover(view: &ResolvedView<'_>) -> String {
                 format!("<{}>", names.join(", "))
             };
             let header = match t.kind {
-                beans::languages::java::JavaTypeKind::Record => format!("record {}{}", t.header.name, tp),
+                beans::languages::java::JavaTypeKind::Record => {
+                    format!("record {}{}", t.header.name, tp)
+                }
                 _ => format!("{} {}{}", kind_str, t.header.name, tp),
             };
             let _ = write!(s, "```java\n{}\n```\n\n`{}`", header, t.header.fqn);
         }
         _ => {
-            let _ = write!(s, "```java\n{} {}\n```\n\n`{}`", kind_str, view.name, view.fqn);
+            let _ = write!(
+                s,
+                "```java\n{} {}\n```\n\n`{}`",
+                kind_str, view.name, view.fqn
+            );
         }
     }
 
@@ -1289,16 +1316,30 @@ fn child_names(view: &ResolvedView<'_>, graph: &Graph<NodePayload>) -> Vec<Strin
     out
 }
 
+/// References to the resolved fixture world, bundled so the assertion runner
+/// takes one context argument instead of a fistful of maps.
+#[derive(Clone, Copy)]
+struct CheckCtx<'a> {
+    graph: &'a Graph<NodePayload>,
+    registries: &'a Registries,
+    file_imports: &'a HashMap<PathBuf, Vec<Import>>,
+    file_packages: &'a HashMap<PathBuf, String>,
+    file_sources: &'a HashMap<PathBuf, String>,
+}
+
 fn run_checks(
     checks: &[AssertionKind],
     cursor: &CursorPosition,
-    graph: &Graph<NodePayload>,
-    registries: &Registries,
-    file_imports: &HashMap<PathBuf, Vec<Import>>,
-    file_packages: &HashMap<PathBuf, String>,
-    file_sources: &HashMap<PathBuf, String>,
+    ctx: CheckCtx,
     cursor_display: &str,
 ) {
+    let CheckCtx {
+        graph,
+        registries,
+        file_imports,
+        file_packages,
+        file_sources,
+    } = ctx;
     let source = file_sources
         .get(&cursor.file)
         .expect("source not found for cursor file");
@@ -1307,7 +1348,13 @@ fn run_checks(
         match check {
             AssertionKind::ResolvesTo(expected_fqn) => {
                 let view = resolve_at_cursor(
-                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
+                    cursor,
+                    graph,
+                    registries,
+                    file_imports,
+                    file_packages,
+                    source,
+                    cursor_display,
                 );
                 assert_eq!(
                     view.fqn, *expected_fqn,
@@ -1317,7 +1364,13 @@ fn run_checks(
             }
             AssertionKind::Kind(expected_kind) => {
                 let view = resolve_at_cursor(
-                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
+                    cursor,
+                    graph,
+                    registries,
+                    file_imports,
+                    file_packages,
+                    source,
+                    cursor_display,
                 );
                 assert_eq!(
                     view.kind, *expected_kind,
@@ -1327,7 +1380,13 @@ fn run_checks(
             }
             AssertionKind::Fqn(expected_fqn) => {
                 let view = resolve_at_cursor(
-                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
+                    cursor,
+                    graph,
+                    registries,
+                    file_imports,
+                    file_packages,
+                    source,
+                    cursor_display,
                 );
                 assert_eq!(
                     view.fqn, *expected_fqn,
@@ -1337,7 +1396,13 @@ fn run_checks(
             }
             AssertionKind::Name(expected_name) => {
                 let view = resolve_at_cursor(
-                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
+                    cursor,
+                    graph,
+                    registries,
+                    file_imports,
+                    file_packages,
+                    source,
+                    cursor_display,
                 );
                 assert_eq!(
                     view.name, *expected_name,
@@ -1347,18 +1412,32 @@ fn run_checks(
             }
             AssertionKind::HoverContains(text) => {
                 let view = resolve_at_cursor(
-                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
+                    cursor,
+                    graph,
+                    registries,
+                    file_imports,
+                    file_packages,
+                    source,
+                    cursor_display,
                 );
                 let hover = build_hover(&view);
                 assert!(
                     hover.contains(text.as_str()),
                     "[{}] hover_contains: '{}' not found in hover text:\n{}",
-                    cursor_display, text, hover
+                    cursor_display,
+                    text,
+                    hover
                 );
             }
             AssertionKind::SignatureReturn(expected_ret) => {
                 let view = resolve_at_cursor(
-                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
+                    cursor,
+                    graph,
+                    registries,
+                    file_imports,
+                    file_packages,
+                    source,
+                    cursor_display,
                 );
                 let return_type = signature_return_type(&view).unwrap_or_else(|| {
                     panic!(
@@ -1374,7 +1453,13 @@ fn run_checks(
             }
             AssertionKind::SignatureParams(expected_params) => {
                 let view = resolve_at_cursor(
-                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
+                    cursor,
+                    graph,
+                    registries,
+                    file_imports,
+                    file_packages,
+                    source,
+                    cursor_display,
                 );
                 let params = signature_params(&view).unwrap_or_else(|| {
                     panic!(
@@ -1386,7 +1471,9 @@ fn run_checks(
                     params.len(),
                     expected_params.len(),
                     "[{}] signature_params: expected {} params, got {}",
-                    cursor_display, expected_params.len(), params.len()
+                    cursor_display,
+                    expected_params.len(),
+                    params.len()
                 );
                 for (i, (exp_name, exp_type)) in expected_params.iter().enumerate() {
                     assert_eq!(
@@ -1403,19 +1490,33 @@ fn run_checks(
             }
             AssertionKind::Modifiers(expected_mods) => {
                 let view = resolve_at_cursor(
-                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
+                    cursor,
+                    graph,
+                    registries,
+                    file_imports,
+                    file_packages,
+                    source,
+                    cursor_display,
                 );
                 for m in expected_mods {
                     assert!(
                         view.modifiers.contains(m),
                         "[{}] modifiers: expected {:?} but symbol has {:?}",
-                        cursor_display, m, view.modifiers
+                        cursor_display,
+                        m,
+                        view.modifiers
                     );
                 }
             }
             AssertionKind::ParentFqn(expected_fqn) => {
                 let view = resolve_at_cursor(
-                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
+                    cursor,
+                    graph,
+                    registries,
+                    file_imports,
+                    file_packages,
+                    source,
+                    cursor_display,
                 );
                 let parent = parent_view(&view, graph).unwrap_or_else(|| {
                     panic!("[{}] parent_fqn: symbol has no parent", cursor_display);
@@ -1428,26 +1529,43 @@ fn run_checks(
             }
             AssertionKind::ChildrenInclude(expected_names) => {
                 let view = resolve_at_cursor(
-                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
+                    cursor,
+                    graph,
+                    registries,
+                    file_imports,
+                    file_packages,
+                    source,
+                    cursor_display,
                 );
                 let names = child_names(&view, graph);
                 for name in expected_names {
                     assert!(
                         names.contains(name),
                         "[{}] children_include: '{}' not found among children {:?}",
-                        cursor_display, name, names
+                        cursor_display,
+                        name,
+                        names
                     );
                 }
             }
             AssertionKind::ChildrenCount(expected_count) => {
                 let view = resolve_at_cursor(
-                    cursor, graph, registries, file_imports, file_packages, source, cursor_display,
+                    cursor,
+                    graph,
+                    registries,
+                    file_imports,
+                    file_packages,
+                    source,
+                    cursor_display,
                 );
                 let names = child_names(&view, graph);
                 assert_eq!(
-                    names.len(), *expected_count,
+                    names.len(),
+                    *expected_count,
                     "[{}] children_count: expected {}, got {}",
-                    cursor_display, expected_count, names.len()
+                    cursor_display,
+                    expected_count,
+                    names.len()
                 );
             }
         }

@@ -112,7 +112,11 @@ fn provision(version: u32) -> PathBuf {
         &format!("download Temurin {version} from {url}"),
     );
     run(
-        Command::new("tar").arg("-xf").arg(&archive).arg("-C").arg(&tmp),
+        Command::new("tar")
+            .arg("-xf")
+            .arg(&archive)
+            .arg("-C")
+            .arg(&tmp),
         "extract JDK archive",
     );
     fs::remove_file(&archive).expect("remove downloaded archive");
@@ -158,7 +162,9 @@ fn tag_from_response_headers(headers: &str) -> Option<String> {
         .lines()
         .filter_map(|line| {
             let (name, value) = line.split_once(':')?;
-            name.trim().eq_ignore_ascii_case("location").then(|| value.trim())
+            name.trim()
+                .eq_ignore_ascii_case("location")
+                .then(|| value.trim())
         })
         .find(|location| location.contains("/releases/download/"))
         .and_then(release_tag_from_url)
@@ -199,7 +205,10 @@ fn newest_cached(cache_root: &Path, version: u32, os: &str, arch: &str) -> Optio
         })
         .collect();
     slots.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
-    slots.into_iter().rev().find_map(|e| find_java_home(&e.path()))
+    slots
+        .into_iter()
+        .rev()
+        .find_map(|e| find_java_home(&e.path()))
 }
 
 /// Drop superseded builds of the same feature version — including
@@ -256,9 +265,12 @@ fn adoptium_platform() -> (&'static str, &'static str) {
 }
 
 fn run(command: &mut Command, what: &str) {
-    let status = command
-        .status()
-        .unwrap_or_else(|e| panic!("failed to spawn `{:?}` to {what}: {e}", command.get_program()));
+    let status = command.status().unwrap_or_else(|e| {
+        panic!(
+            "failed to spawn `{:?}` to {what}: {e}",
+            command.get_program()
+        )
+    });
     assert!(status.success(), "failed to {what}: {status}");
 }
 

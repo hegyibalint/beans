@@ -22,7 +22,14 @@ use crate::backend::ServerState;
 /// cost dominates.
 pub fn scan_workspace(root: &Path) -> Vec<PathBuf> {
     let skip_dirs = [
-        "target", "build", "out", "bin", ".git", ".gradle", ".idea", "node_modules",
+        "target",
+        "build",
+        "out",
+        "bin",
+        ".git",
+        ".gradle",
+        ".idea",
+        "node_modules",
     ];
 
     WalkDir::new(root)
@@ -37,8 +44,7 @@ pub fn scan_workspace(root: &Path) -> Vec<PathBuf> {
         })
         .filter_map(|e| e.ok())
         .filter(|e| {
-            e.file_type().is_file()
-                && e.path().extension().is_some_and(|ext| ext == "java")
+            e.file_type().is_file() && e.path().extension().is_some_and(|ext| ext == "java")
         })
         .map(|e| e.path().to_path_buf())
         .collect()
@@ -47,11 +53,7 @@ pub fn scan_workspace(root: &Path) -> Vec<PathBuf> {
 /// Parse a single source string and integrate the result into the
 /// graph. Used by both the workspace-startup pass and the per-file
 /// `did_change` re-index path.
-pub fn integrate_source(
-    state: &mut ServerState,
-    file: &Path,
-    source: &str,
-) -> Vec<NodeId> {
+pub fn integrate_source(state: &mut ServerState, file: &Path, source: &str) -> Vec<NodeId> {
     // Destroy any previously-indexed roots for this file so the
     // refreshed graph stays consistent with the new source.
     if let Some(old_roots) = state.file_roots.remove(file) {
@@ -116,7 +118,9 @@ pub fn index_workspace(root: &Path, state: &mut ServerState) {
             .file_imports
             .insert(path.clone(), plan.imports.clone());
         if !plan.package.is_empty() {
-            state.file_packages.insert(path.clone(), plan.package.clone());
+            state
+                .file_packages
+                .insert(path.clone(), plan.package.clone());
         }
         // `integrate` interns FQNs at the serial boundary (backlog #037).
         let inserted = java::integrate(

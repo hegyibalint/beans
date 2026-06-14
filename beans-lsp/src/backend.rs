@@ -90,10 +90,7 @@ impl LanguageServer for BeanBackend {
             .await
             .unwrap_or(0);
         self.client
-            .log_message(
-                MessageType::INFO,
-                format!("Beans: Indexed {} files", count),
-            )
+            .log_message(MessageType::INFO, format!("Beans: Indexed {} files", count))
             .await;
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
