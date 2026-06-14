@@ -20,6 +20,7 @@
 //! happens at the JVM layer.
 
 use beans_core::graph::NodeBehavior;
+use beans_core::Interner;
 use beans_core::graph::arena::{NodeHandle, NodeId};
 use beans_lang_jvm::annotation::AnnotationInstance;
 use beans_lang_jvm::fqn::Fqn;
@@ -430,5 +431,90 @@ pub trait AsJava {
 impl AsJava for JavaNodePayload {
     fn as_java(&self) -> Option<&JavaNodePayload> {
         Some(self)
+    }
+}
+
+// ---- FQN interning (backlog #037) ----
+//
+// Per-node `intern_fqns`, forwarded by the payload enum like
+// `on_created`/`header()`. Co-locating the "which fields are FQNs"
+// knowledge with each node means a new FQN field is interned where it
+// is declared. Called from `integrate` at the serial boundary
+// (ADR-0005); the parse phase stays interner-free.
+
+impl JavaDeclHeader {
+    /// Re-key this header's FQN onto the workspace's interned buffers.
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        self.fqn.intern_in(interner);
+    }
+}
+
+impl JavaUseHeader {
+    /// Re-key every candidate FQN onto the interned buffers.
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        for fqn in &mut self.candidate_fqns {
+            fqn.intern_in(interner);
+        }
+    }
+}
+
+impl JavaTypeNode {
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        self.header.intern_fqns(interner);
+    }
+}
+impl JavaMethodNode {
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        self.header.intern_fqns(interner);
+    }
+}
+impl JavaConstructorNode {
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        self.header.intern_fqns(interner);
+    }
+}
+impl JavaFieldNode {
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        self.header.intern_fqns(interner);
+    }
+}
+impl JavaEnumConstantNode {
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        self.header.intern_fqns(interner);
+        self.enum_owner.intern_in(interner);
+    }
+}
+impl JavaAnnotationElementNode {
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        self.header.intern_fqns(interner);
+    }
+}
+impl JavaPackageNode {
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        self.header.intern_fqns(interner);
+    }
+}
+impl JavaTypeUseNode {
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        self.header.intern_fqns(interner);
+    }
+}
+
+impl JavaNodePayload {
+    /// Intern every FQN this payload owns. Forwarded per-variant; the
+    /// match is exhaustive, so a new variant is a compile error here.
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        match self {
+            JavaNodePayload::Type(n) => n.intern_fqns(interner),
+            JavaNodePayload::Method(n) => n.intern_fqns(interner),
+            JavaNodePayload::Constructor(n) => n.intern_fqns(interner),
+            JavaNodePayload::Field(n) => n.intern_fqns(interner),
+            JavaNodePayload::EnumConstant(n) => n.intern_fqns(interner),
+            JavaNodePayload::AnnotationElement(n) => n.intern_fqns(interner),
+            JavaNodePayload::Package(n) => n.intern_fqns(interner),
+            JavaNodePayload::TypeUse(n) => n.intern_fqns(interner),
+            // Parameters and imports carry no FQN.
+            JavaNodePayload::Parameter(_) | JavaNodePayload::Import(_) => {}
+        }
     }
 }

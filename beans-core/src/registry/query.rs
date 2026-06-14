@@ -33,10 +33,8 @@
 //! speculatively.
 
 use std::cell::{Cell, RefCell};
-use std::hash::Hash;
 use std::rc::Rc;
 
-use super::SimpleNamed;
 use super::{Callback, Registry, SubscriptionId, RegistryKey};
 use crate::graph::NodeId;
 
@@ -330,6 +328,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::registry::SimpleNamed; // implemented by the test-double keys below
 
     // Local stand-in keys. The engine is key-agnostic; the real
     // per-vertical keys live in the crates above (beans-lang-jvm,
