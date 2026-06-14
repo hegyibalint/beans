@@ -46,7 +46,9 @@ dependencies = [
  "beans-core",
  "beans-lang-java",
  "beans-lang-jvm",
+ "rayon",
  "serde_json",
+ "walkdir",
 ]
 
 [[package]]
@@ -77,14 +79,10 @@ name = "beans-lsp"
 version = "0.0.1"
 dependencies = [
  "beans",
- "rayon",
- "serde",
- "serde_json",
  "tokio",
  "tower-lsp",
  "tracing",
  "tracing-subscriber",
- "walkdir",
 ]
 
 [[package]]
