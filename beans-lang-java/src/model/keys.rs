@@ -9,7 +9,7 @@
 //! a parameter list.
 
 use beans_core::registry::SimpleNamed;
-use beans_lang_jvm::fqn::Fqn;
+use beans_lang_jvm::model::fqn::Fqn;
 
 /// Key identifying a Java-side declaration by its fully-qualified name.
 /// One key per Java type, method-overload group, field, or package.

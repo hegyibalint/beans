@@ -6,18 +6,12 @@
 //! source model maps closely to its JVM projection, so this crate is
 //! mostly a thin Java-specific overlay on top of `beans-lang-jvm`:
 //!
-//! - [`keys`] — the single Java-side key (`JavaSymbolKey`).
-//! - [`registries`] — the Java registry bag ([`JavaRegistries`]); the
-//!   `beans` facade composes it with [`beans_lang_jvm::JvmRegistries`].
-//! - [`payload`] — the typed `JavaNodePayload` variants plus the
-//!   [`AsJava`](payload::AsJava) projection trait generic vertical code
-//!   is written against.
-//! - [`parser`] — the tree-sitter walker; per ADR-0021 the walker
+//! - [`model`] — Java-side keys, payloads, registries, and parser-local
+//!   type references.
+//! - [`parse`] — the tree-sitter walker; per ADR-0021 the walker
 //!   structure is preserved verbatim while the layers above it are
 //!   rewritten. Generic over the graph payload `P` via `From` bounds.
-//! - [`types`] — Java-local `TypeRef` shape used by the walker;
-//!   converts to the canonical `beans_lang_jvm::TypeRef` via `to_core`.
-//! - [`syntax`] — language-local `extract_imports`, `extract_package`,
+//! - [`source`] — language-local `extract_imports`, `extract_package`,
 //!   `word_at_position` helpers.
 //! - [`resolve`] — in-file name resolution chain (FQN → imports →
 //!   same-package → wildcard → static → simple-name fallback).
@@ -26,22 +20,28 @@
 
 pub mod diagnostics;
 pub mod fixes;
-pub mod keys;
-pub mod parser;
-pub mod payload;
-pub mod registries;
+pub mod model;
+pub mod parse;
 pub mod resolve;
-pub mod syntax;
-pub mod types;
+pub mod source;
 
 pub use fixes::{add_import_fix, import_candidates, quick_fixes_at, type_use_at};
-pub use keys::JavaSymbolKey;
-pub use parser::{ParsedJavaFile, integrate, parse_java_to_graph};
-pub use payload::{
+pub use model::JavaRegistries;
+pub use model::{
     AsJava, JavaAnnotationElementNode, JavaConstructorNode, JavaDeclHeader, JavaEnumConstantNode,
     JavaFieldNode, JavaImportKind, JavaImportNode, JavaMethodNode, JavaNodePayload,
-    JavaPackageNode, JavaParameter, JavaTypeKind, JavaTypeNode, JavaTypeUseNode, JavaUseHeader,
+    JavaPackageNode, JavaParameter, JavaSymbolKey, JavaTypeKind, JavaTypeNode, JavaTypeUseNode,
+    JavaUseHeader,
 };
-pub use registries::JavaRegistries;
+pub use parse::{ParsedJavaFile, integrate, parse_java_to_graph};
 pub use resolve::{lookup_fqn, resolve_compound_name, resolve_name, resolve_simple_name};
-pub use syntax::{Import, extract_imports, extract_package, word_at_position};
+pub use source::{Import, extract_imports, extract_package, word_at_position};
+
+// Compatibility module aliases. Keep these until the facade/API cleanup
+// removes broad root module paths.
+pub use model::keys;
+pub use model::payload;
+pub use model::registries;
+pub use model::type_ref as types;
+pub use parse as parser;
+pub use source as syntax;
