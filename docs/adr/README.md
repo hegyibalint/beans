@@ -105,7 +105,7 @@ by area.
 | [0019](0019-single-core-crate-with-feature-gated-languages.md) | Collapse the workspace into a single beans-core crate with feature-gated language modules | crates |
 | [0020](0020-lsp-is-a-leaf-consumer.md) | Keep beans-lsp a leaf consumer of beans-core | crates |
 | [0021](0021-preserve-tree-sitter-walker-rewrite-layers-above.md) | Preserve the tree-sitter walker; rewrite the layers above it | migration |
-| [0022](0022-per-language-test-crates-mirroring-spec-structure.md) | Organize tests as per-language crates mirroring the spec structure | testing |
+| [0022](0022-per-language-test-crates-mirroring-spec-structure.md) | Organize tests as per-language crates mirroring the spec structure (superseded by 0032) | testing |
 | [0023](0023-mass-author-spec-tests-via-llm-agents-with-human-review.md) | Mass-author spec tests via LLM agents with human review | testing |
 | [0024](0024-tests-start-expected-failure-and-prefer-negative-spec-violations.md) | Tests start as expected_failure and prefer negative spec violations | testing |
 | [0025](0025-dual-mode-check-real-engine-vs-empty-engine.md) | Dual-mode check (real engine vs empty engine) catches trivial-passers | testing |
@@ -115,6 +115,7 @@ by area.
 | [0029](0029-layer-1-ir-declarations-and-use-sites.md) | The layer-1 IR contains declarations and use sites, partitioned by modifiability | graph |
 | [0030](0030-vertical-crates-engine-jvm-model-language-verticals.md) | Split the workspace into engine, shared JVM model, and per-language vertical crates | crates |
 | [0031](0031-one-jvm-sidecar-as-late-arriving-data-pipe.md) | One JVM sidecar as a late-arriving data pipe | tooling |
+| [0032](0032-unified-spec-test-crate.md) | Unify spec and interop tests in one beans-spec-tests crate (supersedes 0022) | testing |
 
 ## Authoring workflow
 
