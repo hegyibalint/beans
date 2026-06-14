@@ -1,5 +1,6 @@
 /target
-/.claude/
+/.claude/*
+!/.claude/agents/
 /.agent/
 beans-vscode/node_modules/
 beans-vscode/out/
