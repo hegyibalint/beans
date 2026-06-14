@@ -19,24 +19,24 @@ pub mod languages {
     #[cfg(feature = "java")]
     pub use beans_lang_java as java;
 
+    #[cfg(feature = "clojure")]
+    pub mod clojure;
+    #[cfg(feature = "groovy")]
+    pub mod groovy;
     #[cfg(feature = "kotlin")]
     pub mod kotlin;
     #[cfg(feature = "scala")]
     pub mod scala;
-    #[cfg(feature = "groovy")]
-    pub mod groovy;
-    #[cfg(feature = "clojure")]
-    pub mod clojure;
 }
 
 // Engine and shared-model re-exports keep consumer imports stable:
 // `beans::Graph`, `beans::SymbolKind`, `beans::Diagnostic`, ...
-pub use beans_core::{
-    diagnostics, fix, graph, primitives, registry, Diagnostic, DiagnosticSeverity, Fix,
-    Interner, Location, SourceEdit,
-};
 pub use beans_core::registry::{
     FallbackSubscription, Query, QueryResult, Registry, Subscription, Watch,
+};
+pub use beans_core::{
+    Diagnostic, DiagnosticSeverity, Fix, Interner, Location, SourceEdit, diagnostics, fix, graph,
+    primitives, registry,
 };
 pub use beans_lang_jvm as jvm;
 pub use beans_lang_jvm::completion;

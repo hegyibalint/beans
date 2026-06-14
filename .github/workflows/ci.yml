@@ -19,6 +19,8 @@ jobs:
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       # Caches the cargo registry and target/ keyed on Cargo.lock + toolchain.
       - name: Cache cargo build
@@ -31,6 +33,12 @@ jobs:
         with:
           path: ~/.cache/beans/test-jdks
           key: beans-test-jdks-${{ runner.os }}
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
         run: cargo test --workspace

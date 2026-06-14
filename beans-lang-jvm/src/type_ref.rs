@@ -53,24 +53,16 @@ pub enum TypeRef {
     },
 
     /// A reference to a type variable declared by a class or method: `T`, `E`
-    TypeVariable {
-        name: String,
-    },
+    TypeVariable { name: String },
 
     /// A wildcard: `?`, `? extends Foo`, `? super Bar`
-    Wildcard {
-        bound: Option<WildcardBound>,
-    },
+    Wildcard { bound: Option<WildcardBound> },
 
     /// An array type: `int[]`, `String[][]`
-    Array {
-        element: Box<TypeRef>,
-    },
+    Array { element: Box<TypeRef> },
 
     /// An intersection type (internal, for type parameter bounds): `Serializable & Comparable<T>`
-    Intersection {
-        types: Vec<TypeRef>,
-    },
+    Intersection { types: Vec<TypeRef> },
 
     /// Unresolved / error sentinel — the parser couldn't determine the type.
     /// Propagates gracefully through analysis without crashing.
@@ -109,12 +101,16 @@ pub struct TypeParam {
 // ---- Comparison with str (for ergonomic test assertions) ----
 
 impl PartialEq<str> for TypeRef {
+    // Comparing requires materializing the Display form; the allocation is
+    // acceptable for these test-assertion conveniences.
+    #[allow(clippy::cmp_owned)]
     fn eq(&self, other: &str) -> bool {
         self.to_string() == other
     }
 }
 
 impl PartialEq<&str> for TypeRef {
+    #[allow(clippy::cmp_owned)]
     fn eq(&self, other: &&str) -> bool {
         self.to_string() == *other
     }
@@ -140,10 +136,14 @@ impl std::fmt::Display for TypeRef {
             }
             TypeRef::TypeVariable { name } => write!(f, "{name}"),
             TypeRef::Wildcard { bound: None } => write!(f, "?"),
-            TypeRef::Wildcard { bound: Some(WildcardBound::Extends(t)) } => {
+            TypeRef::Wildcard {
+                bound: Some(WildcardBound::Extends(t)),
+            } => {
                 write!(f, "? extends {t}")
             }
-            TypeRef::Wildcard { bound: Some(WildcardBound::Super(t)) } => {
+            TypeRef::Wildcard {
+                bound: Some(WildcardBound::Super(t)),
+            } => {
                 write!(f, "? super {t}")
             }
             TypeRef::Array { element } => write!(f, "{element}[]"),
@@ -191,22 +191,31 @@ impl TypeRef {
 
     /// Convenience: `TypeRef::array(TypeRef::Primitive(PrimitiveKind::Int))`
     pub fn array(element: TypeRef) -> Self {
-        TypeRef::Array { element: Box::new(element) }
+        TypeRef::Array {
+            element: Box::new(element),
+        }
     }
 
     /// Convenience: `TypeRef::parameterized(TypeRef::simple("List"), vec![TypeRef::simple("String")])`
     pub fn parameterized(raw: TypeRef, args: Vec<TypeRef>) -> Self {
-        TypeRef::Parameterized { raw: Box::new(raw), args }
+        TypeRef::Parameterized {
+            raw: Box::new(raw),
+            args,
+        }
     }
 
     /// Convenience: `TypeRef::wildcard_extends(TypeRef::simple("Number"))`
     pub fn wildcard_extends(bound: TypeRef) -> Self {
-        TypeRef::Wildcard { bound: Some(WildcardBound::Extends(Box::new(bound))) }
+        TypeRef::Wildcard {
+            bound: Some(WildcardBound::Extends(Box::new(bound))),
+        }
     }
 
     /// Convenience: `TypeRef::wildcard_super(TypeRef::simple("Integer"))`
     pub fn wildcard_super(bound: TypeRef) -> Self {
-        TypeRef::Wildcard { bound: Some(WildcardBound::Super(Box::new(bound))) }
+        TypeRef::Wildcard {
+            bound: Some(WildcardBound::Super(Box::new(bound))),
+        }
     }
 
     /// Is this a primitive type?
@@ -232,9 +241,10 @@ impl TypeRef {
                 _ => TypeRef::simple("java.lang.Object"),
             },
             TypeRef::Array { element } => TypeRef::array(element.erasure()),
-            TypeRef::Intersection { types } => {
-                types.first().map(|t| t.erasure()).unwrap_or(TypeRef::simple("java.lang.Object"))
-            }
+            TypeRef::Intersection { types } => types
+                .first()
+                .map(|t| t.erasure())
+                .unwrap_or(TypeRef::simple("java.lang.Object")),
             other => other.clone(),
         }
     }
@@ -273,11 +283,17 @@ impl TypeRef {
 
 impl TypeParam {
     pub fn new(name: impl Into<String>) -> Self {
-        TypeParam { name: name.into(), bounds: Vec::new() }
+        TypeParam {
+            name: name.into(),
+            bounds: Vec::new(),
+        }
     }
 
     pub fn with_bounds(name: impl Into<String>, bounds: Vec<TypeRef>) -> Self {
-        TypeParam { name: name.into(), bounds }
+        TypeParam {
+            name: name.into(),
+            bounds,
+        }
     }
 }
 
@@ -299,7 +315,7 @@ impl PrimitiveKind {
     }
 
     /// Parse a primitive type name.
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn from_name(s: &str) -> Option<Self> {
         match s {
             "boolean" => Some(PrimitiveKind::Boolean),
             "byte" => Some(PrimitiveKind::Byte),
@@ -344,10 +360,8 @@ mod tests {
 
     #[test]
     fn display_parameterized() {
-        let list_string = TypeRef::parameterized(
-            TypeRef::simple("List"),
-            vec![TypeRef::simple("String")],
-        );
+        let list_string =
+            TypeRef::parameterized(TypeRef::simple("List"), vec![TypeRef::simple("String")]);
         assert_eq!(list_string.to_string(), "List<String>");
 
         let map = TypeRef::parameterized(
@@ -359,10 +373,7 @@ mod tests {
 
     #[test]
     fn display_wildcards() {
-        assert_eq!(
-            TypeRef::Wildcard { bound: None }.to_string(),
-            "?"
-        );
+        assert_eq!(TypeRef::Wildcard { bound: None }.to_string(), "?");
         assert_eq!(
             TypeRef::wildcard_extends(TypeRef::simple("Number")).to_string(),
             "? extends Number"
@@ -413,10 +424,7 @@ mod tests {
             TypeRef::simple("Map"),
             vec![
                 TypeRef::type_var("T"),
-                TypeRef::parameterized(
-                    TypeRef::simple("List"),
-                    vec![TypeRef::type_var("U")],
-                ),
+                TypeRef::parameterized(TypeRef::simple("List"), vec![TypeRef::type_var("U")]),
             ],
         );
 

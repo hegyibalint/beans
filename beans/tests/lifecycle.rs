@@ -23,13 +23,13 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use beans::Registries;
+use beans::TypeRef;
 use beans::graph::{Graph, NodeId};
 use beans::jvm::keys::{JvmMethodKey, JvmTypeKey};
 use beans::jvm::{Fqn, JvmNodePayload};
 use beans::languages::java::{integrate, parse_java_to_graph};
 use beans::payload::NodePayload;
-use beans::Registries;
-use beans::TypeRef;
 
 // =========================================================================
 // Test environment
@@ -84,13 +84,15 @@ impl Env {
 
     fn types_at(&self, fqn: &str) -> Vec<NodeId> {
         self.registries
-            .jvm.types
+            .jvm
+            .types
             .providers(&JvmTypeKey::new(Fqn::new(fqn)))
     }
 
     fn methods_at(&self, owner: &str, name: &str, params: Vec<TypeRef>) -> Vec<NodeId> {
         self.registries
-            .jvm.methods
+            .jvm
+            .methods
             .providers(&JvmMethodKey::new(Fqn::new(owner), name, params))
     }
 }
@@ -113,7 +115,8 @@ fn integrate_registers_each_declaration() {
         "type provider registered"
     );
     assert_eq!(
-        env.methods_at("com.example.Service", "process", vec![]).len(),
+        env.methods_at("com.example.Service", "process", vec![])
+            .len(),
         1,
         "method provider registered"
     );
@@ -154,7 +157,8 @@ fn re_integrate_replaces_old_registrations() {
         "package com.example; public class Service { public void process() {} }",
     );
     assert_eq!(
-        env.methods_at("com.example.Service", "process", vec![]).len(),
+        env.methods_at("com.example.Service", "process", vec![])
+            .len(),
         1
     );
 
@@ -210,7 +214,8 @@ fn delete_then_reintroduce_restores_registrations() {
 
     assert_eq!(env.types_at("com.example.Service").len(), 1);
     assert_eq!(
-        env.methods_at("com.example.Service", "process", vec![]).len(),
+        env.methods_at("com.example.Service", "process", vec![])
+            .len(),
         1
     );
 }
@@ -230,8 +235,14 @@ fn two_files_can_register_same_type_fqn() {
     );
 
     assert_eq!(env.types_at("com.example.Foo").len(), 2);
-    assert_eq!(env.methods_at("com.example.Foo", "aMethod", vec![]).len(), 1);
-    assert_eq!(env.methods_at("com.example.Foo", "bMethod", vec![]).len(), 1);
+    assert_eq!(
+        env.methods_at("com.example.Foo", "aMethod", vec![]).len(),
+        1
+    );
+    assert_eq!(
+        env.methods_at("com.example.Foo", "bMethod", vec![]).len(),
+        1
+    );
 }
 
 #[test]
@@ -272,9 +283,10 @@ fn editing_method_signature_reregisters_under_new_key() {
             .len(),
         1
     );
-    assert!(env
-        .methods_at("com.example.Service", "process", one_arg.clone())
-        .is_empty());
+    assert!(
+        env.methods_at("com.example.Service", "process", one_arg.clone())
+            .is_empty()
+    );
 
     env.integrate(
         path,
@@ -287,7 +299,8 @@ fn editing_method_signature_reregisters_under_new_key() {
         "old no-arg method gone"
     );
     assert_eq!(
-        env.methods_at("com.example.Service", "process", one_arg).len(),
+        env.methods_at("com.example.Service", "process", one_arg)
+            .len(),
         1,
         "new one-arg method registered"
     );
@@ -313,7 +326,8 @@ fn registering_a_provider_fires_existing_subscribers() {
     let cb_counter = counter.clone();
     let _sub = env
         .registries
-        .jvm.types
+        .jvm
+        .types
         .query(key)
         .subscribe(Rc::new(move || cb_counter.set(cb_counter.get() + 1)));
 
@@ -344,7 +358,8 @@ fn dropping_a_provider_fires_existing_subscribers() {
     let cb_counter = counter.clone();
     let _sub = env
         .registries
-        .jvm.types
+        .jvm
+        .types
         .query(key)
         .subscribe(Rc::new(move || cb_counter.set(cb_counter.get() + 1)));
 
@@ -404,4 +419,3 @@ fn stale_node_id_does_not_resolve_to_a_different_payload() {
     }
     // If env.graph.get(stale_id) returns None, that's the safer outcome.
 }
-

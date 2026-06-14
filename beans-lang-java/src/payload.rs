@@ -19,18 +19,18 @@
 //! keyed by [`JavaSymbolKey`] (FQN-only). Method overload disambiguation
 //! happens at the JVM layer.
 
-use beans_core::graph::NodeBehavior;
+use crate::keys::JavaSymbolKey;
+use crate::registries::JavaRegistries;
 use beans_core::Interner;
+use beans_core::graph::NodeBehavior;
 use beans_core::graph::arena::{NodeHandle, NodeId};
+use beans_core::primitives::Location;
 use beans_lang_jvm::annotation::AnnotationInstance;
+use beans_lang_jvm::constant::ConstantValue;
 use beans_lang_jvm::fqn::Fqn;
 use beans_lang_jvm::modifier::Modifier;
-use beans_lang_jvm::constant::ConstantValue;
 use beans_lang_jvm::record::RecordComponent;
 use beans_lang_jvm::type_ref::{TypeParam, TypeRef};
-use crate::keys::JavaSymbolKey;
-use beans_core::primitives::Location;
-use crate::registries::JavaRegistries;
 
 /// What category of Java declaration a [`JavaTypeNode`] represents.
 /// Mirrors [`beans_lang_jvm::JvmTypeKind`] one-for-one today; the split

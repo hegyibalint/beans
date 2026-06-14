@@ -33,17 +33,23 @@ mod missing_import {
         // The anchored run pins text, position, and blank-line
         // separation in one assertion.
         fixture()
-            .file("com/example/model/Service.java", r#"
+            .file(
+                "com/example/model/Service.java",
+                r#"
                 package com.example.model;
                 public class Service {}
-            "#)
-            .file("com/example/app/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/app/App.java",
+                r#"
                 package com.example.app;
 
                 public class App {
                     private Ser<cur>vice service;
                 }
-            "#)
+            "#,
+            )
             .quick_fix_default()
             .apply("Import 'com.example.model.Service'")
             .expect_lines(&[
@@ -59,28 +65,33 @@ mod missing_import {
         // Ambiguous simple name: one fix per candidate FQN, selected
         // by label. Applying the alpha fix imports alpha.
         fixture()
-            .file("com/alpha/Service.java", r#"
+            .file(
+                "com/alpha/Service.java",
+                r#"
                 package com.alpha;
                 public class Service {}
-            "#)
-            .file("com/beta/Service.java", r#"
+            "#,
+            )
+            .file(
+                "com/beta/Service.java",
+                r#"
                 package com.beta;
                 public class Service {}
-            "#)
-            .file("com/example/app/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/app/App.java",
+                r#"
                 package com.example.app;
 
                 public class App {
                     private Ser<cur>vice service;
                 }
-            "#)
+            "#,
+            )
             .quick_fix_default()
             .apply("Import 'com.alpha.Service'")
-            .expect_lines(&[
-                "package com.example.app;",
-                "",
-                "import com.alpha.Service;",
-            ])
+            .expect_lines(&["package com.example.app;", "", "import com.alpha.Service;"])
             .run();
     }
 
@@ -90,15 +101,23 @@ mod missing_import {
         // the new import still lands right after the package line,
         // and the existing import survives untouched.
         fixture()
-            .file("com/example/model/Service.java", r#"
+            .file(
+                "com/example/model/Service.java",
+                r#"
                 package com.example.model;
                 public class Service {}
-            "#)
-            .file("com/example/model/Existing.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/model/Existing.java",
+                r#"
                 package com.example.model;
                 public class Existing {}
-            "#)
-            .file("com/example/app/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/app/App.java",
+                r#"
                 package com.example.app;
 
                 import com.example.model.Existing;
@@ -107,7 +126,8 @@ mod missing_import {
                     private Existing existing;
                     private Ser<cur>vice service;
                 }
-            "#)
+            "#,
+            )
             .quick_fix_default()
             .apply("Import 'com.example.model.Service'")
             .expect_lines(&[
