@@ -35,7 +35,9 @@ pub use model::{
 };
 pub use parse::{ParsedJavaFile, integrate, parse_java_to_graph};
 pub use resolve::{lookup_fqn, resolve_compound_name, resolve_name, resolve_simple_name};
-pub use source::{Import, extract_imports, extract_package, word_at_position};
+pub use source::{
+    Import, compound_at_position, extract_imports, extract_package, word_at_position,
+};
 
 // Compatibility module aliases. Keep these until the facade/API cleanup
 // removes broad root module paths.

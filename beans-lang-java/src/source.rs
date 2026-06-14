@@ -129,6 +129,38 @@ pub fn word_at_position(source: &str, line: u32, col: u32) -> Option<String> {
     Some(target_line[start..end].to_string())
 }
 
+/// Extract the dotted Java name at a given (line, column) position —
+/// `MyClass.doWork` for a cursor anywhere inside it. Used by
+/// go-to-definition to feed [`crate::resolve_compound_name`] before
+/// falling back to the bare [`word_at_position`]. Leading/trailing dots
+/// are trimmed; `None` if the position is past the line end or not on a
+/// name.
+pub fn compound_at_position(source: &str, line: u32, col: u32) -> Option<String> {
+    let target_line = source.lines().nth(line as usize)?;
+    let col = col as usize;
+    if col > target_line.len() {
+        return None;
+    }
+    let bytes = target_line.as_bytes();
+    let mut start = col;
+    while start > 0 && (is_java_identifier_char(bytes[start - 1]) || bytes[start - 1] == b'.') {
+        start -= 1;
+    }
+    let mut end = col;
+    while end < bytes.len() && (is_java_identifier_char(bytes[end]) || bytes[end] == b'.') {
+        end += 1;
+    }
+    if start == end {
+        return None;
+    }
+    let text = target_line[start..end].trim_matches('.');
+    if text.is_empty() {
+        None
+    } else {
+        Some(text.to_string())
+    }
+}
+
 fn is_java_identifier_char(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
 }
