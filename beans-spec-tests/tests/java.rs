@@ -3,6 +3,7 @@
 //! and the fixture harness (ADR-0032). Vertical-local parser/model
 //! unit tests stay in `beans-lang-java/tests/`.
 
+#[path = "support/prelude.rs"]
 mod prelude;
 
 #[path = "java/jls04_types.rs"]

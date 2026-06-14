@@ -54,9 +54,14 @@ beans-spec-tests/tests/
     interop/
         kotlin_java/     # Kotlin producer, Java consumer
         java_kotlin/     # the reverse
-        groovy_java/ …
-    prelude.rs           # shared fixture() + directional-naming notes
+        java_groovy/ …   # Java producer, Groovy consumer
+    support/
+        prelude.rs       # shared fixture() + directional-naming notes
 ```
+
+`support/` is a non-target subdirectory so the shared `prelude.rs` is not
+compiled as its own integration-test binary; the area binaries pull it in
+with `#[path = "support/prelude.rs"] mod prelude;`.
 
 Interop folders are named `<producer>_<consumer>`: `kotlin_java/` is a
 Kotlin producer (declares the symbol) consumed from Java (the use site

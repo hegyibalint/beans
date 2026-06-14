@@ -18,7 +18,7 @@
 //! Interop folders are named `<producer>_<consumer>`: `kotlin_java/` is a
 //! Kotlin producer consumed from Java, `java_kotlin/` the reverse. The
 //! asserted use site belongs to the consumer language. Full convention
-//! notes live in `tests/prelude.rs`.
+//! notes live in `tests/support/prelude.rs`.
 //!
 //! ## What does *not* live here
 //!
