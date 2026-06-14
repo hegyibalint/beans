@@ -64,14 +64,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "beans-lang-java-test"
-version = "0.0.1"
-dependencies = [
- "beans",
- "beans-test-harness",
-]
-
-[[package]]
 name = "beans-lang-jvm"
 version = "0.0.1"
 dependencies = [
@@ -93,6 +85,14 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "walkdir",
+]
+
+[[package]]
+name = "beans-spec-tests"
+version = "0.0.1"
+dependencies = [
+ "beans",
+ "beans-test-harness",
 ]
 
 [[package]]
