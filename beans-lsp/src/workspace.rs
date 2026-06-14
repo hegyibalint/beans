@@ -60,8 +60,7 @@ pub fn integrate_source(
         }
     }
 
-    let mut parsed = java::parse_java_to_graph(file, source);
-    parsed.intern(&state.beans.interner);
+    let parsed = java::parse_java_to_graph(file, source);
     state
         .file_imports
         .insert(file.to_path_buf(), parsed.imports.clone());
@@ -73,12 +72,15 @@ pub fn integrate_source(
         state.file_packages.remove(file);
     }
 
-    let inserted = java::integrate(&mut state.beans.graph, &state.beans.registries, parsed);
+    // `integrate` interns FQNs at the serial boundary (backlog #037).
+    let inserted = java::integrate(
+        &mut state.beans.graph,
+        &state.beans.registries,
+        &state.beans.interner,
+        parsed,
+    );
     let roots = collect_roots(&state.beans.graph, &inserted);
     state.file_roots.insert(file.to_path_buf(), roots);
-    // A reindex destroys the file's old nodes; sweep names they were the
-    // last to reference (backlog #037).
-    state.beans.interner.purge();
     inserted
 }
 
@@ -104,8 +106,7 @@ pub fn index_workspace(root: &Path, state: &mut ServerState) {
     // before children. The plan order inside each `ParsedJavaFile` is
     // already topological; cross-file ordering doesn't matter for
     // hard-link parents (those are intra-file).
-    for (path, mut plan) in parsed {
-        plan.intern(&state.beans.interner);
+    for (path, plan) in parsed {
         if let Some(old_roots) = state.file_roots.remove(&path) {
             for root in old_roots {
                 state.beans.graph.destroy(root);
@@ -117,10 +118,22 @@ pub fn index_workspace(root: &Path, state: &mut ServerState) {
         if !plan.package.is_empty() {
             state.file_packages.insert(path.clone(), plan.package.clone());
         }
-        let inserted = java::integrate(&mut state.beans.graph, &state.beans.registries, plan);
+        // `integrate` interns FQNs at the serial boundary (backlog #037).
+        let inserted = java::integrate(
+            &mut state.beans.graph,
+            &state.beans.registries,
+            &state.beans.interner,
+            plan,
+        );
         let roots = collect_roots(&state.beans.graph, &inserted);
         state.file_roots.insert(path, roots);
     }
+
+    // Bulk reindex is where the name population actually shrinks (a full
+    // rescan destroys-then-rebuilds every root). Sweep interner entries
+    // no surviving node references — off the per-keystroke path, per the
+    // `purge` contract (backlog #037).
+    state.beans.interner.purge();
 }
 
 /// Filter the inserted NodeIds down to those that are top-level

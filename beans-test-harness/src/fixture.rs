@@ -589,9 +589,8 @@ impl Fixture {
             file_sources.insert(path.clone(), clean_source.clone());
             #[cfg(feature = "java")]
             {
-                let mut java_parsed = parsed.into_java();
-                java_parsed.intern(&interner);
-                let inserted = java::integrate(&mut graph, &registries, java_parsed);
+                let java_parsed = parsed.into_java();
+                let inserted = java::integrate(&mut graph, &registries, &interner, java_parsed);
                 let roots: Vec<NodeId> = inserted
                     .into_iter()
                     .filter(|&id| graph.get(id).is_some_and(|n| n.parent.is_none()))
