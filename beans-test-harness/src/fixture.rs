@@ -4,26 +4,17 @@
 //! registries directly; the prototype `SymbolTable` path is gone.
 //!
 //! Per the team-lead's step 4+5 direction, dispatch is per-extension via
-//! a `match` on the file's extension, gated by Cargo features. The
-//! `Language` trait is no longer used.
+//! a `match` on the file's extension. The `Language` trait is no longer
+//! used.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use beans::completion::CompletionCandidates;
 use beans::graph::{Graph, NodeId};
+use beans::languages::java::{self, Import};
 use beans::{Diagnostic, Fix, SourceEdit};
-// `Import` is Java-syntactic data; lives behind the `java` feature.
-// Without any language feature the fixture parses markers but doesn't
-// resolve cursors, so the imports map is a no-op type alias.
-#[cfg(feature = "java")]
-use beans::languages::java::Import;
-#[cfg(not(feature = "java"))]
-type Import = std::convert::Infallible;
 use beans::{Modifier, NodePayload, Registries, SymbolKind};
-
-#[cfg(feature = "java")]
-use beans::languages::java;
 
 use crate::markers::{CursorPosition, strip_markers};
 
@@ -436,9 +427,8 @@ impl QuickFixAssert {
 /// Test fixture builder. Loads source files, strips cursor markers,
 /// builds a graph + registries, and runs assertions.
 ///
-/// Per-extension dispatch is controlled by Cargo features on
-/// `beans-test-harness`. A fixture can only handle a file whose
-/// extension's feature is enabled.
+/// Dispatch is per file extension (see [`parse_for_extension`]); a
+/// fixture can only handle a file whose extension has a parser wired in.
 pub struct Fixture {
     files: Vec<(PathBuf, String)>,
     assertions: Vec<PendingAssertion>,
@@ -591,17 +581,10 @@ impl Fixture {
         }
 
         // 2. Parse all files and integrate into one graph + registries.
-        // The graph is mutable when any language feature is on (so
-        // `integrate` can insert payloads). With every language feature
-        // off the harness can still strip markers but doesn't write to
-        // the graph.
-        #[cfg_attr(not(feature = "java"), allow(unused_mut))]
         let mut graph: Graph<NodePayload> = Graph::new();
         let registries = Registries::new();
-        #[cfg(feature = "java")]
         let interner = beans::Interner::new();
         let mut file_imports: HashMap<PathBuf, Vec<Import>> = HashMap::new();
-        #[cfg_attr(not(feature = "java"), allow(unused_mut))]
         let mut file_roots: HashMap<PathBuf, Vec<NodeId>> = HashMap::new();
         let mut file_packages: HashMap<PathBuf, String> = HashMap::new();
         let mut file_sources: HashMap<PathBuf, String> = HashMap::new();
@@ -613,18 +596,13 @@ impl Fixture {
                 file_packages.insert(path.clone(), parsed.package.clone());
             }
             file_sources.insert(path.clone(), clean_source.clone());
-            #[cfg(feature = "java")]
-            {
-                let java_parsed = parsed.into_java();
-                let inserted = java::integrate(&mut graph, &registries, &interner, java_parsed);
-                let roots: Vec<NodeId> = inserted
-                    .into_iter()
-                    .filter(|&id| graph.get(id).is_some_and(|n| n.parent.is_none()))
-                    .collect();
-                file_roots.insert(path.clone(), roots);
-            }
-            #[cfg(not(feature = "java"))]
-            drop(parsed);
+            let java_parsed = parsed.into_java();
+            let inserted = java::integrate(&mut graph, &registries, &interner, java_parsed);
+            let roots: Vec<NodeId> = inserted
+                .into_iter()
+                .filter(|&id| graph.get(id).is_some_and(|n| n.parent.is_none()))
+                .collect();
+            file_roots.insert(path.clone(), roots);
         }
 
         // 3. Run resolution assertions.
@@ -785,7 +763,6 @@ impl Fixture {
                     panic!("cursor '{}' not found in any file", cursor_display);
                 });
 
-            #[cfg(feature = "java")]
             let fixes: Vec<Fix> = {
                 let source = file_sources
                     .get(&cursor.file)
@@ -801,8 +778,6 @@ impl Fixture {
                     cursor.col,
                 )
             };
-            #[cfg(not(feature = "java"))]
-            let fixes: Vec<Fix> = Vec::new();
 
             match &qf.mode {
                 TestMode::Skip(reason) => {
@@ -854,29 +829,26 @@ impl Fixture {
 // ---------------------------------------------------------------------
 
 /// Output of a per-extension parse — wraps the language-specific
-/// `Parsed*` value plus shared metadata (package, imports). Implemented
-/// as an enum gated by language feature so the harness can dispatch
-/// without `dyn`.
+/// `Parsed*` value plus shared metadata (package, imports). A struct (not
+/// `dyn`) so the harness dispatches on the file extension and hands back a
+/// concrete parse; a new language adds a field and an `into_*` accessor.
 struct ParsedForFixture {
     package: String,
     imports: Vec<Import>,
-    #[cfg(feature = "java")]
     java: Option<java::ParsedJavaFile>,
 }
 
 impl ParsedForFixture {
-    #[cfg(feature = "java")]
     fn into_java(self) -> java::ParsedJavaFile {
         self.java
             .expect("ParsedForFixture::into_java called on non-Java parse — fixture dispatch bug")
     }
 }
 
-fn parse_for_extension(path: &Path, #[allow(unused_variables)] source: &str) -> ParsedForFixture {
+fn parse_for_extension(path: &Path, source: &str) -> ParsedForFixture {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match ext {
-        #[cfg(feature = "java")]
         "java" => {
             let parsed = java::parse_java_to_graph(path, source);
             ParsedForFixture {
@@ -887,7 +859,7 @@ fn parse_for_extension(path: &Path, #[allow(unused_variables)] source: &str) -> 
         }
         _ => panic!(
             "no parser registered for extension '.{}' (file: {}). \
-             Enable the matching beans-test-harness feature.",
+             Only Java is supported today.",
             ext,
             path.display()
         ),
@@ -929,13 +901,11 @@ impl<'a> ResolvedView<'a> {
 
 fn view_fields(payload: &NodePayload) -> Option<(String, String, SymbolKind, Vec<Modifier>)> {
     match payload {
-        #[cfg(feature = "java")]
         NodePayload::Java(java_payload) => java_view_fields(java_payload),
         NodePayload::Jvm(jvm_payload) => Some(jvm_view_fields(jvm_payload)),
     }
 }
 
-#[cfg(feature = "java")]
 fn java_view_fields(
     payload: &beans::languages::java::JavaNodePayload,
 ) -> Option<(String, String, SymbolKind, Vec<Modifier>)> {
@@ -1106,12 +1076,9 @@ fn resolve_at_cursor<'a>(
         .map(|s| s.as_str())
         .unwrap_or("");
 
-    // Per the team-lead's step 4+5 direction the harness dispatches by
-    // file extension. Java resolution is the only chain implemented
-    // today; when other languages land they'll add their own arms gated
-    // by their own features. Without any language feature the harness
-    // can still parse markers but won't resolve cursor positions.
-    #[cfg(feature = "java")]
+    // The harness dispatches by file extension. Java resolution is the
+    // only chain implemented today; when other languages land they'll add
+    // their own arms.
     let resolved = java::resolve_name(
         &word,
         imports,
@@ -1120,11 +1087,6 @@ fn resolve_at_cursor<'a>(
         &registries.jvm,
         graph,
     );
-    #[cfg(not(feature = "java"))]
-    let resolved: Option<NodeId> = {
-        let _ = (imports, current_package, registries, graph);
-        None
-    };
     let id = resolved.unwrap_or_else(|| {
         panic!(
             "[{}] could not resolve '{}' to any symbol",
@@ -1140,11 +1102,9 @@ fn resolve_at_cursor<'a>(
     })
 }
 
-#[allow(unused_variables)]
 fn word_at(source: &str, line: u32, col: u32, file: &Path) -> Option<String> {
     let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
     match ext {
-        #[cfg(feature = "java")]
         "java" => java::word_at_position(source, line, col),
         _ => None,
     }
@@ -1182,7 +1142,6 @@ fn build_hover(view: &ResolvedView<'_>) -> String {
     let mut s = String::new();
 
     match view.payload {
-        #[cfg(feature = "java")]
         NodePayload::Java(beans::languages::java::JavaNodePayload::Method(m)) => {
             let tp = if m.type_parameters.is_empty() {
                 String::new()
@@ -1206,7 +1165,6 @@ fn build_hover(view: &ResolvedView<'_>) -> String {
                 m.header.fqn
             );
         }
-        #[cfg(feature = "java")]
         NodePayload::Java(beans::languages::java::JavaNodePayload::Field(f)) => {
             let _ = write!(
                 s,
@@ -1214,7 +1172,6 @@ fn build_hover(view: &ResolvedView<'_>) -> String {
                 f.field_type, f.header.name, kind_str, f.header.fqn
             );
         }
-        #[cfg(feature = "java")]
         NodePayload::Java(beans::languages::java::JavaNodePayload::Type(t)) => {
             let tp = if t.type_parameters.is_empty() {
                 String::new()
@@ -1244,7 +1201,6 @@ fn build_hover(view: &ResolvedView<'_>) -> String {
 
 fn signature_return_type(view: &ResolvedView<'_>) -> Option<String> {
     match view.payload {
-        #[cfg(feature = "java")]
         NodePayload::Java(beans::languages::java::JavaNodePayload::Method(m)) => {
             Some(m.return_type.to_string())
         }
@@ -1254,14 +1210,12 @@ fn signature_return_type(view: &ResolvedView<'_>) -> Option<String> {
 
 fn signature_params(view: &ResolvedView<'_>) -> Option<Vec<(String, String)>> {
     match view.payload {
-        #[cfg(feature = "java")]
         NodePayload::Java(beans::languages::java::JavaNodePayload::Method(m)) => Some(
             m.parameters
                 .iter()
                 .map(|p| (p.name.clone(), p.param_type.to_string()))
                 .collect(),
         ),
-        #[cfg(feature = "java")]
         NodePayload::Java(beans::languages::java::JavaNodePayload::Constructor(c)) => Some(
             c.parameters
                 .iter()
@@ -1298,15 +1252,9 @@ fn child_names(view: &ResolvedView<'_>, graph: &Graph<NodePayload>) -> Vec<Strin
             if matches!(child.payload, NodePayload::Jvm(_)) {
                 continue;
             }
-            // The match's arm types only unify when a language feature
-            // is on (the Java arm yields `Option<&JavaDeclHeader>`).
-            // With every language feature off the only arm is the JVM
-            // catch-all, and Rust can't infer the `Option<_>` element
-            // type. Annotate the match expression to keep it typed.
             let header = match &child.payload {
-                #[cfg(feature = "java")]
                 NodePayload::Java(j) => j.header().map(|h| h.name.clone()),
-                NodePayload::Jvm(_) => Option::<String>::None,
+                NodePayload::Jvm(_) => None,
             };
             if let Some(name) = header {
                 out.push(name);
