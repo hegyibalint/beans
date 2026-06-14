@@ -3,22 +3,22 @@
 //! Per the vertical crate layout this union lives in the facade — the
 //! one crate that sees every language. Per ADR-0006 a single graph
 //! holds both per-language nodes and their JVM projections, so
-//! [`NodePayload`] unions the per-language payloads (gated by their
-//! language feature) with the shared JVM payload.
+//! [`NodePayload`] unions the per-language payloads with the shared JVM
+//! payload.
 //!
 //! Variants:
-//! - `Jvm` — a JVM-projection node ([`JvmNodePayload`]). **Always
-//!   present**, never feature-gated. Per ADR-0004 each language node
-//!   hard-links a JVM projection as its descendant; cross-file resolution
-//!   between languages goes through the JVM layer (the only vocabulary
-//!   shared by all five). Gating `Jvm` behind a feature would dissolve
-//!   the cross-language interop story the entire architecture is built
-//!   around — even a Kotlin-only build of beans needs the JVM payload
-//!   variant to represent the projection of the Kotlin source nodes.
+//! - `Jvm` — a JVM-projection node ([`JvmNodePayload`]). Per ADR-0004
+//!   each language node hard-links a JVM projection as its descendant;
+//!   cross-file resolution between languages goes through the JVM layer
+//!   (the only vocabulary shared by all five). It is the shared spine of
+//!   the cross-language interop story the whole architecture is built
+//!   around.
 //! - `Java` — a Java-side node ([`JavaNodePayload`]). Hard-links its
-//!   `Jvm` projection child per ADR-0004. Gated by `feature = "java"`.
+//!   `Jvm` projection child per ADR-0004.
 //!
-//! New language variants land alongside their vertical crate.
+//! New language variants land alongside their vertical crate (ADR-0033:
+//! the facade composes every vertical unconditionally — no Cargo
+//! features gate the arms).
 //!
 //! Vertical code never sees this union. Walkers construct payloads
 //! through the `From` impls below (generic `P: From<JavaNodePayload>`
@@ -32,20 +32,16 @@
 
 use beans_core::graph::NodeBehavior;
 use beans_core::graph::arena::{NodeHandle, NodeId};
-use beans_lang_jvm::payload::{AsJvm, JvmNodePayload};
-
-#[cfg(feature = "java")]
 use beans_lang_java::payload::{AsJava, JavaNodePayload};
+use beans_lang_jvm::payload::{AsJvm, JvmNodePayload};
 
 use crate::registries::Registries;
 
-/// Union of every node payload the engine can store. Variants are
-/// feature-gated to match their owning vertical crate.
+/// Union of every node payload the engine can store: one variant per
+/// vertical crate, plus the shared JVM projection.
 #[derive(Debug, Clone, PartialEq)]
 pub enum NodePayload {
     Jvm(JvmNodePayload),
-
-    #[cfg(feature = "java")]
     Java(JavaNodePayload),
 }
 
@@ -54,8 +50,6 @@ impl NodeBehavior for NodePayload {
     fn on_created(&self, id: NodeId, ctx: &Self::Ctx) -> Vec<Box<dyn NodeHandle>> {
         match self {
             NodePayload::Jvm(p) => p.on_created(id, &ctx.jvm),
-
-            #[cfg(feature = "java")]
             NodePayload::Java(p) => p.on_created(id, &ctx.java),
         }
     }
@@ -67,7 +61,6 @@ impl From<JvmNodePayload> for NodePayload {
     }
 }
 
-#[cfg(feature = "java")]
 impl From<JavaNodePayload> for NodePayload {
     fn from(p: JavaNodePayload) -> Self {
         NodePayload::Java(p)
@@ -76,20 +69,20 @@ impl From<JavaNodePayload> for NodePayload {
 
 impl AsJvm for NodePayload {
     fn as_jvm(&self) -> Option<&JvmNodePayload> {
+        // Arms explicit (not `_`) so a new `NodePayload` variant is a
+        // compile error here, not a silent `None` (ADR-0030).
         match self {
             NodePayload::Jvm(p) => Some(p),
-            #[allow(unreachable_patterns)]
-            _ => None,
+            NodePayload::Java(_) => None,
         }
     }
 }
 
-#[cfg(feature = "java")]
 impl AsJava for NodePayload {
     fn as_java(&self) -> Option<&JavaNodePayload> {
         match self {
             NodePayload::Java(p) => Some(p),
-            _ => None,
+            NodePayload::Jvm(_) => None,
         }
     }
 }

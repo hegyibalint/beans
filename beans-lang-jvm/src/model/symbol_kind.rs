@@ -1,12 +1,10 @@
 //! JVM-shaped symbol kind tag.
 //!
-//! Per ADR-0019 / ADR-0004 each per-language module has its own
-//! [`SymbolKind`] that names the constructs *that language* produces
-//! (`kotlin::SymbolKind`,
-//! `scala::SymbolKind`,
-//! `clojure::SymbolKind`). This enum names the
-//! constructs the JVM projection itself produces — every JVM language
-//! eventually reduces to one of these.
+//! Per ADR-0004 / ADR-0030 each per-language vertical will own its own
+//! `SymbolKind`, naming the constructs *that language* produces, as its
+//! `beans-lang-*` crate lands. This enum names the constructs the JVM
+//! projection itself produces — every JVM language eventually reduces to
+//! one of these.
 //!
 //! At the crate root, [`crate::SymbolKind`] re-exports this type so
 //! existing consumers (the spec tests, the fixture, the LSP) keep
