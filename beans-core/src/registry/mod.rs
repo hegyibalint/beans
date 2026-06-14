@@ -8,10 +8,11 @@
 //!
 //! Layout:
 //!
-//! - This file ([`mod.rs`]) carries the [`Registries`] bag (one per
-//!   [`crate::Beans`] instance, flat per-registry fields, not [`Clone`])
-//!   and the [`Registry<K>`] primitive itself plus its provider RAII
-//!   handle ([`ProviderHandle`], [`Callback`], [`SubscriptionId`]). Per
+//! - This file ([`mod.rs`]) carries the [`Registry<K>`] primitive
+//!   itself plus its provider RAII handle ([`ProviderHandle`],
+//!   [`Callback`], [`SubscriptionId`]). There is no bag-of-registries
+//!   here — each vertical owns its registry struct and the `beans`
+//!   facade composes them (see the note below). Per
 //!   ADR-0013 a registry stores *all* providers for a key; per ADR-0014
 //!   RAII handles tie registration lifetime to node lifetime; per
 //!   ADR-0015 the inner state is `Rc<RefCell<...>>` for re-entrant

@@ -7,12 +7,29 @@
 //! - [`Registries`](registries::Registries) — the composed registry
 //!   bag (`jvm` + one field per language vertical).
 //!
-//! It also hosts per-extension dispatch ([`compute_diagnostics`]) and
-//! the [`Beans`] engine instance. Consumers (the LSP, CLIs, the test
-//! harness) depend on this crate; verticals never depend on it.
+//! On top of that storage substrate it hosts the product-facing facade:
+//!
+//! - [`Store`] — the storage aggregate (graph + registries + interner).
+//!   Consumers that want raw engine access reach for this.
+//! - [`Workspace`](workspace::Workspace) — the orchestration facade. It
+//!   owns workspace policy (artifact classification, parser dispatch,
+//!   per-file indexing context) and exposes the consumer-level API
+//!   (`update_file`, `remove_file`, `index_workspace`, `definition_at`,
+//!   `references_at`, `hover_at`, `document_symbols`, `diagnostics`,
+//!   `quick_fixes_at`). The LSP and any future CLI drive
+//!   indexing and resolution through it rather than reimplementing the
+//!   mechanics.
+//!
+//! It also hosts per-extension dispatch ([`compute_diagnostics`]).
+//! Consumers (the LSP, CLIs, the test harness) depend on this crate;
+//! verticals never depend on it.
 
 pub mod payload;
 pub mod registries;
+pub mod workspace;
+
+#[cfg(feature = "java")]
+pub mod view;
 
 pub mod languages {
     //! Language verticals, re-exported under their conventional names.
@@ -46,34 +63,39 @@ pub use beans_lang_jvm::{
 };
 pub use payload::NodePayload;
 pub use registries::Registries;
+pub use workspace::Workspace;
+
+#[cfg(feature = "java")]
+pub use view::{DocSymbol, PayloadView, payload_view};
 
 use beans_core::graph::Graph;
 use std::path::Path;
 
-/// The top-level engine instance. Per workspace, exactly one. Owns the
-/// graph + registries and any future engine-wide state. Not Clone;
-/// not constructed casually. Library consumers (LSP, CLI, batch tools)
-/// each own one and operate it through the methods below.
-pub struct Beans {
+/// The storage aggregate: graph + registries + interner. This is the
+/// raw engine substrate — no workspace policy, no per-file bookkeeping.
+/// [`Workspace`] owns one and layers orchestration on top; consumers
+/// that want low-level access (benchmarks, the test harness) can hold a
+/// `Store` directly. Not `Clone`; per workspace there is exactly one.
+pub struct Store {
     pub graph: Graph<NodePayload>,
     pub registries: Registries,
     /// Workspace string interner (backlog #037). Parsed plans are
     /// interned at the integrate boundary; see
     /// `ParsedJavaFile::intern`.
-    pub interner: beans_core::Interner,
+    pub interner: Interner,
 }
 
-impl Beans {
+impl Store {
     pub fn new() -> Self {
         Self {
             graph: Graph::new(),
             registries: Registries::new(),
-            interner: beans_core::Interner::new(),
+            interner: Interner::new(),
         }
     }
 }
 
-impl Default for Beans {
+impl Default for Store {
     fn default() -> Self {
         Self::new()
     }
@@ -83,6 +105,7 @@ impl Default for Beans {
 /// extension to the owning vertical's rule set. Files whose extension
 /// matches no enabled language feature produce an empty result, so
 /// consumers can call this unconditionally on any document.
+#[cfg_attr(not(feature = "java"), allow(unused_variables))]
 pub fn compute_diagnostics(
     graph: &Graph<NodePayload>,
     registries: &Registries,

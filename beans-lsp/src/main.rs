@@ -2,7 +2,6 @@ mod actor;
 mod backend;
 mod completion;
 mod hover;
-mod workspace;
 
 use tower_lsp::{LspService, Server};
 use tracing_subscriber::EnvFilter;

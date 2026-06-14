@@ -2,54 +2,33 @@
 //!
 //! Per ADR-0018 the graph core is single-threaded; per ADR-0020 the LSP
 //! is a leaf consumer. This file owns the wire-protocol mapping and
-//! dispatches each request through [`crate::actor::WorkerHandle`].
-//! State and resolution logic live in [`crate::actor`]; LSP-shaped
-//! formatting (hover) lives in [`crate::hover`]; workspace indexing
-//! (with rayon parse fanout per ADR-0005) lives in [`crate::workspace`].
+//! dispatches each request through [`crate::actor::WorkerHandle`]. The
+//! request handlers in [`crate::actor`] convert protocol values to and
+//! from the [`beans::Workspace`] facade, which owns workspace indexing
+//! and resolution. LSP-shaped formatting (hover) lives in
+//! [`crate::hover`].
 
-use std::collections::HashMap;
-use std::path::PathBuf;
-
-use beans::Beans;
-use beans::graph::NodeId;
-use beans::languages::java::Import;
+use beans::Workspace;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 
 use crate::actor::{Cmd, WorkerHandle, spawn_worker};
 
-/// Server-wide mutable state. Owned exclusively by the worker thread
-/// per ADR-0018; the LSP backend itself holds only a [`WorkerHandle`]
-/// and the [`Client`]. Per ADR-0014 RAII registration handles live on
-/// each `NodeData`'s `handles` vec; destroying a node frees its registry
-/// entries through `Drop`.
-///
-/// `beans` is the engine instance (graph + registries). The other fields
-/// are LSP-specific bookkeeping that doesn't belong on the engine: open-
-/// file text, the per-file root-ids map (workaround for missing
-/// `file://` view nodes), and Java-side import/package state used by
-/// the resolution chain.
+/// Server-wide state: just the [`beans::Workspace`] facade. Owned
+/// exclusively by the worker thread per ADR-0018; the LSP backend itself
+/// holds only a [`WorkerHandle`] and the [`Client`]. All workspace
+/// semantics — indexed roots, source text, import/package context — live
+/// inside the facade, not here: the LSP no longer owns indexing or
+/// resolution mechanics, only the protocol rim around them.
 pub struct ServerState {
-    pub beans: Beans,
-    pub file_imports: HashMap<PathBuf, Vec<Import>>,
-    pub file_packages: HashMap<PathBuf, String>,
-    /// Per-file root NodeIds. Each `did_change` destroys these roots
-    /// (which cascades through hard-link children) before re-indexing.
-    pub file_roots: HashMap<PathBuf, Vec<NodeId>>,
-    pub open_files: HashMap<Url, String>,
-    pub workspace_root: Option<PathBuf>,
+    pub workspace: Workspace,
 }
 
 impl ServerState {
     pub fn new() -> Self {
         Self {
-            beans: Beans::new(),
-            file_imports: HashMap::new(),
-            file_packages: HashMap::new(),
-            file_roots: HashMap::new(),
-            open_files: HashMap::new(),
-            workspace_root: None,
+            workspace: Workspace::new(),
         }
     }
 }
