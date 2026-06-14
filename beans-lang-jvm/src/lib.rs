@@ -16,32 +16,33 @@
 //! refinements live on the per-language node types, not on these JVM
 //! types.
 
-pub mod annotation;
 pub mod completion;
-pub mod constant;
 pub mod container;
-pub mod fqn;
-pub mod keys;
-pub mod modifier;
-pub mod payload;
-pub mod record;
+pub mod model;
 pub mod registries;
-pub mod symbol_kind;
-pub mod type_ref;
 
-pub use annotation::{AnnotationInstance, AnnotationValue};
 pub use completion::{CompletionCandidate, CompletionCandidates};
-pub use constant::ConstantValue;
 pub use container::{ContainerError, Jar, Jmod};
-pub use fqn::Fqn;
-pub use keys::{JvmConstructorKey, JvmFieldKey, JvmMethodKey, JvmTypeKey, PackageKey};
-pub use modifier::Modifier;
-pub use payload::{
+pub use model::{
+    AnnotationInstance, AnnotationValue, ConstantValue, Fqn, JvmConstructorKey, JvmFieldKey,
+    JvmMethodKey, JvmTypeKey, Modifier, PackageKey, PrimitiveKind, RecordComponent, SymbolKind,
+    TypeParam, TypeRef, WildcardBound,
+};
+pub use model::{
     AsJvm, JvmAnnotationElementNode, JvmConstructorNode, JvmDeclHeader, JvmEnrichments,
     JvmEnumConstantNode, JvmFieldNode, JvmMethodNode, JvmNodePayload, JvmPackageNode, JvmParameter,
     JvmTypeKind, JvmTypeNode, NullabilityInfo,
 };
-pub use record::RecordComponent;
 pub use registries::JvmRegistries;
-pub use symbol_kind::SymbolKind;
-pub use type_ref::{PrimitiveKind, TypeParam, TypeRef, WildcardBound};
+
+// Compatibility module aliases. Keep these until the facade/API cleanup
+// removes broad root module paths.
+pub use model::annotation;
+pub use model::constant;
+pub use model::fqn;
+pub use model::keys;
+pub use model::modifier;
+pub use model::payload;
+pub use model::record;
+pub use model::symbol_kind;
+pub use model::type_ref;

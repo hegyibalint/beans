@@ -19,18 +19,18 @@
 //! keyed by [`JavaSymbolKey`] (FQN-only). Method overload disambiguation
 //! happens at the JVM layer.
 
-use crate::keys::JavaSymbolKey;
-use crate::registries::JavaRegistries;
+use crate::model::keys::JavaSymbolKey;
+use crate::model::registries::JavaRegistries;
 use beans_core::Interner;
 use beans_core::graph::NodeBehavior;
 use beans_core::graph::arena::{NodeHandle, NodeId};
 use beans_core::primitives::Location;
-use beans_lang_jvm::annotation::AnnotationInstance;
-use beans_lang_jvm::constant::ConstantValue;
-use beans_lang_jvm::fqn::Fqn;
-use beans_lang_jvm::modifier::Modifier;
-use beans_lang_jvm::record::RecordComponent;
-use beans_lang_jvm::type_ref::{TypeParam, TypeRef};
+use beans_lang_jvm::model::annotation::AnnotationInstance;
+use beans_lang_jvm::model::constant::ConstantValue;
+use beans_lang_jvm::model::fqn::Fqn;
+use beans_lang_jvm::model::modifier::Modifier;
+use beans_lang_jvm::model::record::RecordComponent;
+use beans_lang_jvm::model::type_ref::{TypeParam, TypeRef};
 
 /// What category of Java declaration a [`JavaTypeNode`] represents.
 /// Mirrors [`beans_lang_jvm::JvmTypeKind`] one-for-one today; the split
@@ -226,7 +226,7 @@ impl NodeBehavior for JavaPackageNode {
 /// because they participate in cross-file refactor flow — renaming a
 /// target FQN must invalidate every importing file, which is the
 /// graph + registry layer's job. The variants mirror
-/// [`crate::syntax::Import`] but without carrying
+/// [`crate::source::Import`] but without carrying
 /// location data twice (the location lives on [`JavaImportNode`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JavaImportKind {

@@ -23,14 +23,14 @@
 //! variants free of `Rc`-flavoured `!Send` types and lets parse output
 //! travel across rayon worker boundaries (ADR-0005).
 
-use crate::annotation::AnnotationInstance;
-use crate::constant::ConstantValue;
-use crate::fqn::Fqn;
-use crate::keys::{JvmConstructorKey, JvmFieldKey, JvmMethodKey, JvmTypeKey, PackageKey};
-use crate::modifier::Modifier;
-use crate::record::RecordComponent;
+use crate::model::annotation::AnnotationInstance;
+use crate::model::constant::ConstantValue;
+use crate::model::fqn::Fqn;
+use crate::model::keys::{JvmConstructorKey, JvmFieldKey, JvmMethodKey, JvmTypeKey, PackageKey};
+use crate::model::modifier::Modifier;
+use crate::model::record::RecordComponent;
+use crate::model::type_ref::{TypeParam, TypeRef};
 use crate::registries::JvmRegistries;
-use crate::type_ref::{TypeParam, TypeRef};
 use beans_core::Interner;
 use beans_core::graph::NodeBehavior;
 use beans_core::graph::arena::{NodeHandle, NodeId};
