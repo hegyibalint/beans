@@ -30,8 +30,8 @@
 //! are therefore plain data — `Send + Sync`-eligible — which lets
 //! pre-integration parse plans travel between rayon workers (ADR-0005).
 
-use beans_core::graph::arena::{NodeHandle, NodeId};
 use beans_core::graph::NodeBehavior;
+use beans_core::graph::arena::{NodeHandle, NodeId};
 use beans_lang_jvm::payload::{AsJvm, JvmNodePayload};
 
 #[cfg(feature = "java")]

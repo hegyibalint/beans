@@ -522,7 +522,11 @@ mod tests {
         }));
 
         let provider = registry.register(key.clone(), NodeId::placeholder(42));
-        assert_eq!(counter.get(), 1, "subscriber fires on provider registration");
+        assert_eq!(
+            counter.get(),
+            1,
+            "subscriber fires on provider registration"
+        );
 
         drop(provider);
         assert_eq!(counter.get(), 2, "subscriber fires on provider drop");
@@ -634,10 +638,7 @@ mod tests {
         // After notify: secondary has the provider the callback registered,
         // and the primary's internals are still usable (re-entrancy didn't
         // wedge it).
-        assert_eq!(
-            secondary.providers(&key_b),
-            vec![NodeId::placeholder(123)]
-        );
+        assert_eq!(secondary.providers(&key_b), vec![NodeId::placeholder(123)]);
         let _ = primary.register(key_a.clone(), NodeId::placeholder(7));
 
         // Drop the derived handle — secondary cleans up.

@@ -23,20 +23,18 @@
 //! variants free of `Rc`-flavoured `!Send` types and lets parse output
 //! travel across rayon worker boundaries (ADR-0005).
 
+use crate::annotation::AnnotationInstance;
+use crate::constant::ConstantValue;
+use crate::fqn::Fqn;
+use crate::keys::{JvmConstructorKey, JvmFieldKey, JvmMethodKey, JvmTypeKey, PackageKey};
+use crate::modifier::Modifier;
+use crate::record::RecordComponent;
+use crate::registries::JvmRegistries;
+use crate::type_ref::{TypeParam, TypeRef};
+use beans_core::Interner;
 use beans_core::graph::NodeBehavior;
 use beans_core::graph::arena::{NodeHandle, NodeId};
-use crate::annotation::AnnotationInstance;
-use crate::fqn::Fqn;
-use crate::keys::{
-    JvmConstructorKey, JvmFieldKey, JvmMethodKey, JvmTypeKey, PackageKey,
-};
-use crate::modifier::Modifier;
-use crate::constant::ConstantValue;
-use crate::record::RecordComponent;
-use crate::type_ref::{TypeParam, TypeRef};
 use beans_core::primitives::Location;
-use beans_core::Interner;
-use crate::registries::JvmRegistries;
 
 /// What category of JVM declaration a [`JvmTypeNode`] represents. Records
 /// and annotations have their own variants because their JVM projection
@@ -166,7 +164,10 @@ impl JvmMethodNode {
         JvmMethodKey::new(
             self.owner.clone(),
             self.header.name.clone(),
-            self.parameters.iter().map(|p| p.param_type.clone()).collect(),
+            self.parameters
+                .iter()
+                .map(|p| p.param_type.clone())
+                .collect(),
         )
     }
 }
@@ -202,7 +203,10 @@ impl JvmConstructorNode {
     pub fn key(&self) -> JvmConstructorKey {
         JvmConstructorKey::new(
             self.owner.clone(),
-            self.parameters.iter().map(|p| p.param_type.clone()).collect(),
+            self.parameters
+                .iter()
+                .map(|p| p.param_type.clone())
+                .collect(),
         )
     }
 }

@@ -119,11 +119,7 @@ pub fn to_completion_item(
 }
 
 #[allow(dead_code)]
-fn build_detail(
-    kind: &SymbolKind,
-    return_type: &str,
-    params: &[CompletionParam],
-) -> String {
+fn build_detail(kind: &SymbolKind, return_type: &str, params: &[CompletionParam]) -> String {
     match kind {
         SymbolKind::Method | SymbolKind::Constructor => {
             let param_str: Vec<String> = params
@@ -164,14 +160,11 @@ mod tests {
     /// Helper: parse `source`, integrate, and return both the graph
     /// and the inserted NodeIds so individual tests can pluck the
     /// payload they care about.
-    fn fixture(
-        source: &str,
-    ) -> (Graph<NodePayload>, Vec<beans::graph::NodeId>) {
+    fn fixture(source: &str) -> (Graph<NodePayload>, Vec<beans::graph::NodeId>) {
         let mut graph: Graph<NodePayload> = Graph::new();
         let registries = Registries::new();
         let interner = beans::Interner::new();
-        let parsed =
-            java::parse_java_to_graph(std::path::Path::new("Test.java"), source);
+        let parsed = java::parse_java_to_graph(std::path::Path::new("Test.java"), source);
         let inserted = java::integrate(&mut graph, &registries, &interner, parsed);
         (graph, inserted)
     }
@@ -185,9 +178,7 @@ mod tests {
             .iter()
             .copied()
             .find(|&id| match graph.get(id).map(|n| &n.payload) {
-                Some(NodePayload::Java(j)) => {
-                    j.header().is_some_and(|h| h.name == name)
-                }
+                Some(NodePayload::Java(j)) => j.header().is_some_and(|h| h.name == name),
                 _ => false,
             })
             .unwrap_or_else(|| panic!("no Java payload named '{name}'"));
@@ -250,9 +241,8 @@ mod tests {
         // `void` is the documented return-type rendering for methods
         // with no return value (per the existing fixture's hover
         // formatting); the adapter passes it through verbatim.
-        let (graph, inserted) = fixture(
-            "package com.example;\npublic class V { public void run() {} }\n",
-        );
+        let (graph, inserted) =
+            fixture("package com.example;\npublic class V { public void run() {} }\n");
         let (id, payload) = find_named(&graph, &inserted, "run");
 
         let candidate = CompletionCandidate {
@@ -273,9 +263,8 @@ mod tests {
         // walker's `JavaConstructorNode` carries only parameters.
         // `build_detail` renders constructors as `(params)` without
         // the arrow.
-        let (graph, inserted) = fixture(
-            "package com.example;\npublic class V { public V(int n) {} }\n",
-        );
+        let (graph, inserted) =
+            fixture("package com.example;\npublic class V { public V(int n) {} }\n");
         // The class is named V; the constructor is also named V. Find
         // the Constructor payload specifically.
         let id = inserted

@@ -28,8 +28,7 @@ pub fn build_hover_text(payload: &NodePayload) -> Option<String> {
             let tp = if m.type_parameters.is_empty() {
                 String::new()
             } else {
-                let names: Vec<&str> =
-                    m.type_parameters.iter().map(|t| t.name.as_str()).collect();
+                let names: Vec<&str> = m.type_parameters.iter().map(|t| t.name.as_str()).collect();
                 format!("<{}>", names.join(", "))
             };
             let params: Vec<String> = m
@@ -79,8 +78,7 @@ pub fn build_hover_text(payload: &NodePayload) -> Option<String> {
             let tp = if t.type_parameters.is_empty() {
                 String::new()
             } else {
-                let names: Vec<&str> =
-                    t.type_parameters.iter().map(|p| p.name.as_str()).collect();
+                let names: Vec<&str> = t.type_parameters.iter().map(|p| p.name.as_str()).collect();
                 format!("<{}>", names.join(", "))
             };
             let kind_word = match t.kind {

@@ -11,7 +11,9 @@ mod jls_14_3_local_classes {
     #[test]
     fn dot_completion_local_class_instance() {
         fixture()
-            .file("com/example/Service.java", r#"
+            .file(
+                "com/example/Service.java",
+                r#"
                 package com.example;
                 public class Service {
                     public void process() {
@@ -22,7 +24,8 @@ mod jls_14_3_local_classes {
                         h.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("assist", SymbolKind::Method));
             })
@@ -34,7 +37,9 @@ mod jls_14_3_local_classes {
     #[test]
     fn local_class_declared_in_method() {
         fixture()
-            .file("com/example/Service.java", r#"
+            .file(
+                "com/example/Service.java",
+                r#"
                 package com.example;
                 public class Service {
                     public void process() {
@@ -44,12 +49,13 @@ mod jls_14_3_local_classes {
                         Helper h = new Helper();
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("local")
-                .kind(SymbolKind::Class)
-                .name("Helper")
-                .parent_fqn("com.example.Service.process")
-                .expected_failure("local class declarations not yet indexed")
+            .kind(SymbolKind::Class)
+            .name("Helper")
+            .parent_fqn("com.example.Service.process")
+            .expected_failure("local class declarations not yet indexed")
             .run();
     }
 
@@ -57,7 +63,9 @@ mod jls_14_3_local_classes {
     #[test]
     fn local_class_with_methods() {
         fixture()
-            .file("com/example/Processor.java", r#"
+            .file(
+                "com/example/Processor.java",
+                r#"
                 package com.example;
                 public class Processor {
                     public String transform(String input) {
@@ -69,13 +77,14 @@ mod jls_14_3_local_classes {
                         return new Formatter().format(input);
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("fmt_method")
-                .kind(SymbolKind::Method)
-                .name("format")
-                .signature_return("String")
-                .signature_params(&[("s", "String")])
-                .expected_failure("local class members not yet indexed")
+            .kind(SymbolKind::Method)
+            .name("format")
+            .signature_return("String")
+            .signature_params(&[("s", "String")])
+            .expected_failure("local class members not yet indexed")
             .run();
     }
 
@@ -83,7 +92,9 @@ mod jls_14_3_local_classes {
     #[test]
     fn local_class_accessing_enclosing_final_param() {
         fixture()
-            .file("com/example/Builder.java", r#"
+            .file(
+                "com/example/Builder.java",
+                r#"
                 package com.example;
                 public class Builder {
                     public Runnable makeTask(final String <cur:param>message) {
@@ -95,12 +106,13 @@ mod jls_14_3_local_classes {
                         return new Task();
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("param")
-                .kind(SymbolKind::Parameter)
-                .name("message")
-                .modifiers(vec![Modifier::Final])
-                .expected_failure("parameter modifiers not yet tracked")
+            .kind(SymbolKind::Parameter)
+            .name("message")
+            .modifiers(vec![Modifier::Final])
+            .expected_failure("parameter modifiers not yet tracked")
             .run();
     }
 }
@@ -112,14 +124,19 @@ mod jls_14_4_local_variables {
     #[test]
     fn dot_completion_local_var_explicit_type() {
         fixture()
-            .file("com/example/Service.java", r#"
+            .file(
+                "com/example/Service.java",
+                r#"
                 package com.example;
                 public class Service {
                     public String process() { return null; }
                     private int internal;
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run() {
@@ -127,25 +144,33 @@ mod jls_14_4_local_variables {
                         svc.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("process", SymbolKind::Method));
                 assert!(!items.has("internal", SymbolKind::Field));
             })
-            .expected_failure("local variable type resolution for dot-completion not yet implemented")
+            .expected_failure(
+                "local variable type resolution for dot-completion not yet implemented",
+            )
             .run();
     }
 
     #[test]
     fn dot_completion_local_var_inferred_type() {
         fixture()
-            .file("com/example/Service.java", r#"
+            .file(
+                "com/example/Service.java",
+                r#"
                 package com.example;
                 public class Service {
                     public String getName() { return null; }
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run() {
@@ -153,7 +178,8 @@ mod jls_14_4_local_variables {
                         svc.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("getName", SymbolKind::Method));
             })
@@ -165,18 +191,21 @@ mod jls_14_4_local_variables {
     #[test]
     fn explicit_type_local_variable() {
         fixture()
-            .file("com/example/App.java", r#"
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run() {
                         <cur:type_ref>String name = "beans";
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("type_ref")
-                .kind(SymbolKind::Class)
-                .name("String")
-                .expected_failure("local variable type references not yet resolved")
+            .kind(SymbolKind::Class)
+            .name("String")
+            .expected_failure("local variable type references not yet resolved")
             .run();
     }
 
@@ -184,18 +213,21 @@ mod jls_14_4_local_variables {
     #[test]
     fn final_local_variable() {
         fixture()
-            .file("com/example/Config.java", r#"
+            .file(
+                "com/example/Config.java",
+                r#"
                 package com.example;
                 public class Config {
                     public void load() {
                         final int <cur:count>count = 42;
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("count")
-                .name("count")
-                .modifiers(vec![Modifier::Final])
-                .expected_failure("local variable declarations not yet indexed")
+            .name("count")
+            .modifiers(vec![Modifier::Final])
+            .expected_failure("local variable declarations not yet indexed")
             .run();
     }
 
@@ -203,7 +235,9 @@ mod jls_14_4_local_variables {
     #[test]
     fn var_type_inference() {
         fixture()
-            .file("com/example/Demo.java", r#"
+            .file(
+                "com/example/Demo.java",
+                r#"
                 package com.example;
                 import java.util.ArrayList;
                 public class Demo {
@@ -211,11 +245,12 @@ mod jls_14_4_local_variables {
                         var <cur:items>items = new ArrayList<String>();
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("items")
-                .name("items")
-                .hover_contains("ArrayList")
-                .expected_failure("var type inference not yet supported")
+            .name("items")
+            .hover_contains("ArrayList")
+            .expected_failure("var type inference not yet supported")
             .run();
     }
 
@@ -224,13 +259,18 @@ mod jls_14_4_local_variables {
     #[test]
     fn local_variable_with_imported_type() {
         fixture()
-            .file("com/example/model/User.java", r#"
+            .file(
+                "com/example/model/User.java",
+                r#"
                 package com.example.model;
                 public class User {
                     private String name;
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 import com.example.model.User;
                 public class App {
@@ -238,10 +278,11 @@ mod jls_14_4_local_variables {
                         <cur:user_type>User user = new User();
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("user_type")
-                .resolves_to("com.example.model.User")
-                .kind(SymbolKind::Class)
+            .resolves_to("com.example.model.User")
+            .kind(SymbolKind::Class)
             .run();
     }
 
@@ -249,7 +290,9 @@ mod jls_14_4_local_variables {
     #[test]
     fn multiple_local_declarations() {
         fixture()
-            .file("com/example/Math.java", r#"
+            .file(
+                "com/example/Math.java",
+                r#"
                 package com.example;
                 public class Math {
                     public int compute() {
@@ -257,10 +300,11 @@ mod jls_14_4_local_variables {
                         return x + y;
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("x")
-                .name("x")
-                .expected_failure("local variable declarations not yet indexed")
+            .name("x")
+            .expected_failure("local variable declarations not yet indexed")
             .run();
     }
 }
@@ -272,14 +316,19 @@ mod jls_14_14_enhanced_for {
     #[test]
     fn dot_completion_enhanced_for_loop_variable() {
         fixture()
-            .file("com/example/model/User.java", r#"
+            .file(
+                "com/example/model/User.java",
+                r#"
                 package com.example.model;
                 public class User {
                     public String getName() { return null; }
                     public String getEmail() { return null; }
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 import com.example.model.User;
                 import java.util.List;
@@ -290,7 +339,8 @@ mod jls_14_14_enhanced_for {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("getName", SymbolKind::Method));
                 assert!(items.has("getEmail", SymbolKind::Method));
@@ -304,13 +354,18 @@ mod jls_14_14_enhanced_for {
     #[test]
     fn dot_completion_for_loop_var_out_of_scope() {
         fixture()
-            .file("com/example/model/User.java", r#"
+            .file(
+                "com/example/model/User.java",
+                r#"
                 package com.example.model;
                 public class User {
                     public String getName() { return null; }
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 import com.example.model.User;
                 import java.util.List;
@@ -322,7 +377,8 @@ mod jls_14_14_enhanced_for {
                         u.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(!items.has("getName", SymbolKind::Method));
             })
@@ -332,13 +388,18 @@ mod jls_14_14_enhanced_for {
     #[test]
     fn dot_completion_enhanced_for_var() {
         fixture()
-            .file("com/example/model/User.java", r#"
+            .file(
+                "com/example/model/User.java",
+                r#"
                 package com.example.model;
                 public class User {
                     public String getName() { return null; }
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 import com.example.model.User;
                 import java.util.List;
@@ -349,7 +410,8 @@ mod jls_14_14_enhanced_for {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("getName", SymbolKind::Method));
             })
@@ -361,7 +423,9 @@ mod jls_14_14_enhanced_for {
     #[test]
     fn for_each_with_explicit_type() {
         fixture()
-            .file("com/example/Printer.java", r#"
+            .file(
+                "com/example/Printer.java",
+                r#"
                 package com.example;
                 import java.util.List;
                 public class Printer {
@@ -371,11 +435,12 @@ mod jls_14_14_enhanced_for {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("elem_type")
-                .kind(SymbolKind::Class)
-                .name("String")
-                .expected_failure("enhanced-for loop variable types not yet resolved")
+            .kind(SymbolKind::Class)
+            .name("String")
+            .expected_failure("enhanced-for loop variable types not yet resolved")
             .run();
     }
 
@@ -383,7 +448,9 @@ mod jls_14_14_enhanced_for {
     #[test]
     fn for_each_loop_variable() {
         fixture()
-            .file("com/example/Aggregator.java", r#"
+            .file(
+                "com/example/Aggregator.java",
+                r#"
                 package com.example;
                 import java.util.List;
                 public class Aggregator {
@@ -395,10 +462,11 @@ mod jls_14_14_enhanced_for {
                         return total;
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("num")
-                .name("num")
-                .expected_failure("enhanced-for loop variable declarations not yet indexed")
+            .name("num")
+            .expected_failure("enhanced-for loop variable declarations not yet indexed")
             .run();
     }
 
@@ -406,7 +474,9 @@ mod jls_14_14_enhanced_for {
     #[test]
     fn for_each_with_var() {
         fixture()
-            .file("com/example/MapWalker.java", r#"
+            .file(
+                "com/example/MapWalker.java",
+                r#"
                 package com.example;
                 import java.util.Map;
                 public class MapWalker {
@@ -416,11 +486,12 @@ mod jls_14_14_enhanced_for {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("entry")
-                .name("entry")
-                .hover_contains("Map.Entry")
-                .expected_failure("var in enhanced-for not yet supported")
+            .name("entry")
+            .hover_contains("Map.Entry")
+            .expected_failure("var in enhanced-for not yet supported")
             .run();
     }
 }
@@ -432,14 +503,19 @@ mod jls_14_14_1_basic_for {
     #[test]
     fn dot_completion_for_loop_initializer_variable() {
         fixture()
-            .file("com/example/Iterator.java", r#"
+            .file(
+                "com/example/Iterator.java",
+                r#"
                 package com.example;
                 public class Iterator {
                     public boolean hasNext() { return false; }
                     public Object next() { return null; }
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run() {
@@ -448,7 +524,8 @@ mod jls_14_14_1_basic_for {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("hasNext", SymbolKind::Method));
                 assert!(items.has("next", SymbolKind::Method));
@@ -465,14 +542,19 @@ mod jls_14_20_try_statements {
     #[test]
     fn dot_completion_try_with_resources_variable() {
         fixture()
-            .file("com/example/Connection.java", r#"
+            .file(
+                "com/example/Connection.java",
+                r#"
                 package com.example;
                 public class Connection implements AutoCloseable {
                     public void execute(String sql) {}
                     public void close() {}
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run() throws Exception {
@@ -481,7 +563,8 @@ mod jls_14_20_try_statements {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("execute", SymbolKind::Method));
                 assert!(items.has("close", SymbolKind::Method));
@@ -493,14 +576,19 @@ mod jls_14_20_try_statements {
     #[test]
     fn dot_completion_try_with_resources_var() {
         fixture()
-            .file("com/example/Connection.java", r#"
+            .file(
+                "com/example/Connection.java",
+                r#"
                 package com.example;
                 public class Connection implements AutoCloseable {
                     public void execute(String sql) {}
                     public void close() {}
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run() throws Exception {
@@ -509,7 +597,8 @@ mod jls_14_20_try_statements {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("execute", SymbolKind::Method));
             })
@@ -520,21 +609,29 @@ mod jls_14_20_try_statements {
     #[test]
     fn dot_completion_try_multiple_resources_second_var() {
         fixture()
-            .file("com/example/Connection.java", r#"
+            .file(
+                "com/example/Connection.java",
+                r#"
                 package com.example;
                 public class Connection implements AutoCloseable {
                     public Statement prepareStatement(String sql) { return null; }
                     public void close() {}
                 }
-            "#)
-            .file("com/example/Statement.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Statement.java",
+                r#"
                 package com.example;
                 public class Statement implements AutoCloseable {
                     public Object executeQuery() { return null; }
                     public void close() {}
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run() throws Exception {
@@ -544,25 +641,33 @@ mod jls_14_20_try_statements {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("executeQuery", SymbolKind::Method));
                 assert!(!items.has("prepareStatement", SymbolKind::Method));
             })
-            .expected_failure("multiple try-with-resources variable dot-completion not yet implemented")
+            .expected_failure(
+                "multiple try-with-resources variable dot-completion not yet implemented",
+            )
             .run();
     }
 
     #[test]
     fn dot_completion_catch_exception_variable() {
         fixture()
-            .file("com/example/AppException.java", r#"
+            .file(
+                "com/example/AppException.java",
+                r#"
                 package com.example;
                 public class AppException extends RuntimeException {
                     public int getCode() { return 0; }
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run() {
@@ -573,7 +678,8 @@ mod jls_14_20_try_statements {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("getCode", SymbolKind::Method));
             })
@@ -584,7 +690,9 @@ mod jls_14_20_try_statements {
     #[test]
     fn dot_completion_multi_catch_exception_variable() {
         fixture()
-            .file("com/example/App.java", r#"
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 import java.io.IOException;
                 import java.sql.SQLException;
@@ -598,7 +706,8 @@ mod jls_14_20_try_statements {
                     }
                     private void riskyOp() throws IOException, SQLException {}
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("getMessage", SymbolKind::Method));
             })
@@ -633,7 +742,9 @@ mod jls_14_20_try_statements {
     #[test]
     fn try_with_resources_var_inference() {
         fixture()
-            .file("com/example/StreamProcessor.java", r#"
+            .file(
+                "com/example/StreamProcessor.java",
+                r#"
                 package com.example;
                 import java.io.FileInputStream;
                 public class StreamProcessor {
@@ -643,11 +754,12 @@ mod jls_14_20_try_statements {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("stream")
-                .name("stream")
-                .hover_contains("FileInputStream")
-                .expected_failure("var in try-with-resources not yet supported")
+            .name("stream")
+            .hover_contains("FileInputStream")
+            .expected_failure("var in try-with-resources not yet supported")
             .run();
     }
 
@@ -655,7 +767,9 @@ mod jls_14_20_try_statements {
     #[test]
     fn multi_catch_exception_parameter() {
         fixture()
-            .file("com/example/Parser.java", r#"
+            .file(
+                "com/example/Parser.java",
+                r#"
                 package com.example;
                 import java.io.IOException;
                 import java.sql.SQLException;
@@ -669,10 +783,11 @@ mod jls_14_20_try_statements {
                     }
                     private void riskyOperation(String s) throws IOException, SQLException {}
                 }
-            "#)
+            "#,
+            )
             .assert_at("ex")
-                .name("e")
-                .expected_failure("multi-catch exception parameters not yet indexed")
+            .name("e")
+            .expected_failure("multi-catch exception parameters not yet indexed")
             .run();
     }
 
@@ -680,7 +795,9 @@ mod jls_14_20_try_statements {
     #[test]
     fn single_catch_exception_type() {
         fixture()
-            .file("com/example/SafeRunner.java", r#"
+            .file(
+                "com/example/SafeRunner.java",
+                r#"
                 package com.example;
                 public class SafeRunner {
                     public void run() {
@@ -691,11 +808,12 @@ mod jls_14_20_try_statements {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("exc_type")
-                .name("IllegalStateException")
-                .kind(SymbolKind::Class)
-                .expected_failure("catch clause exception types not yet resolved")
+            .name("IllegalStateException")
+            .kind(SymbolKind::Class)
+            .expected_failure("catch clause exception types not yet resolved")
             .run();
     }
 }
@@ -707,17 +825,25 @@ mod jls_14_30_patterns {
     #[test]
     fn dot_completion_nested_record_pattern_variable() {
         fixture()
-            .file("com/example/Point.java", r#"
+            .file(
+                "com/example/Point.java",
+                r#"
                 package com.example;
                 public record Point(int x, int y) {
                     public double distanceTo(Point other) { return 0.0; }
                 }
-            "#)
-            .file("com/example/Pair.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Pair.java",
+                r#"
                 package com.example;
                 public record Pair<A, B>(A first, B second) {}
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run(Object obj) {
@@ -726,38 +852,55 @@ mod jls_14_30_patterns {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("distanceTo", SymbolKind::Method));
                 assert!(items.has("x", SymbolKind::Method));
                 assert!(items.has("y", SymbolKind::Method));
             })
-            .expected_failure("nested record deconstruction pattern variable dot-completion not yet implemented")
+            .expected_failure(
+                "nested record deconstruction pattern variable dot-completion not yet implemented",
+            )
             .run();
     }
 
     #[test]
     fn dot_completion_switch_record_pattern_var_inferred() {
         fixture()
-            .file("com/example/Response.java", r#"
+            .file(
+                "com/example/Response.java",
+                r#"
                 package com.example;
                 public class Response {
                     public String getBody() { return null; }
                 }
-            "#)
-            .file("com/example/Result.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Result.java",
+                r#"
                 package com.example;
                 public sealed interface Result permits Success, Failure {}
-            "#)
-            .file("com/example/Success.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Success.java",
+                r#"
                 package com.example;
                 public record Success(Response resp) implements Result {}
-            "#)
-            .file("com/example/Failure.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Failure.java",
+                r#"
                 package com.example;
                 public record Failure(String message) implements Result {}
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public String handle(Result result) {
@@ -767,7 +910,8 @@ mod jls_14_30_patterns {
                         };
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("getBody", SymbolKind::Method));
             })
@@ -778,13 +922,18 @@ mod jls_14_30_patterns {
     #[test]
     fn dot_completion_instanceof_pattern_variable() {
         fixture()
-            .file("com/example/Circle.java", r#"
+            .file(
+                "com/example/Circle.java",
+                r#"
                 package com.example;
                 public class Circle {
                     public double getRadius() { return 0.0; }
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void draw(Object shape) {
@@ -793,7 +942,8 @@ mod jls_14_30_patterns {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("getRadius", SymbolKind::Method));
                 assert!(!items.has("getWidth", SymbolKind::Method));
@@ -805,23 +955,34 @@ mod jls_14_30_patterns {
     #[test]
     fn dot_completion_switch_type_pattern_variable() {
         fixture()
-            .file("com/example/Shape.java", r#"
+            .file(
+                "com/example/Shape.java",
+                r#"
                 package com.example;
                 public interface Shape {}
-            "#)
-            .file("com/example/Circle.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Circle.java",
+                r#"
                 package com.example;
                 public class Circle implements Shape {
                     public double getRadius() { return 0.0; }
                 }
-            "#)
-            .file("com/example/Rectangle.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Rectangle.java",
+                r#"
                 package com.example;
                 public class Rectangle implements Shape {
                     public double getWidth() { return 0.0; }
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public String describe(Shape shape) {
@@ -832,7 +993,8 @@ mod jls_14_30_patterns {
                         };
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("getRadius", SymbolKind::Method));
                 assert!(!items.has("getWidth", SymbolKind::Method));
@@ -844,7 +1006,9 @@ mod jls_14_30_patterns {
     #[test]
     fn dot_completion_switch_pattern_guard() {
         fixture()
-            .file("com/example/App.java", r#"
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public String classify(Object obj) {
@@ -854,7 +1018,8 @@ mod jls_14_30_patterns {
                         };
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("length", SymbolKind::Method));
                 assert!(items.has("isEmpty", SymbolKind::Method));
@@ -868,13 +1033,18 @@ mod jls_14_30_patterns {
     #[test]
     fn dot_completion_instanceof_pattern_var_out_of_scope() {
         fixture()
-            .file("com/example/Circle.java", r#"
+            .file(
+                "com/example/Circle.java",
+                r#"
                 package com.example;
                 public class Circle {
                     public double getRadius() { return 0.0; }
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void draw(Object shape) {
@@ -884,7 +1054,8 @@ mod jls_14_30_patterns {
                         c.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(!items.has("getRadius", SymbolKind::Method));
             })
@@ -895,7 +1066,9 @@ mod jls_14_30_patterns {
     #[test]
     fn instanceof_type_pattern() {
         fixture()
-            .file("com/example/TypeChecker.java", r#"
+            .file(
+                "com/example/TypeChecker.java",
+                r#"
                 package com.example;
                 public class TypeChecker {
                     public int length(Object obj) {
@@ -905,11 +1078,12 @@ mod jls_14_30_patterns {
                         return -1;
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("pat_var")
-                .name("s")
-                .hover_contains("String")
-                .expected_failure("instanceof pattern variables not yet indexed")
+            .name("s")
+            .hover_contains("String")
+            .expected_failure("instanceof pattern variables not yet indexed")
             .run();
     }
 
@@ -917,17 +1091,25 @@ mod jls_14_30_patterns {
     #[test]
     fn instanceof_pattern_type_reference() {
         fixture()
-            .file("com/example/model/Shape.java", r#"
+            .file(
+                "com/example/model/Shape.java",
+                r#"
                 package com.example.model;
                 public abstract class Shape {}
-            "#)
-            .file("com/example/model/Circle.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/model/Circle.java",
+                r#"
                 package com.example.model;
                 public class Circle extends Shape {
                     public double radius;
                 }
-            "#)
-            .file("com/example/Renderer.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Renderer.java",
+                r#"
                 package com.example;
                 import com.example.model.Shape;
                 import com.example.model.Circle;
@@ -938,10 +1120,11 @@ mod jls_14_30_patterns {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("circ_type")
-                .resolves_to("com.example.model.Circle")
-                .kind(SymbolKind::Class)
+            .resolves_to("com.example.model.Circle")
+            .kind(SymbolKind::Class)
             .run();
     }
 
@@ -949,7 +1132,9 @@ mod jls_14_30_patterns {
     #[test]
     fn switch_pattern_matching_with_type_pattern() {
         fixture()
-            .file("com/example/Formatter.java", r#"
+            .file(
+                "com/example/Formatter.java",
+                r#"
                 package com.example;
                 public class Formatter {
                     public String format(Object value) {
@@ -960,11 +1145,12 @@ mod jls_14_30_patterns {
                         };
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("int_var")
-                .name("i")
-                .hover_contains("Integer")
-                .expected_failure("switch pattern variables not yet indexed")
+            .name("i")
+            .hover_contains("Integer")
+            .expected_failure("switch pattern variables not yet indexed")
             .run();
     }
 
@@ -972,7 +1158,9 @@ mod jls_14_30_patterns {
     #[test]
     fn switch_pattern_with_guard() {
         fixture()
-            .file("com/example/Classifier.java", r#"
+            .file(
+                "com/example/Classifier.java",
+                r#"
                 package com.example;
                 public class Classifier {
                     public String classify(Object obj) {
@@ -983,11 +1171,12 @@ mod jls_14_30_patterns {
                         };
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("guarded")
-                .name("s")
-                .hover_contains("String")
-                .expected_failure("guarded switch pattern variables not yet indexed")
+            .name("s")
+            .hover_contains("String")
+            .expected_failure("guarded switch pattern variables not yet indexed")
             .run();
     }
 
@@ -996,11 +1185,16 @@ mod jls_14_30_patterns {
     #[test]
     fn record_deconstruction_pattern() {
         fixture()
-            .file("com/example/Point.java", r#"
+            .file(
+                "com/example/Point.java",
+                r#"
                 package com.example;
                 public record Point(int x, int y) {}
-            "#)
-            .file("com/example/Geometry.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Geometry.java",
+                r#"
                 package com.example;
                 public class Geometry {
                     public double distance(Object obj) {
@@ -1010,10 +1204,11 @@ mod jls_14_30_patterns {
                         return 0.0;
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("rec_pat")
-                .resolves_to("com.example.Point")
-                .kind(SymbolKind::Record)
+            .resolves_to("com.example.Point")
+            .kind(SymbolKind::Record)
             .run();
     }
 
@@ -1021,15 +1216,23 @@ mod jls_14_30_patterns {
     #[test]
     fn nested_record_pattern() {
         fixture()
-            .file("com/example/Pair.java", r#"
+            .file(
+                "com/example/Pair.java",
+                r#"
                 package com.example;
                 public record Pair<A, B>(A first, B second) {}
-            "#)
-            .file("com/example/Point.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Point.java",
+                r#"
                 package com.example;
                 public record Point(int x, int y) {}
-            "#)
-            .file("com/example/LineSegment.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/LineSegment.java",
+                r#"
                 package com.example;
                 public class LineSegment {
                     public double length(Object obj) {
@@ -1039,10 +1242,11 @@ mod jls_14_30_patterns {
                         return 0.0;
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("outer_pat")
-                .resolves_to("com.example.Pair")
-                .kind(SymbolKind::Record)
+            .resolves_to("com.example.Pair")
+            .kind(SymbolKind::Record)
             .run();
     }
 
@@ -1051,19 +1255,30 @@ mod jls_14_30_patterns {
     #[test]
     fn switch_with_sealed_type_and_record_patterns() {
         fixture()
-            .file("com/example/Shape.java", r#"
+            .file(
+                "com/example/Shape.java",
+                r#"
                 package com.example;
                 public sealed interface Shape permits Circle, Rectangle {}
-            "#)
-            .file("com/example/Circle.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Circle.java",
+                r#"
                 package com.example;
                 public record Circle(double radius) implements Shape {}
-            "#)
-            .file("com/example/Rectangle.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Rectangle.java",
+                r#"
                 package com.example;
                 public record Rectangle(double width, double height) implements Shape {}
-            "#)
-            .file("com/example/AreaCalculator.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/AreaCalculator.java",
+                r#"
                 package com.example;
                 public class AreaCalculator {
                     public double area(<cur:param_type>Shape shape) {
@@ -1073,26 +1288,32 @@ mod jls_14_30_patterns {
                         };
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("param_type")
-                .resolves_to("com.example.Shape")
-                .kind(SymbolKind::Interface)
+            .resolves_to("com.example.Shape")
+            .kind(SymbolKind::Interface)
             .assert_at("circle_pat")
-                .resolves_to("com.example.Circle")
-                .kind(SymbolKind::Record)
+            .resolves_to("com.example.Circle")
+            .kind(SymbolKind::Record)
             .run();
     }
 
     #[test]
     fn dot_completion_instanceof_flow_scope_after_early_return() {
         fixture()
-            .file("com/example/Circle.java", r#"
+            .file(
+                "com/example/Circle.java",
+                r#"
                 package com.example;
                 public class Circle {
                     public double getRadius() { return 0.0; }
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public double area(Object shape) {
@@ -1100,11 +1321,14 @@ mod jls_14_30_patterns {
                         c.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("getRadius", SymbolKind::Method));
             })
-            .expected_failure("instanceof flow-scoping after early return not yet implemented in completion")
+            .expected_failure(
+                "instanceof flow-scoping after early return not yet implemented in completion",
+            )
             .run();
     }
 }
@@ -1116,18 +1340,26 @@ mod jls_14_11_switch {
     #[test]
     fn dot_completion_switch_arm_on_original_object() {
         fixture()
-            .file("com/example/Status.java", r#"
+            .file(
+                "com/example/Status.java",
+                r#"
                 package com.example;
                 public enum Status { ACTIVE, INACTIVE }
-            "#)
-            .file("com/example/Employee.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Employee.java",
+                r#"
                 package com.example;
                 public class Employee {
                     public Status getStatus() { return Status.ACTIVE; }
                     public String getName() { return null; }
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public String describe(Employee emp) {
@@ -1137,7 +1369,8 @@ mod jls_14_11_switch {
                         };
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("getName", SymbolKind::Method));
                 assert!(items.has("getStatus", SymbolKind::Method));
@@ -1154,14 +1387,19 @@ mod jls_14_19_synchronized {
     #[test]
     fn dot_completion_synchronized_block_variable() {
         fixture()
-            .file("com/example/SharedBuffer.java", r#"
+            .file(
+                "com/example/SharedBuffer.java",
+                r#"
                 package com.example;
                 public class SharedBuffer {
                     public void put(String item) {}
                     public String take() { return null; }
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run(SharedBuffer buffer) {
@@ -1170,7 +1408,8 @@ mod jls_14_19_synchronized {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("put", SymbolKind::Method));
                 assert!(items.has("take", SymbolKind::Method));
@@ -1187,14 +1426,19 @@ mod jls_14_20_2_finally {
     #[test]
     fn dot_completion_finally_block_variable() {
         fixture()
-            .file("com/example/Connection.java", r#"
+            .file(
+                "com/example/Connection.java",
+                r#"
                 package com.example;
                 public class Connection {
                     public boolean isClosed() { return false; }
                     public void close() {}
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run(Connection conn) {
@@ -1205,7 +1449,8 @@ mod jls_14_20_2_finally {
                         }
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("isClosed", SymbolKind::Method));
                 assert!(items.has("close", SymbolKind::Method));
