@@ -2,7 +2,7 @@
 //! `beans` facade (ADR-0032).
 //!
 //! Folders under `interop/` are named `<producer>_<consumer>` — see the
-//! directional-naming notes in `tests/prelude.rs`.
+//! directional-naming notes in `tests/support/prelude.rs`.
 
 #[path = "support/prelude.rs"]
 mod prelude;
