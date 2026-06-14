@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use tree_sitter::{Node, Parser};
 
 use beans_core::graph::NodeBehavior;
+use beans_core::Interner;
 use beans_core::graph::arena::{Graph, NodeId};
 use beans_lang_jvm::fqn::Fqn;
 use beans_lang_jvm::payload::{
@@ -70,64 +71,6 @@ pub enum JavaPlanPayload {
     Jvm(JvmNodePayload),
 }
 
-impl ParsedJavaFile {
-    /// Re-key every qualified name in the plan onto the workspace's
-    /// canonical buffers (backlog #037). Runs at the serial integrate
-    /// boundary — parsing stays interner-free so it can fan out across
-    /// rayon workers with self-contained outputs (ADR-0005). Every
-    /// downstream copy (registry key, RAII handle, projection) clones
-    /// from these payloads, so one pass here collapses them all.
-    pub fn intern(&mut self, interner: &beans_core::Interner) {
-        for pending in &mut self.plan {
-            match &mut pending.payload {
-                JavaPlanPayload::Java(java) => match java {
-                    JavaNodePayload::Type(n) => n.header.fqn.intern_in(interner),
-                    JavaNodePayload::Method(n) => n.header.fqn.intern_in(interner),
-                    JavaNodePayload::Constructor(n) => n.header.fqn.intern_in(interner),
-                    JavaNodePayload::Field(n) => n.header.fqn.intern_in(interner),
-                    JavaNodePayload::EnumConstant(n) => {
-                        n.header.fqn.intern_in(interner);
-                        n.enum_owner.intern_in(interner);
-                    }
-                    JavaNodePayload::AnnotationElement(n) => n.header.fqn.intern_in(interner),
-                    JavaNodePayload::Package(n) => n.header.fqn.intern_in(interner),
-                    JavaNodePayload::TypeUse(n) => {
-                        for fqn in &mut n.header.candidate_fqns {
-                            fqn.intern_in(interner);
-                        }
-                    }
-                    JavaNodePayload::Parameter(_) | JavaNodePayload::Import(_) => {}
-                },
-                JavaPlanPayload::Jvm(jvm) => match jvm {
-                    JvmNodePayload::Type(n) => n.header.fqn.intern_in(interner),
-                    JvmNodePayload::Method(n) => {
-                        n.header.fqn.intern_in(interner);
-                        n.owner.intern_in(interner);
-                    }
-                    JvmNodePayload::Constructor(n) => {
-                        n.header.fqn.intern_in(interner);
-                        n.owner.intern_in(interner);
-                    }
-                    JvmNodePayload::Field(n) => {
-                        n.header.fqn.intern_in(interner);
-                        n.owner.intern_in(interner);
-                    }
-                    JvmNodePayload::EnumConstant(n) => {
-                        n.header.fqn.intern_in(interner);
-                        n.enum_owner.intern_in(interner);
-                    }
-                    JvmNodePayload::AnnotationElement(n) => {
-                        n.header.fqn.intern_in(interner);
-                        n.owner.intern_in(interner);
-                    }
-                    JvmNodePayload::Package(n) => n.header.fqn.intern_in(interner),
-                    JvmNodePayload::Parameter(_) => {}
-                },
-            }
-        }
-    }
-}
-
 /// Parse a Java source file into a self-contained [`ParsedJavaFile`].
 ///
 /// Performs no graph mutation — runs on its own thread, suitable for
@@ -155,16 +98,18 @@ pub fn parse_java_to_graph(path: &Path, source: &str) -> ParsedJavaFile {
     let root = tree.root_node();
     let source_bytes = source.as_bytes();
 
+    // One shared path buffer per file: minted here, cloned into every
+    // Location (declarations via `make_location`, imports via
+    // `extract_imports`) — backlog #037.
+    let shared_path: std::sync::Arc<Path> = std::sync::Arc::from(path);
+
     // Imports are captured before the symbol pass so the walker can
-    // resolve `JavaTypeUseNode::candidate_fqns` per ADR-0029. The
-    // line-based `extract_imports` is robust to malformed surrounding
-    // code; tree-sitter would do the same job but we preserve the
-    // existing line-based path for now.
-    let imports = extract_imports(path, source);
+    // resolve `JavaTypeUseNode::candidate_fqns` per ADR-0029. Line-based
+    // (not tree-sitter) and robust to malformed surrounding code.
+    let imports = extract_imports(&shared_path, source);
 
     let mut ctx = ParseContext {
-        path,
-        shared_path: std::sync::Arc::from(path),
+        shared_path,
         source: source_bytes,
         plan: Vec::new(),
         package: String::new(),
@@ -208,6 +153,7 @@ pub fn parse_java_to_graph(path: &Path, source: &str) -> ParsedJavaFile {
 pub fn integrate<P, C>(
     graph: &mut Graph<P>,
     registries: &C,
+    interner: &Interner,
     parsed: ParsedJavaFile,
 ) -> Vec<NodeId>
 where
@@ -216,9 +162,18 @@ where
     let mut inserted: Vec<NodeId> = Vec::with_capacity(parsed.plan.len());
     for pending in parsed.plan {
         let parent = pending.parent.and_then(|idx| inserted.get(idx).copied());
+        // Intern FQNs here, at the serial boundary — interning is part
+        // of integration, not a step a caller can forget (backlog #037,
+        // ADR-0005: the parse phase stays interner-free for rayon).
         let payload = match pending.payload {
-            JavaPlanPayload::Java(j) => P::from(j),
-            JavaPlanPayload::Jvm(v) => P::from(v),
+            JavaPlanPayload::Java(mut j) => {
+                j.intern_fqns(interner);
+                P::from(j)
+            }
+            JavaPlanPayload::Jvm(mut v) => {
+                v.intern_fqns(interner);
+                P::from(v)
+            }
         };
         let id = graph.insert(payload, parent);
         inserted.push(id);
@@ -240,7 +195,6 @@ where
 // ---- Walker context ----
 
 struct ParseContext<'a> {
-    path: &'a Path,
     /// One shared buffer for this file's path; every emitted
     /// [`Location`] clones it (pointer bump) instead of copying the
     /// path text per node (backlog #037).

@@ -7,11 +7,12 @@
 //! `JvmTypeKey`, `JvmMethodKey`, and the per-language equivalents share a
 //! comparable representation.
 //!
-//! For now [`Fqn`] is a thin newtype around [`String`]. ADR-0008 calls out
-//! that link objects exist at the scale of millions in a real project and
-//! that "we need to keep the query objects compact"; when that becomes
-//! load-bearing we will swap the inner storage for `Arc<str>` or a string
-//! intern table without changing the public API.
+//! [`Fqn`] wraps `Arc<str>` (backlog #037): ADR-0008 flagged that link
+//! objects exist at the scale of millions, so the query objects must
+//! stay compact and cheap to clone. The shared buffer makes every copy
+//! a pointer bump, and [`Fqn::intern_in`] collapses identical text onto
+//! one allocation at the integrate boundary — all without changing the
+//! public API.
 
 use std::fmt;
 use std::sync::Arc;

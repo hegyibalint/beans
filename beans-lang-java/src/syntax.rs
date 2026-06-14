@@ -48,8 +48,12 @@ impl Import {
 /// Line-based, not parser-based — robust to malformed surrounding code.
 /// Each returned `Import` carries a [`Location`] spanning its line so
 /// diagnostic rules can squiggle the right place.
-pub fn extract_imports(file: &Path, source: &str) -> Vec<Import> {
-    let shared_file: std::sync::Arc<Path> = std::sync::Arc::from(file);
+///
+/// Takes the file's shared `Arc<Path>` (minted once in
+/// `parse_java_to_graph`) so import locations point at the *same* path
+/// buffer as the file's declaration locations — one buffer per file,
+/// not one per producer (backlog #037).
+pub fn extract_imports(file: &std::sync::Arc<Path>, source: &str) -> Vec<Import> {
     let mut imports = Vec::new();
     for (line_idx, line) in source.lines().enumerate() {
         let trimmed = line.trim();
@@ -69,7 +73,7 @@ pub fn extract_imports(file: &Path, source: &str) -> Vec<Import> {
             .map(|i| (i + 1) as u32)
             .unwrap_or(line.len() as u32);
         let location = Location {
-            file: std::sync::Arc::clone(&shared_file),
+            file: std::sync::Arc::clone(file),
             start_line: line_idx as u32,
             start_col,
             end_line: line_idx as u32,

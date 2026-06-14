@@ -41,6 +41,7 @@ use beans::TypeRef;
 struct Env {
     graph: Graph<NodePayload>,
     registries: Registries,
+    interner: beans::Interner,
     file_roots: HashMap<PathBuf, Vec<NodeId>>,
 }
 
@@ -49,6 +50,7 @@ impl Env {
         Self {
             graph: Graph::new(),
             registries: Registries::new(),
+            interner: beans::Interner::new(),
             file_roots: HashMap::new(),
         }
     }
@@ -62,7 +64,7 @@ impl Env {
             }
         }
         let parsed = parse_java_to_graph(path, source);
-        let inserted = integrate(&mut self.graph, &self.registries, parsed);
+        let inserted = integrate(&mut self.graph, &self.registries, &self.interner, parsed);
         let roots: Vec<NodeId> = inserted
             .iter()
             .copied()
@@ -114,6 +116,32 @@ fn integrate_registers_each_declaration() {
         env.methods_at("com.example.Service", "process", vec![]).len(),
         1,
         "method provider registered"
+    );
+}
+
+#[test]
+fn integrate_interns_declaration_fqns() {
+    // Guards backlog #037: interning is folded into `integrate`, so a
+    // declaration's FQN shares the workspace interner's buffer rather
+    // than owning a private allocation. If interning is ever dropped
+    // from `integrate` (or a node's `intern_fqns` forgets a field), the
+    // node's FQN pointer diverges from the interner's and this fails —
+    // the regression the per-node forwarder + this test exist to catch.
+    let mut env = Env::new();
+    env.integrate(
+        Path::new("Service.java"),
+        "package com.example; public class Service {}",
+    );
+
+    let id = env.types_at("com.example.Service")[0];
+    let NodePayload::Jvm(JvmNodePayload::Type(t)) = &env.graph.get(id).unwrap().payload else {
+        panic!("expected a JVM type projection");
+    };
+    let canonical = env.interner.intern("com.example.Service");
+    assert_eq!(
+        t.header.fqn.as_str().as_ptr(),
+        canonical.as_ptr(),
+        "declaration FQN must point at the interner's shared buffer"
     );
 }
 

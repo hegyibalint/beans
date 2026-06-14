@@ -35,6 +35,7 @@ use crate::constant::ConstantValue;
 use crate::record::RecordComponent;
 use crate::type_ref::{TypeParam, TypeRef};
 use beans_core::primitives::Location;
+use beans_core::Interner;
 use crate::registries::JvmRegistries;
 
 /// What category of JVM declaration a [`JvmTypeNode`] represents. Records
@@ -419,5 +420,79 @@ pub trait AsJvm {
 impl AsJvm for JvmNodePayload {
     fn as_jvm(&self) -> Option<&JvmNodePayload> {
         Some(self)
+    }
+}
+
+// ---- FQN interning (backlog #037) ----
+//
+// Per-node `intern_fqns`, forwarded by the payload enum exactly like
+// `on_created`/`header`. The "which fields are FQNs" knowledge lives on
+// each node next to its fields, so a new FQN field is interned right
+// where it is declared — not in a distant match someone must remember
+// to extend. Called from `integrate` at the serial boundary (ADR-0005).
+
+impl JvmDeclHeader {
+    /// Re-key this header's FQN onto the workspace's interned buffers.
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        self.fqn.intern_in(interner);
+    }
+}
+
+impl JvmTypeNode {
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        self.header.intern_fqns(interner);
+    }
+}
+impl JvmMethodNode {
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        self.header.intern_fqns(interner);
+        self.owner.intern_in(interner);
+    }
+}
+impl JvmConstructorNode {
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        self.header.intern_fqns(interner);
+        self.owner.intern_in(interner);
+    }
+}
+impl JvmFieldNode {
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        self.header.intern_fqns(interner);
+        self.owner.intern_in(interner);
+    }
+}
+impl JvmEnumConstantNode {
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        self.header.intern_fqns(interner);
+        self.enum_owner.intern_in(interner);
+    }
+}
+impl JvmAnnotationElementNode {
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        self.header.intern_fqns(interner);
+        self.owner.intern_in(interner);
+    }
+}
+impl JvmPackageNode {
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        self.header.intern_fqns(interner);
+    }
+}
+
+impl JvmNodePayload {
+    /// Intern every FQN this payload owns. Forwarded per-variant; the
+    /// match is exhaustive, so a new variant is a compile error here.
+    pub fn intern_fqns(&mut self, interner: &Interner) {
+        match self {
+            JvmNodePayload::Type(n) => n.intern_fqns(interner),
+            JvmNodePayload::Method(n) => n.intern_fqns(interner),
+            JvmNodePayload::Constructor(n) => n.intern_fqns(interner),
+            JvmNodePayload::Field(n) => n.intern_fqns(interner),
+            JvmNodePayload::EnumConstant(n) => n.intern_fqns(interner),
+            JvmNodePayload::AnnotationElement(n) => n.intern_fqns(interner),
+            JvmNodePayload::Package(n) => n.intern_fqns(interner),
+            // Parameters carry only a name + TypeRef; no FQN.
+            JvmNodePayload::Parameter(_) => {}
+        }
     }
 }
