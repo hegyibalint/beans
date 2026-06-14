@@ -5,6 +5,9 @@
 //!
 //! - [`graph`] — the typed arena: hard-link forest, generational
 //!   `NodeId`, RAII `handles` (ADR-0027).
+//! - [`integration`] — the [`IntegrationJob`] trait: the owned, `Send`
+//!   handoff from parallel parse to serial graph commit (ADR-0005,
+//!   ADR-0018).
 //! - [`registry`] — the `Registry<K>` primitive plus the query types
 //!   (`Query`, `Subscription`, `FallbackSubscription`; ADR-0008 rev 3).
 //! - [`primitives`] — source vocabulary shared by every layer
@@ -21,12 +24,14 @@
 pub mod diagnostics;
 pub mod fix;
 pub mod graph;
+pub mod integration;
 pub mod interner;
 pub mod primitives;
 pub mod registry;
 
 pub use diagnostics::{Diagnostic, DiagnosticSeverity};
 pub use fix::{Fix, SourceEdit};
+pub use integration::IntegrationJob;
 pub use interner::Interner;
 pub use primitives::Location;
 pub use registry::{

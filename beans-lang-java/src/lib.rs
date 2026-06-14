@@ -33,7 +33,7 @@ pub use model::{
     JavaPackageNode, JavaParameter, JavaSymbolKey, JavaTypeKind, JavaTypeNode, JavaTypeUseNode,
     JavaUseHeader,
 };
-pub use parse::{ParsedJavaFile, integrate, parse_java_to_graph};
+pub use parse::{ParsedJavaFile, parse_java_to_graph};
 pub use resolve::{lookup_fqn, resolve_compound_name, resolve_name, resolve_simple_name};
 pub use source::{
     Import, compound_at_position, extract_imports, extract_package, word_at_position,

@@ -28,7 +28,7 @@ use beans::TypeRef;
 use beans::graph::{Graph, NodeId};
 use beans::jvm::keys::{JvmMethodKey, JvmTypeKey};
 use beans::jvm::{Fqn, JvmNodePayload};
-use beans::languages::java::{integrate, parse_java_to_graph};
+use beans::languages::java::parse_java_to_graph;
 use beans::payload::NodePayload;
 
 // =========================================================================
@@ -64,7 +64,7 @@ impl Env {
             }
         }
         let parsed = parse_java_to_graph(path, source);
-        let inserted = integrate(&mut self.graph, &self.registries, &self.interner, parsed);
+        let inserted = parsed.integrate(&mut self.graph, &self.registries, &self.interner);
         let roots: Vec<NodeId> = inserted
             .iter()
             .copied()

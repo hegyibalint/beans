@@ -165,7 +165,7 @@ mod tests {
         let registries = Registries::new();
         let interner = beans::Interner::new();
         let parsed = java::parse_java_to_graph(std::path::Path::new("Test.java"), source);
-        let inserted = java::integrate(&mut graph, &registries, &interner, parsed);
+        let inserted = parsed.integrate(&mut graph, &registries, &interner);
         (graph, inserted)
     }
 

@@ -17,6 +17,15 @@
 //! per language as the verticals land. Parsing fans out across rayon
 //! (ADR-0005); integration into the graph is serial because the graph
 //! and registries are `!Send` (ADR-0018).
+//!
+//! Both indexing paths converge on one language-neutral serial commit
+//! (issue #15): parsing produces an owned, `Send`
+//! [`IntegrationJob`](crate::IntegrationJob) per file, and `commit_job`
+//! integrates it into the graph on the calling thread — it never names a
+//! concrete parsed-file type. Per-language file facts (Java
+//! imports/package) live outside the graph because resolution and the
+//! unused-import diagnostic consume them directly; a thin per-language
+//! wrapper (`commit_java`) records them around the neutral primitive.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -30,7 +39,7 @@ use crate::languages::java::{self, ParsedJavaFile};
 #[cfg(feature = "java")]
 use crate::view::{DocSymbol, doc_symbol_detail, is_jvm_projection, payload_view};
 #[cfg(feature = "java")]
-use crate::{Diagnostic, Fix, Location};
+use crate::{Diagnostic, Fix, IntegrationJob, Location, NodePayload};
 
 /// The orchestration facade: a [`Store`] plus the per-file context and
 /// the consumer-level API. One per workspace; not `Clone`.
@@ -114,13 +123,18 @@ impl Workspace {
     /// whose extension matches no enabled language is cached but
     /// produces no nodes. Returns the inserted `NodeId`s.
     pub fn update_file(&mut self, path: &Path, source: &str) -> Vec<NodeId> {
-        self.destroy_roots(path);
         self.sources.insert(path.to_path_buf(), source.to_string());
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         match ext {
             #[cfg(feature = "java")]
-            "java" => self.integrate_java(path, source),
-            _ => Vec::new(),
+            "java" => self.commit_java(java::parse_java_to_graph(path, source)),
+            _ => {
+                // No enabled vertical owns this extension: evict any prior
+                // nodes (a file rewritten into an unsupported type must
+                // not keep stale symbols) and index nothing further.
+                self.destroy_roots(path);
+                Vec::new()
+            }
         }
     }
 
@@ -156,40 +170,66 @@ impl Workspace {
         }
     }
 
-    // ---- Java vertical ----
+    // ---- Commit path ----
 
+    /// Commit one [`IntegrationJob`] into the engine — the language-neutral
+    /// serial integration primitive (ADR-0018), per #15's design. Evicts
+    /// the file's prior roots, integrates the job's nodes (the job interns
+    /// its own FQNs at this serial boundary — backlog #037), and records
+    /// the new roots. Per-language file facts are not its concern; a thin
+    /// per-language wrapper (`commit_java`) records those around it. Gated
+    /// only because Java is its sole caller today.
     #[cfg(feature = "java")]
-    fn integrate_java(&mut self, path: &Path, source: &str) -> Vec<NodeId> {
-        let parsed = java::parse_java_to_graph(path, source);
-        self.record_java_context(path, &parsed);
-        // `integrate` interns FQNs at the serial boundary (backlog #037).
-        let inserted = java::integrate(
+    fn commit_job(&mut self, job: Box<dyn IntegrationJob<NodePayload>>) -> Vec<NodeId> {
+        let path = job.path().to_path_buf();
+        self.destroy_roots(&path);
+        let inserted = job.integrate(
             &mut self.store.graph,
             &self.store.registries,
             &self.store.interner,
-            parsed,
         );
-        let roots = collect_roots(&self.store, &inserted);
-        self.file_roots.insert(path.to_path_buf(), roots);
+        self.record_roots(path, &inserted);
         inserted
     }
 
+    /// Record a file's freshly-inserted top-level roots — the ids a later
+    /// re-index destroys to refresh the file.
     #[cfg(feature = "java")]
-    fn record_java_context(&mut self, path: &Path, parsed: &ParsedJavaFile) {
-        self.file_imports
-            .insert(path.to_path_buf(), parsed.imports.clone());
-        if parsed.package.is_empty() {
-            self.file_packages.remove(path);
-        } else {
-            self.file_packages
-                .insert(path.to_path_buf(), parsed.package.clone());
-        }
+    fn record_roots(&mut self, path: PathBuf, inserted: &[NodeId]) {
+        let roots = collect_roots(&self.store, inserted);
+        self.file_roots.insert(path, roots);
     }
 
-    /// Parallel parse + serial integrate of every `.java` file under
-    /// `root` (ADR-0005). The bulk path is also where the interner
-    /// shrinks: a full rescan destroys-then-rebuilds every root, so we
-    /// sweep unreferenced interner entries afterward (off the
+    // ---- Java vertical ----
+
+    /// Commit a parsed Java file: hand its language-neutral
+    /// [`IntegrationJob`] to [`commit_job`](Self::commit_job), then record
+    /// the per-file facts the facade keeps outside the graph. Java
+    /// imports/package feed resolution and the unused-import diagnostic;
+    /// they are moved out of the parse output (which integration ignores)
+    /// rather than cloned. `commit_job` already evicted the file's prior
+    /// facts via `destroy_roots`, so this only sets the fresh ones.
+    #[cfg(feature = "java")]
+    fn commit_java(&mut self, mut parsed: ParsedJavaFile) -> Vec<NodeId> {
+        let imports = std::mem::take(&mut parsed.imports);
+        let package = std::mem::take(&mut parsed.package);
+        let path = parsed.path.clone();
+        let inserted = self.commit_job(Box::new(parsed));
+        self.file_imports.insert(path.clone(), imports);
+        if package.is_empty() {
+            self.file_packages.remove(&path);
+        } else {
+            self.file_packages.insert(path, package);
+        }
+        inserted
+    }
+
+    /// Parallel parse + serial commit of every `.java` file under `root`
+    /// (ADR-0005). Workers parse into owned, `Send` `ParsedJavaFile`s; the
+    /// calling thread drains them through [`commit_java`](Self::commit_java),
+    /// the same path incremental updates take. The bulk path is also where
+    /// the interner shrinks: a full rescan destroys-then-rebuilds every
+    /// root, so we sweep unreferenced interner entries afterward (off the
     /// per-keystroke path, per the `purge` contract — backlog #037).
     #[cfg(feature = "java")]
     fn index_java_tree(&mut self, root: &Path) {
@@ -198,7 +238,7 @@ impl Workspace {
         let files = scan_java_files(root);
 
         // `ParsedJavaFile: Send` (static check in beans-lang-java); rayon
-        // collects the parsed plans on the calling thread.
+        // collects the parsed files on the calling thread.
         let parsed: Vec<ParsedJavaFile> = files
             .par_iter()
             .filter_map(|file| {
@@ -207,18 +247,9 @@ impl Workspace {
             })
             .collect();
 
-        for plan in parsed {
-            let path = plan.path.clone();
-            self.destroy_roots(&path);
-            self.record_java_context(&path, &plan);
-            let inserted = java::integrate(
-                &mut self.store.graph,
-                &self.store.registries,
-                &self.store.interner,
-                plan,
-            );
-            let roots = collect_roots(&self.store, &inserted);
-            self.file_roots.insert(path, roots);
+        // Serial commit — graph and registries are single-threaded (ADR-0018).
+        for parsed in parsed {
+            self.commit_java(parsed);
         }
 
         self.store.interner.purge();
@@ -465,6 +496,104 @@ fn scan_java_files(root: &Path) -> Vec<PathBuf> {
 mod tests {
     use super::*;
     use crate::SymbolKind;
+
+    /// Per ADR-0005 the parse→commit handoff rides a rayon worker, so the
+    /// boxed [`IntegrationJob`] must be `Send` (the trait's supertrait
+    /// guarantees it). `index_java_tree`'s `collect::<Vec<ParsedJavaFile>>()`
+    /// already enforces the parse output is `Send`; this pins the erased
+    /// commit job too, and fails loudly if a future change taints it.
+    fn _assert_job_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<Box<dyn IntegrationJob<NodePayload>>>();
+    }
+
+    #[test]
+    fn index_workspace_bulk_resolves_across_files() {
+        use std::fs;
+        let tmp = std::env::temp_dir().join("beans_ws_bulk_index");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(tmp.join("model")).unwrap();
+        fs::create_dir_all(tmp.join("service")).unwrap();
+        fs::write(
+            tmp.join("model/User.java"),
+            "package com.example.model;\npublic class User {\n    public String getName() { return null; }\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.join("service/UserService.java"),
+            "package com.example.service;\nimport com.example.model.User;\npublic class UserService {\n    public User findUser() { return null; }\n}\n",
+        )
+        .unwrap();
+
+        let mut ws = Workspace::new();
+        let indexed = ws.index_workspace(&tmp);
+        assert_eq!(indexed, 2, "both files produced roots");
+        assert_eq!(ws.root(), Some(tmp.as_path()));
+
+        // Cross-file resolution works after a *bulk* index — proof the
+        // shared commit path recorded each file's imports/package, exactly
+        // as the incremental path does.
+        let svc = tmp.join("service/UserService.java");
+        let user_id = ws
+            .resolve_at(&svc, 3, 11)
+            .expect("User resolves across files via the import");
+        let view = payload_view(&ws.store().graph.get(user_id).unwrap().payload).unwrap();
+        assert_eq!(view.fqn, "com.example.model.User");
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn incremental_update_after_bulk_index_refreshes_file() {
+        use std::fs;
+        let tmp = std::env::temp_dir().join("beans_ws_bulk_then_incremental");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let foo = tmp.join("Foo.java");
+        fs::write(
+            &foo,
+            "package com.test;\npublic class Foo { public void oldMethod() {} }",
+        )
+        .unwrap();
+
+        let mut ws = Workspace::new();
+        ws.index_workspace(&tmp);
+        assert!(
+            java::lookup_fqn(
+                &ws.store().registries.java,
+                &ws.store().registries.jvm,
+                "com.test.Foo.oldMethod"
+            )
+            .is_some(),
+            "bulk index registers the method"
+        );
+
+        // An incremental update over a bulk-indexed file takes the same
+        // commit path: the old roots are evicted before the new ones land.
+        ws.update_file(
+            &foo,
+            "package com.test;\npublic class Foo { public void newMethod() {} }",
+        );
+        assert!(
+            java::lookup_fqn(
+                &ws.store().registries.java,
+                &ws.store().registries.jvm,
+                "com.test.Foo.oldMethod"
+            )
+            .is_none(),
+            "old method unregistered after incremental re-index"
+        );
+        assert!(
+            java::lookup_fqn(
+                &ws.store().registries.java,
+                &ws.store().registries.jvm,
+                "com.test.Foo.newMethod"
+            )
+            .is_some()
+        );
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
 
     #[test]
     fn update_then_resolve_within_file() {

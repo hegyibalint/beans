@@ -26,6 +26,7 @@ use crate::source::{Import, extract_imports};
 use beans_core::Interner;
 use beans_core::graph::NodeBehavior;
 use beans_core::graph::arena::{Graph, NodeId};
+use beans_core::integration::IntegrationJob;
 use beans_core::primitives::Location;
 use beans_lang_jvm::model::fqn::Fqn;
 use beans_lang_jvm::model::payload::{
@@ -141,55 +142,86 @@ pub fn parse_java_to_graph(path: &Path, source: &str) -> ParsedJavaFile {
     }
 }
 
-/// Insert every node in the parsed plan into `graph`, register each
-/// via its [`NodeBehavior::on_created`], and return the resulting
-/// [`NodeId`]s in plan order.
-///
-/// Hard-link parent/child relationships are reconstructed from the
-/// plan's `parent` indices. Per ADR-0014 the registration handles are
-/// stored on [`NodeData::handles`](beans_core::graph::NodeData::handles); the
-/// engine drops them when [`Graph::destroy`] frees the slot, removing
-/// each registry entry as a side effect.
-pub fn integrate<P, C>(
-    graph: &mut Graph<P>,
-    registries: &C,
-    interner: &Interner,
-    parsed: ParsedJavaFile,
-) -> Vec<NodeId>
-where
-    P: From<JavaNodePayload> + From<JvmNodePayload> + NodeBehavior<Ctx = C>,
-{
-    let mut inserted: Vec<NodeId> = Vec::with_capacity(parsed.plan.len());
-    for pending in parsed.plan {
-        let parent = pending.parent.and_then(|idx| inserted.get(idx).copied());
-        // Intern FQNs here, at the serial boundary — interning is part
-        // of integration, not a step a caller can forget (backlog #037,
-        // ADR-0005: the parse phase stays interner-free for rayon).
-        let payload = match pending.payload {
-            JavaPlanPayload::Java(mut j) => {
-                j.intern_fqns(interner);
-                P::from(j)
-            }
-            JavaPlanPayload::Jvm(mut v) => {
-                v.intern_fqns(interner);
-                P::from(v)
-            }
-        };
-        let id = graph.insert(payload, parent);
-        inserted.push(id);
-    }
-
-    for &id in &inserted {
-        let handles = graph
-            .get(id)
-            .map(|node| node.payload.on_created(id, registries))
-            .unwrap_or_default();
-        if let Some(node) = graph.get_mut(id) {
-            node.handles = handles;
+impl ParsedJavaFile {
+    /// Insert every node in the parsed plan into `graph`, register each
+    /// via its [`NodeBehavior::on_created`], and return the resulting
+    /// [`NodeId`]s in plan order. Consumes the parse output by value (no
+    /// boxing); direct callers that hold a concrete `ParsedJavaFile` — the
+    /// test harness, lifecycle tests — use this rather than the boxed
+    /// [`IntegrationJob`] handoff.
+    ///
+    /// Hard-link parent/child relationships are reconstructed from the
+    /// plan's `parent` indices. Per ADR-0014 the registration handles are
+    /// stored on [`NodeData::handles`](beans_core::graph::NodeData::handles);
+    /// the engine drops them when [`Graph::destroy`] frees the slot,
+    /// removing each registry entry as a side effect.
+    pub fn integrate<P, C>(
+        self,
+        graph: &mut Graph<P>,
+        registries: &C,
+        interner: &Interner,
+    ) -> Vec<NodeId>
+    where
+        P: From<JavaNodePayload> + From<JvmNodePayload> + NodeBehavior<Ctx = C>,
+    {
+        let mut inserted: Vec<NodeId> = Vec::with_capacity(self.plan.len());
+        for pending in self.plan {
+            let parent = pending.parent.and_then(|idx| inserted.get(idx).copied());
+            // Intern FQNs here, at the serial boundary — interning is part
+            // of integration, not a step a caller can forget (backlog #037,
+            // ADR-0005: the parse phase stays interner-free for rayon).
+            let payload = match pending.payload {
+                JavaPlanPayload::Java(mut j) => {
+                    j.intern_fqns(interner);
+                    P::from(j)
+                }
+                JavaPlanPayload::Jvm(mut v) => {
+                    v.intern_fqns(interner);
+                    P::from(v)
+                }
+            };
+            let id = graph.insert(payload, parent);
+            inserted.push(id);
         }
+
+        for &id in &inserted {
+            let handles = graph
+                .get(id)
+                .map(|node| node.payload.on_created(id, registries))
+                .unwrap_or_default();
+            if let Some(node) = graph.get_mut(id) {
+                node.handles = handles;
+            }
+        }
+
+        inserted
+    }
+}
+
+/// Hand a parsed Java file to the graph thread as an [`IntegrationJob`]
+/// (issue #15). Boxing as `dyn IntegrationJob<P>` erases the concrete
+/// parsed-file type so the facade can commit a heterogeneous batch of
+/// language jobs through one serial loop. The boxed receiver is the
+/// dynamic-dispatch handoff shape — object safety needs `Box<Self>`, not a
+/// bare `self` — so the body unboxes and forwards to the by-value
+/// [`ParsedJavaFile::integrate`] algorithm. The bound mirrors it: any
+/// payload union the Java and JVM payloads convert into.
+impl<P> IntegrationJob<P> for ParsedJavaFile
+where
+    P: From<JavaNodePayload> + From<JvmNodePayload> + NodeBehavior,
+{
+    fn path(&self) -> &Path {
+        &self.path
     }
 
-    inserted
+    fn integrate(
+        self: Box<Self>,
+        graph: &mut Graph<P>,
+        ctx: &P::Ctx,
+        interner: &Interner,
+    ) -> Vec<NodeId> {
+        (*self).integrate(graph, ctx, interner)
+    }
 }
 
 // ---- Walker context ----

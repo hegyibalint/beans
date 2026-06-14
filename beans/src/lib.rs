@@ -52,8 +52,8 @@ pub use beans_core::registry::{
     FallbackSubscription, Query, QueryResult, Registry, Subscription, Watch,
 };
 pub use beans_core::{
-    Diagnostic, DiagnosticSeverity, Fix, Interner, Location, SourceEdit, diagnostics, fix, graph,
-    primitives, registry,
+    Diagnostic, DiagnosticSeverity, Fix, IntegrationJob, Interner, Location, SourceEdit,
+    diagnostics, fix, graph, integration, primitives, registry,
 };
 pub use beans_lang_jvm as jvm;
 pub use beans_lang_jvm::completion;
