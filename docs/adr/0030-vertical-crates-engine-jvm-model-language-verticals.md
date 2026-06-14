@@ -4,6 +4,12 @@
 
 Accepted. Supersedes [ADR-0019](0019-single-core-crate-with-feature-gated-languages.md).
 
+Amended by [ADR-0033](0033-no-language-cargo-features-in-facade.md): the
+facade no longer makes languages Cargo features. It composes every vertical
+unconditionally, and the minimal-build escape hatch is to depend on the
+lower-level crates directly. The "languages are Cargo features" parts below
+record the original decision.
+
 ## Context
 
 ADR-0019 collapsed the workspace into a single `beans-core` crate with
@@ -53,7 +59,8 @@ The workspace is split along the architecture's own lines:
   (`NodePayload`, the composed `Registries`), the `From`/projection
   impls that connect them to the verticals, per-extension dispatch
   (`compute_diagnostics`), and the `Beans` instance. Languages are
-  Cargo features of this crate.
+  Cargo features of this crate. (Removed by ADR-0033: the facade now
+  composes every vertical unconditionally.)
 - **`beans-lsp`**, test crates — rims; depend on the facade.
 
 Dependency direction, compiler-enforced:
@@ -89,11 +96,14 @@ beans-lang-kotlin┼──▶ beans-lang-jvm ──▶ beans-core
   bounds instead of matching a concrete union. Contained to vertical
   signatures; rims see only the concrete `NodePayload`.
 - The facade is a new coordination point: adding a language touches
-  the new vertical crate plus the facade's unions and features.
+  the new vertical crate plus the facade's unions and dispatch.
 - Cargo feature unification can produce mixed states in whole-
   workspace `--no-default-features` builds (a member forcing
   `beans/java` on while the harness's own `java` flag is off). The
   supported min-build is `beans` with `default-features = false`.
+  (No longer applies under ADR-0033, which removes the language
+  features; the minimal build is now a direct dependency on the
+  lower-level crates.)
 
 ## Alternatives considered
 

@@ -116,6 +116,7 @@ by area.
 | [0030](0030-vertical-crates-engine-jvm-model-language-verticals.md) | Split the workspace into engine, shared JVM model, and per-language vertical crates | crates |
 | [0031](0031-one-jvm-sidecar-as-late-arriving-data-pipe.md) | One JVM sidecar as a late-arriving data pipe | tooling |
 | [0032](0032-unified-spec-test-crate.md) | Unify spec and interop tests in one beans-spec-tests crate (supersedes 0022) | testing |
+| [0033](0033-no-language-cargo-features-in-facade.md) | Compose every language vertical unconditionally; no language Cargo features in the facade (amends 0030) | crates |
 
 ## Authoring workflow
 
