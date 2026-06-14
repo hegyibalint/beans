@@ -6,8 +6,9 @@ Accepted
 
 ## Context
 
-ADR-0003 commits beans to a spec-driven posture; ADR-0022 organizes the
-test suite as an executable specification mirroring the spec structure.
+ADR-0003 commits beans to a spec-driven posture; ADR-0032 (superseding
+ADR-0022) organizes the test suite as an executable specification
+mirroring the spec structure.
 Those decisions imply a *lot* of tests. The Java Language Specification
 alone has 18 chapters with hundreds of sections, each describing rules
 that need at least a handful of tests to encode. A reasonable density —
@@ -37,8 +38,8 @@ before merging. The workflow:
 
 1. An agent is given a spec section (e.g., JLS §15.12 — Method
    Invocation Expressions), the fixture-test idiom from
-   `beans-test-harness`, and the per-language test layout from
-   ADR-0022.
+   `beans-test-harness`, and the unified spec-test layout from ADR-0032
+   (the `beans-spec-tests` crate).
 2. The agent drafts a batch of tests (target ~20 per section, more
    for complex ones, fewer for trivial ones). Each test names the spec
    section, picks a fact stated in the spec, and encodes it.
