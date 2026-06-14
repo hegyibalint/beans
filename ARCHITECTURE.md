@@ -60,4 +60,4 @@ The few rules no single module doc can own:
 - Java IR (declarations, use sites, candidate FQNs) — `beans-lang-java/src/payload.rs`.
 - Diagnostics and fixes — `beans-lang-java/src/{diagnostics,fixes}.rs`.
 - The async/sync actor bridge — `beans-lsp/src/actor.rs`.
-- Testing discipline — [CONTRIBUTING.md](CONTRIBUTING.md) and ADR-0022…0026.
+- Testing discipline — ADR-0022…0026 and the fixture framework in `beans-test-harness`.
