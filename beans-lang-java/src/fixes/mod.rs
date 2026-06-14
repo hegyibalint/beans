@@ -15,12 +15,12 @@ use beans_core::fix::{Fix, SourceEdit};
 use beans_core::graph::Graph;
 use beans_core::primitives::Location;
 use beans_lang_jvm::Fqn;
-use beans_lang_jvm::payload::AsJvm;
+use beans_lang_jvm::model::payload::AsJvm;
 use beans_lang_jvm::registries::JvmRegistries;
 
-use crate::keys::JavaSymbolKey;
-use crate::payload::{AsJava, JavaNodePayload, JavaTypeUseNode};
-use crate::registries::JavaRegistries;
+use crate::model::keys::JavaSymbolKey;
+use crate::model::payload::{AsJava, JavaNodePayload, JavaTypeUseNode};
+use crate::model::registries::JavaRegistries;
 
 /// All importable workspace types named `name`, FQN-sorted and deduped.
 ///
