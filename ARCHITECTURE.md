@@ -19,12 +19,12 @@ the code wins; fix this file.
 | `beans-core` | The symbolic engine: graph arena, `Registry<K>` + query types, `Location`, neutral analysis values (`Diagnostic`, `Fix`). No language or JVM knowledge. | `src/lib.rs`, `src/graph/`, `src/registry/mod.rs` |
 | `beans-lang-jvm` | The shared JVM model every language projects into, plus `JvmRegistries` — the only registry surface verticals share. The `container` module reads class bytes out of `.jmod`/`.jar` archives (classfile decoding deferred to #012). | `src/lib.rs`, `src/container.rs` |
 | `beans-lang-java` | The Java vertical: model, tree-sitter walker, resolution, diagnostic rules, fixes, `JavaRegistries`. | `src/lib.rs`, `src/parser.rs` |
-| `beans-lang-java-test` | Java spec tests, organized by JLS chapter, plus fix-behavior tests. | `tests/spec/` |
 | `beans-toolchains` | JVM location framework: supplier fan-out (env/PATH, SDKMAN/asdf/mise, IntelliJ/Gradle/Maven caches, OS conventions) → canonicalize/dedup → release-file probe (exec fallback) → spec selection. Standalone; no workspace deps. | `src/lib.rs` |
 | `beans` | The facade: the `NodePayload` union, the composed `Registries`, per-extension dispatch, the `Beans` instance. Languages are Cargo features here. | `src/lib.rs` |
 | `beans-lsp` | The LSP rim: protocol envelopes over the facade, an actor bridging async tower-lsp to the single-threaded engine. | `src/actor.rs` |
 | `beans-test-harness` | Fixture framework: `<cur>` markers, `.resolve()` / `.complete()` / `.diagnostics()` / `.quick_fix()`. | `src/fixture.rs` |
 | `beans-test-jdks` | Test-only JDK provisioning: download + cache a pinned Temurin so container/bytecode tests don't trust `$JAVA_HOME`. | `src/lib.rs` |
+| `beans-spec-tests` | Facade-level spec + interop behavior tests across the language verticals. Java spec by JLS chapter (`tests/java/`); cross-language scenarios under `tests/interop/<producer>_<consumer>/`. | `tests/`, `src/lib.rs` |
 
 ```
 beans-lang-java ─┐
@@ -60,4 +60,4 @@ The few rules no single module doc can own:
 - Java IR (declarations, use sites, candidate FQNs) — `beans-lang-java/src/payload.rs`.
 - Diagnostics and fixes — `beans-lang-java/src/{diagnostics,fixes}.rs`.
 - The async/sync actor bridge — `beans-lsp/src/actor.rs`.
-- Testing discipline — ADR-0022…0026 and the fixture framework in `beans-test-harness`.
+- Testing discipline — ADR-0022…0026 and ADR-0032 (unified spec-test crate), plus the fixture framework in `beans-test-harness`.

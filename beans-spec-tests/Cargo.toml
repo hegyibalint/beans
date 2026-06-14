@@ -1,0 +1,13 @@
+[package]
+name = "beans-spec-tests"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+# Facade-level spec and interop behavior tests (ADR-0032). Depends on the
+# composed `beans` facade and the fixture harness — never on `beans-lsp`.
+# Language features are added here as their verticals land; today only
+# `java` exists, so that is all we enable.
+[dev-dependencies]
+beans = { path = "../beans", default-features = false, features = ["java"] }
+beans-test-harness = { path = "../beans-test-harness", default-features = false, features = ["java"] }

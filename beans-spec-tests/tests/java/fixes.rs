@@ -2,20 +2,18 @@
 //!
 //! These pin *tool behavior* of analysis-layer [`beans::Fix`]
 //! values — which fixes are offered and what applying them yields —
-//! not JLS claims, so they live outside the `spec/` tree. The spec
-//! facts they lean on (single-type-import semantics, the
-//! `missing-import` diagnostic) are tested in
-//! `spec/jls07_packages.rs`.
+//! not JLS claims, so they sit alongside the JLS chapters rather than
+//! mapping to one. The spec facts they lean on (single-type-import
+//! semantics, the `missing-import` diagnostic) are tested in
+//! `java/jls07_packages.rs`.
 //!
 //! Tier 2 — LSP lifecycle role-play (didOpen → publishDiagnostics →
 //! codeAction → apply → didChange → republish) — does NOT belong
 //! here: those tests live in `beans-lsp`'s own suite, driving the
 //! in-process tower-lsp service (backlog #038).
 
-mod prelude;
-
 fn fixture() -> beans_test_harness::fixture::Fixture {
-    prelude::fixture()
+    crate::prelude::fixture()
 }
 
 // ----- missing-import quick fix -----

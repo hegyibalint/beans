@@ -2,7 +2,13 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR-0032](0032-unified-spec-test-crate.md).
+
+The chapter-mirroring **layout** survives — spec tests are still organized
+by spec chapter and interop still has a first-class home. What changed is
+the **packaging**: ADR-0032 collapses the per-language test crates into one
+`beans-spec-tests` crate keyed off the composed `beans` facade, rather than
+one crate per `beans-lang-*`. See ADR-0032 for why.
 
 ## Context
 

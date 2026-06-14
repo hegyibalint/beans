@@ -1,6 +1,6 @@
 //! Engine-as-system tests, written as specification.
 //!
-//! The 338 spec tests in `beans-test-java` check **what Java means**.
+//! The Java spec tests in `beans-spec-tests` check **what Java means**.
 //! These tests check **whether the engine works** — what happens across
 //! file edits, deletes, re-introductions, and cross-file dependencies.
 //! Implementation is disposable; tests are the spec.

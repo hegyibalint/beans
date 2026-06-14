@@ -1,9 +1,0 @@
-[package]
-name = "beans-lang-java-test"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-
-[dev-dependencies]
-beans = { path = "../beans", default-features = false, features = ["java"] }
-beans-test-harness = { path = "../beans-test-harness", default-features = false, features = ["java"] }
