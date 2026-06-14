@@ -8,11 +8,10 @@
 //! `DocumentSymbol`, keeping LSP-shaped formatting out of the facade
 //! (ADR-0020).
 //!
-//! This module is gated on `feature = "java"`: today only Java payloads
-//! carry declaration views (JVM-projection nodes are siblings of their
-//! Java counterparts, and resolution always lands on the Java side, so
-//! they project to `None`). When another vertical lands, its payload
-//! arm joins [`payload_view`] and the gate widens.
+//! Today only Java payloads carry declaration views: JVM-projection
+//! nodes are siblings of their Java counterparts, and resolution always
+//! lands on the Java side, so they project to `None`. When another
+//! vertical lands, its payload arm joins [`payload_view`].
 
 use crate::NodePayload;
 use crate::languages::java::{JavaNodePayload, JavaTypeKind};

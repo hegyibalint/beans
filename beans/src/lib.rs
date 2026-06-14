@@ -26,24 +26,14 @@
 
 pub mod payload;
 pub mod registries;
-pub mod workspace;
-
-#[cfg(feature = "java")]
 pub mod view;
+pub mod workspace;
 
 pub mod languages {
     //! Language verticals, re-exported under their conventional names.
-    #[cfg(feature = "java")]
+    //! One re-export per vertical crate that exists today; new languages
+    //! join here as their `beans-lang-*` crates land.
     pub use beans_lang_java as java;
-
-    #[cfg(feature = "clojure")]
-    pub mod clojure;
-    #[cfg(feature = "groovy")]
-    pub mod groovy;
-    #[cfg(feature = "kotlin")]
-    pub mod kotlin;
-    #[cfg(feature = "scala")]
-    pub mod scala;
 }
 
 // Engine and shared-model re-exports keep consumer imports stable:
@@ -63,10 +53,8 @@ pub use beans_lang_jvm::{
 };
 pub use payload::NodePayload;
 pub use registries::Registries;
-pub use workspace::Workspace;
-
-#[cfg(feature = "java")]
 pub use view::{DocSymbol, PayloadView, payload_view};
+pub use workspace::Workspace;
 
 use beans_core::graph::Graph;
 use std::path::Path;
@@ -103,19 +91,17 @@ impl Default for Store {
 
 /// Compute every diagnostic that applies to `file`. Dispatches by file
 /// extension to the owning vertical's rule set. Files whose extension
-/// matches no enabled language feature produce an empty result, so
-/// consumers can call this unconditionally on any document.
-#[cfg_attr(not(feature = "java"), allow(unused_variables))]
+/// matches no supported language produce an empty result, so consumers
+/// can call this unconditionally on any document.
 pub fn compute_diagnostics(
     graph: &Graph<NodePayload>,
     registries: &Registries,
     file: &Path,
-    #[cfg(feature = "java")] java_imports: &[beans_lang_java::Import],
+    java_imports: &[beans_lang_java::Import],
     roots: &[beans_core::graph::NodeId],
 ) -> Vec<Diagnostic> {
     let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
     match ext {
-        #[cfg(feature = "java")]
         "java" => beans_lang_java::diagnostics::check_file(
             graph,
             &registries.java,

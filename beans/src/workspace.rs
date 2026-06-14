@@ -11,12 +11,12 @@
 //! mechanics (the duplication ADR-0020's library-first rule exists to
 //! prevent).
 //!
-//! Language specifics are gated on their vertical's Cargo feature.
 //! Today only Java is wired in; the dispatch in [`Workspace::update_file`]
 //! and the parallel scan in [`Workspace::index_workspace`] grow an arm
-//! per language as the verticals land. Parsing fans out across rayon
-//! (ADR-0005); integration into the graph is serial because the graph
-//! and registries are `!Send` (ADR-0018).
+//! per language as the verticals land — every vertical is composed
+//! unconditionally (ADR-0033). Parsing fans out across rayon (ADR-0005);
+//! integration into the graph is serial because the graph and registries
+//! are `!Send` (ADR-0018).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -24,12 +24,8 @@ use std::path::{Path, PathBuf};
 use beans_core::graph::NodeId;
 
 use crate::Store;
-
-#[cfg(feature = "java")]
 use crate::languages::java::{self, ParsedJavaFile};
-#[cfg(feature = "java")]
 use crate::view::{DocSymbol, doc_symbol_detail, is_jvm_projection, payload_view};
-#[cfg(feature = "java")]
 use crate::{Diagnostic, Fix, Location};
 
 /// The orchestration facade: a [`Store`] plus the per-file context and
@@ -48,10 +44,8 @@ pub struct Workspace {
     /// The workspace root, if one was supplied to [`Workspace::index_workspace`].
     root: Option<PathBuf>,
     /// Per-file Java import context, consumed by resolution and diagnostics.
-    #[cfg(feature = "java")]
     file_imports: HashMap<PathBuf, Vec<java::Import>>,
     /// Per-file Java package context, consumed by resolution.
-    #[cfg(feature = "java")]
     file_packages: HashMap<PathBuf, String>,
 }
 
@@ -62,9 +56,7 @@ impl Workspace {
             file_roots: HashMap::new(),
             sources: HashMap::new(),
             root: None,
-            #[cfg(feature = "java")]
             file_imports: HashMap::new(),
-            #[cfg(feature = "java")]
             file_packages: HashMap::new(),
         }
     }
@@ -103,7 +95,6 @@ impl Workspace {
     /// produced at least one indexed artifact.
     pub fn index_workspace(&mut self, root: &Path) -> usize {
         self.root = Some(root.to_path_buf());
-        #[cfg(feature = "java")]
         self.index_java_tree(root);
         self.file_roots.len()
     }
@@ -111,14 +102,13 @@ impl Workspace {
     /// Re-index `path` from the supplied `source`, replacing any prior
     /// roots for the file and caching the text as the open-document
     /// buffer. Dispatches by extension to the owning vertical; a file
-    /// whose extension matches no enabled language is cached but
+    /// whose extension matches no supported language is cached but
     /// produces no nodes. Returns the inserted `NodeId`s.
     pub fn update_file(&mut self, path: &Path, source: &str) -> Vec<NodeId> {
         self.destroy_roots(path);
         self.sources.insert(path.to_path_buf(), source.to_string());
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         match ext {
-            #[cfg(feature = "java")]
             "java" => self.integrate_java(path, source),
             _ => Vec::new(),
         }
@@ -149,16 +139,12 @@ impl Workspace {
                 self.store.graph.destroy(root);
             }
         }
-        #[cfg(feature = "java")]
-        {
-            self.file_imports.remove(path);
-            self.file_packages.remove(path);
-        }
+        self.file_imports.remove(path);
+        self.file_packages.remove(path);
     }
 
     // ---- Java vertical ----
 
-    #[cfg(feature = "java")]
     fn integrate_java(&mut self, path: &Path, source: &str) -> Vec<NodeId> {
         let parsed = java::parse_java_to_graph(path, source);
         self.record_java_context(path, &parsed);
@@ -174,7 +160,6 @@ impl Workspace {
         inserted
     }
 
-    #[cfg(feature = "java")]
     fn record_java_context(&mut self, path: &Path, parsed: &ParsedJavaFile) {
         self.file_imports
             .insert(path.to_path_buf(), parsed.imports.clone());
@@ -191,7 +176,6 @@ impl Workspace {
     /// shrinks: a full rescan destroys-then-rebuilds every root, so we
     /// sweep unreferenced interner entries afterward (off the
     /// per-keystroke path, per the `purge` contract — backlog #037).
-    #[cfg(feature = "java")]
     fn index_java_tree(&mut self, root: &Path) {
         use rayon::prelude::*;
 
@@ -224,7 +208,6 @@ impl Workspace {
         self.store.interner.purge();
     }
 
-    #[cfg(feature = "java")]
     fn imports_of(&self, path: &Path) -> &[java::Import] {
         self.file_imports
             .get(path)
@@ -232,7 +215,6 @@ impl Workspace {
             .unwrap_or(&[])
     }
 
-    #[cfg(feature = "java")]
     fn package_of(&self, path: &Path) -> &str {
         self.file_packages
             .get(path)
@@ -250,7 +232,6 @@ impl Workspace {
     /// cross the public boundary (ADR-0007). Consumers reach resolution
     /// through [`Workspace::definition_at`] / [`Workspace::hover_at`],
     /// which return domain values.
-    #[cfg(feature = "java")]
     fn resolve_at(&self, path: &Path, line: u32, col: u32) -> Option<NodeId> {
         let source = self.source(path)?;
         let imports = self.imports_of(path);
@@ -271,7 +252,6 @@ impl Workspace {
 
     /// Resolve the cursor to a declaration and return that declaration's
     /// source location — the go-to-definition primitive.
-    #[cfg(feature = "java")]
     pub fn definition_at(&self, path: &Path, line: u32, col: u32) -> Option<Location> {
         let id = self.resolve_at(path, line, col)?;
         let node = self.store.graph.get(id)?;
@@ -281,7 +261,6 @@ impl Workspace {
     /// Resolve the cursor to a declaration and return its payload — the
     /// hover primitive. LSP-shaped formatting (markdown) stays in the
     /// rim (ADR-0020); the facade only locates the payload.
-    #[cfg(feature = "java")]
     pub fn hover_at(&self, path: &Path, line: u32, col: u32) -> Option<&crate::NodePayload> {
         let id = self.resolve_at(path, line, col)?;
         self.store.graph.get(id).map(|node| &node.payload)
@@ -291,7 +270,6 @@ impl Workspace {
     /// under the cursor, returning their locations. This mirrors the
     /// prototype's name-based reference search; precise reference
     /// tracking is future work.
-    #[cfg(feature = "java")]
     pub fn references_at(&self, path: &Path, line: u32, col: u32) -> Vec<Location> {
         let Some(source) = self.source(path) else {
             return Vec::new();
@@ -315,7 +293,6 @@ impl Workspace {
     /// declarations and their nested members, as language-neutral
     /// [`DocSymbol`]s. JVM-projection siblings are skipped — only the
     /// source-side declaration becomes a user-facing entry.
-    #[cfg(feature = "java")]
     pub fn document_symbols(&self, path: &Path) -> Vec<DocSymbol> {
         let Some(roots) = self.file_roots.get(path) else {
             return Vec::new();
@@ -334,7 +311,6 @@ impl Workspace {
         out
     }
 
-    #[cfg(feature = "java")]
     fn build_doc_symbol(&self, file: &Path, id: NodeId) -> Option<DocSymbol> {
         let node = self.store.graph.get(id)?;
         let view = payload_view(&node.payload)?;
@@ -371,7 +347,6 @@ impl Workspace {
     }
 
     /// Compute the diagnostics for `path` from the current graph.
-    #[cfg(feature = "java")]
     pub fn diagnostics(&self, path: &Path) -> Vec<Diagnostic> {
         let imports = self.imports_of(path);
         let roots = self
@@ -391,7 +366,6 @@ impl Workspace {
     /// The quick fixes available at the cursor (e.g. add-import for an
     /// unresolved type). Returns domain [`Fix`]es; the rim maps them onto
     /// protocol code actions.
-    #[cfg(feature = "java")]
     pub fn quick_fixes_at(&self, path: &Path, line: u32, col: u32) -> Vec<Fix> {
         let Some(source) = self.source(path) else {
             return Vec::new();
@@ -416,7 +390,6 @@ impl Default for Workspace {
 
 /// Filter inserted `NodeId`s down to top-level roots (no parent) — the
 /// per-file roots re-indexing destroys to refresh the file.
-#[cfg(feature = "java")]
 fn collect_roots(store: &Store, inserted: &[NodeId]) -> Vec<NodeId> {
     inserted
         .iter()
@@ -428,7 +401,6 @@ fn collect_roots(store: &Store, inserted: &[NodeId]) -> Vec<NodeId> {
 /// Scan a directory tree for `.java` files, skipping hidden directories
 /// and common build outputs. Cheap directory walk; not parallelised
 /// because the OS cost dominates.
-#[cfg(feature = "java")]
 fn scan_java_files(root: &Path) -> Vec<PathBuf> {
     use walkdir::WalkDir;
 
@@ -461,7 +433,7 @@ fn scan_java_files(root: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-#[cfg(all(test, feature = "java"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::SymbolKind;

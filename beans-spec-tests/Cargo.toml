@@ -6,8 +6,8 @@ authors.workspace = true
 
 # Facade-level spec and interop behavior tests (ADR-0032). Depends on the
 # composed `beans` facade and the fixture harness — never on `beans-lsp`.
-# Language features are added here as their verticals land; today only
-# `java` exists, so that is all we enable.
+# The facade composes every language vertical unconditionally (ADR-0033),
+# so there are no language features to enable here.
 [dev-dependencies]
-beans = { path = "../beans", default-features = false, features = ["java"] }
-beans-test-harness = { path = "../beans-test-harness", default-features = false, features = ["java"] }
+beans = { path = "../beans" }
+beans-test-harness = { path = "../beans-test-harness" }
