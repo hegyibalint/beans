@@ -12,7 +12,11 @@ fn main() {
         } else {
             major
         },
-        exact_major: args.iter().any(|a| a == "--exact").then_some(major).flatten(),
+        exact_major: args
+            .iter()
+            .any(|a| a == "--exact")
+            .then_some(major)
+            .flatten(),
         require_jdk: args.iter().any(|a| a == "--jdk"),
     };
 

@@ -10,9 +10,9 @@
 //! The fixture harness asserts on these neutral types so it stays a
 //! `beans-core`-only consumer per ADR-0020.
 
+use crate::Fqn;
 use crate::SymbolKind;
 use beans_core::graph::NodeId;
-use crate::Fqn;
 
 /// One completion candidate — what one symbol would contribute to a
 /// completion list. Producers fill these in from a graph walk; the

@@ -35,7 +35,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use super::{Callback, Registry, SubscriptionId, RegistryKey};
+use super::{Callback, Registry, RegistryKey, SubscriptionId};
 use crate::graph::NodeId;
 
 // =========================================================================
@@ -257,8 +257,7 @@ where
         fallback_key: F,
     ) -> Self {
         let cached = Rc::new(RefCell::new(Cached::Stale));
-        let consumer_subs: Rc<RefCell<Vec<WatchSubscriber>>> =
-            Rc::new(RefCell::new(Vec::new()));
+        let consumer_subs: Rc<RefCell<Vec<WatchSubscriber>>> = Rc::new(RefCell::new(Vec::new()));
 
         // The wrapping callback: invalidate own cache, then fire every
         // live consumer subscriber. Snapshot-and-release: clone the
@@ -382,7 +381,7 @@ mod tests {
     }
     impl SimpleNamed for JavaSymbolKey {
         fn simple_name(&self) -> &str {
-            self.0 .0.rsplit('.').next().unwrap_or(&self.0 .0)
+            self.0.0.rsplit('.').next().unwrap_or(&self.0.0)
         }
     }
 
@@ -460,7 +459,11 @@ mod tests {
 
         // Another mutation. Counter must not advance.
         let _h2 = registry.register(key.clone(), NodeId::placeholder(2));
-        assert_eq!(counter.get(), 1, "dropped Subscription stops receiving notifications");
+        assert_eq!(
+            counter.get(),
+            1,
+            "dropped Subscription stops receiving notifications"
+        );
     }
 
     #[test]
@@ -470,9 +473,7 @@ mod tests {
         let registry: Registry<JvmTypeKey> = Registry::new();
         let key = JvmTypeKey::new("com.example.X");
 
-        let sub = registry
-            .query(key.clone())
-            .subscribe(Rc::new(|| {}));
+        let sub = registry.query(key.clone()).subscribe(Rc::new(|| {}));
 
         assert!(matches!(sub.resolve(), QueryResult::None));
 

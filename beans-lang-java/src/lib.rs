@@ -34,14 +34,14 @@ pub mod resolve;
 pub mod syntax;
 pub mod types;
 
+pub use fixes::{add_import_fix, import_candidates, quick_fixes_at, type_use_at};
 pub use keys::JavaSymbolKey;
-pub use parser::{integrate, parse_java_to_graph, ParsedJavaFile};
+pub use parser::{ParsedJavaFile, integrate, parse_java_to_graph};
 pub use payload::{
     AsJava, JavaAnnotationElementNode, JavaConstructorNode, JavaDeclHeader, JavaEnumConstantNode,
-    JavaFieldNode, JavaImportNode, JavaImportKind, JavaMethodNode, JavaNodePayload,
+    JavaFieldNode, JavaImportKind, JavaImportNode, JavaMethodNode, JavaNodePayload,
     JavaPackageNode, JavaParameter, JavaTypeKind, JavaTypeNode, JavaTypeUseNode, JavaUseHeader,
 };
-pub use fixes::{add_import_fix, import_candidates, quick_fixes_at, type_use_at};
 pub use registries::JavaRegistries;
 pub use resolve::{lookup_fqn, resolve_compound_name, resolve_name, resolve_simple_name};
-pub use syntax::{extract_imports, extract_package, word_at_position, Import};
+pub use syntax::{Import, extract_imports, extract_package, word_at_position};

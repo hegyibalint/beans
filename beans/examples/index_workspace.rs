@@ -15,8 +15,8 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use beans::languages::java;
 use beans::Beans;
+use beans::languages::java;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -122,8 +122,7 @@ fn main() {
     if let Some(file) = files.first() {
         let roots = file_roots.get(file).map(|v| v.as_slice()).unwrap_or(&[]);
         let t = Instant::now();
-        let diags =
-            beans::compute_diagnostics(&beans.graph, &beans.registries, file, &[], roots);
+        let diags = beans::compute_diagnostics(&beans.graph, &beans.registries, file, &[], roots);
         println!(
             "compute_diagnostics({}): {} findings in {:.2?}",
             file.file_name().unwrap().to_string_lossy(),
@@ -136,9 +135,9 @@ fn main() {
 /// Approximate per-category heap anatomy of the graph — the share
 /// measurement gating backlog #037's strong-form design.
 fn memory_anatomy(beans: &Beans) {
+    use beans::NodePayload;
     use beans::jvm::{JvmNodePayload, TypeRef};
     use beans::languages::java::JavaNodePayload;
-    use beans::NodePayload;
     use std::collections::HashSet;
 
     fn typeref_stats(t: &TypeRef, count: &mut u64, text: &mut u64) {
@@ -226,19 +225,35 @@ fn memory_anatomy(beans: &Beans) {
 
     let slots = beans.graph.iter().count() as u64;
     let payload_width = std::mem::size_of::<NodePayload>() as u64;
-    println!("
--- memory anatomy (approx, heap-categories) --");
-    println!("  payload enum width:    {} B x {} slots = {:.0} MB (arena floor)",
-        payload_width, slots, (payload_width * slots) as f64 / 1e6);
-    println!("  fqn references:        {} ({} distinct buffers, {:.1} MB text)",
-        fqn_refs, fqn_buffers.len(), fqn_buffer_bytes as f64 / 1e6);
+    println!(
+        "
+-- memory anatomy (approx, heap-categories) --"
+    );
+    println!(
+        "  payload enum width:    {} B x {} slots = {:.0} MB (arena floor)",
+        payload_width,
+        slots,
+        (payload_width * slots) as f64 / 1e6
+    );
+    println!(
+        "  fqn references:        {} ({} distinct buffers, {:.1} MB text)",
+        fqn_refs,
+        fqn_buffers.len(),
+        fqn_buffer_bytes as f64 / 1e6
+    );
     println!("    of which candidates: {}", candidate_refs);
     println!("  name field text:       {:.1} MB", name_bytes as f64 / 1e6);
-    println!("  TypeRef nodes:         {} ({:.1} MB text, ~{:.0} MB structs)",
-        tr_count, tr_text as f64 / 1e6,
-        (tr_count * std::mem::size_of::<TypeRef>() as u64) as f64 / 1e6);
-    println!("  RAII handles:          {} (~{:.0} MB boxed)",
-        handle_count, (handle_count * 88) as f64 / 1e6);
+    println!(
+        "  TypeRef nodes:         {} ({:.1} MB text, ~{:.0} MB structs)",
+        tr_count,
+        tr_text as f64 / 1e6,
+        (tr_count * std::mem::size_of::<TypeRef>() as u64) as f64 / 1e6
+    );
+    println!(
+        "  RAII handles:          {} (~{:.0} MB boxed)",
+        handle_count,
+        (handle_count * 88) as f64 / 1e6
+    );
     println!("  locations:             {}", locations);
 }
 
