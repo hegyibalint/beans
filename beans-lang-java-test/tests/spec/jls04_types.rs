@@ -13,15 +13,18 @@ mod jls_4_1_kinds_of_types {
     #[test]
     fn jdk_auto_imported_type_resolves() {
         fixture()
-            .file("com/example/Account.java", r#"
+            .file(
+                "com/example/Account.java",
+                r#"
                 package com.example;
                 public class Account {
                     private <cur:string_ref>String owner;
                 }
-            "#)
+            "#,
+            )
             .assert_at("string_ref")
-                .resolves_to("java.lang.String")
-                .expected_failure("JDK type java.lang.String not available in fixture")
+            .resolves_to("java.lang.String")
+            .expected_failure("JDK type java.lang.String not available in fixture")
             .run();
     }
 
@@ -30,15 +33,18 @@ mod jls_4_1_kinds_of_types {
     #[test]
     fn object_type_resolves() {
         fixture()
-            .file("com/example/Container.java", r#"
+            .file(
+                "com/example/Container.java",
+                r#"
                 package com.example;
                 public class Container {
                     private <cur:obj_ref>Object data;
                 }
-            "#)
+            "#,
+            )
             .assert_at("obj_ref")
-                .resolves_to("java.lang.Object")
-                .expected_failure("JDK type java.lang.Object not available in fixture")
+            .resolves_to("java.lang.Object")
+            .expected_failure("JDK type java.lang.Object not available in fixture")
             .run();
     }
 }
@@ -52,7 +58,9 @@ mod jls_4_3_reference_types {
     #[test]
     fn jdk_collection_type_resolves() {
         fixture()
-            .file("com/example/Registry.java", r#"
+            .file(
+                "com/example/Registry.java",
+                r#"
                 package com.example;
                 import java.util.List;
                 import java.util.Map;
@@ -60,13 +68,14 @@ mod jls_4_3_reference_types {
                     private <cur:list_ref>List<String> names;
                     private <cur:map_ref>Map<String, Integer> counts;
                 }
-            "#)
+            "#,
+            )
             .assert_at("list_ref")
-                .resolves_to("java.util.List")
-                .expected_failure("JDK type java.util.List not available in fixture")
+            .resolves_to("java.util.List")
+            .expected_failure("JDK type java.util.List not available in fixture")
             .assert_at("map_ref")
-                .resolves_to("java.util.Map")
-                .expected_failure("JDK type java.util.Map not available in fixture")
+            .resolves_to("java.util.Map")
+            .expected_failure("JDK type java.util.Map not available in fixture")
             .run();
     }
 
@@ -75,7 +84,9 @@ mod jls_4_3_reference_types {
     #[test]
     fn jdk_type_in_method_parameter() {
         fixture()
-            .file("com/example/Formatter.java", r#"
+            .file(
+                "com/example/Formatter.java",
+                r#"
                 package com.example;
                 import java.util.Date;
                 public class Formatter {
@@ -83,10 +94,11 @@ mod jls_4_3_reference_types {
                         return date.toString();
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("date_ref")
-                .resolves_to("java.util.Date")
-                .expected_failure("JDK type java.util.Date not available in fixture")
+            .resolves_to("java.util.Date")
+            .expected_failure("JDK type java.util.Date not available in fixture")
             .run();
     }
 
@@ -95,7 +107,9 @@ mod jls_4_3_reference_types {
     #[test]
     fn jdk_exception_type_resolves() {
         fixture()
-            .file("com/example/FileReader.java", r#"
+            .file(
+                "com/example/FileReader.java",
+                r#"
                 package com.example;
                 import java.io.IOException;
                 public class FileReader {
@@ -103,10 +117,11 @@ mod jls_4_3_reference_types {
                         return "";
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("exc_ref")
-                .resolves_to("java.io.IOException")
-                .expected_failure("JDK type java.io.IOException not available in fixture")
+            .resolves_to("java.io.IOException")
+            .expected_failure("JDK type java.io.IOException not available in fixture")
             .run();
     }
 }
@@ -119,22 +134,28 @@ mod jls_4_4_type_variables {
     #[test]
     fn dot_completion_bounded_type_param_user_defined_bound() {
         fixture()
-            .file("com/example/MyService.java", r#"
+            .file(
+                "com/example/MyService.java",
+                r#"
                 package com.example;
                 public class MyService {
                     public String process(int count) { return null; }
                     public void shutdown() {}
                     private int internal;
                 }
-            "#)
-            .file("com/example/Util.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Util.java",
+                r#"
                 package com.example;
                 public class Util {
                     public <T extends MyService> void use(T t) {
                         t.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("process", SymbolKind::Method));
                 assert!(items.has("shutdown", SymbolKind::Method));
@@ -148,7 +169,9 @@ mod jls_4_4_type_variables {
     #[test]
     fn dot_completion_unbounded_type_param_shows_object_methods() {
         fixture()
-            .file("com/example/Box.java", r#"
+            .file(
+                "com/example/Box.java",
+                r#"
                 package com.example;
                 public class Box<T> {
                     private T value;
@@ -156,7 +179,8 @@ mod jls_4_4_type_variables {
                         value.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("toString", SymbolKind::Method));
                 assert!(items.has("hashCode", SymbolKind::Method));
@@ -170,14 +194,19 @@ mod jls_4_4_type_variables {
     #[test]
     fn dot_completion_class_level_bounded_param_field() {
         fixture()
-            .file("com/example/Handler.java", r#"
+            .file(
+                "com/example/Handler.java",
+                r#"
                 package com.example;
                 public class Handler {
                     public void handle(String event) {}
                     public void reset() {}
                 }
-            "#)
-            .file("com/example/Dispatcher.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Dispatcher.java",
+                r#"
                 package com.example;
                 public class Dispatcher<T extends Handler> {
                     private T handler;
@@ -185,12 +214,15 @@ mod jls_4_4_type_variables {
                         handler.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("handle", SymbolKind::Method));
                 assert!(items.has("reset", SymbolKind::Method));
             })
-            .expected_failure("member completion via class-level bounded type parameter not yet implemented")
+            .expected_failure(
+                "member completion via class-level bounded type parameter not yet implemented",
+            )
             .run();
     }
 
@@ -198,7 +230,9 @@ mod jls_4_4_type_variables {
     #[test]
     fn dot_completion_intersection_bound_access_control() {
         fixture()
-            .file("com/example/Base.java", r#"
+            .file(
+                "com/example/Base.java",
+                r#"
                 package com.example;
                 public class Base {
                     public void mPublic() {}
@@ -206,21 +240,28 @@ mod jls_4_4_type_variables {
                     void mPackage() {}
                     private void mPrivate() {}
                 }
-            "#)
-            .file("com/example/Capability.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Capability.java",
+                r#"
                 package com.example;
                 public interface Capability {
                     void perform();
                 }
-            "#)
-            .file("com/example/Test.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Test.java",
+                r#"
                 package com.example;
                 public class Test {
                     public <T extends Base & Capability> void test(T t) {
                         t.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("mPublic", SymbolKind::Method));
                 assert!(items.has("mProtected", SymbolKind::Method));
@@ -228,7 +269,9 @@ mod jls_4_4_type_variables {
                 assert!(items.has("perform", SymbolKind::Method));
                 assert!(!items.has("mPrivate", SymbolKind::Method));
             })
-            .expected_failure("intersection bound completion with access control not yet implemented")
+            .expected_failure(
+                "intersection bound completion with access control not yet implemented",
+            )
             .run();
     }
 
@@ -236,22 +279,28 @@ mod jls_4_4_type_variables {
     #[test]
     fn dot_completion_type_param_bounded_by_generic_type() {
         fixture()
-            .file("com/example/Container.java", r#"
+            .file(
+                "com/example/Container.java",
+                r#"
                 package com.example;
                 public class Container<E> {
                     public void add(E item) {}
                     public E first() { return null; }
                     public int size() { return 0; }
                 }
-            "#)
-            .file("com/example/Processor.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Processor.java",
+                r#"
                 package com.example;
                 public class Processor {
                     public <T extends Container<String>> void process(T t) {
                         t.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("add", SymbolKind::Method));
                 assert!(items.has("first", SymbolKind::Method));
@@ -265,14 +314,19 @@ mod jls_4_4_type_variables {
     #[test]
     fn dot_completion_field_typed_as_bounded_type_param() {
         fixture()
-            .file("com/example/Resource.java", r#"
+            .file(
+                "com/example/Resource.java",
+                r#"
                 package com.example;
                 public class Resource {
                     public void release() {}
                     public String status() { return null; }
                 }
-            "#)
-            .file("com/example/Cache.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Cache.java",
+                r#"
                 package com.example;
                 public class Cache<V extends Resource> {
                     private V current;
@@ -280,12 +334,15 @@ mod jls_4_4_type_variables {
                         current.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("release", SymbolKind::Method));
                 assert!(items.has("status", SymbolKind::Method));
             })
-            .expected_failure("member completion via field typed as bounded type parameter not yet implemented")
+            .expected_failure(
+                "member completion via field typed as bounded type parameter not yet implemented",
+            )
             .run();
     }
 
@@ -294,15 +351,18 @@ mod jls_4_4_type_variables {
     #[test]
     fn bounded_type_param_bound_resolves() {
         fixture()
-            .file("com/example/SortedList.java", r#"
+            .file(
+                "com/example/SortedList.java",
+                r#"
                 package com.example;
                 public class SortedList<<cur:bound_ref>T extends Comparable<T>> {
                     public void add(T item) {}
                 }
-            "#)
+            "#,
+            )
             .assert_at("bound_ref")
-                .resolves_to("java.lang.Comparable")
-                .expected_failure("type parameter bound resolution to JDK type not yet implemented")
+            .resolves_to("java.lang.Comparable")
+            .expected_failure("type parameter bound resolution to JDK type not yet implemented")
             .run();
     }
 
@@ -311,18 +371,20 @@ mod jls_4_4_type_variables {
     #[test]
     fn multi_param_bound_resolves() {
         fixture()
-            .file("com/example/Converter.java", r#"
+            .file(
+                "com/example/Converter.java",
+                r#"
                 package com.example;
                 public class Converter<S extends <cur:num_ref>Number, T extends CharSequence> {
                     public T convert(S source) { return null; }
                 }
-            "#)
+            "#,
+            )
             .assert_at("num_ref")
-                .resolves_to("java.lang.Number")
-                .expected_failure("JDK type java.lang.Number not available as bound target")
+            .resolves_to("java.lang.Number")
+            .expected_failure("JDK type java.lang.Number not available as bound target")
             .run();
     }
-
 }
 
 // §4.5 — Parameterized Types
@@ -333,7 +395,9 @@ mod jls_4_5_parameterized_types {
     #[test]
     fn dot_completion_parameterized_type_own_methods() {
         fixture()
-            .file("com/example/Container.java", r#"
+            .file(
+                "com/example/Container.java",
+                r#"
                 package com.example;
                 public class Container<E> {
                     public void add(E item) {}
@@ -341,15 +405,19 @@ mod jls_4_5_parameterized_types {
                     public int size() { return 0; }
                     private E[] data;
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run(Container<String> c) {
                         c.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("add", SymbolKind::Method));
                 assert!(items.has("get", SymbolKind::Method));
@@ -364,32 +432,43 @@ mod jls_4_5_parameterized_types {
     #[test]
     fn dot_completion_generic_method_return_type() {
         fixture()
-            .file("com/example/Item.java", r#"
+            .file(
+                "com/example/Item.java",
+                r#"
                 package com.example;
                 public class Item {
                     public String label() { return null; }
                     public int weight() { return 0; }
                 }
-            "#)
-            .file("com/example/Container.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Container.java",
+                r#"
                 package com.example;
                 public class Container<E> {
                     public E get(int index) { return null; }
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run(Container<Item> c) {
                         c.get(0).<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("label", SymbolKind::Method));
                 assert!(items.has("weight", SymbolKind::Method));
             })
-            .expected_failure("chained call completion with generic return type not yet implemented")
+            .expected_failure(
+                "chained call completion with generic return type not yet implemented",
+            )
             .run();
     }
 
@@ -397,7 +476,9 @@ mod jls_4_5_parameterized_types {
     #[test]
     fn dot_completion_multiple_type_parameters() {
         fixture()
-            .file("com/example/Pair.java", r#"
+            .file(
+                "com/example/Pair.java",
+                r#"
                 package com.example;
                 public class Pair<A, B> {
                     public A getFirst() { return null; }
@@ -406,15 +487,19 @@ mod jls_4_5_parameterized_types {
                     private A first;
                     private B second;
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run(Pair<String, Integer> p) {
                         p.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("getFirst", SymbolKind::Method));
                 assert!(items.has("getSecond", SymbolKind::Method));
@@ -430,33 +515,45 @@ mod jls_4_5_parameterized_types {
     #[test]
     fn dot_completion_nested_generic_chained_outer_return() {
         fixture()
-            .file("com/example/Item.java", r#"
+            .file(
+                "com/example/Item.java",
+                r#"
                 package com.example;
                 public class Item {
                     public String name() { return null; }
                 }
-            "#)
-            .file("com/example/Box.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Box.java",
+                r#"
                 package com.example;
                 public class Box<E> {
                     public E unwrap() { return null; }
                     public boolean isEmpty() { return true; }
                 }
-            "#)
-            .file("com/example/Wrapper.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Wrapper.java",
+                r#"
                 package com.example;
                 public class Wrapper<E> {
                     public E get() { return null; }
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run(Wrapper<Box<Item>> w) {
                         w.get().<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("unwrap", SymbolKind::Method));
                 assert!(items.has("isEmpty", SymbolKind::Method));
@@ -470,7 +567,9 @@ mod jls_4_5_parameterized_types {
     #[test]
     fn dot_completion_parameterized_instance_excludes_static() {
         fixture()
-            .file("com/example/Registry.java", r#"
+            .file(
+                "com/example/Registry.java",
+                r#"
                 package com.example;
                 public class Registry<E> {
                     public void register(E item) {}
@@ -478,15 +577,19 @@ mod jls_4_5_parameterized_types {
                     public static Registry create() { return new Registry(); }
                     public static int count() { return 0; }
                 }
-            "#)
-            .file("com/example/App.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/App.java",
+                r#"
                 package com.example;
                 public class App {
                     public void run(Registry<String> reg) {
                         reg.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("register", SymbolKind::Method));
                 assert!(items.has("lookup", SymbolKind::Method));
@@ -500,17 +603,20 @@ mod jls_4_5_parameterized_types {
     #[test]
     fn parameterized_constructor_type_resolves() {
         fixture()
-            .file("com/example/Service.java", r#"
+            .file(
+                "com/example/Service.java",
+                r#"
                 package com.example;
                 import java.util.List;
                 import java.util.ArrayList;
                 public class Service {
                     private List<String> items = new <cur:ctor_ref>ArrayList<>();
                 }
-            "#)
+            "#,
+            )
             .assert_at("ctor_ref")
-                .resolves_to("java.util.ArrayList")
-                .expected_failure("JDK type java.util.ArrayList in new-expression not resolved")
+            .resolves_to("java.util.ArrayList")
+            .expected_failure("JDK type java.util.ArrayList in new-expression not resolved")
             .run();
     }
 
@@ -519,20 +625,22 @@ mod jls_4_5_parameterized_types {
     #[test]
     fn nested_parameterized_inner_type_resolves() {
         fixture()
-            .file("com/example/Graph.java", r#"
+            .file(
+                "com/example/Graph.java",
+                r#"
                 package com.example;
                 import java.util.Map;
                 import java.util.List;
                 public class Graph {
                     private Map<String, <cur:inner_list>List<String>> adjacencyList;
                 }
-            "#)
+            "#,
+            )
             .assert_at("inner_list")
-                .resolves_to("java.util.List")
-                .expected_failure("JDK type in nested type argument not resolved")
+            .resolves_to("java.util.List")
+            .expected_failure("JDK type in nested type argument not resolved")
             .run();
     }
-
 }
 
 // §4.8 — Raw Types
@@ -543,15 +651,20 @@ mod jls_4_8_raw_types {
     #[test]
     fn dot_completion_raw_type_erased_members() {
         fixture()
-            .file("com/example/Cell.java", r#"
+            .file(
+                "com/example/Cell.java",
+                r#"
                 package com.example;
                 public class Cell<E> {
                     public E value;
                     public E get() { return value; }
                     public void set(E v) { value = v; }
                 }
-            "#)
-            .file("com/example/Legacy.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Legacy.java",
+                r#"
                 package com.example;
                 public class Legacy {
                     @SuppressWarnings("rawtypes")
@@ -559,7 +672,8 @@ mod jls_4_8_raw_types {
                         raw.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("get", SymbolKind::Method));
                 assert!(items.has("set", SymbolKind::Method));
@@ -574,7 +688,9 @@ mod jls_4_8_raw_types {
     #[test]
     fn raw_list_resolves_to_jdk() {
         fixture()
-            .file("com/example/LegacyService.java", r#"
+            .file(
+                "com/example/LegacyService.java",
+                r#"
                 package com.example;
                 import java.util.List;
                 import java.util.ArrayList;
@@ -582,10 +698,11 @@ mod jls_4_8_raw_types {
                 public class LegacyService {
                     private <cur:raw_type>List items = new ArrayList();
                 }
-            "#)
+            "#,
+            )
             .assert_at("raw_type")
-                .resolves_to("java.util.List")
-                .expected_failure("JDK type resolution for raw List not yet implemented")
+            .resolves_to("java.util.List")
+            .expected_failure("JDK type resolution for raw List not yet implemented")
             .run();
     }
 
@@ -594,17 +711,20 @@ mod jls_4_8_raw_types {
     #[test]
     fn raw_map_param_resolves_to_jdk() {
         fixture()
-            .file("com/example/Compat.java", r#"
+            .file(
+                "com/example/Compat.java",
+                r#"
                 package com.example;
                 import java.util.Map;
                 @SuppressWarnings("rawtypes")
                 public class Compat {
                     public void process(<cur:raw_param>Map data) {}
                 }
-            "#)
+            "#,
+            )
             .assert_at("raw_param")
-                .resolves_to("java.util.Map")
-                .expected_failure("JDK type resolution for raw Map param not yet implemented")
+            .resolves_to("java.util.Map")
+            .expected_failure("JDK type resolution for raw Map param not yet implemented")
             .run();
     }
 }
@@ -617,27 +737,36 @@ mod jls_4_9_intersection_types {
     #[test]
     fn dot_completion_intersection_bound_both_bounds_members() {
         fixture()
-            .file("com/example/Printable.java", r#"
+            .file(
+                "com/example/Printable.java",
+                r#"
                 package com.example;
                 public interface Printable {
                     void print();
                 }
-            "#)
-            .file("com/example/Entity.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Entity.java",
+                r#"
                 package com.example;
                 public class Entity {
                     public String getName() { return null; }
                     public int getId() { return 0; }
                 }
-            "#)
-            .file("com/example/Processor.java", r#"
+            "#,
+            )
+            .file(
+                "com/example/Processor.java",
+                r#"
                 package com.example;
                 public class Processor {
                     public <T extends Entity & Printable> void handle(T item) {
                         item.<cur>
                     }
                 }
-            "#)
+            "#,
+            )
             .complete_default(|items| {
                 assert!(items.has("getName", SymbolKind::Method));
                 assert!(items.has("getId", SymbolKind::Method));
@@ -652,16 +781,19 @@ mod jls_4_9_intersection_types {
     #[test]
     fn intersection_bound_first_type_resolves() {
         fixture()
-            .file("com/example/Sorter.java", r#"
+            .file(
+                "com/example/Sorter.java",
+                r#"
                 package com.example;
                 import java.io.Serializable;
                 public class Sorter<T extends <cur:ser_ref>Serializable & Comparable<T>> {
                     private T best;
                 }
-            "#)
+            "#,
+            )
             .assert_at("ser_ref")
-                .resolves_to("java.io.Serializable")
-                .expected_failure("JDK type in intersection bound not resolved")
+            .resolves_to("java.io.Serializable")
+            .expected_failure("JDK type in intersection bound not resolved")
             .run();
     }
 
@@ -670,7 +802,9 @@ mod jls_4_9_intersection_types {
     #[test]
     fn intersection_bound_second_type_resolves() {
         fixture()
-            .file("com/example/Processor.java", r#"
+            .file(
+                "com/example/Processor.java",
+                r#"
                 package com.example;
                 import java.io.Closeable;
                 public class Processor {
@@ -678,10 +812,11 @@ mod jls_4_9_intersection_types {
                         task.run();
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("close_ref")
-                .resolves_to("java.io.Closeable")
-                .expected_failure("JDK type in second intersection bound not resolved")
+            .resolves_to("java.io.Closeable")
+            .expected_failure("JDK type in second intersection bound not resolved")
             .run();
     }
 }
@@ -695,17 +830,20 @@ mod jls_4_10_subtyping {
     #[test]
     fn extends_jdk_type_resolves() {
         fixture()
-            .file("com/example/AppException.java", r#"
+            .file(
+                "com/example/AppException.java",
+                r#"
                 package com.example;
                 public class AppException extends <cur:rt_exc>RuntimeException {
                     public AppException(String message) {
                         super(message);
                     }
                 }
-            "#)
+            "#,
+            )
             .assert_at("rt_exc")
-                .resolves_to("java.lang.RuntimeException")
-                .expected_failure("JDK type java.lang.RuntimeException not available in fixture")
+            .resolves_to("java.lang.RuntimeException")
+            .expected_failure("JDK type java.lang.RuntimeException not available in fixture")
             .run();
     }
 
@@ -714,17 +852,20 @@ mod jls_4_10_subtyping {
     #[test]
     fn implements_jdk_interface_resolves() {
         fixture()
-            .file("com/example/Config.java", r#"
+            .file(
+                "com/example/Config.java",
+                r#"
                 package com.example;
                 import java.io.Serializable;
                 public class Config implements <cur:ser_ref>Serializable {
                     private static final long serialVersionUID = 1L;
                     private String name;
                 }
-            "#)
+            "#,
+            )
             .assert_at("ser_ref")
-                .resolves_to("java.io.Serializable")
-                .expected_failure("JDK interface java.io.Serializable not available in fixture")
+            .resolves_to("java.io.Serializable")
+            .expected_failure("JDK interface java.io.Serializable not available in fixture")
             .run();
     }
 
@@ -733,21 +874,23 @@ mod jls_4_10_subtyping {
     #[test]
     fn implements_multiple_jdk_interfaces() {
         fixture()
-            .file("com/example/Task.java", r#"
+            .file(
+                "com/example/Task.java",
+                r#"
                 package com.example;
                 import java.io.Serializable;
                 public class Task implements <cur:run_ref>Runnable, <cur:ser_ref>Serializable {
                     private static final long serialVersionUID = 1L;
                     public void run() {}
                 }
-            "#)
+            "#,
+            )
             .assert_at("run_ref")
-                .resolves_to("java.lang.Runnable")
-                .expected_failure("JDK type java.lang.Runnable not available in fixture")
+            .resolves_to("java.lang.Runnable")
+            .expected_failure("JDK type java.lang.Runnable not available in fixture")
             .assert_at("ser_ref")
-                .resolves_to("java.io.Serializable")
-                .expected_failure("JDK type java.io.Serializable not available in fixture")
+            .resolves_to("java.io.Serializable")
+            .expected_failure("JDK type java.io.Serializable not available in fixture")
             .run();
     }
 }
-

@@ -40,7 +40,13 @@ fn main() {
                 None => ("?".into(), "?".into(), "no release file".into()),
             };
             let kind = if i.is_jdk() { "JDK" } else { "JRE" };
-            (major, kind.to_string(), version, vendor, tilde(&i.java_home))
+            (
+                major,
+                kind.to_string(),
+                version,
+                vendor,
+                tilde(&i.java_home),
+            )
         })
         .collect();
 

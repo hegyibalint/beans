@@ -23,9 +23,9 @@ use std::path::Path;
 
 use beans_core::diagnostics::{Diagnostic, DiagnosticSeverity};
 use beans_core::graph::{Graph, NodeId};
+use beans_lang_jvm::Modifier;
 use beans_lang_jvm::payload::AsJvm;
 use beans_lang_jvm::registries::JvmRegistries;
-use beans_lang_jvm::Modifier;
 
 use crate::keys::JavaSymbolKey;
 use crate::payload::{AsJava, JavaNodePayload};

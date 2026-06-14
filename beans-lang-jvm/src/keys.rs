@@ -112,11 +112,7 @@ pub struct JvmMethodKey {
 }
 
 impl JvmMethodKey {
-    pub fn new(
-        owner: impl Into<Fqn>,
-        name: impl Into<String>,
-        param_types: Vec<TypeRef>,
-    ) -> Self {
+    pub fn new(owner: impl Into<Fqn>, name: impl Into<String>, param_types: Vec<TypeRef>) -> Self {
         Self {
             owner: owner.into(),
             name: name.into(),

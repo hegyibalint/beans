@@ -11,8 +11,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::suppliers::Candidate;
 use crate::JavaInstallation;
+use crate::suppliers::Candidate;
 
 fn has_java_executable(home: &Path) -> bool {
     let bin = home.join("bin");

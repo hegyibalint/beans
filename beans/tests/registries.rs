@@ -65,7 +65,8 @@ fn java_type_resolves_through_java_registry_first() {
 
     let java_id = graph.insert(java_class("Service", "com.example.Service"), None);
     let _java_h = registries
-        .java.symbols
+        .java
+        .symbols
         .register(JavaSymbolKey::new("com.example.Service"), java_id);
 
     let jvm_id = graph.insert(
@@ -73,7 +74,8 @@ fn java_type_resolves_through_java_registry_first() {
         Some(java_id), // hard-linked projection child of Java node.
     );
     let _jvm_h = registries
-        .jvm.types
+        .jvm
+        .types
         .register(JvmTypeKey::new("com.example.Service"), jvm_id);
 
     let fb: FallbackSubscription<JavaSymbolKey, JvmTypeKey> = FallbackSubscription::new(
@@ -99,7 +101,8 @@ fn falls_through_to_jvm_when_no_java_provider_exists() {
         None,
     );
     let _jvm_h = registries
-        .jvm.types
+        .jvm
+        .types
         .register(JvmTypeKey::new("com.example.Service"), jvm_id);
 
     let fb: FallbackSubscription<JavaSymbolKey, JvmTypeKey> = FallbackSubscription::new(
@@ -148,7 +151,8 @@ fn fallback_observes_jvm_projection_arriving_after_construction() {
         None,
     );
     let _h = registries
-        .jvm.types
+        .jvm
+        .types
         .register(JvmTypeKey::new("com.example.Late"), late_id);
 
     assert_eq!(fb.resolve().first(), Some(late_id));
@@ -164,11 +168,21 @@ fn method_overload_keys_distinguish_by_param_types() {
 
     let owner = "com.example.Service";
     let int_id = graph.insert(
-        jvm_method("process", "com.example.Service.process", owner, TypeRef::Void),
+        jvm_method(
+            "process",
+            "com.example.Service.process",
+            owner,
+            TypeRef::Void,
+        ),
         None,
     );
     let str_id = graph.insert(
-        jvm_method("process", "com.example.Service.process", owner, TypeRef::Void),
+        jvm_method(
+            "process",
+            "com.example.Service.process",
+            owner,
+            TypeRef::Void,
+        ),
         None,
     );
 
@@ -177,11 +191,7 @@ fn method_overload_keys_distinguish_by_param_types() {
         "process",
         vec![TypeRef::Primitive(beans::PrimitiveKind::Int)],
     );
-    let str_key = JvmMethodKey::new(
-        owner,
-        "process",
-        vec![TypeRef::simple("java.lang.String")],
-    );
+    let str_key = JvmMethodKey::new(owner, "process", vec![TypeRef::simple("java.lang.String")]);
 
     let _hi = registries.jvm.methods.register(int_key.clone(), int_id);
     let _hs = registries.jvm.methods.register(str_key.clone(), str_id);
@@ -198,24 +208,26 @@ fn package_registry_isolated_from_type_registry() {
     let mut graph: Graph<NodePayload> = Graph::new();
     let registries = Registries::new();
 
-    let pkg_payload =
-        NodePayload::Jvm(JvmNodePayload::from(beans::jvm::JvmPackageNode {
-            header: JvmDeclHeader::new("com.example", "com.example"),
-        }));
+    let pkg_payload = NodePayload::Jvm(JvmNodePayload::from(beans::jvm::JvmPackageNode {
+        header: JvmDeclHeader::new("com.example", "com.example"),
+    }));
     let pkg_id = graph.insert(pkg_payload, None);
     let _hp = registries
-        .jvm.packages
+        .jvm
+        .packages
         .register(PackageKey::new("com.example"), pkg_id);
 
     assert_eq!(
         registries
-            .jvm.packages
+            .jvm
+            .packages
             .providers(&PackageKey::new("com.example")),
         vec![pkg_id]
     );
     assert!(
         registries
-            .jvm.types
+            .jvm
+            .types
             .providers(&JvmTypeKey::new("com.example"))
             .is_empty()
     );
@@ -243,7 +255,10 @@ fn enrichments_default_to_none_for_java_sources() {
             nullability: Some(NullabilityInfo::NonNull),
         },
     };
-    assert_eq!(param.enrichments.nullability, Some(NullabilityInfo::NonNull));
+    assert_eq!(
+        param.enrichments.nullability,
+        Some(NullabilityInfo::NonNull)
+    );
 }
 
 #[test]
@@ -264,23 +279,20 @@ fn registry_returns_all_providers_for_a_key() {
     let mut graph: Graph<NodePayload> = Graph::new();
     let registries = Registries::new();
 
-    let id1 = graph.insert(
-        java_class("Shared", "com.example.Shared"),
-        None,
-    );
-    let id2 = graph.insert(
-        java_class("Shared", "com.example.Shared"),
-        None,
-    );
+    let id1 = graph.insert(java_class("Shared", "com.example.Shared"), None);
+    let id2 = graph.insert(java_class("Shared", "com.example.Shared"), None);
     let _h1 = registries
-        .java.symbols
+        .java
+        .symbols
         .register(JavaSymbolKey::new("com.example.Shared"), id1);
     let _h2 = registries
-        .java.symbols
+        .java
+        .symbols
         .register(JavaSymbolKey::new("com.example.Shared"), id2);
 
     let providers = registries
-        .java.symbols
+        .java
+        .symbols
         .providers(&JavaSymbolKey::new("com.example.Shared"));
     assert_eq!(providers, vec![id1, id2]);
 }

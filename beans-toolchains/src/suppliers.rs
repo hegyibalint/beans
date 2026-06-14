@@ -141,7 +141,10 @@ pub fn real_candidates() -> Vec<Candidate> {
         let gradle_home = env("GRADLE_USER_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join(".gradle"));
-        out.extend(dir_children(&gradle_home.join("jdks"), "Gradle ~/.gradle/jdks"));
+        out.extend(dir_children(
+            &gradle_home.join("jdks"),
+            "Gradle ~/.gradle/jdks",
+        ));
 
         let toolchains_xml = home.join(".m2/toolchains.xml");
         if let Ok(xml) = std::fs::read_to_string(&toolchains_xml) {
