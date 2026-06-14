@@ -10,3 +10,15 @@ obvious: a decision made while implementing, or a follow-up deliberately
 deferred. Decisions worth keeping belong in the issue or an ADR, not buried in
 a PR description.
 -->
+
+---
+
+Comments should be prefixed with an emoji describing the importance of the comment:
+ - ❌: Problems that MUST be addressed. 
+  - Each comment MUST be replied to.
+ - ⚠️: Problems that SHOULD be addressed. 
+  - Each comment MUST be replied to.
+ - 🤔: Problems that MIGHT be addressed. 
+  - Not mandatory to reply.
+ - 💄: Stylistic or formatting issues. 
+  - Not mandatory to reply.
