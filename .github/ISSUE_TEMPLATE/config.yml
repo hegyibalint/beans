@@ -1,0 +1,3 @@
+# One common format for every issue. Blank issues are disabled so all work
+# — whether filed by a human or an agent — flows through task.md.
+blank_issues_enabled: false
