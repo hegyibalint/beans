@@ -25,14 +25,14 @@
 //! Hover, etc.) is the consumer's job — per ADR-0020 LSP types do not
 //! enter this layer.
 
-use beans_core::graph::arena::{Graph, NodeId};
-use beans_lang_jvm::fqn::Fqn;
-use beans_lang_jvm::keys::{JvmTypeKey, PackageKey};
-use beans_lang_jvm::registries::JvmRegistries;
 use crate::keys::JavaSymbolKey;
 use crate::payload::AsJava;
 use crate::registries::JavaRegistries;
 use crate::syntax::Import;
+use beans_core::graph::arena::{Graph, NodeId};
+use beans_lang_jvm::fqn::Fqn;
+use beans_lang_jvm::keys::{JvmTypeKey, PackageKey};
+use beans_lang_jvm::registries::JvmRegistries;
 
 /// Resolve a Java identifier at a use site.
 ///
@@ -128,9 +128,7 @@ pub fn resolve_compound_name<P: AsJava>(
         let type_part = &name[..dot];
         let member_part = &name[dot + 1..];
 
-        if let Some(type_id) =
-            resolve_name(type_part, imports, current_package, java, jvm, graph)
-        {
+        if let Some(type_id) = resolve_name(type_part, imports, current_package, java, jvm, graph) {
             // Walk the type's hard-link children, filtering for a Java
             // payload whose simple name matches (mirrors the
             // prototype's `lookup_children + filter`).
@@ -189,16 +187,15 @@ pub fn resolve_simple_name<P: AsJava>(name: &str, graph: &Graph<P>) -> Option<No
             hits.push(id);
         }
     }
-    if hits.len() == 1 {
-        Some(hits[0])
-    } else {
-        None
-    }
+    if hits.len() == 1 { Some(hits[0]) } else { None }
 }
 
 /// Borrow the simple name of a Java payload. JVM-projection nodes
 /// return `None` because they're hard-linked siblings of their Java
 /// counterparts; resolution always lands on the Java side.
 fn payload_simple_name<P: AsJava>(payload: &P) -> Option<&str> {
-    payload.as_java().and_then(|j| j.header()).map(|h| h.name.as_str())
+    payload
+        .as_java()
+        .and_then(|j| j.header())
+        .map(|h| h.name.as_str())
 }

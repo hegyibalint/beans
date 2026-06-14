@@ -38,8 +38,8 @@ pub use keys::{JvmConstructorKey, JvmFieldKey, JvmMethodKey, JvmTypeKey, Package
 pub use modifier::Modifier;
 pub use payload::{
     AsJvm, JvmAnnotationElementNode, JvmConstructorNode, JvmDeclHeader, JvmEnrichments,
-    JvmEnumConstantNode, JvmFieldNode, JvmMethodNode, JvmNodePayload, JvmPackageNode,
-    JvmParameter, JvmTypeKind, JvmTypeNode, NullabilityInfo,
+    JvmEnumConstantNode, JvmFieldNode, JvmMethodNode, JvmNodePayload, JvmPackageNode, JvmParameter,
+    JvmTypeKind, JvmTypeNode, NullabilityInfo,
 };
 pub use record::RecordComponent;
 pub use registries::JvmRegistries;
