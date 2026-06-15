@@ -319,29 +319,43 @@ impl<K: RegistryKey> Registry<K> {
     }
 
     /// Close a notification batch opened by [`Self::begin_batch`]. The
-    /// outermost commit (depth returning to zero) drains the recorded
-    /// keys and fires each one's subscribers exactly once, under the
-    /// usual snapshot-and-release contract so callbacks may re-enter.
-    /// Inner commits only decrement the depth.
+    /// outermost commit (depth returning to zero) fires each recorded
+    /// key's subscribers exactly once; inner commits only decrement the
+    /// depth.
+    ///
+    /// The flush is a single observer boundary: every pending key's
+    /// callback list is snapshotted *before* any callback runs, then the
+    /// borrow is released and the snapshots fire (snapshot-and-release,
+    /// ADR-0015). So a callback that mutates the subscriber list of
+    /// another key still in this flush affects only *future*
+    /// notifications, never the rest of this flush — the outcome doesn't
+    /// depend on the (unordered) key iteration.
+    ///
+    /// Calling `commit_batch` without a matching [`Self::begin_batch`] is
+    /// a programmer error and panics.
     pub fn commit_batch(&self) {
-        // Decrement under a short borrow; capture the pending keys only
-        // when this is the outermost commit, then release the borrow
-        // before firing so callbacks may re-enter (and so re-entrant
+        // Snapshot every pending key's callbacks under one borrow, then
+        // release it before firing. Capturing all snapshots up front is
+        // what makes the flush a single observer boundary; releasing
+        // before firing lets callbacks re-enter (and re-entrant
         // mutations, now at depth 0, fan out immediately).
-        let pending = {
+        let notifications: Vec<Vec<Callback>> = {
             let mut inner = self.inner.borrow_mut();
-            debug_assert!(
+            assert!(
                 inner.batch_depth > 0,
                 "commit_batch without a matching begin_batch"
             );
-            inner.batch_depth = inner.batch_depth.saturating_sub(1);
+            inner.batch_depth -= 1;
             if inner.batch_depth > 0 {
                 return;
             }
-            std::mem::take(&mut inner.pending_notifications)
+            let pending = std::mem::take(&mut inner.pending_notifications);
+            pending
+                .iter()
+                .map(|key| inner.snapshot_subscribers(key))
+                .collect()
         };
-        for key in pending {
-            let callbacks = self.inner.borrow().snapshot_subscribers(&key);
+        for callbacks in notifications {
             for cb in callbacks {
                 cb();
             }
@@ -885,6 +899,57 @@ mod tests {
             counter.get(),
             2,
             "the coalesced manual notify fires once at commit"
+        );
+    }
+
+    #[test]
+    fn commit_flush_is_one_observer_boundary() {
+        // A callback fired during the flush may subscribe to another key
+        // that is *also* pending in the same batch. Because commit
+        // snapshots every pending key's callbacks before firing any, that
+        // late subscriber must not fire within this flush — regardless of
+        // the (unordered) key iteration. Without the up-front snapshot the
+        // outcome would be `HashSet`-order-dependent.
+        let registry: Registry<TestKey> = Registry::new();
+        let key_a = TestKey("A");
+        let key_b = TestKey("B");
+
+        // B's pre-existing subscriber, plus a slot to hold a subscription
+        // added from inside A's callback (kept alive past the callback).
+        let (_sub_b, b_count) = counting_sub(&registry, &key_b);
+        let late_count = Rc::new(Cell::new(0u32));
+        let late_slot: Rc<RefCell<Option<Subscription<TestKey>>>> = Rc::new(RefCell::new(None));
+
+        let registry_in_cb = registry.clone();
+        let key_b_in_cb = key_b.clone();
+        let late_count_in_cb = late_count.clone();
+        let late_slot_in_cb = Rc::clone(&late_slot);
+        let _sub_a = registry.query(key_a.clone()).subscribe(Rc::new(move || {
+            let lc = late_count_in_cb.clone();
+            let sub = registry_in_cb
+                .query(key_b_in_cb.clone())
+                .subscribe(Rc::new(move || lc.set(lc.get() + 1)));
+            *late_slot_in_cb.borrow_mut() = Some(sub);
+        }));
+
+        registry.begin_batch();
+        let _ha = registry.register(key_a.clone(), NodeId::placeholder(1));
+        let _hb = registry.register(key_b.clone(), NodeId::placeholder(2));
+        registry.commit_batch();
+
+        assert_eq!(b_count.get(), 1, "B's pre-existing subscriber fires once");
+        assert_eq!(
+            late_count.get(),
+            0,
+            "a subscriber added during the flush does not fire within the same flush"
+        );
+
+        // It is an ordinary subscriber from here on.
+        registry.notify(&key_b);
+        assert_eq!(
+            late_count.get(),
+            1,
+            "the late subscriber fires on the next notification"
         );
     }
 }
