@@ -16,7 +16,10 @@
 //! per language as the verticals land — every vertical is composed
 //! unconditionally (ADR-0033). Parsing fans out across rayon (ADR-0005);
 //! integration into the graph is serial because the graph and registries
-//! are `!Send` (ADR-0018).
+//! are `!Send` (ADR-0018). Both the bulk scan and an incremental
+//! `update_file` commit under a registry notification batch
+//! (`Registries::begin_batch`/`commit_batch`), so subscriber callbacks
+//! fire once per changed key at batch end instead of churning per node.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -105,13 +108,19 @@ impl Workspace {
     /// whose extension matches no supported language is cached but
     /// produces no nodes. Returns the inserted `NodeId`s.
     pub fn update_file(&mut self, path: &Path, source: &str) -> Vec<NodeId> {
+        // Batch the remove+add so a refresh emits each changed key's
+        // subscriber callbacks once at commit, not twice (once on the
+        // destroy_roots provider drops, once on re-integration).
+        self.store.registries.begin_batch();
         self.destroy_roots(path);
         self.sources.insert(path.to_path_buf(), source.to_string());
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        match ext {
+        let inserted = match ext {
             "java" => self.integrate_java(path, source),
             _ => Vec::new(),
-        }
+        };
+        self.store.registries.commit_batch();
+        inserted
     }
 
     /// Re-index `path` from its on-disk contents. Used when an editor
@@ -191,6 +200,12 @@ impl Workspace {
             })
             .collect();
 
+        // One notification batch spans the whole bulk integrate: every
+        // file's registrations land, but subscriber callbacks fire once
+        // per changed key at commit rather than churning per node across
+        // the scan (ADR-0008 auto-notify would otherwise re-fire each
+        // cross-reference on every provider insert).
+        self.store.registries.begin_batch();
         for plan in parsed {
             let path = plan.path.clone();
             self.destroy_roots(&path);
@@ -204,6 +219,7 @@ impl Workspace {
             let roots = collect_roots(&self.store, &inserted);
             self.file_roots.insert(path, roots);
         }
+        self.store.registries.commit_batch();
 
         self.store.interner.purge();
     }
@@ -612,6 +628,59 @@ public class Dog {
 
         // A resolved position offers nothing.
         assert!(ws.quick_fixes_at(app, 1, 0).is_empty());
+    }
+
+    #[test]
+    fn bulk_index_then_incremental_share_commit_path() {
+        use std::fs;
+        let tmp = std::env::temp_dir().join("beans_ws_bulk_batch");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(tmp.join("src")).unwrap();
+        fs::write(
+            tmp.join("src/User.java"),
+            "package com.example.model;\npublic class User {\n    public String getName() { return null; }\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.join("src/UserService.java"),
+            "package com.example.service;\nimport com.example.model.User;\npublic class UserService {\n    public User findUser() { return null; }\n}\n",
+        )
+        .unwrap();
+
+        let mut ws = Workspace::new();
+        let indexed = ws.index_workspace(&tmp);
+        assert_eq!(indexed, 2, "both files indexed in the bulk batch");
+
+        // Cross-file resolution proves the batched bulk path committed:
+        // `User` in UserService resolves via its import, which needs the
+        // model file's providers registered and the batch's deferred
+        // notifications drained.
+        let svc = tmp.join("src/UserService.java");
+        let user_id = ws
+            .resolve_at(&svc, 3, 11)
+            .expect("import-resolved User after bulk index");
+        let view = payload_view(&ws.store().graph.get(user_id).unwrap().payload).unwrap();
+        assert_eq!(view.fqn, "com.example.model.User");
+
+        // An incremental update on the same engine runs the same
+        // begin/commit lifecycle: the new method registers and the old one
+        // is gone.
+        ws.update_file(
+            &tmp.join("src/User.java"),
+            "package com.example.model;\npublic class User {\n    public String getEmail() { return null; }\n}\n",
+        );
+        let java = &ws.store().registries.java;
+        let jvm = &ws.store().registries.jvm;
+        assert!(
+            java::lookup_fqn(java, jvm, "com.example.model.User.getEmail").is_some(),
+            "incremental update after bulk index registers the new method"
+        );
+        assert!(
+            java::lookup_fqn(java, jvm, "com.example.model.User.getName").is_none(),
+            "the replaced method is unregistered"
+        );
+
+        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]
