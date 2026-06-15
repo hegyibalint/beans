@@ -32,6 +32,10 @@ impl Registries {
     }
 
     /// Close the notification batch opened by [`Self::begin_batch`].
+    ///
+    /// Each child `Registry<K>` snapshots and fires as its own observer
+    /// boundary. The composed bag coordinates fields, but it does not
+    /// provide an atomic all-registries callback snapshot.
     pub fn commit_batch(&self) {
         self.jvm.commit_batch();
         self.java.commit_batch();
