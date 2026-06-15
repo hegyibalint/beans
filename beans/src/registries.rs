@@ -20,4 +20,20 @@ impl Registries {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Open a notification batch across every composed registry — the
+    /// JVM projection surface and each language vertical. `Workspace`
+    /// wraps bulk and incremental indexing in this so a batch of
+    /// integrations emits each changed key's subscriber callbacks once,
+    /// at [`Self::commit_batch`], instead of churning per node.
+    pub fn begin_batch(&self) {
+        self.jvm.begin_batch();
+        self.java.begin_batch();
+    }
+
+    /// Close the notification batch opened by [`Self::begin_batch`].
+    pub fn commit_batch(&self) {
+        self.jvm.commit_batch();
+        self.java.commit_batch();
+    }
 }

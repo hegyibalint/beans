@@ -18,4 +18,16 @@ impl JavaRegistries {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Open a notification batch on every Java registry. Mutations stay
+    /// immediate; subscriber callbacks defer to the matching
+    /// [`Self::commit_batch`].
+    pub fn begin_batch(&self) {
+        self.symbols.begin_batch();
+    }
+
+    /// Close the notification batch on every Java registry.
+    pub fn commit_batch(&self) {
+        self.symbols.commit_batch();
+    }
 }
