@@ -19,7 +19,10 @@
 //!   subscription support, with the snapshot-and-release pattern for
 //!   callback safety. Per ADR-0008 `register` and the provider drop
 //!   path auto-fire subscribers — no manual `notify` required for
-//!   normal mutations.
+//!   normal mutations. [`Registry::begin_batch`]/[`Registry::commit_batch`]
+//!   coalesce those notifications: inside a batch, mutations and queries
+//!   stay live but subscriber callbacks defer to the outermost commit and
+//!   fire once per changed key (used by bulk indexing).
 //! - [`query`] holds the query types: [`QueryResult`] tri-state,
 //!   [`Query<K>`] (stateless one-shot), [`Subscription<K>`] (active
 //!   single-key watch — the RAII subscription, replacing the old
@@ -47,7 +50,7 @@
 //! [`graph`]: crate::graph
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::rc::{Rc, Weak};
 
@@ -110,6 +113,17 @@ pub(crate) struct RegistryInner<K> {
     by_simple_name: HashMap<String, Vec<NodeId>>,
     subscribers: HashMap<K, Vec<(SubscriptionId, Callback)>>,
     next_id: u64,
+
+    /// Notification-batch nesting depth. Zero means callbacks fire
+    /// immediately (the default); positive means we are inside one or
+    /// more `begin_batch`/`commit_batch` spans and subscriber callbacks
+    /// are deferred. See [`Registry::begin_batch`].
+    batch_depth: usize,
+    /// Keys whose subscriber notification should fire at the end of the
+    /// current batch. Drained and fired once each at the outermost
+    /// `commit_batch`. A `HashSet` because a key touched N times in a
+    /// batch still fires once.
+    pending_notifications: HashSet<K>,
 }
 
 impl<K> RegistryInner<K> {
@@ -119,6 +133,8 @@ impl<K> RegistryInner<K> {
             by_simple_name: HashMap::new(),
             subscribers: HashMap::new(),
             next_id: 0,
+            batch_depth: 0,
+            pending_notifications: HashSet::new(),
         }
     }
 
@@ -265,20 +281,108 @@ impl<K: RegistryKey> Registry<K> {
             .unwrap_or_default()
     }
 
-    /// Fire all callbacks subscribed to `key`. Uses snapshot-and-release
-    /// (ADR-0015): clone the callback list under a short borrow, drop
-    /// the borrow, then invoke. Callbacks may freely re-enter the
-    /// registry. Subscribers added during a callback are picked up on
-    /// the *next* notification, not the current one.
+    /// Fire all callbacks subscribed to `key` — *or*, inside a batch,
+    /// record `key` to be fired once at the outermost `commit_batch`.
     ///
-    /// `register` and the [`ProviderHandle`] drop path call this
-    /// automatically per ADR-0008, so consumers rarely need to invoke
-    /// it manually. It remains public for non-mutation fan-outs.
+    /// Outside a batch this fans out immediately, using
+    /// snapshot-and-release (ADR-0015): clone the callback list under a
+    /// short borrow, drop the borrow, then invoke. Callbacks may freely
+    /// re-enter the registry; subscribers added during a callback are
+    /// picked up on the *next* notification, not the current one.
+    ///
+    /// Inside a batch (`batch_depth > 0`) this is batch-aware: it does
+    /// not fan out, it enqueues `key` into `pending_notifications` with
+    /// the same once-per-key coalescing as mutation-triggered
+    /// notifications. This upholds the batch contract that no subscriber
+    /// observes intermediate integration state. See [`Self::begin_batch`].
+    ///
+    /// `register` and the [`ProviderHandle`] drop path route through the
+    /// same fire-or-defer helper per ADR-0008, so consumers rarely need
+    /// to invoke this manually. It remains the public non-mutation
+    /// fan-out API.
     pub fn notify(&self, key: &K) {
-        let callbacks = self.inner.borrow().snapshot_subscribers(key);
-        for cb in callbacks {
-            cb();
+        notify_or_defer(&self.inner, key);
+    }
+
+    /// Open a notification batch. While any batch is open, provider
+    /// mutations still apply immediately and one-shot queries
+    /// ([`Self::providers`], [`Self::query_simple_name`]) see current
+    /// state — only subscriber callbacks are deferred. Each key whose
+    /// provider set changes, or that receives an explicit [`Self::notify`],
+    /// is recorded once; [`Self::commit_batch`] fires those deferred
+    /// notifications.
+    ///
+    /// Batches nest: `begin_batch` increments a depth counter and only
+    /// the outermost `commit_batch` drains and fires. This is
+    /// notification coalescing, not a transaction — there is no rollback
+    /// and no isolation guarantee, just delayed observer dispatch.
+    pub fn begin_batch(&self) {
+        self.inner.borrow_mut().batch_depth += 1;
+    }
+
+    /// Close a notification batch opened by [`Self::begin_batch`]. The
+    /// outermost commit (depth returning to zero) fires each recorded
+    /// key's subscribers exactly once; inner commits only decrement the
+    /// depth.
+    ///
+    /// The flush is a single observer boundary: every pending key's
+    /// callback list is snapshotted *before* any callback runs, then the
+    /// borrow is released and the snapshots fire (snapshot-and-release,
+    /// ADR-0015). So a callback that mutates the subscriber list of
+    /// another key still in this flush affects only *future*
+    /// notifications, never the rest of this flush — the outcome doesn't
+    /// depend on the (unordered) key iteration.
+    ///
+    /// Calling `commit_batch` without a matching [`Self::begin_batch`] is
+    /// a programmer error and panics.
+    pub fn commit_batch(&self) {
+        // Snapshot every pending key's callbacks under one borrow, then
+        // release it before firing. Capturing all snapshots up front is
+        // what makes the flush a single observer boundary; releasing
+        // before firing lets callbacks re-enter (and re-entrant
+        // mutations, now at depth 0, fan out immediately).
+        let notifications: Vec<Vec<Callback>> = {
+            let mut inner = self.inner.borrow_mut();
+            assert!(
+                inner.batch_depth > 0,
+                "commit_batch without a matching begin_batch"
+            );
+            inner.batch_depth -= 1;
+            if inner.batch_depth > 0 {
+                return;
+            }
+            let pending = std::mem::take(&mut inner.pending_notifications);
+            pending
+                .iter()
+                .map(|key| inner.snapshot_subscribers(key))
+                .collect()
+        };
+        for callbacks in notifications {
+            for cb in callbacks {
+                cb();
+            }
         }
+    }
+}
+
+/// Fire-or-defer the subscriber notification for `key`. Outside a batch
+/// it snapshots the callbacks (releasing the borrow first, per ADR-0015)
+/// and fans out immediately; inside a batch it records `key` for the
+/// outermost [`Registry::commit_batch`] to fire. Shared by
+/// [`Registry::register`], [`Registry::notify`], and the
+/// [`ProviderHandle`] drop path so all three observe batch mode
+/// identically and never fire while holding the `RefCell` borrow.
+fn notify_or_defer<K: RegistryKey>(inner: &Rc<RefCell<RegistryInner<K>>>, key: &K) {
+    let callbacks = {
+        let mut guard = inner.borrow_mut();
+        if guard.batch_depth > 0 {
+            guard.pending_notifications.insert(key.clone());
+            return;
+        }
+        guard.snapshot_subscribers(key)
+    };
+    for cb in callbacks {
+        cb();
     }
 }
 
@@ -300,7 +404,7 @@ impl<K: RegistryKey> Registry<K> {
     /// under the snapshot-and-release contract (see [`Self::notify`]).
     pub fn register(&self, key: K, node: NodeId) -> ProviderHandle<K> {
         self.inner.borrow_mut().add_provider(key.clone(), node);
-        self.notify(&key);
+        notify_or_defer(&self.inner, &key);
         ProviderHandle {
             inner: Rc::downgrade(&self.inner),
             key,
@@ -362,13 +466,11 @@ impl<K: RegistryKey> Drop for ProviderHandle<K> {
             return;
         };
         inner.borrow_mut().remove_provider(&self.key, self.node);
-        // Per ADR-0008, fire subscribers after the mutation. Use the
-        // shared snapshot-and-release helper so callbacks may re-enter
-        // the registry safely (ADR-0015).
-        let callbacks = inner.borrow().snapshot_subscribers(&self.key);
-        for cb in callbacks {
-            cb();
-        }
+        // Per ADR-0008, fire subscribers after the mutation — through the
+        // shared fire-or-defer helper so a drop inside a batch coalesces
+        // like any other mutation, and so callbacks fired now run under
+        // snapshot-and-release and may re-enter safely (ADR-0015).
+        notify_or_defer(&inner, &self.key);
     }
 }
 
@@ -645,5 +747,218 @@ mod tests {
         // Drop the derived handle — secondary cleans up.
         *derived_handle.borrow_mut() = None;
         assert!(secondary.providers(&key_b).is_empty());
+    }
+
+    /// Subscribe a counter to `key` and return (subscription, counter).
+    /// Hold the subscription for the test's lifetime.
+    fn counting_sub(
+        registry: &Registry<TestKey>,
+        key: &TestKey,
+    ) -> (Subscription<TestKey>, Rc<Cell<u32>>) {
+        let counter = Rc::new(Cell::new(0u32));
+        let cb_counter = counter.clone();
+        let sub = registry
+            .query(key.clone())
+            .subscribe(Rc::new(move || cb_counter.set(cb_counter.get() + 1)));
+        (sub, counter)
+    }
+
+    #[test]
+    fn register_during_batch_defers_until_commit() {
+        let registry: Registry<TestKey> = Registry::new();
+        let key = TestKey("Batched");
+        let (_sub, counter) = counting_sub(&registry, &key);
+
+        registry.begin_batch();
+        let _h = registry.register(key.clone(), NodeId::placeholder(1));
+        assert_eq!(
+            counter.get(),
+            0,
+            "register inside a batch must not fire subscribers"
+        );
+
+        registry.commit_batch();
+        assert_eq!(
+            counter.get(),
+            1,
+            "the deferred notification fires at commit"
+        );
+    }
+
+    #[test]
+    fn provider_drop_during_batch_defers_until_commit() {
+        let registry: Registry<TestKey> = Registry::new();
+        let key = TestKey("DropBatched");
+        // Register before subscribing so the registration's own notify
+        // doesn't perturb the count we assert on.
+        let handle = registry.register(key.clone(), NodeId::placeholder(1));
+        let (_sub, counter) = counting_sub(&registry, &key);
+
+        registry.begin_batch();
+        drop(handle);
+        assert_eq!(
+            counter.get(),
+            0,
+            "a provider drop inside a batch defers its notification"
+        );
+
+        registry.commit_batch();
+        assert_eq!(
+            counter.get(),
+            1,
+            "the deferred drop notification fires at commit"
+        );
+    }
+
+    #[test]
+    fn repeated_mutations_to_a_key_fire_once_per_batch() {
+        let registry: Registry<TestKey> = Registry::new();
+        let key = TestKey("Coalesced");
+        let (_sub, counter) = counting_sub(&registry, &key);
+
+        registry.begin_batch();
+        let h1 = registry.register(key.clone(), NodeId::placeholder(1));
+        let h2 = registry.register(key.clone(), NodeId::placeholder(2));
+        drop(h1);
+        registry.notify(&key);
+        assert_eq!(counter.get(), 0, "nothing fires mid-batch");
+
+        registry.commit_batch();
+        assert_eq!(
+            counter.get(),
+            1,
+            "four touches to one key coalesce into a single notification"
+        );
+        // Hold h2 until after the assertion so its drop (which fires
+        // immediately, now outside the batch) doesn't skew the count.
+        drop(h2);
+    }
+
+    #[test]
+    fn queries_see_provider_changes_before_commit() {
+        let registry: Registry<TestKey> = Registry::new();
+        let key = TestKey("Visible");
+
+        registry.begin_batch();
+        let _h = registry.register(key.clone(), NodeId::placeholder(7));
+        // Only notifications defer; the provider state itself is live.
+        assert_eq!(registry.providers(&key), vec![NodeId::placeholder(7)]);
+        assert_eq!(
+            registry.query_simple_name("Visible"),
+            vec![NodeId::placeholder(7)]
+        );
+        registry.commit_batch();
+    }
+
+    #[test]
+    fn nested_batches_fire_only_on_outermost_commit() {
+        let registry: Registry<TestKey> = Registry::new();
+        let key = TestKey("Nested");
+        let (_sub, counter) = counting_sub(&registry, &key);
+
+        registry.begin_batch();
+        registry.begin_batch();
+        let _h = registry.register(key.clone(), NodeId::placeholder(1));
+
+        registry.commit_batch();
+        assert_eq!(
+            counter.get(),
+            0,
+            "an inner commit must not fire — still inside the outer batch"
+        );
+
+        registry.commit_batch();
+        assert_eq!(
+            counter.get(),
+            1,
+            "the outermost commit fires the deferred notification once"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "commit_batch without a matching begin_batch")]
+    fn commit_without_begin_panics() {
+        let registry: Registry<TestKey> = Registry::new();
+        registry.commit_batch();
+    }
+
+    #[test]
+    fn manual_notify_is_batch_aware() {
+        let registry: Registry<TestKey> = Registry::new();
+        let key = TestKey("ManualNotify");
+        let (_sub, counter) = counting_sub(&registry, &key);
+
+        // Outside a batch, notify fans out immediately.
+        registry.notify(&key);
+        assert_eq!(counter.get(), 1);
+
+        // Inside a batch, a manual notify coalesces to commit — the batch
+        // contract (no subscriber sees intermediate state) has no bypass.
+        registry.begin_batch();
+        registry.notify(&key);
+        registry.notify(&key);
+        assert_eq!(
+            counter.get(),
+            1,
+            "manual notify inside a batch does not fan out immediately"
+        );
+
+        registry.commit_batch();
+        assert_eq!(
+            counter.get(),
+            2,
+            "the coalesced manual notify fires once at commit"
+        );
+    }
+
+    #[test]
+    fn commit_flush_is_one_observer_boundary() {
+        // A callback fired during the flush may subscribe to another key
+        // that is *also* pending in the same batch. Because commit
+        // snapshots every pending key's callbacks before firing any, that
+        // late subscriber must not fire within this flush — regardless of
+        // the (unordered) key iteration. Without the up-front snapshot the
+        // outcome would be `HashSet`-order-dependent.
+        let registry: Registry<TestKey> = Registry::new();
+        let key_a = TestKey("A");
+        let key_b = TestKey("B");
+
+        // B's pre-existing subscriber, plus a slot to hold a subscription
+        // added from inside A's callback (kept alive past the callback).
+        let (_sub_b, b_count) = counting_sub(&registry, &key_b);
+        let late_count = Rc::new(Cell::new(0u32));
+        let late_slot: Rc<RefCell<Option<Subscription<TestKey>>>> = Rc::new(RefCell::new(None));
+
+        let registry_in_cb = registry.clone();
+        let key_b_in_cb = key_b.clone();
+        let late_count_in_cb = late_count.clone();
+        let late_slot_in_cb = Rc::clone(&late_slot);
+        let _sub_a = registry.query(key_a.clone()).subscribe(Rc::new(move || {
+            let lc = late_count_in_cb.clone();
+            let sub = registry_in_cb
+                .query(key_b_in_cb.clone())
+                .subscribe(Rc::new(move || lc.set(lc.get() + 1)));
+            *late_slot_in_cb.borrow_mut() = Some(sub);
+        }));
+
+        registry.begin_batch();
+        let _ha = registry.register(key_a.clone(), NodeId::placeholder(1));
+        let _hb = registry.register(key_b.clone(), NodeId::placeholder(2));
+        registry.commit_batch();
+
+        assert_eq!(b_count.get(), 1, "B's pre-existing subscriber fires once");
+        assert_eq!(
+            late_count.get(),
+            0,
+            "a subscriber added during the flush does not fire within the same flush"
+        );
+
+        // It is an ordinary subscriber from here on.
+        registry.notify(&key_b);
+        assert_eq!(
+            late_count.get(),
+            1,
+            "the late subscriber fires on the next notification"
+        );
     }
 }
