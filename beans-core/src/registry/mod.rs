@@ -119,9 +119,10 @@ pub(crate) struct RegistryInner<K> {
     /// more `begin_batch`/`commit_batch` spans and subscriber callbacks
     /// are deferred. See [`Registry::begin_batch`].
     batch_depth: usize,
-    /// Keys whose provider set changed during the current batch. Drained
-    /// and fired once each at the outermost `commit_batch`. A `HashSet`
-    /// because a key touched N times in a batch still fires once.
+    /// Keys whose subscriber notification should fire at the end of the
+    /// current batch. Drained and fired once each at the outermost
+    /// `commit_batch`. A `HashSet` because a key touched N times in a
+    /// batch still fires once.
     pending_notifications: HashSet<K>,
 }
 
@@ -307,8 +308,9 @@ impl<K: RegistryKey> Registry<K> {
     /// mutations still apply immediately and one-shot queries
     /// ([`Self::providers`], [`Self::query_simple_name`]) see current
     /// state — only subscriber callbacks are deferred. Each key whose
-    /// provider set changes is recorded once; [`Self::commit_batch`]
-    /// fires those deferred notifications.
+    /// provider set changes, or that receives an explicit [`Self::notify`],
+    /// is recorded once; [`Self::commit_batch`] fires those deferred
+    /// notifications.
     ///
     /// Batches nest: `begin_batch` increments a depth counter and only
     /// the outermost `commit_batch` drains and fires. This is
@@ -871,6 +873,13 @@ mod tests {
             1,
             "the outermost commit fires the deferred notification once"
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "commit_batch without a matching begin_batch")]
+    fn commit_without_begin_panics() {
+        let registry: Registry<TestKey> = Registry::new();
+        registry.commit_batch();
     }
 
     #[test]

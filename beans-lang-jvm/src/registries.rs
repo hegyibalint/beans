@@ -41,6 +41,10 @@ impl JvmRegistries {
 
     /// Close the notification batch on every JVM registry, firing each
     /// changed key's subscribers once at the outermost commit.
+    ///
+    /// The single observer-boundary guarantee is per concrete
+    /// `Registry<K>`. This bag coordinates the fields explicitly but
+    /// does not snapshot every field before any field fires.
     pub fn commit_batch(&self) {
         self.types.commit_batch();
         self.methods.commit_batch();
