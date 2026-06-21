@@ -30,5 +30,6 @@ pub use fix::{Fix, SourceEdit};
 pub use interner::Interner;
 pub use primitives::Location;
 pub use registry::{
-    FallbackSubscription, Query, QueryResult, Registry, SimpleNamed, Subscription, Watch,
+    FallbackSubscription, NamedRegistry, Query, QueryResult, Registry, SimpleNameIndex,
+    SimpleNamed, Subscription, Watch,
 };

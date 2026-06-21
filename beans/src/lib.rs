@@ -39,7 +39,8 @@ pub mod languages {
 // Engine and shared-model re-exports keep consumer imports stable:
 // `beans::Graph`, `beans::SymbolKind`, `beans::Diagnostic`, ...
 pub use beans_core::registry::{
-    FallbackSubscription, Query, QueryResult, Registry, Subscription, Watch,
+    FallbackSubscription, NamedRegistry, Query, QueryResult, Registry, SimpleNameIndex,
+    Subscription, Watch,
 };
 pub use beans_core::{
     Diagnostic, DiagnosticSeverity, Fix, Interner, Location, SourceEdit, diagnostics, fix, graph,

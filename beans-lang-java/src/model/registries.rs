@@ -5,13 +5,13 @@
 //! `beans_lang_jvm::JvmRegistries` — the cross-vertical surface. The
 //! `beans` facade composes both into its `Registries`.
 
-use beans_core::registry::Registry;
+use beans_core::registry::NamedRegistry;
 
 use crate::model::keys::JavaSymbolKey;
 
 #[derive(Default)]
 pub struct JavaRegistries {
-    pub symbols: Registry<JavaSymbolKey>,
+    pub symbols: NamedRegistry<JavaSymbolKey>,
 }
 
 impl JavaRegistries {

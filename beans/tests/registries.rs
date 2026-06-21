@@ -79,9 +79,9 @@ fn java_type_resolves_through_java_registry_first() {
         .register(JvmTypeKey::new("com.example.Service"), jvm_id);
 
     let fb: FallbackSubscription<JavaSymbolKey, JvmTypeKey> = FallbackSubscription::new(
-        &registries.java.symbols,
+        registries.java.symbols.exact(),
         JavaSymbolKey::new("com.example.Service"),
-        &registries.jvm.types,
+        registries.jvm.types.exact(),
         JvmTypeKey::new("com.example.Service"),
     );
 
@@ -106,9 +106,9 @@ fn falls_through_to_jvm_when_no_java_provider_exists() {
         .register(JvmTypeKey::new("com.example.Service"), jvm_id);
 
     let fb: FallbackSubscription<JavaSymbolKey, JvmTypeKey> = FallbackSubscription::new(
-        &registries.java.symbols,
+        registries.java.symbols.exact(),
         JavaSymbolKey::new("com.example.Service"),
-        &registries.jvm.types,
+        registries.jvm.types.exact(),
         JvmTypeKey::new("com.example.Service"),
     );
 
@@ -120,9 +120,9 @@ fn unresolved_when_neither_registry_has_provider() {
     let registries = Registries::new();
 
     let fb: FallbackSubscription<JavaSymbolKey, JvmTypeKey> = FallbackSubscription::new(
-        &registries.java.symbols,
+        registries.java.symbols.exact(),
         JavaSymbolKey::new("missing.Type"),
-        &registries.jvm.types,
+        registries.jvm.types.exact(),
         JvmTypeKey::new("missing.Type"),
     );
 
@@ -138,9 +138,9 @@ fn fallback_observes_jvm_projection_arriving_after_construction() {
     let registries = Registries::new();
 
     let fb: FallbackSubscription<JavaSymbolKey, JvmTypeKey> = FallbackSubscription::new(
-        &registries.java.symbols,
+        registries.java.symbols.exact(),
         JavaSymbolKey::new("com.example.Late"),
-        &registries.jvm.types,
+        registries.jvm.types.exact(),
         JvmTypeKey::new("com.example.Late"),
     );
     assert!(fb.resolve().is_empty());

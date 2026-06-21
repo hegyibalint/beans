@@ -6,7 +6,7 @@
 //! vertical's own registries live in its own crate
 //! (`JavaRegistries`, ...), and the `beans` facade composes them all.
 
-use beans_core::registry::Registry;
+use beans_core::registry::{NamedRegistry, Registry};
 
 use crate::model::keys::{JvmConstructorKey, JvmFieldKey, JvmMethodKey, JvmTypeKey, PackageKey};
 
@@ -15,7 +15,7 @@ use crate::model::keys::{JvmConstructorKey, JvmFieldKey, JvmMethodKey, JvmTypeKe
 /// loading (jmod/JAR readers register here directly).
 #[derive(Default)]
 pub struct JvmRegistries {
-    pub types: Registry<JvmTypeKey>,
+    pub types: NamedRegistry<JvmTypeKey>,
     pub methods: Registry<JvmMethodKey>,
     pub fields: Registry<JvmFieldKey>,
     pub constructors: Registry<JvmConstructorKey>,
