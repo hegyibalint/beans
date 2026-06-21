@@ -117,6 +117,7 @@ by area.
 | [0031](0031-one-jvm-sidecar-as-late-arriving-data-pipe.md) | One JVM sidecar as a late-arriving data pipe | tooling |
 | [0032](0032-unified-spec-test-crate.md) | Unify spec and interop tests in one beans-spec-tests crate (supersedes 0022) | testing |
 | [0033](0033-no-language-cargo-features-in-facade.md) | Compose every language vertical unconditionally; no language Cargo features in the facade (amends 0030) | crates |
+| [0034](0034-compose-observable-indexes-in-domain-registries.md) | Compose observable indexes in domain registries | registries |
 
 ## Authoring workflow
 
