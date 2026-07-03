@@ -1,8 +1,0 @@
-[package]
-name = "beans-test-harness"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-
-[dependencies]
-beans = { path = "../beans" }
