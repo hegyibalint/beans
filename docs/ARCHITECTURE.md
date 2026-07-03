@@ -56,6 +56,15 @@ Beans have the following layers:
 
 To move ahead, we need to lay down also some fundamental concepts.
 
+#### Identity
+
+One of our targets is to serialize and deserialize information, and their relationship as fast as possible.
+
+One of the bigger challenge is the relationship aspect: we cannot serialize and deserialize plain references.
+What we could do is to assign each of the objects a unique identifier, and serialize/deserialize references by their identifier.
+
+We will call this `Id`. The benefit of beans is that this doesn't need to be complicated: a monotonically increasing integer is enough to uniquely identify each object.
+
 #### Source
 
 In Beans, `Source` could mean any _source_ of information. 
@@ -66,3 +75,37 @@ In the JVM ecosystem, you could have widely varied containers of informations:
  - ???
 
  There are potential shortcuts here, when it comes to caching: if a JARs or a file's hash is the same as a cached one, we don't need to do anything. Also this opens a door to future concepts like remote caching of indices.
+
+Source processing is pure; it doesn't need to access any other information than the source itself, and the result is the intermediate representation of the source.
+
+#### Indexes
+
+Indexes are providing efficient access to certain key-value pairs.
+We are going to go into much more detail about what indexes can store, but what's important is:
+ - Indexes
+
+#### Scope
+
+A scope defines a set of sources that another source can consume. To understand why this is necessary, let's consider a project with multiple project: if they don't depend on each other, each of them could define their own `Foo.java`, which would be completely valid. When we index these sources, all of these `Foo` classes end up in the index, and we need a way to distinguish between them: the _scope_ will help specify exactly which `Foo` class belongs to which project.
+
+In the JVM, there are two vastly different mechanisms to define scopes:
+ - *Classpath scopes*: a scope defined by the classpath. 
+  - The classpath is quite simple: a list of directories and JARs.
+ - *Module scopes*: a scope defined by the module system path
+  - This is much more involved than the classpath scope; we need to take into account what `module-info.java` files define, and what dependencies they declare.
+
+#### Diagnostics
+
+Diagnostics are where the magic happens.
+We anticipate that diagnostics can get complex, and they will need to get various kinds of information from the index.
+
+DX is key here: meanwhile we will have a handful of indices, we will have hundreds if not thousands of diagnostics; we should make the proper tradeoffs to make sure that diagnostics are performant yet comfortable to write.
+
+
+### Data flow
+
+The two ends of the system stand in a push and pull relationship:
+ - File changes introduce a push: their intermediate representations are pushed to the index.
+ - Diagnostics are tricky: they pull, but needs to be susceptible to push
+  - When a diagnostics first fires, it will need to pull data from the indices
+  - Upon conditions changing, the diagnostics will need to accept pushed data from the index
