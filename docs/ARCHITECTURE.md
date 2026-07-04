@@ -43,6 +43,8 @@ The realization is that LSPs cannot communicate between each other easily; a sep
     - Example project could be `integration-gradle`, `integration-maven`
   - `schema` could contain definitions between the `crates` and `sidecar`
     - Not decided yet what tech we could use here
+  - `extensions` could contain IDE and code editor extensions. 
+    - Examples are extensions for VSCode, Zed, or vim
 
 ### Concepts
 
@@ -66,7 +68,7 @@ In the JVM ecosystem, you could have widely varied containers of informations:
 
  There are potential shortcuts here, when it comes to caching: if a JARs or a file's hash is the same as a cached one, we don't need to do anything. Also this opens a door to future concepts like remote caching of indices.
 
-Source processing is pure; it doesn't need to access any other information than the source itself, and the result is the intermediate representation of the source.
+Source processing is pure; it doesn't need to access any other information than the source itself, and the result is the source model.
 
 #### Revision
 
@@ -113,27 +115,27 @@ Beans can be composed down to some major layers:
 The first layer, handling incoming sources of data.
 Data can come in various forms: source files, JARs, JMOD, etc.
 
-The translation layer ingests these sources, if needed, breaks them down into atomic parts, and builds the intermediate representation needed by the rest of the system.
+The translation layer ingests these sources, if needed, breaks them down into atomic parts, and builds the source model needed by the rest of the system.
 
-This intermediate representation is rich; the aim is that this model can support all the required diagnostics _of that language_. E.g. a Scala IR could be used to provide detailed diagnostics for Scala code.
+This source model is rich; the aim is that this model can support all the required diagnostics _of that language_. E.g. a Scala source model could be used to provide detailed diagnostics for Scala code.
 
-The translation layer is pure: files in, IRs out. The translation layer doesn't require any state or side effects to operate.
+The translation layer is pure: files in, source models out. The translation layer doesn't require any state or side effects to operate.
 
 ### Projection
 
-After we have the intermediate representation, the projection layer takes these rich models, and creates a common JVM IR that can be used by the rest of the system.
+After we have the source model, the projection layer takes these rich models, and creates a common JVM model that can be used by the rest of the system.
 
-Languages interact with each other through the projection layer, which provides a common IR that can be used to reason about their code.
+Languages interact with each other through the projection layer, which provides a common model that can be used to reason about their code.
 
-Just like the translation layer, the projection layer is pure too: it takes IRs in, and produces a JVM IR out.
+Just like the translation layer, the projection layer is pure too: it takes source models in, and produces a JVM model out.
 
 ### Storage and indexing
 
-The storage layer is responsible for persisting the IRs, and offer various indexing capabilities.
+The storage layer is responsible for persisting the models, and offer various indexing capabilities.
 This is a crucial layer, that makes or breaks our performance and speed goals.
 
 The storage system would serve as a "lake" of symbols.
-All IRs, regardless what scope they belong to (see the Scope concept above) would be dumped into this storage system.
+All models, regardless what scope they belong to (see the Scope concept above) would be dumped into this storage system.
 
 Then, indices are built on top of the symbol storage system, to allow fast, scope-aware lookup and retrieval of symbols.
 
@@ -141,7 +143,7 @@ Storage by definition is not pure; it requires side effects to persist data to d
 
 ### Semantic
 
-The semantic layer consumes the IRs, and builds high-level semantic models over them.
+The semantic layer consumes the stored models, and builds high-level semantic models over them.
 This is the layer that the language-server uses to provide diagnostics and code completion.
 
 The semantic layer is by default pure, with an exception:
@@ -167,7 +169,7 @@ There are two forces that play in here:
 
 Diagnostics are only computed for files that are open in the editor.
 For completeness, we need to index all sources in the workspace, otherwise the semantic layer cannot resolve references across files. 
-But we don't need to go further than create and project the IRs for most of the sources.
+But we don't need to go further than create and project the source models for most of the sources.
 
 #### Changed Files
 
