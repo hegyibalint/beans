@@ -38,23 +38,13 @@ The realization is that LSPs cannot communicate between each other easily; a sep
 
  This project layout ensures good separation between all the different verticals:
   - `crates` could contain majority of the implementation
-    - Example modules could be `storage`, `lsp` and `cli`
+    - Example modules could be `storage`, `lsp` and `cli`, `platform-jvm` and language specific crates like `lang-java` or `lang-kotlin`
   - `sidecar` could contain a multi-project Java build implementing functionality over the JVM
     - Example project could be `integration-gradle`, `integration-maven`
   - `schema` could contain definitions between the `crates` and `sidecar`
     - Not decided yet what tech we could use here
 
-## Architecture
-
-Beans have the following layers:
- - *Ingestion layer*: Handles incoming data; this is a simple sounding, but fat layer. Whatever comes in (source file, JARs, JMOD, etc.) we need to break it down to atomic parts, and build a semantic, intermediate representation.
- - *Storage layer*: The storage layer takes care of persisting, with a stable ID, the incoming intermediate representations.
- - *Indexing layer*: Diagnostics need access information at lightning speed. To serve this use-case, we need to create queriable "lake" of symbols. This is one of the most important layers in Beans: it's performance can make or break the key objectives.
- - *Diagnostics layer*: the most complicated, yet distributed layer. The diagnostics layer takes care of understanding the intermediate representations, and help create the functionality required by the LSP and CLI functionalities.
-
-### Model concepts
-
-To move ahead, we need to lay down also some fundamental concepts.
+### Concepts
 
 #### Identity
 
@@ -69,7 +59,7 @@ We will call this `Id`. The benefit of beans is that this doesn't need to be com
 
 In Beans, `Source` could mean any _source_ of information. 
 In the JVM ecosystem, you could have widely varied containers of informations:
- - *Source files*: the simplest formats of information, a singular source file like `.java`, `.kt`, `.scala`, `.groovy`, or `.clj`. Meanwhile the files can be complex, and contain technically limiteless amounts of definitions, they are still considered as a single, atomic unit of information.
+ - *Source files*: the simplest formats of information, a singular source file like `.java`, `.kt`, `.scala`, `.groovy`, or `.clj`. While the files can be complex, and contain technically limiteless amounts of definitions, they are still considered as a single, atomic unit of information.
  - *JARs*: technically a ZIP archive. JARs are tricky, because they can contains vastly different informations: compiled Java classes, source files, resources, and other metadata. 
  - *JMODs*: the JVMs module format, a container of compiled Java classes and other metadata.
  - ???
@@ -78,11 +68,26 @@ In the JVM ecosystem, you could have widely varied containers of informations:
 
 Source processing is pure; it doesn't need to access any other information than the source itself, and the result is the intermediate representation of the source.
 
-#### Indexes
+#### Revision
 
-Indexes are providing efficient access to certain key-value pairs.
-We are going to go into much more detail about what indexes can store, but what's important is:
- - Indexes
+Files, and the environment changes; when they do, it's important that we don't apply already stale data.
+A solution to this problem is to assign each `Source` a revision number, and only apply changes from a newer revision.
+Without a revision, we run a chance that stale diagnostics could surface themselves.
+Take the following example
+
+```
+t=0ms   keystroke → world becomes R42
+t=1ms   diagnostics for the open files start on worker threads, reading R42
+t=10ms  another keystroke arrives → R43 wants to exist
+t=31ms  the R42 diagnostic run would have finished
+```
+
+Without a revision, the second keystroke would mutate the state under the running R42 computation (it would read a mix of R42 and R43 that never existed), and the run's results would be published as if they described the latest state.
+
+The revision is a global counter. 
+When sources change, the revision is incremented.
+Each source carries the revision number it was last updated with.
+This means that on the source-level, revision numbers can have large gaps between them.
 
 #### Scope
 
@@ -94,18 +99,78 @@ In the JVM, there are two vastly different mechanisms to define scopes:
  - *Module scopes*: a scope defined by the module system path
   - This is much more involved than the classpath scope; we need to take into account what `module-info.java` files define, and what dependencies they declare.
 
-#### Diagnostics
+## Layers
 
-Diagnostics are where the magic happens.
-We anticipate that diagnostics can get complex, and they will need to get various kinds of information from the index.
+Beans can be composed down to some major layers:
+ - Translation
+ - Projection
+ - Storage and indexing
+ - Semantic
+ - Language server
 
-DX is key here: meanwhile we will have a handful of indices, we will have hundreds if not thousands of diagnostics; we should make the proper tradeoffs to make sure that diagnostics are performant yet comfortable to write.
+### Translation
 
+The first layer, handling incoming sources of data.
+Data can come in various forms: source files, JARs, JMOD, etc.
 
-### Data flow
+The translation layer ingests these sources, if needed, breaks them down into atomic parts, and builds the intermediate representation needed by the rest of the system.
 
-The two ends of the system stand in a push and pull relationship:
- - File changes introduce a push: their intermediate representations are pushed to the index.
- - Diagnostics are tricky: they pull, but needs to be susceptible to push
-  - When a diagnostics first fires, it will need to pull data from the indices
-  - Upon conditions changing, the diagnostics will need to accept pushed data from the index
+This intermediate representation is rich; the aim is that this model can support all the required diagnostics _of that language_. E.g. a Scala IR could be used to provide detailed diagnostics for Scala code.
+
+The translation layer is pure: files in, IRs out. The translation layer doesn't require any state or side effects to operate.
+
+### Projection
+
+After we have the intermediate representation, the projection layer takes these rich models, and creates a common JVM IR that can be used by the rest of the system.
+
+Languages interact with each other through the projection layer, which provides a common IR that can be used to reason about their code.
+
+Just like the translation layer, the projection layer is pure too: it takes IRs in, and produces a JVM IR out.
+
+### Storage and indexing
+
+The storage layer is responsible for persisting the IRs, and offer various indexing capabilities.
+This is a crucial layer, that makes or breaks our performance and speed goals.
+
+The storage system would serve as a "lake" of symbols.
+All IRs, regardless what scope they belong to (see the Scope concept above) would be dumped into this storage system.
+
+Then, indices are built on top of the symbol storage system, to allow fast, scope-aware lookup and retrieval of symbols.
+
+Storage by definition is not pure; it requires side effects to persist data to disk.
+
+### Semantic
+
+The semantic layer consumes the IRs, and builds high-level semantic models over them.
+This is the layer that the language-server uses to provide diagnostics and code completion.
+
+The semantic layer is by default pure, with an exception:
+ - Semantic computations themselves are pure; they take the lake and indices as input and return a result.
+ - To cut redundant work, computations are wrapped in a memoization cache. That cache is the layer's only mutable state.
+
+### Language server
+
+The language server layer is responsible for implementing the LSP protocol, and to communicate with the semantic layer.
+
+The language server's job is quite thin and limited. 
+Diagnostics, code navigation, quick actions, and other LSP features are handled by the semantic layer, as it has a better understanding of the code.
+
+### Data Flow
+
+Beans' data flow model should be similar to many other LSPs (rust-analyzer, IntelliJ, Roslyn, etc...).
+
+There are two forces that play in here:
+ - What happens when a file is opened
+ - What happens when a file has changed
+
+#### Opened Files
+
+Diagnostics are only computed for files that are open in the editor.
+For completeness, we need to index all sources in the workspace, otherwise the semantic layer cannot resolve references across files. 
+But we don't need to go further than create and project the IRs for most of the sources.
+
+#### Changed Files
+
+As mentioned, we need to index all relevant files in the workspace to resolve references across files.
+But the world moves under our feet: dependencies, and external libraries can change. Non open files can change as well.
+This means that we need to listen, and partially re-index the workspace when files change.
