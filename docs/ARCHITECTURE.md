@@ -59,16 +59,22 @@ We will call this `Id`. The benefit of beans is that this doesn't need to be com
 
 #### Source
 
-In Beans, `Source` could mean any _source_ of information. 
+In Beans, _source_ could mean any important, incoming information. 
 In the JVM ecosystem, you could have widely varied containers of informations:
  - *Source files*: the simplest formats of information, a singular source file like `.java`, `.kt`, `.scala`, `.groovy`, or `.clj`. While the files can be complex, and contain technically limiteless amounts of definitions, they are still considered as a single, atomic unit of information.
+ - *Class files*: compiled Java classes, stored in `.class` files.
  - *JARs*: technically a ZIP archive. JARs are tricky, because they can contains vastly different informations: compiled Java classes, source files, resources, and other metadata. 
  - *JMODs*: the JVMs module format, a container of compiled Java classes and other metadata.
- - ???
 
  There are potential shortcuts here, when it comes to caching: if a JARs or a file's hash is the same as a cached one, we don't need to do anything. Also this opens a door to future concepts like remote caching of indices.
 
-Source processing is pure; it doesn't need to access any other information than the source itself, and the result is the source model.
+#### Source model
+
+The source model is the _processed_ representation of an atomic unit of _source_, ready for use by the rest of the system.
+
+Source models can come in two flavors: 
+ - *Language specific models*: a model that is specific to a particular programming language. It's expected that language A will use language A's model. But it's not expected that B can use A's model.
+ - *JVM models*: in order to solve the A to B compatibility problem, we use a common denominator model, the JVM model. The JVM model is a lossy, but common projection of the true source model. By using this model, a language's semantic engine has a chance to understand and work with other languages. For example, a Java language engine can understand and work, even if in a limited way, with a Kotlin class.
 
 #### Revision
 
@@ -112,8 +118,8 @@ Beans can be composed down to some major layers:
 
 ### Translation
 
-The first layer, handling incoming sources of data.
-Data can come in various forms: source files, JARs, JMOD, etc.
+The first layer: this layer is responsible for ingesting _sources_, and building the _source model_.
+The incoming data can come in various forms: source files, JARs, JMOD, etc.
 
 The translation layer ingests these sources, if needed, breaks them down into atomic parts, and builds the source model needed by the rest of the system.
 

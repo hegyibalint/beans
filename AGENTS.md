@@ -6,3 +6,5 @@ This is a fresh implementation. You can find our previous attempt on the `spike`
 
 The `docs/ARCHITECTURE.md` document should not be edited directly.
 Propose changes as text in the conversation; only touch the file when explicitly permitted.
+
+Comments should be used very sparingly; this is an experimental project.
