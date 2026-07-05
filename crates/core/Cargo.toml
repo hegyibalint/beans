@@ -9,3 +9,4 @@ license.workspace = true
 name = "beans_core"
 
 [dependencies]
+tree-sitter = { workspace = true }

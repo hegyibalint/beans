@@ -2,8 +2,8 @@ pub struct PlatformJvm {
 
 }
 
-impl Default for PlatformJvm {
-    fn default() -> Self {
-        Self {  }
+impl PlatformJvm {
+    pub fn new() -> PlatformJvm {
+        PlatformJvm {}
     }
 }

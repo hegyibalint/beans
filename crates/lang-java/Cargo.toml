@@ -10,5 +10,7 @@ name = "beans_lang_java"
 
 [dependencies]
 core = { path = "../core" }
-platform-jvm = { path = "../platform-jvm" }
 storage = { path = "../storage" }
+platform-jvm = { path = "../platform-jvm" }
+tree-sitter = { workspace = true }
+tree-sitter-java = { workspace = true }

@@ -12,8 +12,8 @@ impl Beans {
     pub fn new() -> Beans {
         Beans {
             revision: Revision::default(),
-            platform_jvm: PlatformJvm::default(),
-            lang_java: LanguageJava::default()
+            platform_jvm: PlatformJvm::new(),
+            lang_java: LanguageJava::new()
         }
     }
 
