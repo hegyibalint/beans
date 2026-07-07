@@ -1,4 +1,4 @@
-use beans_core::{FileId, Revision, VirtualFile};
+use beans_core::{analysis::FileAnalysis, file, lsp::FileAnalysis, FileId, Revision, VirtualFile};
 use beans_lang_java::LanguageJava;
 use beans_platform_jvm::PlatformJvm;
 
@@ -25,9 +25,9 @@ impl Beans {
 
 #[allow(unused_variables)]
 impl Beans {
-    pub fn open(&mut self, file: VirtualFile) {
+    pub fn open(&mut self, file: VirtualFile) -> FileAnalysis {
         if file.uri.ends_with(".java") {
-            self.lang_java.open(&mut self.platform_jvm, file);
+            return self.lang_java.open(self.revision, &mut self.platform_jvm, file);
         } else {
             panic!("unsupported file type: {}", file.uri);
         }

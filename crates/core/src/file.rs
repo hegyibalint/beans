@@ -1,5 +1,3 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
-
 struct VirtualFile {
     pub uri: String,
     pub content: String,

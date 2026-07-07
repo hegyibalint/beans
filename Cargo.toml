@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/engine", "crates/lang-java", "crates/lsp", "crates/platform-jvm", "crates/storage"]
+members = ["crates/core", "crates/engine", "crates/lang-java", "crates/lsp", "crates/platform-jvm"]
 
 [workspace.package]
 version = "0.0.1"
