@@ -107,7 +107,6 @@ version = "0.0.1"
 dependencies = [
  "core",
  "platform-jvm",
- "storage",
  "tree-sitter",
  "tree-sitter-java",
 ]
@@ -128,7 +127,6 @@ dependencies = [
  "lsp-server",
  "lsp-types",
  "serde_json",
- "storage",
 ]
 
 [[package]]
@@ -274,10 +272,6 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
-
-[[package]]
-name = "storage"
-version = "0.0.1"
 
 [[package]]
 name = "streaming-iterator"
