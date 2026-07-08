@@ -28,7 +28,7 @@ impl LanguageJava {
         let model = self.parser.parse(file);
         self.model_store.put(revision, model.clone());
         FileAnalysis {
-            diagnostics: vec![dummy_diagnostics(&model)].iter().filter(|d| d.is_some()).map(|d| d.unwrap()).collect(),
+            diagnostics: vec![dummy_diagnostics(&model)],
             actions: vec![],
         }
     }

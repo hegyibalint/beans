@@ -98,13 +98,13 @@ fn parse_qualified_name(node: Node, src: &str) -> Option<JavaQualifiedName> {
     match node.kind() {
         "identifier" | "type_identifier" => Some(JavaQualifiedName {
             segments: vec![parse_simple_name(node, src)?],
-            span: node.byte_range(),
+            span: node.byte_range().into(),
         }),
         "scoped_identifier" => {
             let mut qualified = parse_qualified_name(node.child_by_field_name("scope")?, src)?;
             let last = parse_simple_name(node.child_by_field_name("name")?, src)?;
             qualified.segments.push(last);
-            qualified.span = node.byte_range();
+            qualified.span = node.byte_range().into();
             Some(qualified)
         }
         kind => panic!("uncovered name node kind: {kind}"),
@@ -115,7 +115,7 @@ fn parse_simple_name(node: Node, src: &str) -> Option<JavaSimpleName> {
     match node.kind() {
         "identifier" | "type_identifier" => Some(JavaSimpleName {
             text: util_copy_source(node, src),
-            span: node.byte_range(),
+            span: node.byte_range().into(),
         }),
         kind => panic!("uncovered simple name node kind: {kind}"),
     }
