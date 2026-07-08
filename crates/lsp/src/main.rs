@@ -60,13 +60,16 @@ fn handle_notification_did_open_text_document(conn: &Connection, beans: &mut Bea
 #[cfg(test)]
 mod tests {
     use beans::Beans;
-use lsp_server::{Connection, Message, Notification};
+    use lsp_server::{Connection, Message, Notification};
     use lsp_types::notification::Notification as _;
-    use lsp_types::{DidOpenTextDocumentParams, TextDocumentItem, notification::DidOpenTextDocument};
+    use lsp_types::{
+        DiagnosticSeverity, DidOpenTextDocumentParams, PublishDiagnosticsParams, TextDocumentItem,
+        notification::{DidOpenTextDocument, PublishDiagnostics},
+    };
     use crate::server_loop;
 
     #[test]
-    fn start_and_open_file() {
+    fn open_file_publishes_dummy_diagnostic() {
         let (server_conn, client) = Connection::memory();
 
         let beans = Beans::new();
@@ -74,7 +77,7 @@ use lsp_server::{Connection, Message, Notification};
             server_loop(server_conn, beans);
         });
 
-        let did_open_msg_params = DidOpenTextDocumentParams {
+        let did_open = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {
                 uri: "file://src/main/org/beans/test/Foo.java".parse().unwrap(),
                 language_id: "beans".into(),
@@ -86,12 +89,32 @@ use lsp_server::{Connection, Message, Notification};
 
                 class Foo {
                     Bar bar;
-                }"#.into(),
-            }
+                }"#
+                .into(),
+            },
         };
 
-        let notif = Notification::new(DidOpenTextDocument::METHOD.to_string(), did_open_msg_params);
+        let notif = Notification::new(DidOpenTextDocument::METHOD.to_string(), did_open);
         client.sender.send(Message::Notification(notif)).unwrap();
+
+        // Receive the publish before dropping the client, otherwise the server's send races the
+        // channel closing.
+        let msg = client
+            .receiver
+            .recv()
+            .expect("server publishes diagnostics on open");
+        let published = match msg {
+            Message::Notification(published) => published,
+            other => panic!("expected a notification, got {other:?}"),
+        };
+        assert_eq!(published.method, PublishDiagnostics::METHOD);
+
+        let params: PublishDiagnosticsParams = published
+            .extract(PublishDiagnostics::METHOD)
+            .expect("payload is PublishDiagnosticsParams");
+        assert_eq!(params.diagnostics.len(), 1);
+        assert_eq!(params.diagnostics[0].message, "dummy diagnostics");
+        assert_eq!(params.diagnostics[0].severity, Some(DiagnosticSeverity::WARNING));
 
         drop(client);
         handle.join().unwrap();
