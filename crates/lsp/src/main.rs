@@ -2,7 +2,7 @@ mod translation;
 
 use lsp_server::{Connection, Message, Notification as ServerNotification};
 use lsp_types::notification::{DidOpenTextDocument, Notification, PublishDiagnostics};
-use lsp_types::{Diagnostic, DidOpenTextDocumentParams, PublishDiagnosticsParams, ServerCapabilities};
+use lsp_types::{Diagnostic, DidOpenTextDocumentParams, PublishDiagnosticsParams, ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind};
 use beans::Beans;
 use beans_core::VirtualFile;
 
@@ -12,8 +12,15 @@ use crate::translation::translate_diagnostics;
 fn main() {
     let (conn, _) = Connection::stdio();
     let beans = Beans::new();
+    run(conn, beans);
+}
 
-    let server_capabilities = serde_json::to_value(&ServerCapabilities::default()).unwrap();
+fn run(conn: Connection, beans: Beans) {
+    let capabilities = ServerCapabilities {
+        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
+        ..Default::default()
+    };
+    let server_capabilities = serde_json::to_value(&capabilities).unwrap();
     let _initialization_params = conn.initialize(server_capabilities).unwrap();
 
     server_loop(conn, beans);
@@ -120,4 +127,64 @@ mod tests {
         handle.join().unwrap();
     }
 
+    #[test]
+    fn initialize_advertises_sync_then_publishes_on_open() {
+        use lsp_server::{Request, RequestId};
+        use lsp_types::{
+            InitializeParams, InitializeResult, InitializedParams, TextDocumentSyncCapability,
+            TextDocumentSyncKind,
+        };
+
+        let (server_conn, client) = Connection::memory();
+        let beans = Beans::new();
+        let handle = std::thread::spawn(move || {
+            crate::run(server_conn, beans);
+        });
+
+        // Drive the real handshake `conn.initialize` expects, rather than skipping it.
+        let init = Request::new(
+            RequestId::from(1),
+            "initialize".to_string(),
+            InitializeParams::default(),
+        );
+        client.sender.send(Message::Request(init)).unwrap();
+
+        let response = match client.receiver.recv().unwrap() {
+            Message::Response(response) => response,
+            other => panic!("expected initialize response, got {other:?}"),
+        };
+        let result: InitializeResult = serde_json::from_value(response.result.unwrap()).unwrap();
+        assert_eq!(
+            result.capabilities.text_document_sync,
+            Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
+            "without this capability clients never send didOpen and no diagnostics surface",
+        );
+
+        let initialized = Notification::new("initialized".to_string(), InitializedParams {});
+        client.sender.send(Message::Notification(initialized)).unwrap();
+
+        let did_open = DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: "file://src/main/org/beans/test/Foo.java".parse().unwrap(),
+                language_id: "java".into(),
+                version: 0,
+                text: "package org.beans.test;\n\nclass Foo {}\n".into(),
+            },
+        };
+        let notif = Notification::new(DidOpenTextDocument::METHOD.to_string(), did_open);
+        client.sender.send(Message::Notification(notif)).unwrap();
+
+        let published = match client.receiver.recv().unwrap() {
+            Message::Notification(published) => published,
+            other => panic!("expected a publish notification, got {other:?}"),
+        };
+        assert_eq!(published.method, PublishDiagnostics::METHOD);
+        let params: PublishDiagnosticsParams = published
+            .extract(PublishDiagnostics::METHOD)
+            .expect("payload is PublishDiagnosticsParams");
+        assert_eq!(params.diagnostics.len(), 1);
+
+        drop(client);
+        handle.join().unwrap();
+    }
 }
