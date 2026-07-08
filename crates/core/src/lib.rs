@@ -28,5 +28,5 @@ pub struct EntryId(usize);
 
 pub struct VirtualFile {
     pub uri: String,
-    pub content: String,
+    pub contents: String,
 }

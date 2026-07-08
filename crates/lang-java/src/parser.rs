@@ -18,12 +18,12 @@ impl JavaParser {
         JavaParser { parser }
     }
 
-    pub fn parse(&mut self, file: VirtualFile) -> JavaFile {
+    pub fn parse(&mut self, contents: &str) -> JavaFile {
         let tree = self
             .parser
-            .parse(&file.content, None)
+            .parse(contents, None)
             .expect("parse returns a tree when a language is set");
-        parse_file(tree.root_node(), &file.content)
+        parse_file(tree.root_node(), contents)
     }
 }
 
@@ -144,7 +144,7 @@ class Foo {
         let mut parser = JavaParser::new();
         let model = parser.parse(VirtualFile {
             uri: "file:///Foo.java".to_string(),
-            content: content.clone(),
+            contents: content.clone(),
         });
 
         let package = model.package.as_ref().expect("package is parsed");
