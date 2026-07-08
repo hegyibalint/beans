@@ -1,4 +1,4 @@
-use beans_core::{analysis::FileAnalysis, file, lsp::FileAnalysis, FileId, Revision, VirtualFile};
+use beans_core::{analysis::FileAnalysis, Revision, VirtualFile};
 use beans_lang_java::LanguageJava;
 use beans_platform_jvm::PlatformJvm;
 
@@ -31,13 +31,5 @@ impl Beans {
         } else {
             panic!("unsupported file type: {}", file.uri);
         }
-    }
-
-    pub fn change(&mut self, file: FileId, text: String) {
-        todo!("bump revision; re-translate + re-project; diff old vs new model into the indices")
-    }
-
-    pub fn close(&mut self, file: FileId) {
-        todo!("drop the editor overlay; keep the file's indexed contributions")
     }
 }
