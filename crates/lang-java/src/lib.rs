@@ -24,8 +24,8 @@ impl LanguageJava {
         }
     }
 
-    pub fn open(&mut self, revision: Revision, _platform_jvm: &mut PlatformJvm, file: VirtualFile) -> FileAnalysis {
-        let model = self.parser.parse(file);
+    pub fn open(&mut self, revision: Revision, _platform_jvm: &mut PlatformJvm, uri: &str, contents: &str) -> FileAnalysis {
+        let model = self.parser.parse(contents);
         self.model_store.put(revision, model.clone());
         FileAnalysis {
             diagnostics: vec![dummy_diagnostics(&model)],

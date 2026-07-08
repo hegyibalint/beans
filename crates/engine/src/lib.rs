@@ -25,11 +25,11 @@ impl Beans {
 
 #[allow(unused_variables)]
 impl Beans {
-    pub fn open(&mut self, file: VirtualFile) -> FileAnalysis {
-        if file.uri.ends_with(".java") {
-            return self.lang_java.open(self.revision, &mut self.platform_jvm, file);
+    pub fn open(&mut self, uri: &str, contents: &str) -> FileAnalysis {
+        if uri.ends_with(".java") {
+            return self.lang_java.open(self.revision, &mut self.platform_jvm, uri, contents);
         } else {
-            panic!("unsupported file type: {}", file.uri);
+            panic!("unsupported file type: {}", uri);
         }
     }
 }
