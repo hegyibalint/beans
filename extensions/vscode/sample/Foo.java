@@ -1,4 +1,4 @@
-package org.beans.test;
+package org.beans.test.asd;
 
 import org.beans.test.Bar
 
