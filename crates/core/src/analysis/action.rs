@@ -1,4 +1,4 @@
-use crate::{Revision, Span};
+use crate::Span;
 
 pub enum ActionKind {
     Terminal,

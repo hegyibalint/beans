@@ -1,19 +1,22 @@
-use std::collections::HashMap;
-
 use crate::Revision;
 
 pub struct RevisionedStorage<T> {
-    revisions: HashMap<Revision, Vec<T>>
+    current_revision: Revision,
+    models: Vec<T>,
 }
 
 impl<T> RevisionedStorage<T> {
     pub fn new() -> Self {
         Self {
-            revisions: HashMap::new(),
+            current_revision: Revision::default(),
+            models: Vec::new(),
         }
     }
 
     pub fn put(&mut self, revision: Revision, model: T) {
-        self.revisions.entry(revision).or_default().push(model)
+        if revision > self.current_revision {
+            self.current_revision = revision;
+        }
+        self.models.push(model);
     }
 }

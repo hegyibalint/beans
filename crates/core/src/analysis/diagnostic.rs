@@ -1,4 +1,4 @@
-use crate::{Revision, Span};
+use crate::Span;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagnosticSeverity {
