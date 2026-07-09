@@ -1,18 +1,48 @@
 mod translation;
 
-use lsp_server::{Connection, Message, Notification as ServerNotification};
-use lsp_types::notification::{DidOpenTextDocument, Notification, PublishDiagnostics};
-use lsp_types::{Diagnostic, DidOpenTextDocumentParams, PublishDiagnosticsParams, ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind};
+use std::collections::HashMap;
+
 use beans::Beans;
-use beans_core::VirtualFile;
+use lsp_server::{Connection, Message, Notification as ServerNotification};
+use lsp_types::notification::{
+    DidChangeTextDocument, DidOpenTextDocument, Notification, PublishDiagnostics,
+};
+use lsp_types::{DidChangeTextDocumentParams, DidOpenTextDocumentParams};
+use lsp_types::{
+    PublishDiagnosticsParams, ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind,
+    Uri,
+};
 
 use crate::translation::translate_diagnostics;
-
 
 fn main() {
     let (conn, _) = Connection::stdio();
     let beans = Beans::new();
     run(conn, beans);
+}
+
+struct State {
+    beans: Beans,
+    versions: HashMap<String, i32>,
+}
+
+impl State {
+    fn new(beans: Beans) -> Self {
+        Self {
+            beans,
+            versions: HashMap::new(),
+        }
+    }
+
+    fn is_stale(&self, uri: &Uri, version: i32) -> bool {
+        self.versions
+            .get(uri.as_str())
+            .is_some_and(|&current| version <= current)
+    }
+
+    fn record(&mut self, uri: &Uri, version: i32) {
+        self.versions.insert(uri.as_str().to_owned(), version);
+    }
 }
 
 fn run(conn: Connection, beans: Beans) {
@@ -23,31 +53,54 @@ fn run(conn: Connection, beans: Beans) {
     let server_capabilities = serde_json::to_value(&capabilities).unwrap();
     let _initialization_params = conn.initialize(server_capabilities).unwrap();
 
-    server_loop(conn, beans);
+    // Session begins here: one initialize per connection, so State starts empty.
+    server_loop(conn, State::new(beans));
 }
 
-fn server_loop(conn: Connection, mut beans: Beans) {
+fn server_loop(conn: Connection, mut state: State) {
     for msg in &conn.receiver {
         match msg {
             Message::Request(_req) => {}
             Message::Response(_res) => {}
-            Message::Notification(notif) => handle_notification(&conn, &mut beans, notif),
+            Message::Notification(notif) => handle_notification(&conn, &mut state, notif),
             _ => panic!("Unexpected message: {:?}", msg),
         }
     }
 }
 
-fn handle_notification(conn: &Connection, beans: &mut Beans, notif: ServerNotification) {
-    if notif.method == DidOpenTextDocument::METHOD {
-        let payload = notif.extract::<DidOpenTextDocumentParams>(DidOpenTextDocument::METHOD).unwrap();
-        handle_notification_did_open_text_document(conn, beans, payload)
+fn handle_notification(conn: &Connection, state: &mut State, notif: ServerNotification) {
+    match notif.method.as_str() {
+        DidOpenTextDocument::METHOD => {
+            let params = notif
+                .extract::<DidOpenTextDocumentParams>(DidOpenTextDocument::METHOD)
+                .unwrap();
+            let doc = params.text_document;
+            // Open re-baselines the document: never stale, always processed.
+            state.record(&doc.uri, doc.version);
+            on_document(conn, &mut state.beans, doc.uri, doc.version, doc.text);
+        }
+        DidChangeTextDocument::METHOD => {
+            let mut params = notif
+                .extract::<DidChangeTextDocumentParams>(DidChangeTextDocument::METHOD)
+                .unwrap();
+            let uri = params.text_document.uri;
+            let version = params.text_document.version;
+            if state.is_stale(&uri, version) {
+                return;
+            }
+            // FULL sync sends the whole document as a single change entry.
+            let Some(change) = params.content_changes.pop() else {
+                return;
+            };
+            state.record(&uri, version);
+            on_document(conn, &mut state.beans, uri, version, change.text);
+        }
+        _ => {}
     }
 }
 
-fn handle_notification_did_open_text_document(conn: &Connection, beans: &mut Beans, params: DidOpenTextDocumentParams) {
-    let uri = params.text_document.uri;
-    let contents = params.text_document.text;
-    let analysis = beans.open(uri.as_str(), contents.as_str());
+fn on_document(conn: &Connection, beans: &mut Beans, uri: Uri, version: i32, contents: String) {
+    let analysis = beans.process(uri.as_str(), contents.as_str());
 
     // Map and send off all diagnostics
     let lsp_diagnostics = analysis
@@ -58,14 +111,17 @@ fn handle_notification_did_open_text_document(conn: &Connection, beans: &mut Bea
     let params = PublishDiagnosticsParams {
         uri,
         diagnostics: lsp_diagnostics,
-        version: None
+        version: Some(version),
     };
     let notification = ServerNotification::new(PublishDiagnostics::METHOD.to_string(), params);
-    conn.sender.send(Message::Notification(notification)).unwrap();
+    conn.sender
+        .send(Message::Notification(notification))
+        .unwrap();
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::{State, server_loop};
     use beans::Beans;
     use lsp_server::{Connection, Message, Notification};
     use lsp_types::notification::Notification as _;
@@ -73,7 +129,6 @@ mod tests {
         DiagnosticSeverity, DidOpenTextDocumentParams, PublishDiagnosticsParams, TextDocumentItem,
         notification::{DidOpenTextDocument, PublishDiagnostics},
     };
-    use crate::server_loop;
 
     #[test]
     fn open_file_publishes_dummy_diagnostic() {
@@ -81,7 +136,7 @@ mod tests {
 
         let beans = Beans::new();
         let handle = std::thread::spawn(move || {
-            server_loop(server_conn, beans);
+            server_loop(server_conn, State::new(beans));
         });
 
         let did_open = DidOpenTextDocumentParams {
@@ -121,7 +176,10 @@ mod tests {
             .expect("payload is PublishDiagnosticsParams");
         assert_eq!(params.diagnostics.len(), 1);
         assert_eq!(params.diagnostics[0].message, "dummy diagnostics");
-        assert_eq!(params.diagnostics[0].severity, Some(DiagnosticSeverity::WARNING));
+        assert_eq!(
+            params.diagnostics[0].severity,
+            Some(DiagnosticSeverity::WARNING)
+        );
 
         drop(client);
         handle.join().unwrap();
@@ -161,7 +219,10 @@ mod tests {
         );
 
         let initialized = Notification::new("initialized".to_string(), InitializedParams {});
-        client.sender.send(Message::Notification(initialized)).unwrap();
+        client
+            .sender
+            .send(Message::Notification(initialized))
+            .unwrap();
 
         let did_open = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {

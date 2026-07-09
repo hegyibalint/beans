@@ -1,4 +1,3 @@
-use beans_core::VirtualFile;
 use tree_sitter::{Node, Parser};
 
 use crate::model::{
@@ -142,10 +141,7 @@ class Foo {
         .to_string();
 
         let mut parser = JavaParser::new();
-        let model = parser.parse(VirtualFile {
-            uri: "file:///Foo.java".to_string(),
-            contents: content.clone(),
-        });
+        let model = parser.parse(content.as_str());
 
         let package = model.package.as_ref().expect("package is parsed");
         let segments: Vec<&str> = package.segments.iter().map(|s| s.text.as_str()).collect();
@@ -153,7 +149,12 @@ class Foo {
 
         assert_eq!(model.imports.len(), 1);
         let import = &model.imports[0];
-        let segments: Vec<&str> = import.name.segments.iter().map(|s| s.text.as_str()).collect();
+        let segments: Vec<&str> = import
+            .name
+            .segments
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect();
         assert_eq!(segments, ["java", "util", "List"]);
         assert!(matches!(import.kind, JavaImportKind::Type));
 
