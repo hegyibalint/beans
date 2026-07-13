@@ -1,4 +1,31 @@
-use std::fmt;
+use std::{fmt, path::PathBuf};
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum JvmSource {
+    File {
+        /// The filesystem path to the class file, e.g. `src/main/java/org/beans/app/Foo.class`.
+        path: PathBuf,
+    },
+    JarEntry {
+        /// The filesystem path to the jar file, e.g. `.m2/repository/org/beans/app/1.0.0/app-1.0.0.jar`.
+        jar_path: PathBuf,
+        /// The logical path to the entry within the jar file, e.g. `org/beans/app/Foo.class`.
+        entry_path: String,
+    },
+    JmodEntry {
+        /// The filesystem path to the jmod file, e.g. `/usr/lib/jvm/java-17-openjdk-amd64/jmods/java.base.jmod`.
+        jmod_path: PathBuf,
+        /// The logical path to the entry within the jmod file, e.g. `classes/dev/blnt/beans/app/Foo.class`.
+        entry_path: String,
+    },
+    JimageEntry {
+        /// The filesystem path to the runtime image, e.g. `/usr/lib/jvm/java-17-openjdk-amd64/lib/modules`.
+        /// A JDK has exactly one, holding every system module.
+        jimage_path: PathBuf,
+        /// The logical path to the entry within the image, e.g. `java.base/java/lang/String.class`.
+        entry_path: String,
+    },
+}
 
 /// Nesting is flat: `Foo$Inner` is its own class, linked back by `enclosing`.
 #[derive(Debug, Clone)]
@@ -26,7 +53,7 @@ pub enum JvmKind {
 #[derive(Debug, Clone)]
 pub struct JvmField {
     pub name: String,
-    pub type_: JvmType,
+    pub jvm_type: JvmType,
 }
 
 #[derive(Debug, Clone)]
