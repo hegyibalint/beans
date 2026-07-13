@@ -33,7 +33,7 @@ pub struct JavaClass {
 #[derive(Debug, Clone)]
 pub struct JavaField {
     pub name: JavaSimpleName,
-    pub type_: JavaQualifiedName,
+    pub java_type: JavaQualifiedName,
 }
 
 #[derive(Debug, Clone)]
@@ -46,7 +46,7 @@ pub struct JavaMethod {
 #[derive(Debug, Clone)]
 pub struct JavaMethodParameter {
     pub name: JavaSimpleName,
-    pub type_: JavaQualifiedName,
+    pub java_type: JavaQualifiedName,
 }
 
 /// One or more simple names; "qualified" in the loose sense (a single
