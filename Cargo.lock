@@ -123,9 +123,9 @@ version = "0.0.1"
 dependencies = [
  "core",
  "engine",
- "lang-java",
  "lsp-server",
  "lsp-types",
+ "platform-jvm",
  "serde_json",
 ]
 

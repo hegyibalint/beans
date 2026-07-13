@@ -13,7 +13,7 @@ use lsp_types::{
     Uri,
 };
 
-use crate::translation::translate_diagnostics;
+use crate::translation::{translate_diagnostics, uri_to_source};
 
 fn main() {
     let (conn, _) = Connection::stdio();
@@ -100,7 +100,13 @@ fn handle_notification(conn: &Connection, state: &mut State, notif: ServerNotifi
 }
 
 fn on_document(conn: &Connection, beans: &mut Beans, uri: Uri, version: i32, contents: String) {
-    let analysis = beans.process(uri.as_str(), contents.as_str());
+    // Skip what we cannot source (untitled buffers) or no language claims.
+    let Some(source) = uri_to_source(&uri) else {
+        return;
+    };
+    let Some(analysis) = beans.process(source, contents.as_str()) else {
+        return;
+    };
 
     // Map and send off all diagnostics
     let lsp_diagnostics = analysis

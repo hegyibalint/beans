@@ -10,5 +10,5 @@ name = "beans"
 
 [dependencies]
 core = { path = "../core" }
-platform-jvm = { path = "../platform-jvm" }
 lang-java = { path = "../lang-java" }
+platform-jvm = { path = "../platform-jvm" }
