@@ -24,8 +24,9 @@ impl From<Range<usize>> for Span {
 pub struct Revision(usize);
 
 impl Revision {
-    pub fn bump(&mut self) {
+    pub fn bump(&mut self) -> Revision {
         self.0 += 1;
+        *self
     }
 }
 
