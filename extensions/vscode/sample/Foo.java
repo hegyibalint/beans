@@ -1,6 +1,4 @@
-package org.beans.test.asd;
-
-import org.beans.test.Bar
+package org.beans.app;
 
 class Foo {
     Bar bar;

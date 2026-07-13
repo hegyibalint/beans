@@ -1,6 +1,6 @@
-pub struct PlatformJvm {
+pub mod model;
 
-}
+pub struct PlatformJvm {}
 
 impl PlatformJvm {
     pub fn new() -> PlatformJvm {
