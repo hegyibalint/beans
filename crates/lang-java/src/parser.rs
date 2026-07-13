@@ -113,7 +113,7 @@ fn parse_class_declaration(node: Node, src: &str) -> Option<JavaClass> {
 }
 
 fn parse_field_declaration(node: Node, src: &str) -> Vec<JavaField> {
-    let Some(type_) = node
+    let Some(java_type) = node
         .child_by_field_name("type")
         .and_then(|t| parse_type(t, src))
     else {
@@ -126,7 +126,7 @@ fn parse_field_declaration(node: Node, src: &str) -> Vec<JavaField> {
             let name = parse_simple_name(decl.child_by_field_name("name")?, src)?;
             Some(JavaField {
                 name,
-                type_: type_.clone(),
+                java_type: java_type.clone(),
             })
         })
         .collect()
@@ -156,8 +156,8 @@ fn parse_method_declaration(node: Node, src: &str) -> Option<JavaMethod> {
 
 fn parse_formal_parameter(node: Node, src: &str) -> Option<JavaMethodParameter> {
     let name = parse_simple_name(node.child_by_field_name("name")?, src)?;
-    let type_ = parse_type(node.child_by_field_name("type")?, src)?;
-    Some(JavaMethodParameter { name, type_ })
+    let java_type = parse_type(node.child_by_field_name("type")?, src)?;
+    Some(JavaMethodParameter { name, java_type })
 }
 
 /// Pull the named type out of a type node. Reference types (`Bar`,
@@ -290,7 +290,7 @@ class Foo {
         let class = &model.classes[0];
 
         let field_type: Vec<&str> = class.fields[0]
-            .type_
+            .java_type
             .segments
             .iter()
             .map(|s| s.text.as_str())
@@ -305,7 +305,7 @@ class Foo {
         assert_eq!(return_type, ["Baz"]);
         assert_eq!(method.params[0].name.text, "q");
         let param_type: Vec<&str> = method.params[0]
-            .type_
+            .java_type
             .segments
             .iter()
             .map(|s| s.text.as_str())
