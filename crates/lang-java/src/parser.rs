@@ -1,7 +1,8 @@
 use tree_sitter::{Node, Parser};
 
 use crate::model::{
-    JavaClass, JavaFile, JavaImport, JavaImportKind, JavaQualifiedName, JavaSimpleName,
+    JavaClass, JavaField, JavaFile, JavaImport, JavaImportKind, JavaMethod, JavaMethodParameter,
+    JavaQualifiedName, JavaSimpleName,
 };
 
 pub struct JavaParser {
@@ -90,7 +91,109 @@ fn parse_import_declaration(node: Node, src: &str) -> Option<JavaImport> {
 
 fn parse_class_declaration(node: Node, src: &str) -> Option<JavaClass> {
     let name = parse_simple_name(node.child_by_field_name("name")?, src)?;
-    Some(JavaClass { name })
+
+    let mut fields = Vec::new();
+    let mut methods = Vec::new();
+    if let Some(body) = node.child_by_field_name("body") {
+        let mut cursor = body.walk();
+        for member in body.named_children(&mut cursor) {
+            match member.kind() {
+                "field_declaration" => fields.extend(parse_field_declaration(member, src)),
+                "method_declaration" => methods.extend(parse_method_declaration(member, src)),
+                _ => {}
+            }
+        }
+    }
+
+    Some(JavaClass {
+        name,
+        fields,
+        methods,
+    })
+}
+
+fn parse_field_declaration(node: Node, src: &str) -> Vec<JavaField> {
+    let Some(type_) = node
+        .child_by_field_name("type")
+        .and_then(|t| parse_type(t, src))
+    else {
+        return Vec::new();
+    };
+
+    let mut cursor = node.walk();
+    node.children_by_field_name("declarator", &mut cursor)
+        .filter_map(|decl| {
+            let name = parse_simple_name(decl.child_by_field_name("name")?, src)?;
+            Some(JavaField {
+                name,
+                type_: type_.clone(),
+            })
+        })
+        .collect()
+}
+
+fn parse_method_declaration(node: Node, src: &str) -> Option<JavaMethod> {
+    let name = parse_simple_name(node.child_by_field_name("name")?, src)?;
+    let return_type = parse_type(node.child_by_field_name("type")?, src)?;
+
+    let mut cursor = node.walk();
+    let params = node
+        .child_by_field_name("parameters")
+        .map(|list| {
+            list.named_children(&mut cursor)
+                .filter(|c| c.kind() == "formal_parameter")
+                .filter_map(|param| parse_formal_parameter(param, src))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Some(JavaMethod {
+        name,
+        params,
+        return_type,
+    })
+}
+
+fn parse_formal_parameter(node: Node, src: &str) -> Option<JavaMethodParameter> {
+    let name = parse_simple_name(node.child_by_field_name("name")?, src)?;
+    let type_ = parse_type(node.child_by_field_name("type")?, src)?;
+    Some(JavaMethodParameter { name, type_ })
+}
+
+/// Pull the named type out of a type node. Reference types (`Bar`,
+/// `java.util.List`, `List<T>`) yield a qualified name; primitives,
+/// arrays and `void` are not modelled yet and drop out as `None`.
+fn parse_type(node: Node, src: &str) -> Option<JavaQualifiedName> {
+    match node.kind() {
+        "type_identifier" => Some(JavaQualifiedName {
+            segments: vec![parse_simple_name(node, src)?],
+            span: node.byte_range().into(),
+        }),
+        "scoped_type_identifier" => {
+            let mut cursor = node.walk();
+            let mut segments = Vec::new();
+            for child in node.named_children(&mut cursor) {
+                match child.kind() {
+                    "type_identifier" => segments.push(parse_simple_name(child, src)?),
+                    "scoped_type_identifier" => segments.extend(parse_type(child, src)?.segments),
+                    _ => {}
+                }
+            }
+            (!segments.is_empty()).then(|| JavaQualifiedName {
+                segments,
+                span: node.byte_range().into(),
+            })
+        }
+        "generic_type" => {
+            let mut cursor = node.walk();
+            node.named_children(&mut cursor)
+                .find_map(|child| match child.kind() {
+                    "type_identifier" | "scoped_type_identifier" => parse_type(child, src),
+                    _ => None,
+                })
+        }
+        _ => None,
+    }
 }
 
 fn parse_qualified_name(node: Node, src: &str) -> Option<JavaQualifiedName> {
@@ -166,5 +269,47 @@ class Foo {
         assert_eq!(&content[span.start as usize..span.end as usize], "Foo");
 
         eprintln!("{model:#?}");
+    }
+
+    #[test]
+    fn parse_member_type_references() {
+        let content = r#"package org.beans.test.asd;
+
+class Foo {
+    Bar bar;
+
+    Baz make(Qux q) {
+    }
+}
+"#
+        .to_string();
+
+        let mut parser = JavaParser::new();
+        let model = parser.parse(content.as_str());
+
+        let class = &model.classes[0];
+
+        let field_type: Vec<&str> = class.fields[0]
+            .type_
+            .segments
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect();
+        assert_eq!(class.fields[0].name.text, "bar");
+        assert_eq!(field_type, ["Bar"]);
+
+        let method = &class.methods[0];
+        assert_eq!(method.name.text, "make");
+        let return_type: Vec<&str> =
+            method.return_type.segments.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(return_type, ["Baz"]);
+        assert_eq!(method.params[0].name.text, "q");
+        let param_type: Vec<&str> = method.params[0]
+            .type_
+            .segments
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect();
+        assert_eq!(param_type, ["Qux"]);
     }
 }

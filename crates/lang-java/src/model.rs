@@ -1,4 +1,5 @@
 use beans_core::Span;
+use beans_platform_jvm::model::Fqn;
 
 #[derive(Debug, Clone)]
 pub struct JavaSimpleName {
@@ -14,13 +15,19 @@ pub struct JavaQualifiedName {
     pub span: Span,
 }
 
+pub enum JavaSymbol {
+    Resolved(Fqn),        // already bound: import / same-package / java.lang / same file
+    Importable(Vec<Fqn>), // not in scope, but the catalog offers candidates
+    Unresolved,           // catalog has nothing
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JavaImportKind {
-    Type,            // import a.b.C;
-    TypeOnDemand,    // import a.b.*;
-    Static,          // import static a.b.C.member;
-    StaticOnDemand,  // import static a.b.C.*;
-    Module,          // import module a.b;  (Java 25)
+    Type,           // import a.b.C;
+    TypeOnDemand,   // import a.b.*;
+    Static,         // import static a.b.C.member;
+    StaticOnDemand, // import static a.b.C.*;
+    Module,         // import module a.b;  (Java 25)
 }
 
 #[derive(Debug, Clone)]
@@ -30,8 +37,29 @@ pub struct JavaImport {
 }
 
 #[derive(Debug, Clone)]
+pub struct JavaMethodParameter {
+    pub name: JavaSimpleName,
+    pub type_: JavaQualifiedName,
+}
+
+#[derive(Debug, Clone)]
+pub struct JavaMethod {
+    pub name: JavaSimpleName,
+    pub params: Vec<JavaMethodParameter>,
+    pub return_type: JavaQualifiedName,
+}
+
+#[derive(Debug, Clone)]
+pub struct JavaField {
+    pub name: JavaSimpleName,
+    pub type_: JavaQualifiedName,
+}
+
+#[derive(Debug, Clone)]
 pub struct JavaClass {
     pub name: JavaSimpleName,
+    pub fields: Vec<JavaField>,
+    pub methods: Vec<JavaMethod>,
 }
 
 #[derive(Debug, Default, Clone)]

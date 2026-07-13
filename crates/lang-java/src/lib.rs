@@ -2,9 +2,9 @@ mod diagnostics;
 pub mod model;
 mod parser;
 
+use beans_core::Revision;
 use beans_core::analysis::FileAnalysis;
 use beans_core::storage::RevisionedStorage;
-use beans_core::Revision;
 use beans_platform_jvm::PlatformJvm;
 
 use crate::diagnostics::dummy_diagnostics;
@@ -13,7 +13,7 @@ use crate::parser::JavaParser;
 
 pub struct LanguageJava {
     parser: JavaParser,
-    model_store: RevisionedStorage<JavaFile>,
+    model_store: RevisionedStorage<HashMap<String, JavaFile>>,
 }
 
 impl LanguageJava {
@@ -24,15 +24,18 @@ impl LanguageJava {
         }
     }
 
-    pub fn process(
+    pub fn process(&mut self, revision: Revision, _uri: &str, contents: &str) {
+        let model = self.parser.parse(contents);
+        self.model_store.put(revision, model.clone());
+    }
+
+    pub fn analyze(
         &mut self,
         revision: Revision,
         _platform_jvm: &mut PlatformJvm,
-        _uri: &str,
-        contents: &str,
+        uri: &str,
     ) -> FileAnalysis {
-        let model = self.parser.parse(contents);
-        self.model_store.put(revision, model.clone());
+        let model = self.model_store.get(revision);
         FileAnalysis {
             diagnostics: vec![dummy_diagnostics(&model)],
             actions: vec![],
