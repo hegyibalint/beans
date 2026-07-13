@@ -1,6 +1,6 @@
 use beans_core::{Revision, analysis::FileAnalysis};
 use beans_lang_java::LanguageJava;
-use beans_platform_jvm::PlatformJvm;
+use beans_platform_jvm::{PlatformJvm, model::JvmSource};
 
 pub struct Beans {
     revision: Revision,
@@ -18,17 +18,18 @@ impl Beans {
     }
 }
 
-#[allow(unused_variables)]
 impl Beans {
-    pub fn process(&mut self, uri: &str, contents: &str) -> FileAnalysis {
-        let current_revision = self.revision.bump();
+    /// `None` when no language claims the source; the editor sends us
+    /// all kinds of files, and skipping them is not an error.
+    pub fn process(&mut self, source: JvmSource, contents: &str) -> Option<FileAnalysis> {
+        let revision = self.revision.bump();
 
-        if uri.ends_with(".java") {
-            return self
-                .lang_java
-                .process(self.revision, &mut self.platform_jvm, uri, contents);
-        } else {
-            panic!("unsupported file type: {}", uri);
+        if self.lang_java.accepts(&source) {
+            self.lang_java
+                .process(source.clone(), revision, &mut self.platform_jvm, contents);
+            return self.lang_java.analyze(&source, revision);
         }
+
+        None
     }
 }

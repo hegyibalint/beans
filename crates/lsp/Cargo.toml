@@ -12,7 +12,7 @@ path = "src/main.rs"
 [dependencies]
 core = { path = "../core" }
 engine = { path = "../engine" }
-lang-java = { path = "../lang-java" }
+platform-jvm = { path = "../platform-jvm" }
 lsp-server.workspace = true
 lsp-types.workspace = true
 serde_json.workspace = true
