@@ -2,7 +2,7 @@ use std::{fmt, path::PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum JvmSource {
-    File {
+    SourceFile {
         /// The filesystem path to the class file, e.g. `src/main/java/org/beans/app/Foo.class`.
         path: PathBuf,
     },
