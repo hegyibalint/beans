@@ -9,3 +9,4 @@ license.workspace = true
 name = "beans_platform_jvm"
 
 [dependencies]
+core = { path = "../core" }
