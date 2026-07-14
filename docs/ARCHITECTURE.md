@@ -125,3 +125,15 @@ Indices need maintenance for size and staleness, and Beans will have a backgroun
 One important thing is what pulls the diagnostics; this is very important, as it drives key decisions in the architecture. Beans is designed to pull diagnostics for open files only.
 
 Wider-scoped, batched runs are still possible, but they are not the default. The idea is that the user is only interested in the files they are working on, and not the entire project.
+
+## Testing
+
+Testing in Beans follows typical testing patterns, with some additions. Code should be tested in typical unit, integration, and end-to-end tests. However, because a lot of behavior is based on language specifications, we need to add a fourth type of test: specification tests. Specification tests are acceptance tests written from the spec, often ahead of the implementation.
+
+Specification tests are written from the specification alone. Imagine a QA developer who reads the spec and encodes what it promises, knowing nothing about how Beans works inside: the test treats Beans as a black box and asserts only observable behavior. Because of this, spec tests naturally exercise the whole system — needing the composed engine is a side-effect of the perspective, not a design choice. They live in the `spec-tests` crate, above the engine; tests that peek inside a vertical are not spec tests and stay in that vertical. Spec tests drive the engine, never the LSP: the LSP is just one frontend, and other consumers like a CLI fork from the engine level, so maximum precision must already hold at that surface. The LSP keeps its own thin end-to-end tests for translation and transport.
+
+The suite mirrors the specification's structure: one area per language (`java/`, later `interop/` with `<producer>_<consumer>` folders), one file per chapter (`jls07_packages.rs`), one module per section (`jls_7_4_package_declarations`). Section numbers cite a single pinned edition of the spec. Spec versions are not directories: most rules hold across all versions, and behavior that genuinely varies by language level is a parameter on the individual test.
+
+Two disciplines keep the suite honest:
+ - Every spec test starts marked `expected_failure`. When the engine catches up and the test unexpectedly passes, the harness fails it loudly; the author promotes it by removing the marker. The pending list is the roadmap.
+ - Tests assert specific facts, never absence. "No diagnostics" is the default state of an engine that does nothing — and in Beans, silence is even a designed behavior. A good assertion names the diagnostic and its position, or the exact Fqn a symbol resolves to.
