@@ -1,11 +1,28 @@
+use beans_core::{Revision, storage::RevisionedStorage};
+
+use crate::model::{JvmClass, JvmSource};
+
 pub mod model;
 
-pub struct PlatformJvm {}
+pub struct PlatformJvm {
+    /// A source's value is its whole contribution, so re-registering a
+    /// source replaces everything it previously declared.
+    class_lake: RevisionedStorage<JvmSource, Vec<JvmClass>>,
+}
 
 impl PlatformJvm {
     pub fn new() -> PlatformJvm {
-        PlatformJvm {}
+        PlatformJvm {
+            class_lake: RevisionedStorage::new(),
+        }
     }
 
-    pub fn register(&self, jvm_class: &model::JvmClass) {}
+    pub fn register(
+        &mut self,
+        revision: Revision,
+        jvm_source: JvmSource,
+        jvm_classes: Vec<JvmClass>,
+    ) -> &[JvmClass] {
+        self.class_lake.put(revision, jvm_source, jvm_classes)
+    }
 }

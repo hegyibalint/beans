@@ -9,21 +9,21 @@ use beans_core::storage::RevisionedStorage;
 use beans_platform_jvm::PlatformJvm;
 use beans_platform_jvm::model::JvmSource;
 
-use crate::diagnostics::dummy_diagnostics;
+use crate::diagnostics::symbol_diagnostics;
 use crate::model::JavaFile;
 use crate::parser::JavaParser;
 use crate::projection::project_to_jvm;
 
 pub struct LanguageJava {
     parser: JavaParser,
-    model_store: RevisionedStorage<JvmSource, JavaFile>,
+    model_lake: RevisionedStorage<JvmSource, JavaFile>,
 }
 
 impl LanguageJava {
     pub fn new() -> LanguageJava {
         LanguageJava {
             parser: JavaParser::new(),
-            model_store: RevisionedStorage::new(),
+            model_lake: RevisionedStorage::new(),
         }
     }
 
@@ -42,18 +42,16 @@ impl LanguageJava {
         platform_jvm: &mut PlatformJvm,
         contents: &str,
     ) {
-        let java_model = self
-            .model_store
-            .put(revision, java_source, self.parser.parse(contents));
-        project_to_jvm(java_model)
-            .iter()
-            .for_each(|jvm_class| platform_jvm.register(jvm_class));
+        let java_model =
+            self.model_lake
+                .put(revision, java_source.clone(), self.parser.parse(contents));
+        platform_jvm.register(revision, java_source, project_to_jvm(java_model));
     }
 
     pub fn analyze(&self, java_source: &JvmSource, revision: Revision) -> Option<FileAnalysis> {
-        let java_model = self.model_store.get(java_source, revision)?;
+        let java_model = self.model_lake.get(java_source, revision)?;
         Some(FileAnalysis {
-            diagnostics: vec![dummy_diagnostics(java_model)],
+            diagnostics: symbol_diagnostics(java_model),
             actions: vec![],
         })
     }

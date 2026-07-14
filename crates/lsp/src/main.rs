@@ -180,8 +180,9 @@ mod tests {
         let params: PublishDiagnosticsParams = published
             .extract(PublishDiagnostics::METHOD)
             .expect("payload is PublishDiagnosticsParams");
+        // The `Bar bar;` field is the file's single type reference.
         assert_eq!(params.diagnostics.len(), 1);
-        assert_eq!(params.diagnostics[0].message, "dummy diagnostics");
+        assert_eq!(params.diagnostics[0].message, "type reference: Bar");
         assert_eq!(
             params.diagnostics[0].severity,
             Some(DiagnosticSeverity::WARNING)
@@ -235,7 +236,7 @@ mod tests {
                 uri: "file://src/main/org/beans/test/Foo.java".parse().unwrap(),
                 language_id: "java".into(),
                 version: 0,
-                text: "package org.beans.test;\n\nclass Foo {}\n".into(),
+                text: "package org.beans.test;\n\nclass Foo {\n    Bar bar;\n}\n".into(),
             },
         };
         let notif = Notification::new(DidOpenTextDocument::METHOD.to_string(), did_open);
