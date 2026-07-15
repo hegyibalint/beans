@@ -1,4 +1,10 @@
 /target
+
+# Oracle-copyrighted spec texts; fetch locally via scripts/specs/
+/docs/lang-specs/jls/
+/docs/lang-specs/jvms/
+
+__pycache__/
 /.claude/*
 !/.claude/agents/
 !/.claude/CLAUDE.md
