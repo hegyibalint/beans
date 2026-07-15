@@ -104,7 +104,8 @@ fn on_document(conn: &Connection, beans: &mut Beans, uri: Uri, version: i32, con
     let Some(source) = uri_to_source(&uri) else {
         return;
     };
-    let Some(analysis) = beans.process(source, contents.as_str()) else {
+    beans.process(source.clone(), contents.as_str());
+    let Some(analysis) = beans.analyze(&source) else {
         return;
     };
 
