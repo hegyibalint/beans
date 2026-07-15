@@ -19,15 +19,20 @@ impl Beans {
 }
 
 impl Beans {
-    /// `None` when no language claims the source; the editor sends us
-    /// all kinds of files, and skipping them is not an error.
-    pub fn process(&mut self, source: JvmSource, contents: &str) -> Option<FileAnalysis> {
+    pub fn process(&mut self, source: JvmSource, contents: &str) {
         let revision = self.revision.bump();
 
         if self.lang_java.accepts(&source) {
             self.lang_java
-                .process(source.clone(), revision, &mut self.platform_jvm, contents);
-            return self.lang_java.analyze(&source, revision);
+                .process(source, revision, &mut self.platform_jvm, contents);
+        }
+    }
+
+    /// `None` when no language claims the source; the editor sends us
+    /// all kinds of files, and skipping them is not an error.
+    pub fn analyze(&self, source: &JvmSource) -> Option<FileAnalysis> {
+        if self.lang_java.accepts(source) {
+            return self.lang_java.analyze(source, self.revision);
         }
 
         None
