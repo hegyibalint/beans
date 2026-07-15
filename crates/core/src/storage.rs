@@ -41,9 +41,7 @@ impl<K: Eq + Hash, V> RevisionedStorage<K, V> {
 
     /// The value as it stood at `at`: the newest version not newer than `at`.
     pub fn get(&self, key: &K, at: Revision) -> Option<&V> {
-        let chain = self.entries.get(key)?;
-        let newer_than_at = chain.partition_point(|v| v.revision <= at);
-        chain[..newer_than_at].last()?.value.as_ref()
+        value_at(self.entries.get(key)?, at)
     }
 
     /// Live heads only; what index building and persistence consume.
@@ -51,6 +49,13 @@ impl<K: Eq + Hash, V> RevisionedStorage<K, V> {
         self.entries
             .iter()
             .filter_map(|(key, chain)| Some((key, chain.last()?.value.as_ref()?)))
+    }
+
+    /// Every entry alive at `at`; what analysis at a revision consumes.
+    pub fn iter_at(&self, at: Revision) -> impl Iterator<Item = (&K, &V)> {
+        self.entries
+            .iter()
+            .filter_map(move |(key, chain)| Some((key, value_at(chain, at)?)))
     }
 
     /// Chains are kept in ascending revision order, so a write is an append
@@ -73,6 +78,11 @@ impl<K: Eq + Hash, V> RevisionedStorage<K, V> {
             .expect("the chain holds at least the version just written")
             .value
     }
+}
+
+fn value_at<V>(chain: &[Versioned<V>], at: Revision) -> Option<&V> {
+    let newer_than_at = chain.partition_point(|v| v.revision <= at);
+    chain[..newer_than_at].last()?.value.as_ref()
 }
 
 pub struct Index<K, V> {
@@ -152,6 +162,21 @@ mod tests {
         storage.put(Revision(1), "Foo.java", "second");
 
         assert_eq!(storage.get(&"Foo.java", Revision(1)), Some(&"second"));
+    }
+
+    #[test]
+    fn iter_at_reads_the_world_as_of_a_revision() {
+        let mut storage = RevisionedStorage::new();
+        storage.put(Revision(1), "Foo.java", "foo");
+        storage.put(Revision(2), "Bar.java", "bar");
+        storage.remove(Revision(3), "Bar.java");
+
+        let mut at_two: Vec<_> = storage.iter_at(Revision(2)).collect();
+        at_two.sort();
+        assert_eq!(at_two, [(&"Bar.java", &"bar"), (&"Foo.java", &"foo")]);
+
+        let at_three: Vec<_> = storage.iter_at(Revision(3)).collect();
+        assert_eq!(at_three, [(&"Foo.java", &"foo")]);
     }
 
     #[test]
