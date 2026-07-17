@@ -17,14 +17,14 @@ use crate::projection::project_to_jvm;
 
 pub struct LanguageJava {
     parser: JavaParser,
-    model_lake: RevisionedStorage<JvmSource, JavaFile>,
+    file_models: RevisionedStorage<JvmSource, JavaFile>,
 }
 
 impl LanguageJava {
     pub fn new() -> LanguageJava {
         LanguageJava {
             parser: JavaParser::new(),
-            model_lake: RevisionedStorage::new(),
+            file_models: RevisionedStorage::new(),
         }
     }
 
@@ -44,13 +44,13 @@ impl LanguageJava {
         contents: &str,
     ) {
         let java_model =
-            self.model_lake
+            self.file_models
                 .put(revision, java_source.clone(), self.parser.parse(contents));
         platform_jvm.register(revision, java_source, project_to_jvm(java_model));
     }
 
     pub fn analyze(&self, java_source: &JvmSource, revision: Revision) -> Option<FileAnalysis> {
-        let java_model = self.model_lake.get(java_source, revision)?;
+        let java_model = self.file_models.get(java_source, revision)?;
         Some(FileAnalysis {
             diagnostics: symbol_diagnostics(java_model),
             actions: vec![],

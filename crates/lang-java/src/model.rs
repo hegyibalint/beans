@@ -66,7 +66,7 @@ pub struct JavaMethodParameter {
 
 /// One or more simple names; "qualified" in the loose sense (a single
 /// segment is legal, e.g. `package test;`).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct JavaQualifiedName {
     pub segments: Vec<JavaSimpleName>,
     pub span: Span,
@@ -82,15 +82,15 @@ impl JavaQualifiedName {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct JavaSimpleName {
     pub text: String,
     pub span: Span,
 }
 
 pub enum JavaSymbol {
-    Resolved(JvmQualifiedName),        // already bound: import / same-package / java.lang / same file
+    Resolved(JvmQualifiedName), // already bound: import / same-package / java.lang / same file
     Importable(Vec<JvmQualifiedName>), // not in scope, but the lake offers candidates
-    Unresolvable,         // not found, and the searched scope was complete
-    Unknown,              // didn't do anything yet, default state
+    Unresolvable,               // not found, and the searched scope was complete
+    Unknown,                    // didn't do anything yet, default state
 }

@@ -32,8 +32,12 @@ enum Mode {
 
 enum Expect {
     Code { code: String },
+    CodeAt { cursor: String, code: String },
     ResolvesTo { cursor: String, fqn: String },
     ResolvesToTypeParam { cursor: String, name: String },
+    ResolvesToLocalType { cursor: String, name: String },
+    AmbiguousBetween { cursor: String, fqns: Vec<String> },
+    OffersImports { cursor: String, fqns: Vec<String> },
 }
 
 struct Expectation {
@@ -72,6 +76,13 @@ impl Fixture {
         })
     }
 
+    pub fn expect_at(self, cursor: &str, code: &str) -> Self {
+        self.push_expectation(Expect::CodeAt {
+            cursor: cursor.to_string(),
+            code: code.to_string(),
+        })
+    }
+
     /// The type reference at the named cursor must resolve to `fqn`.
     pub fn resolves_to(self, cursor: &str, fqn: &str) -> Self {
         self.push_expectation(Expect::ResolvesTo {
@@ -86,6 +97,27 @@ impl Fixture {
         self.push_expectation(Expect::ResolvesToTypeParam {
             cursor: cursor.to_string(),
             name: name.to_string(),
+        })
+    }
+
+    pub fn resolves_to_local_type(self, cursor: &str, name: &str) -> Self {
+        self.push_expectation(Expect::ResolvesToLocalType {
+            cursor: cursor.to_string(),
+            name: name.to_string(),
+        })
+    }
+
+    pub fn ambiguous_between(self, cursor: &str, fqns: &[&str]) -> Self {
+        self.push_expectation(Expect::AmbiguousBetween {
+            cursor: cursor.to_string(),
+            fqns: fqns.iter().map(|fqn| (*fqn).to_string()).collect(),
+        })
+    }
+
+    pub fn offers_imports(self, cursor: &str, fqns: &[&str]) -> Self {
+        self.push_expectation(Expect::OffersImports {
+            cursor: cursor.to_string(),
+            fqns: fqns.iter().map(|fqn| (*fqn).to_string()).collect(),
         })
     }
 
@@ -134,10 +166,21 @@ impl Fixture {
             for expectation in analysis.expectations {
                 let met = match &expectation.expect {
                     Expect::Code { code } => result.diagnostics.iter().any(|d| d.code == code),
+                    Expect::CodeAt { cursor, code } => {
+                        let cursor = find_cursor(&cursors, cursor, &analysis.file);
+                        result.diagnostics.iter().any(|diagnostic| {
+                            diagnostic.code == code
+                                && diagnostic.span.start as usize <= cursor.offset
+                                && cursor.offset < diagnostic.span.end as usize
+                        })
+                    }
                     // The engine has no resolution query yet; every
                     // resolution expectation is unmet until it grows one.
                     Expect::ResolvesTo { cursor, .. }
-                    | Expect::ResolvesToTypeParam { cursor, .. } => {
+                    | Expect::ResolvesToTypeParam { cursor, .. }
+                    | Expect::ResolvesToLocalType { cursor, .. }
+                    | Expect::AmbiguousBetween { cursor, .. }
+                    | Expect::OffersImports { cursor, .. } => {
                         find_cursor(&cursors, cursor, &analysis.file);
                         false
                     }
@@ -185,12 +228,26 @@ fn find_cursor<'a>(cursors: &'a [Cursor], name: &str, file: &Path) -> &'a Cursor
 fn describe(expect: &Expect) -> String {
     match expect {
         Expect::Code { code } => format!("expected `{code}`"),
+        Expect::CodeAt { cursor, code } => {
+            format!("expected `{code}` at <cur:{cursor}>")
+        }
         Expect::ResolvesTo { cursor, fqn } => {
             format!("expected <cur:{cursor}> to resolve to `{fqn}`")
         }
         Expect::ResolvesToTypeParam { cursor, name } => {
             format!("expected <cur:{cursor}> to resolve to type parameter `{name}`")
         }
+        Expect::ResolvesToLocalType { cursor, name } => {
+            format!("expected <cur:{cursor}> to resolve to local type `{name}`")
+        }
+        Expect::AmbiguousBetween { cursor, fqns } => format!(
+            "expected <cur:{cursor}> to be ambiguous between {}",
+            fqns.join(", ")
+        ),
+        Expect::OffersImports { cursor, fqns } => format!(
+            "expected <cur:{cursor}> to offer imports {}",
+            fqns.join(", ")
+        ),
     }
 }
 
