@@ -30,11 +30,11 @@ pub enum JvmSource {
 /// Nesting is flat: `Foo$Inner` is its own class, linked back by `enclosing`.
 #[derive(Debug, Clone)]
 pub struct JvmClass {
-    pub fqn: Fqn,
+    pub fqn: JvmQualifiedName,
     pub kind: JvmKind,
-    pub enclosing: Option<Fqn>,
-    pub superclass: Option<Fqn>,
-    pub interfaces: Vec<Fqn>,
+    pub enclosing: Option<JvmQualifiedName>,
+    pub superclass: Option<JvmQualifiedName>,
+    pub interfaces: Vec<JvmQualifiedName>,
     pub fields: Vec<JvmField>,
     pub methods: Vec<JvmMethod>,
 }
@@ -68,7 +68,7 @@ pub struct JvmMethod {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum JvmType {
     Primitive(JvmPrimitive),
-    Class(Fqn),
+    Class(JvmQualifiedName),
     Array(Box<JvmType>),
     Void,
 }
@@ -88,11 +88,11 @@ pub enum JvmPrimitive {
 /// Identity of a JVM type: the binary name, nested types joined with `$`.
 /// e.g. `org.beans.app.Foo`, `org.beans.app.Foo$Inner`
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Fqn(String);
+pub struct JvmQualifiedName(String);
 
-impl Fqn {
-    pub fn new(binary_name: impl Into<String>) -> Fqn {
-        Fqn(binary_name.into())
+impl JvmQualifiedName {
+    pub fn new(binary_name: impl Into<String>) -> JvmQualifiedName {
+        JvmQualifiedName(binary_name.into())
     }
 
     pub fn as_str(&self) -> &str {
@@ -114,7 +114,7 @@ impl Fqn {
     }
 }
 
-impl fmt::Display for Fqn {
+impl fmt::Display for JvmQualifiedName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
@@ -126,21 +126,21 @@ mod tests {
 
     #[test]
     fn splits_package_and_simple_name() {
-        let fqn = Fqn::new("org.beans.app.Foo");
+        let fqn = JvmQualifiedName::new("org.beans.app.Foo");
         assert_eq!(fqn.package(), "org.beans.app");
         assert_eq!(fqn.simple_name(), "Foo");
     }
 
     #[test]
     fn nested_type_is_named_by_its_last_segment() {
-        let fqn = Fqn::new("org.beans.app.Foo$Inner");
+        let fqn = JvmQualifiedName::new("org.beans.app.Foo$Inner");
         assert_eq!(fqn.package(), "org.beans.app");
         assert_eq!(fqn.simple_name(), "Inner");
     }
 
     #[test]
     fn default_package_has_no_qualifier() {
-        let fqn = Fqn::new("Foo");
+        let fqn = JvmQualifiedName::new("Foo");
         assert_eq!(fqn.package(), "");
         assert_eq!(fqn.simple_name(), "Foo");
     }

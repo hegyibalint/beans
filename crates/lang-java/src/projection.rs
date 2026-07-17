@@ -1,4 +1,4 @@
-use beans_platform_jvm::model::{Fqn, JvmClass, JvmKind};
+use beans_platform_jvm::model::{JvmQualifiedName, JvmClass, JvmKind};
 
 use crate::model::JavaFile;
 
@@ -21,7 +21,7 @@ pub fn project_to_jvm(file: &JavaFile) -> Vec<JvmClass> {
                 None => class.name.text.clone(),
             };
             JvmClass {
-                fqn: Fqn::new(binary_name),
+                fqn: JvmQualifiedName::new(binary_name),
                 kind: JvmKind::Class,
                 enclosing: None,
                 superclass: None,
