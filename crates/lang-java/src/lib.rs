@@ -2,6 +2,7 @@ mod diagnostics;
 mod model;
 mod parser;
 mod projection;
+mod resolution;
 
 use beans_core::Revision;
 use beans_core::analysis::FileAnalysis;

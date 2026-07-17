@@ -1,5 +1,5 @@
 use beans_core::Span;
-use beans_platform_jvm::model::Fqn;
+use beans_platform_jvm::model::JvmQualifiedName;
 
 #[derive(Debug, Default, Clone)]
 pub struct JavaFile {
@@ -89,8 +89,8 @@ pub struct JavaSimpleName {
 }
 
 pub enum JavaSymbol {
-    Resolved(Fqn),        // already bound: import / same-package / java.lang / same file
-    Importable(Vec<Fqn>), // not in scope, but the lake offers candidates
+    Resolved(JvmQualifiedName),        // already bound: import / same-package / java.lang / same file
+    Importable(Vec<JvmQualifiedName>), // not in scope, but the lake offers candidates
     Unresolvable,         // not found, and the searched scope was complete
     Unknown,              // didn't do anything yet, default state
 }
