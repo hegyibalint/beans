@@ -38,3 +38,15 @@ impl Beans {
         None
     }
 }
+
+struct ProcessingContext<'a> {
+    revision: Revision,
+    platform_jvm: &'a mut PlatformJvm,
+}
+
+trait LanguageEngine {
+    fn accepts(&self, source: &JvmSource) -> bool;
+
+    fn ingest(&self, context: &mut ProcessingContext, source: JvmSource, contents: &str);
+    fn process(&self, context: &mut ProcessingContext, source: JvmSource, contents: &str);
+}
