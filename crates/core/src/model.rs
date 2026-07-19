@@ -1,4 +1,4 @@
-use std::range::Range;
+use std::ops::Range;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span {

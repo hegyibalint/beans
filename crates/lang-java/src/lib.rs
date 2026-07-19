@@ -4,13 +4,13 @@ mod parser;
 mod projection;
 mod resolution;
 
-use beans_core::Revision;
 use beans_core::analysis::FileAnalysis;
+use beans_core::storage::Revision;
 use beans_core::storage::RevisionedStorage;
 use beans_platform_jvm::PlatformJvm;
 use beans_platform_jvm::model::JvmSource;
 
-use crate::diagnostics::symbol_diagnostics;
+use crate::diagnostics::dummy_diagnostic;
 use crate::model::JavaFile;
 use crate::parser::JavaParser;
 use crate::projection::project_to_jvm;
@@ -52,7 +52,7 @@ impl LanguageJava {
     pub fn analyze(&self, java_source: &JvmSource, revision: Revision) -> Option<FileAnalysis> {
         let java_model = self.file_models.get(java_source, revision)?;
         Some(FileAnalysis {
-            diagnostics: symbol_diagnostics(java_model),
+            diagnostics: dummy_diagnostic(java_model),
             actions: vec![],
         })
     }

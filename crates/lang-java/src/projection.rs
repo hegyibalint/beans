@@ -1,34 +1,39 @@
-use beans_platform_jvm::model::{JvmQualifiedName, JvmClass, JvmKind};
+use beans_platform_jvm::model::{JvmClass, JvmKind, JvmQualifiedName};
 
-use crate::model::JavaFile;
+use crate::model::{JavaDeclaration, JavaFile, JavaTypeKind};
 
 /// Declarations only for now: the class identities fall out of the file
 /// alone, while members and supertypes need resolution against the lake.
 pub fn project_to_jvm(file: &JavaFile) -> Vec<JvmClass> {
-    let package = file.package.as_ref().map(|name| {
-        name.segments
-            .iter()
-            .map(|segment| segment.text.as_str())
-            .collect::<Vec<_>>()
-            .join(".")
-    });
+    let package = file.package.as_ref().map(|name| name.dotted());
 
-    file.classes
+    file.top_level_types
         .iter()
-        .map(|class| {
-            let binary_name = match &package {
-                Some(package) => format!("{package}.{}", class.name.text),
-                None => class.name.text.clone(),
+        .filter_map(|id| {
+            let JavaDeclaration::Type(declaration) = file.declarations.get(id.0)? else {
+                return None;
             };
-            JvmClass {
+            let name = declaration.name.as_ref()?.text.clone();
+            let binary_name = match &package {
+                Some(package) => format!("{package}.{name}"),
+                None => name,
+            };
+            let kind = match declaration.kind {
+                JavaTypeKind::Class => JvmKind::Class,
+                JavaTypeKind::Interface => JvmKind::Interface,
+                JavaTypeKind::Enum => JvmKind::Enum,
+                JavaTypeKind::Record => JvmKind::Record,
+                JavaTypeKind::AnnotationInterface => JvmKind::Annotation,
+            };
+            Some(JvmClass {
                 fqn: JvmQualifiedName::new(binary_name),
-                kind: JvmKind::Class,
+                kind,
                 enclosing: None,
                 superclass: None,
                 interfaces: Vec::new(),
                 fields: Vec::new(),
                 methods: Vec::new(),
-            }
+            })
         })
         .collect()
 }

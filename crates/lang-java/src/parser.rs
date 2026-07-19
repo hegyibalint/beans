@@ -1,8 +1,8 @@
 use tree_sitter::{Node, Parser};
 
 use crate::model::{
-    JavaClass, JavaField, JavaFile, JavaImport, JavaImportKind, JavaMethod, JavaMethodParameter,
-    JavaQualifiedName, JavaSimpleName,
+    JavaDeclaration, JavaDeclarationId, JavaFile, JavaIdentifier, JavaImport, JavaImportKind,
+    JavaName, JavaQualifiedName, JavaScope, JavaScopeId, JavaTypeDeclaration, JavaTypeKind,
 };
 
 pub struct JavaParser {
@@ -23,12 +23,15 @@ impl JavaParser {
             .parser
             .parse(contents, None)
             .expect("parse returns a tree when a language is set");
-        parse_file(tree.root_node(), contents)
+        parse_program(tree.root_node(), contents)
     }
 }
 
-fn parse_file(root: Node, src: &str) -> JavaFile {
-    let mut file = JavaFile::default();
+fn parse_program(root: Node, src: &str) -> JavaFile {
+    debug_assert_eq!(root.kind(), "program");
+
+    let mut file = JavaFile::new();
+    let compilation_unit_scope = file.compilation_unit_scope;
 
     let mut cursor = root.walk();
     for child in root.named_children(&mut cursor) {
@@ -42,10 +45,41 @@ fn parse_file(root: Node, src: &str) -> JavaFile {
                 }
             }
             "class_declaration" => {
-                if let Some(class) = parse_class_declaration(child, src) {
-                    file.classes.push(class);
+                if let Some(declaration) =
+                    parse_class_declaration(child, compilation_unit_scope, src, &mut file)
+                {
+                    file.top_level_types.push(declaration);
                 }
             }
+            "interface_declaration" => {
+                if let Some(declaration) =
+                    parse_interface_declaration(child, compilation_unit_scope, src, &mut file)
+                {
+                    file.top_level_types.push(declaration);
+                }
+            }
+            "enum_declaration" => {
+                if let Some(declaration) =
+                    parse_enum_declaration(child, compilation_unit_scope, src, &mut file)
+                {
+                    file.top_level_types.push(declaration);
+                }
+            }
+            "record_declaration" => {
+                if let Some(declaration) =
+                    parse_record_declaration(child, compilation_unit_scope, src, &mut file)
+                {
+                    file.top_level_types.push(declaration);
+                }
+            }
+            "annotation_type_declaration" => {
+                if let Some(declaration) =
+                    parse_annotation_type_declaration(child, compilation_unit_scope, src, &mut file)
+                {
+                    file.top_level_types.push(declaration);
+                }
+            }
+            "module_declaration" | "line_comment" | "block_comment" => {}
             _ => {}
         }
     }
@@ -53,11 +87,11 @@ fn parse_file(root: Node, src: &str) -> JavaFile {
     file
 }
 
-fn parse_package_declaration(node: Node, src: &str) -> Option<JavaQualifiedName> {
+fn parse_package_declaration(node: Node, src: &str) -> Option<JavaName> {
     let mut cursor = node.walk();
     node.named_children(&mut cursor)
         .find_map(|child| match child.kind() {
-            "identifier" | "scoped_identifier" => parse_qualified_name(child, src),
+            "identifier" | "scoped_identifier" => parse_name(child, src),
             _ => None,
         })
 }
@@ -71,7 +105,7 @@ fn parse_import_declaration(node: Node, src: &str) -> Option<JavaImport> {
     for child in node.children(&mut cursor) {
         match child.kind() {
             "identifier" | "scoped_identifier" => {
-                name = parse_qualified_name(child, src);
+                name = parse_name(child, src);
             }
             "static" => is_static = true,
             "asterisk" => on_demand = true,
@@ -89,137 +123,153 @@ fn parse_import_declaration(node: Node, src: &str) -> Option<JavaImport> {
     Some(JavaImport { name: name?, kind })
 }
 
-fn parse_class_declaration(node: Node, src: &str) -> Option<JavaClass> {
-    let name = parse_simple_name(node.child_by_field_name("name")?, src)?;
+fn parse_class_declaration(
+    node: Node,
+    declaring_scope: JavaScopeId,
+    src: &str,
+    file: &mut JavaFile,
+) -> Option<JavaDeclarationId> {
+    add_type_declaration(node, JavaTypeKind::Class, declaring_scope, src, file)
+}
 
-    let mut fields = Vec::new();
-    let mut methods = Vec::new();
-    if let Some(body) = node.child_by_field_name("body") {
-        let mut cursor = body.walk();
-        for member in body.named_children(&mut cursor) {
-            match member.kind() {
-                "field_declaration" => fields.extend(parse_field_declaration(member, src)),
-                "method_declaration" => methods.extend(parse_method_declaration(member, src)),
-                _ => {}
+fn parse_interface_declaration(
+    node: Node,
+    declaring_scope: JavaScopeId,
+    src: &str,
+    file: &mut JavaFile,
+) -> Option<JavaDeclarationId> {
+    add_type_declaration(node, JavaTypeKind::Interface, declaring_scope, src, file)
+}
+
+fn parse_enum_declaration(
+    node: Node,
+    declaring_scope: JavaScopeId,
+    src: &str,
+    file: &mut JavaFile,
+) -> Option<JavaDeclarationId> {
+    add_type_declaration(node, JavaTypeKind::Enum, declaring_scope, src, file)
+}
+
+fn parse_record_declaration(
+    node: Node,
+    declaring_scope: JavaScopeId,
+    src: &str,
+    file: &mut JavaFile,
+) -> Option<JavaDeclarationId> {
+    add_type_declaration(node, JavaTypeKind::Record, declaring_scope, src, file)
+}
+
+fn parse_annotation_type_declaration(
+    node: Node,
+    declaring_scope: JavaScopeId,
+    src: &str,
+    file: &mut JavaFile,
+) -> Option<JavaDeclarationId> {
+    add_type_declaration(
+        node,
+        JavaTypeKind::AnnotationInterface,
+        declaring_scope,
+        src,
+        file,
+    )
+}
+
+fn add_type_declaration(
+    node: Node,
+    kind: JavaTypeKind,
+    declaring_scope: JavaScopeId,
+    src: &str,
+    file: &mut JavaFile,
+) -> Option<JavaDeclarationId> {
+    let name = parse_identifier(node.child_by_field_name("name")?, src)?;
+    let body = node.child_by_field_name("body")?;
+    let body_scope = JavaScopeId(file.scopes.len());
+    file.scopes.push(JavaScope {
+        parent: Some(declaring_scope),
+        declarations: Vec::new(),
+    });
+
+    let declaration = JavaDeclarationId(file.declarations.len());
+    file.declarations
+        .push(JavaDeclaration::Type(JavaTypeDeclaration {
+            name: Some(name),
+            kind,
+            declaring_scope,
+            body_scope,
+        }));
+    file.scopes[declaring_scope.0]
+        .declarations
+        .push(declaration);
+
+    walk_type_body(body, body_scope, src, file);
+
+    Some(declaration)
+}
+
+fn walk_type_body(node: Node, scope: JavaScopeId, src: &str, file: &mut JavaFile) {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        match child.kind() {
+            "class_declaration" => {
+                parse_class_declaration(child, scope, src, file);
             }
+            "interface_declaration" => {
+                parse_interface_declaration(child, scope, src, file);
+            }
+            "enum_declaration" => {
+                parse_enum_declaration(child, scope, src, file);
+            }
+            "record_declaration" => {
+                parse_record_declaration(child, scope, src, file);
+            }
+            "annotation_type_declaration" => {
+                parse_annotation_type_declaration(child, scope, src, file);
+            }
+            "enum_body_declarations" => walk_type_body(child, scope, src, file),
+            _ => {}
         }
     }
-
-    Some(JavaClass {
-        name,
-        fields,
-        methods,
-    })
 }
 
-fn parse_field_declaration(node: Node, src: &str) -> Vec<JavaField> {
-    let Some(java_type) = node
-        .child_by_field_name("type")
-        .and_then(|t| parse_type(t, src))
-    else {
-        return Vec::new();
-    };
-
-    let mut cursor = node.walk();
-    node.children_by_field_name("declarator", &mut cursor)
-        .filter_map(|decl| {
-            let name = parse_simple_name(decl.child_by_field_name("name")?, src)?;
-            Some(JavaField {
-                name,
-                java_type: java_type.clone(),
-            })
-        })
-        .collect()
-}
-
-fn parse_method_declaration(node: Node, src: &str) -> Option<JavaMethod> {
-    let name = parse_simple_name(node.child_by_field_name("name")?, src)?;
-    let return_type = parse_type(node.child_by_field_name("type")?, src)?;
-
-    let mut cursor = node.walk();
-    let params = node
-        .child_by_field_name("parameters")
-        .map(|list| {
-            list.named_children(&mut cursor)
-                .filter(|c| c.kind() == "formal_parameter")
-                .filter_map(|param| parse_formal_parameter(param, src))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Some(JavaMethod {
-        name,
-        params,
-        return_type,
-    })
-}
-
-fn parse_formal_parameter(node: Node, src: &str) -> Option<JavaMethodParameter> {
-    let name = parse_simple_name(node.child_by_field_name("name")?, src)?;
-    let java_type = parse_type(node.child_by_field_name("type")?, src)?;
-    Some(JavaMethodParameter { name, java_type })
-}
-
-/// Pull the named type out of a type node. Reference types (`Bar`,
-/// `java.util.List`, `List<T>`) yield a qualified name; primitives,
-/// arrays and `void` are not modelled yet and drop out as `None`.
-fn parse_type(node: Node, src: &str) -> Option<JavaQualifiedName> {
+fn parse_name(node: Node, src: &str) -> Option<JavaName> {
     match node.kind() {
-        "type_identifier" => Some(JavaQualifiedName {
-            segments: vec![parse_simple_name(node, src)?],
-            span: node.byte_range().into(),
-        }),
-        "scoped_type_identifier" => {
-            let mut cursor = node.walk();
-            let mut segments = Vec::new();
-            for child in node.named_children(&mut cursor) {
-                match child.kind() {
-                    "type_identifier" => segments.push(parse_simple_name(child, src)?),
-                    "scoped_type_identifier" => segments.extend(parse_type(child, src)?.segments),
-                    _ => {}
-                }
-            }
-            (!segments.is_empty()).then(|| JavaQualifiedName {
-                segments,
-                span: node.byte_range().into(),
-            })
-        }
-        "generic_type" => {
-            let mut cursor = node.walk();
-            node.named_children(&mut cursor)
-                .find_map(|child| match child.kind() {
-                    "type_identifier" | "scoped_type_identifier" => parse_type(child, src),
-                    _ => None,
-                })
-        }
-        _ => None,
-    }
-}
-
-fn parse_qualified_name(node: Node, src: &str) -> Option<JavaQualifiedName> {
-    match node.kind() {
-        "identifier" | "type_identifier" => Some(JavaQualifiedName {
-            segments: vec![parse_simple_name(node, src)?],
-            span: node.byte_range().into(),
-        }),
-        "scoped_identifier" => {
-            let mut qualified = parse_qualified_name(node.child_by_field_name("scope")?, src)?;
-            let last = parse_simple_name(node.child_by_field_name("name")?, src)?;
-            qualified.segments.push(last);
-            qualified.span = node.byte_range().into();
-            Some(qualified)
-        }
+        "identifier" => Some(JavaName::Simple(parse_identifier(node, src)?)),
+        "scoped_identifier" => Some(JavaName::Qualified(parse_scoped_identifier(node, src)?)),
         kind => panic!("uncovered name node kind: {kind}"),
     }
 }
 
-fn parse_simple_name(node: Node, src: &str) -> Option<JavaSimpleName> {
+fn parse_scoped_identifier(node: Node, src: &str) -> Option<JavaQualifiedName> {
+    let mut identifiers = Vec::new();
+    collect_scoped_identifier(node, src, &mut identifiers)?;
+    Some(JavaQualifiedName::new(
+        identifiers,
+        node.byte_range().into(),
+    ))
+}
+
+fn collect_scoped_identifier(
+    node: Node,
+    src: &str,
+    identifiers: &mut Vec<JavaIdentifier>,
+) -> Option<()> {
+    let scope = node.child_by_field_name("scope")?;
+    match scope.kind() {
+        "identifier" => identifiers.push(parse_identifier(scope, src)?),
+        "scoped_identifier" => collect_scoped_identifier(scope, src, identifiers)?,
+        kind => panic!("uncovered scoped identifier scope kind: {kind}"),
+    }
+    identifiers.push(parse_identifier(node.child_by_field_name("name")?, src)?);
+    Some(())
+}
+
+fn parse_identifier(node: Node, src: &str) -> Option<JavaIdentifier> {
     match node.kind() {
-        "identifier" | "type_identifier" => Some(JavaSimpleName {
+        "identifier" => Some(JavaIdentifier {
             text: util_copy_source(node, src),
             span: node.byte_range().into(),
         }),
-        kind => panic!("uncovered simple name node kind: {kind}"),
+        kind => panic!("uncovered identifier node kind: {kind}"),
     }
 }
 
@@ -230,86 +280,105 @@ fn util_copy_source(node: Node, src: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::JavaImportKind;
 
-    #[test]
-    fn parse_minimal_file() {
-        let content = r#"package org.beans.test;
-
-import java.util.List;
-
-class Foo {
-}
-"#
-        .to_string();
-
-        let mut parser = JavaParser::new();
-        let model = parser.parse(content.as_str());
-
-        let package = model.package.as_ref().expect("package is parsed");
-        let segments: Vec<&str> = package.segments.iter().map(|s| s.text.as_str()).collect();
-        assert_eq!(segments, ["org", "beans", "test"]);
-
-        assert_eq!(model.imports.len(), 1);
-        let import = &model.imports[0];
-        let segments: Vec<&str> = import
-            .name
-            .segments
-            .iter()
-            .map(|s| s.text.as_str())
-            .collect();
-        assert_eq!(segments, ["java", "util", "List"]);
-        assert!(matches!(import.kind, JavaImportKind::Type));
-
-        assert_eq!(model.classes.len(), 1);
-        let class = &model.classes[0];
-        assert_eq!(class.name.text, "Foo");
-
-        let span = &class.name.span;
-        assert_eq!(&content[span.start as usize..span.end as usize], "Foo");
-
-        eprintln!("{model:#?}");
+    fn type_declaration(file: &JavaFile, id: JavaDeclarationId) -> &JavaTypeDeclaration {
+        let JavaDeclaration::Type(declaration) = &file.declarations[id.0] else {
+            panic!("expected a type declaration");
+        };
+        declaration
     }
 
     #[test]
-    fn parse_member_type_references() {
-        let content = r#"package org.beans.test.asd;
-
-class Foo {
-    Bar bar;
-
-    Baz make(Qux q) {
-    }
-}
-"#
-        .to_string();
-
+    fn parses_compilation_unit_declarations() {
+        let content = "package org.beans.test;\nimport java.util.List;\nclass Foo {}\n";
         let mut parser = JavaParser::new();
-        let model = parser.parse(content.as_str());
+        let file = parser.parse(content);
 
-        let class = &model.classes[0];
+        assert_eq!(
+            file.package.as_ref().map(JavaName::dotted),
+            Some("org.beans.test".to_string())
+        );
+        assert!(matches!(&file.package, Some(JavaName::Qualified(_))));
+        assert_eq!(file.imports.len(), 1);
+        assert_eq!(file.imports[0].name.dotted(), "java.util.List");
+        assert!(matches!(&file.imports[0].name, JavaName::Qualified(_)));
+        assert_eq!(file.imports[0].kind, JavaImportKind::Type);
 
-        let field_type: Vec<&str> = class.fields[0]
-            .java_type
-            .segments
+        assert_eq!(file.top_level_types, [JavaDeclarationId(0)]);
+        assert_eq!(
+            file.scopes[file.compilation_unit_scope.0].declarations,
+            [JavaDeclarationId(0)]
+        );
+
+        let declaration = type_declaration(&file, JavaDeclarationId(0));
+        assert_eq!(
+            declaration.name.as_ref().map(|name| name.text.as_str()),
+            Some("Foo")
+        );
+        assert_eq!(declaration.kind, JavaTypeKind::Class);
+        assert_eq!(declaration.declaring_scope, file.compilation_unit_scope);
+        assert_eq!(
+            file.scopes[declaration.body_scope.0].parent,
+            Some(file.compilation_unit_scope)
+        );
+    }
+
+    #[test]
+    fn parses_a_single_identifier_as_a_simple_name() {
+        let mut parser = JavaParser::new();
+        let file = parser.parse("package example; class Example {}");
+
+        let Some(JavaName::Simple(identifier)) = file.package else {
+            panic!("expected a simple package name");
+        };
+        assert_eq!(identifier.text, "example");
+    }
+
+    #[test]
+    fn parses_each_named_type_kind() {
+        let content = "class C {} interface I {} enum E {} record R() {} @interface A {}";
+        let mut parser = JavaParser::new();
+        let file = parser.parse(content);
+
+        let kinds: Vec<_> = file
+            .top_level_types
             .iter()
-            .map(|s| s.text.as_str())
+            .map(|id| type_declaration(&file, *id).kind)
             .collect();
-        assert_eq!(class.fields[0].name.text, "bar");
-        assert_eq!(field_type, ["Bar"]);
+        assert_eq!(
+            kinds,
+            [
+                JavaTypeKind::Class,
+                JavaTypeKind::Interface,
+                JavaTypeKind::Enum,
+                JavaTypeKind::Record,
+                JavaTypeKind::AnnotationInterface,
+            ]
+        );
+    }
 
-        let method = &class.methods[0];
-        assert_eq!(method.name.text, "make");
-        let return_type: Vec<&str> =
-            method.return_type.segments.iter().map(|s| s.text.as_str()).collect();
-        assert_eq!(return_type, ["Baz"]);
-        assert_eq!(method.params[0].name.text, "q");
-        let param_type: Vec<&str> = method.params[0]
-            .java_type
-            .segments
-            .iter()
-            .map(|s| s.text.as_str())
-            .collect();
-        assert_eq!(param_type, ["Qux"]);
+    #[test]
+    fn recursively_parses_member_types() {
+        let content = "class Outer { class Member { interface Deep {} } }";
+        let mut parser = JavaParser::new();
+        let file = parser.parse(content);
+
+        assert_eq!(file.top_level_types, [JavaDeclarationId(0)]);
+        assert_eq!(file.declarations.len(), 3);
+
+        let outer = type_declaration(&file, JavaDeclarationId(0));
+        let member = type_declaration(&file, JavaDeclarationId(1));
+        let deep = type_declaration(&file, JavaDeclarationId(2));
+
+        assert_eq!(
+            file.scopes[outer.body_scope.0].declarations,
+            [JavaDeclarationId(1)]
+        );
+        assert_eq!(member.declaring_scope, outer.body_scope);
+        assert_eq!(
+            file.scopes[member.body_scope.0].declarations,
+            [JavaDeclarationId(2)]
+        );
+        assert_eq!(deep.declaring_scope, member.body_scope);
     }
 }
