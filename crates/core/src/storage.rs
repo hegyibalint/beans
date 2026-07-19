@@ -1,7 +1,15 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 
-use crate::Revision;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
+pub struct Revision(usize);
+
+impl Revision {
+    pub fn bump(&mut self) -> Revision {
+        self.0 += 1;
+        *self
+    }
+}
 
 pub struct RevisionedStorage<K: Eq + Hash, V> {
     entries: HashMap<K, Vec<Versioned<V>>>,
