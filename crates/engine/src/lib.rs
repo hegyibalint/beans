@@ -1,4 +1,4 @@
-use beans_core::{Revision, analysis::FileAnalysis};
+use beans_core::{analysis::FileAnalysis, storage::Revision};
 use beans_lang_java::LanguageJava;
 use beans_platform_jvm::{PlatformJvm, model::JvmSource};
 

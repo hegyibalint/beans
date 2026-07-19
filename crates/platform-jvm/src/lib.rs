@@ -1,4 +1,4 @@
-use beans_core::{Revision, storage::RevisionedStorage};
+use beans_core::storage::{Revision, RevisionedStorage};
 
 use crate::model::{JvmClass, JvmQualifiedName, JvmSource};
 use crate::scope::JvmScope;

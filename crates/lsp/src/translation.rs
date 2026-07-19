@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use beans_core::Span;
 use beans_core::analysis::diagnostic::{DiagnosticSeverity, Diagnostics};
+use beans_core::model::Span;
 use beans_platform_jvm::model::JvmSource;
 use lsp_types::Uri;
 
