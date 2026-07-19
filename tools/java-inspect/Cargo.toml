@@ -1,0 +1,11 @@
+[package]
+name = "java-inspect"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+core = { path = "../../crates/core" }
+tree-sitter.workspace = true
+tree-sitter-java.workspace = true
