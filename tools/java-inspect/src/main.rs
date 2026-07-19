@@ -53,10 +53,10 @@ fn print_java_file(file: &JavaFile) {
         file.compilation_unit_scope
     );
     println!("  top_level_types: {:?}", file.top_level_types);
-    println!("  symbols:");
-    print_indexed(&file.symbols);
-    println!("  scopes:");
-    print_indexed(&file.scopes);
+    println!("  declarations:");
+    print_indexed(&file.declarations);
+    println!("  lexical_scopes:");
+    print_indexed(&file.lexical_scopes);
     println!("}}");
 }
 

@@ -37,19 +37,19 @@ class Example {
 == JavaFile: tools/java-inspect/examples/anonymous-class.java ==
 JavaFile {
   ...
-  symbols:
+  declarations:
     0: Type(
         ...
     )
-  scopes:
-    0: JavaScope {
+  lexical_scopes:
+    0: JavaLexicalScope {
         ...
     }
 }
 ```
 
-Symbols and scopes are prefixed with their arena index so their IDs can be
-followed through the model.
+Declarations and lexical scopes are prefixed with their arena index so their
+IDs can be followed through the model.
 
 The utility includes `lang-java`'s model and parser source directly. It does
 not compile the rest of the production library, so it remains usable while
