@@ -1,10 +1,10 @@
 use beans_core::storage::{Revision, RevisionedStorage};
 
 use crate::model::{JvmClass, JvmQualifiedName, JvmSource};
-use crate::scope::JvmScope;
+use crate::search_scope::JvmSearchScope;
 
 pub mod model;
-pub mod scope;
+pub mod search_scope;
 
 pub struct PlatformJvm {
     /// A source's value is its whole contribution, so re-registering a
@@ -31,10 +31,10 @@ impl PlatformJvm {
     pub fn class(
         &self,
         fqn: &JvmQualifiedName,
-        scope: &dyn JvmScope,
+        search_scope: &dyn JvmSearchScope,
         revision: Revision,
     ) -> Option<&JvmClass> {
-        self.classes(scope, revision)
+        self.classes(search_scope, revision)
             .find(|class| class.fqn == *fqn)
     }
 
@@ -43,17 +43,21 @@ impl PlatformJvm {
     pub fn classes_in_package(
         &self,
         package: &str,
-        scope: &dyn JvmScope,
+        search_scope: &dyn JvmSearchScope,
         revision: Revision,
     ) -> impl Iterator<Item = &JvmClass> {
-        self.classes(scope, revision)
+        self.classes(search_scope, revision)
             .filter(move |class| class.fqn.package() == package)
     }
 
-    fn classes(&self, scope: &dyn JvmScope, revision: Revision) -> impl Iterator<Item = &JvmClass> {
+    fn classes(
+        &self,
+        search_scope: &dyn JvmSearchScope,
+        revision: Revision,
+    ) -> impl Iterator<Item = &JvmClass> {
         self.class_lake
             .iter_at(revision)
-            .filter(move |(source, _)| scope.in_scope(source))
+            .filter(move |(source, _)| search_scope.contains(source))
             .flat_map(|(_source, classes)| classes)
     }
 }

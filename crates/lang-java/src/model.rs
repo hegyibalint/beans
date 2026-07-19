@@ -5,15 +5,15 @@ pub struct JavaFile {
     pub package: Option<JavaName>,
     pub imports: Vec<JavaImport>,
 
-    /// Symbols that appear in this file, including types, fields, methods, and parameters.
-    /// Indexed by simply their order of appearance in the file, newtyped as `JavaSymbolId`.
+    /// Declarations that appear in this file, including types, fields, methods, and parameters.
+    /// Indexed by their order of appearance in the file, newtyped as `JavaDeclarationId`.
     pub declarations: Vec<JavaDeclaration>,
-    /// Scopes that appear in this file, including the compilation unit scope and any nested scopes.
-    /// Indexed by simply their order of appearance in the file, newtyped as `JavaScopeId`.
-    /// The first scope is always the compilation unit scope.
-    pub scopes: Vec<JavaScope>,
+    /// Lexical scopes that appear in this file, including the compilation unit scope and nested scopes.
+    /// Indexed by their order of appearance in the file, newtyped as `JavaLexicalScopeId`.
+    /// The first lexical scope is always the compilation unit scope.
+    pub lexical_scopes: Vec<JavaLexicalScope>,
 
-    pub compilation_unit_scope: JavaScopeId,
+    pub compilation_unit_scope: JavaLexicalScopeId,
     pub top_level_types: Vec<JavaDeclarationId>,
 }
 
@@ -23,37 +23,41 @@ impl JavaFile {
             package: None,
             imports: Vec::new(),
             declarations: Vec::new(),
-            scopes: vec![JavaScope {
+            lexical_scopes: vec![JavaLexicalScope {
                 parent: None,
                 declarations: Vec::new(),
             }],
-            compilation_unit_scope: JavaScopeId(0),
+            compilation_unit_scope: JavaLexicalScopeId(0),
             top_level_types: Vec::new(),
         }
     }
 
-    pub fn scope_chain<'file>(
+    pub fn lexical_scope_chain<'file>(
         &'file self,
-        start: JavaScopeId,
-    ) -> impl Iterator<Item = (JavaScopeId, &'file JavaScope)> + 'file {
+        start: JavaLexicalScopeId,
+    ) -> impl Iterator<Item = (JavaLexicalScopeId, &'file JavaLexicalScope)> + 'file {
         std::iter::successors(Some(start), move |scope_id| {
-            self.scopes.get(scope_id.0).unwrap().parent
+            self.lexical_scopes.get(scope_id.0).unwrap().parent
         })
-        .map(move |scope_id| (scope_id, self.scopes.get(scope_id.0).unwrap()))
+        .map(move |scope_id| (scope_id, self.lexical_scopes.get(scope_id.0).unwrap()))
     }
 
-    pub fn scoped_declaration_chain<'file>(
+    pub fn iter_declaration_chain<'file>(
         &'file self,
-        start: JavaScopeId,
-    ) -> impl Iterator<Item = (JavaScopeId, JavaDeclarationId, &'file JavaDeclaration)> + 'file
-    {
-        self.scope_chain(start).flat_map(move |(scope_id, scope)| {
-            scope
-                .declarations
-                .iter()
-                .copied()
-                .map(move |decl_id| (scope_id, decl_id, self.declarations.get(decl_id.0).unwrap()))
-        })
+        start: JavaLexicalScopeId,
+    ) -> impl Iterator<
+        Item = (
+            JavaLexicalScopeId,
+            JavaDeclarationId,
+            &'file JavaDeclaration,
+        ),
+    > + 'file {
+        self.lexical_scope_chain(start)
+            .flat_map(move |(scope_id, scope)| {
+                scope.declarations.iter().copied().map(move |decl_id| {
+                    (scope_id, decl_id, self.declarations.get(decl_id.0).unwrap())
+                })
+            })
     }
 }
 
@@ -67,7 +71,7 @@ impl Default for JavaFile {
 pub struct JavaDeclarationId(pub usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct JavaScopeId(pub usize);
+pub struct JavaLexicalScopeId(pub usize);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct JavaIdentifier {
@@ -161,8 +165,8 @@ pub enum JavaDeclaration {
 pub struct JavaTypeDeclaration {
     pub name: Option<JavaIdentifier>,
     pub kind: JavaTypeKind,
-    pub declaring_scope: JavaScopeId,
-    pub body_scope: JavaScopeId,
+    pub declaring_scope: JavaLexicalScopeId,
+    pub body_scope: JavaLexicalScopeId,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,8 +197,8 @@ pub struct JavaMethodDeclaration {
 }
 
 #[derive(Debug, Clone)]
-pub struct JavaScope {
-    pub parent: Option<JavaScopeId>,
+pub struct JavaLexicalScope {
+    pub parent: Option<JavaLexicalScopeId>,
     pub declarations: Vec<JavaDeclarationId>,
 }
 
@@ -202,9 +206,9 @@ pub struct JavaScope {
 mod tests {
     use super::*;
 
-    fn add_scope(file: &mut JavaFile, parent: JavaScopeId) -> JavaScopeId {
-        let scope_id = JavaScopeId(file.scopes.len());
-        file.scopes.push(JavaScope {
+    fn add_lexical_scope(file: &mut JavaFile, parent: JavaLexicalScopeId) -> JavaLexicalScopeId {
+        let scope_id = JavaLexicalScopeId(file.lexical_scopes.len());
+        file.lexical_scopes.push(JavaLexicalScope {
             parent: Some(parent),
             declarations: Vec::new(),
         });
@@ -212,27 +216,29 @@ mod tests {
     }
 
     #[test]
-    fn scope_chain_from_the_compilation_unit_contains_only_itself() {
+    fn lexical_scope_chain_from_the_compilation_unit_contains_only_itself() {
         let file = JavaFile::new();
-        let entries: Vec<_> = file.scope_chain(file.compilation_unit_scope).collect();
+        let entries: Vec<_> = file
+            .lexical_scope_chain(file.compilation_unit_scope)
+            .collect();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].0, file.compilation_unit_scope);
         assert!(std::ptr::eq(
             entries[0].1,
-            &file.scopes[file.compilation_unit_scope.0]
+            &file.lexical_scopes[file.compilation_unit_scope.0]
         ));
     }
 
     #[test]
-    fn scope_chain_walks_from_innermost_to_outermost() {
+    fn lexical_scope_chain_walks_from_innermost_to_outermost() {
         let mut file = JavaFile::new();
         let compilation_unit = file.compilation_unit_scope;
-        let outer = add_scope(&mut file, compilation_unit);
-        let sibling = add_scope(&mut file, compilation_unit);
-        let inner = add_scope(&mut file, outer);
+        let outer = add_lexical_scope(&mut file, compilation_unit);
+        let sibling = add_lexical_scope(&mut file, compilation_unit);
+        let inner = add_lexical_scope(&mut file, outer);
 
-        let entries: Vec<_> = file.scope_chain(inner).collect();
+        let entries: Vec<_> = file.lexical_scope_chain(inner).collect();
         let scope_ids: Vec<_> = entries.iter().map(|(scope_id, _)| *scope_id).collect();
 
         assert_eq!(scope_ids, [inner, outer, compilation_unit]);
@@ -240,7 +246,7 @@ mod tests {
         assert!(
             entries
                 .iter()
-                .all(|(scope_id, scope)| std::ptr::eq(*scope, &file.scopes[scope_id.0]))
+                .all(|(scope_id, scope)| std::ptr::eq(*scope, &file.lexical_scopes[scope_id.0]))
         );
     }
 }

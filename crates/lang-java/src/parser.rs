@@ -2,7 +2,8 @@ use tree_sitter::{Node, Parser};
 
 use crate::model::{
     JavaDeclaration, JavaDeclarationId, JavaFile, JavaIdentifier, JavaImport, JavaImportKind,
-    JavaName, JavaQualifiedName, JavaScope, JavaScopeId, JavaTypeDeclaration, JavaTypeKind,
+    JavaLexicalScope, JavaLexicalScopeId, JavaName, JavaQualifiedName, JavaTypeDeclaration,
+    JavaTypeKind,
 };
 
 pub struct JavaParser {
@@ -125,7 +126,7 @@ fn parse_import_declaration(node: Node, src: &str) -> Option<JavaImport> {
 
 fn parse_class_declaration(
     node: Node,
-    declaring_scope: JavaScopeId,
+    declaring_scope: JavaLexicalScopeId,
     src: &str,
     file: &mut JavaFile,
 ) -> Option<JavaDeclarationId> {
@@ -134,7 +135,7 @@ fn parse_class_declaration(
 
 fn parse_interface_declaration(
     node: Node,
-    declaring_scope: JavaScopeId,
+    declaring_scope: JavaLexicalScopeId,
     src: &str,
     file: &mut JavaFile,
 ) -> Option<JavaDeclarationId> {
@@ -143,7 +144,7 @@ fn parse_interface_declaration(
 
 fn parse_enum_declaration(
     node: Node,
-    declaring_scope: JavaScopeId,
+    declaring_scope: JavaLexicalScopeId,
     src: &str,
     file: &mut JavaFile,
 ) -> Option<JavaDeclarationId> {
@@ -152,7 +153,7 @@ fn parse_enum_declaration(
 
 fn parse_record_declaration(
     node: Node,
-    declaring_scope: JavaScopeId,
+    declaring_scope: JavaLexicalScopeId,
     src: &str,
     file: &mut JavaFile,
 ) -> Option<JavaDeclarationId> {
@@ -161,7 +162,7 @@ fn parse_record_declaration(
 
 fn parse_annotation_type_declaration(
     node: Node,
-    declaring_scope: JavaScopeId,
+    declaring_scope: JavaLexicalScopeId,
     src: &str,
     file: &mut JavaFile,
 ) -> Option<JavaDeclarationId> {
@@ -177,14 +178,14 @@ fn parse_annotation_type_declaration(
 fn add_type_declaration(
     node: Node,
     kind: JavaTypeKind,
-    declaring_scope: JavaScopeId,
+    declaring_scope: JavaLexicalScopeId,
     src: &str,
     file: &mut JavaFile,
 ) -> Option<JavaDeclarationId> {
     let name = parse_identifier(node.child_by_field_name("name")?, src)?;
     let body = node.child_by_field_name("body")?;
-    let body_scope = JavaScopeId(file.scopes.len());
-    file.scopes.push(JavaScope {
+    let body_scope = JavaLexicalScopeId(file.lexical_scopes.len());
+    file.lexical_scopes.push(JavaLexicalScope {
         parent: Some(declaring_scope),
         declarations: Vec::new(),
     });
@@ -197,7 +198,7 @@ fn add_type_declaration(
             declaring_scope,
             body_scope,
         }));
-    file.scopes[declaring_scope.0]
+    file.lexical_scopes[declaring_scope.0]
         .declarations
         .push(declaration);
 
@@ -206,7 +207,7 @@ fn add_type_declaration(
     Some(declaration)
 }
 
-fn walk_type_body(node: Node, scope: JavaScopeId, src: &str, file: &mut JavaFile) {
+fn walk_type_body(node: Node, scope: JavaLexicalScopeId, src: &str, file: &mut JavaFile) {
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         match child.kind() {
@@ -306,7 +307,7 @@ mod tests {
 
         assert_eq!(file.top_level_types, [JavaDeclarationId(0)]);
         assert_eq!(
-            file.scopes[file.compilation_unit_scope.0].declarations,
+            file.lexical_scopes[file.compilation_unit_scope.0].declarations,
             [JavaDeclarationId(0)]
         );
 
@@ -318,7 +319,7 @@ mod tests {
         assert_eq!(declaration.kind, JavaTypeKind::Class);
         assert_eq!(declaration.declaring_scope, file.compilation_unit_scope);
         assert_eq!(
-            file.scopes[declaration.body_scope.0].parent,
+            file.lexical_scopes[declaration.body_scope.0].parent,
             Some(file.compilation_unit_scope)
         );
     }
@@ -371,12 +372,12 @@ mod tests {
         let deep = type_declaration(&file, JavaDeclarationId(2));
 
         assert_eq!(
-            file.scopes[outer.body_scope.0].declarations,
+            file.lexical_scopes[outer.body_scope.0].declarations,
             [JavaDeclarationId(1)]
         );
         assert_eq!(member.declaring_scope, outer.body_scope);
         assert_eq!(
-            file.scopes[member.body_scope.0].declarations,
+            file.lexical_scopes[member.body_scope.0].declarations,
             [JavaDeclarationId(2)]
         );
         assert_eq!(deep.declaring_scope, member.body_scope);
