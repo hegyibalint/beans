@@ -3,15 +3,21 @@ mod translation;
 use std::collections::HashMap;
 
 use beans::Beans;
-use lsp_server::{Connection, Message, Notification as ServerNotification};
+use lsp_server::{
+    Connection, Message, Notification as ServerNotification, Request as ServerRequest,
+    Response as ServerResponse,
+};
 use lsp_types::notification::{
     DidChangeTextDocument, DidOpenTextDocument, Notification, PublishDiagnostics,
 };
-use lsp_types::{DidChangeTextDocumentParams, DidOpenTextDocumentParams};
-use lsp_types::{
-    PublishDiagnosticsParams, ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind,
-    Uri,
+use lsp_types::request::{
+    GotoDeclaration, GotoDeclarationParams, GotoDeclarationResponse, Request as _,
 };
+use lsp_types::{
+    DeclarationCapability, PublishDiagnosticsParams, ServerCapabilities,
+    TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
+};
+use lsp_types::{DidChangeTextDocumentParams, DidOpenTextDocumentParams};
 
 use crate::translation::{translate_diagnostics, uri_to_source};
 
@@ -48,6 +54,7 @@ impl State {
 fn run(conn: Connection, beans: Beans) {
     let capabilities = ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
+        declaration_provider: Some(DeclarationCapability::Simple(true)),
         ..Default::default()
     };
     let server_capabilities = serde_json::to_value(&capabilities).unwrap();
@@ -60,46 +67,94 @@ fn run(conn: Connection, beans: Beans) {
 fn server_loop(conn: Connection, mut state: State) {
     for msg in &conn.receiver {
         match msg {
-            Message::Request(_req) => {}
+            Message::Request(req) => handle_request(&conn, &state, req),
             Message::Response(_res) => {}
             Message::Notification(notif) => handle_notification(&conn, &mut state, notif),
-            _ => panic!("Unexpected message: {:?}", msg),
         }
     }
 }
 
-fn handle_notification(conn: &Connection, state: &mut State, notif: ServerNotification) {
-    match notif.method.as_str() {
+fn handle_request(conn: &Connection, state: &State, request: ServerRequest) {
+    if request.method != GotoDeclaration::METHOD {
+        return;
+    }
+
+    let (id, params) = request
+        .extract::<GotoDeclarationParams>(GotoDeclaration::METHOD)
+        .unwrap();
+    let result = handle_request_goto_declaration(state, params);
+    let response = ServerResponse::new_ok(id, result);
+    conn.sender.send(Message::Response(response)).unwrap();
+}
+
+fn handle_request_goto_declaration(
+    _state: &State,
+    _params: GotoDeclarationParams,
+) -> Option<GotoDeclarationResponse> {
+    None
+}
+
+fn handle_notification(conn: &Connection, state: &mut State, notification: ServerNotification) {
+    match notification.method.as_str() {
         DidOpenTextDocument::METHOD => {
-            let params = notif
+            let params = notification
                 .extract::<DidOpenTextDocumentParams>(DidOpenTextDocument::METHOD)
                 .unwrap();
-            let doc = params.text_document;
-            // Open re-baselines the document: never stale, always processed.
-            state.record(&doc.uri, doc.version);
-            on_document(conn, &mut state.beans, doc.uri, doc.version, doc.text);
+            handle_notification_did_open(conn, state, params);
         }
         DidChangeTextDocument::METHOD => {
-            let mut params = notif
+            let params = notification
                 .extract::<DidChangeTextDocumentParams>(DidChangeTextDocument::METHOD)
                 .unwrap();
-            let uri = params.text_document.uri;
-            let version = params.text_document.version;
-            if state.is_stale(&uri, version) {
-                return;
-            }
-            // FULL sync sends the whole document as a single change entry.
-            let Some(change) = params.content_changes.pop() else {
-                return;
-            };
-            state.record(&uri, version);
-            on_document(conn, &mut state.beans, uri, version, change.text);
+            handle_notification_did_change(conn, state, params);
         }
         _ => {}
     }
 }
 
-fn on_document(conn: &Connection, beans: &mut Beans, uri: Uri, version: i32, contents: String) {
+fn handle_notification_did_open(
+    conn: &Connection,
+    state: &mut State,
+    params: DidOpenTextDocumentParams,
+) {
+    let document = params.text_document;
+    // Open re-baselines the document: never stale, always processed.
+    state.record(&document.uri, document.version);
+    process_document_and_publish_diagnostics(
+        conn,
+        &mut state.beans,
+        document.uri,
+        document.version,
+        document.text,
+    );
+}
+
+fn handle_notification_did_change(
+    conn: &Connection,
+    state: &mut State,
+    mut params: DidChangeTextDocumentParams,
+) {
+    let uri = params.text_document.uri;
+    let version = params.text_document.version;
+    if state.is_stale(&uri, version) {
+        return;
+    }
+
+    // FULL sync sends the whole document as a single change entry.
+    let Some(change) = params.content_changes.pop() else {
+        return;
+    };
+    state.record(&uri, version);
+    process_document_and_publish_diagnostics(conn, &mut state.beans, uri, version, change.text);
+}
+
+fn process_document_and_publish_diagnostics(
+    conn: &Connection,
+    beans: &mut Beans,
+    uri: Uri,
+    version: i32,
+    contents: String,
+) {
     // Skip what we cannot source (untitled buffers) or no language claims.
     let Some(source) = uri_to_source(&uri) else {
         return;
@@ -136,6 +191,49 @@ mod tests {
         DiagnosticSeverity, DidOpenTextDocumentParams, PublishDiagnosticsParams, TextDocumentItem,
         notification::{DidOpenTextDocument, PublishDiagnostics},
     };
+
+    #[test]
+    fn goto_declaration_request_receives_an_empty_response() {
+        use lsp_server::{Request, RequestId};
+        use lsp_types::request::{GotoDeclaration, GotoDeclarationParams, Request as _};
+        use lsp_types::{
+            PartialResultParams, Position, TextDocumentIdentifier, TextDocumentPositionParams,
+            WorkDoneProgressParams,
+        };
+
+        let (server_conn, client) = Connection::memory();
+        let handle = std::thread::spawn(move || {
+            server_loop(server_conn, State::new(Beans::new()));
+        });
+        let params = GotoDeclarationParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: "file:///workspace/Foo.java".parse().unwrap(),
+                },
+                position: Position::new(0, 0),
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+        };
+        let request = Request::new(
+            RequestId::from(1),
+            GotoDeclaration::METHOD.to_string(),
+            params,
+        );
+
+        client.sender.send(Message::Request(request)).unwrap();
+
+        let response = match client.receiver.recv().unwrap() {
+            Message::Response(response) => response,
+            other => panic!("expected a response, got {other:?}"),
+        };
+        assert_eq!(response.id, RequestId::from(1));
+        assert_eq!(response.result, Some(serde_json::Value::Null));
+        assert!(response.error.is_none());
+
+        drop(client);
+        handle.join().unwrap();
+    }
 
     #[test]
     fn open_file_publishes_dummy_diagnostic() {
@@ -197,8 +295,8 @@ mod tests {
     fn initialize_advertises_sync_then_publishes_on_open() {
         use lsp_server::{Request, RequestId};
         use lsp_types::{
-            InitializeParams, InitializeResult, InitializedParams, TextDocumentSyncCapability,
-            TextDocumentSyncKind,
+            DeclarationCapability, InitializeParams, InitializeResult, InitializedParams,
+            TextDocumentSyncCapability, TextDocumentSyncKind,
         };
 
         let (server_conn, client) = Connection::memory();
@@ -224,6 +322,10 @@ mod tests {
             result.capabilities.text_document_sync,
             Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
             "without this capability clients never send didOpen and no diagnostics surface",
+        );
+        assert_eq!(
+            result.capabilities.declaration_provider,
+            Some(DeclarationCapability::Simple(true)),
         );
 
         let initialized = Notification::new("initialized".to_string(), InitializedParams {});
