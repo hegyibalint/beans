@@ -36,6 +36,13 @@ impl LanguageJava {
         }
     }
 
+    pub(crate) fn file_models_at(
+        &self,
+        revision: Revision,
+    ) -> impl Iterator<Item = (&JvmSource, &JavaFile)> {
+        self.file_models.iter_at(revision)
+    }
+
     pub fn process(
         &mut self,
         java_source: JvmSource,

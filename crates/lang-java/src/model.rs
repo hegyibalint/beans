@@ -14,7 +14,7 @@ pub struct JavaFile {
     pub lexical_scopes: Vec<JavaLexicalScope>,
 
     pub compilation_unit_scope: JavaLexicalScopeId,
-    pub top_level_types: Vec<JavaDeclarationId>,
+    pub top_level_declarations: Vec<JavaDeclarationId>,
 }
 
 impl JavaFile {
@@ -28,8 +28,35 @@ impl JavaFile {
                 declarations: Vec::new(),
             }],
             compilation_unit_scope: JavaLexicalScopeId(0),
-            top_level_types: Vec::new(),
+            top_level_declarations: Vec::new(),
         }
+    }
+
+    pub fn strip_package<'name>(&self, name: &'name JavaName) -> Option<&'name [JavaIdentifier]> {
+        let name_segments = name.segments();
+        let Some(package) = &self.package else {
+            // In an unnamed package, there is nothing to strip (the prefix is [])
+            // We can return the whole name as an identifier
+            return Some(name_segments);
+        };
+
+        let package_segments = package.segments();
+        if name_segments.len() < package_segments.len() {
+            // The prefix we want to strip off is longer than what we are stripping from.
+            // This makes no sense, we can return nothing
+            return None;
+        }
+
+        for index in 0..package_segments.len() {
+            if name_segments[index].text != package_segments[index].text {
+                // The prefix is mismatched, we can give up and return nothing
+                return None;
+            }
+        }
+
+        // If we survived until here, we are sure that the prefix exists
+        // We can just trim it off from the name segments, and return it back
+        Some(&name_segments[package_segments.len()..])
     }
 
     pub fn lexical_scope_chain<'file>(
@@ -58,6 +85,13 @@ impl JavaFile {
                     (scope_id, decl_id, self.declarations.get(decl_id.0).unwrap())
                 })
             })
+    }
+
+    pub fn iter_declarations<'file>(
+        &'file self,
+        ids: &'file [JavaDeclarationId],
+    ) -> impl Iterator<Item = (JavaDeclarationId, &'file JavaDeclaration)> + 'file {
+        ids.iter().copied().map(|id| (id, &self.declarations[id.0]))
     }
 }
 
@@ -213,6 +247,58 @@ mod tests {
             declarations: Vec::new(),
         });
         scope_id
+    }
+
+    fn identifier(text: &str, start: usize) -> JavaIdentifier {
+        JavaIdentifier {
+            text: text.into(),
+            span: Span {
+                start,
+                end: start + text.len(),
+            },
+        }
+    }
+
+    #[test]
+    fn strip_package_returns_the_type_name_segments() {
+        let mut file = JavaFile::new();
+        file.package = Some(JavaName::Simple(identifier("p", 0)));
+        let name = JavaName::Qualified(JavaQualifiedName::new(
+            vec![
+                identifier("p", 10),
+                identifier("Outer", 12),
+                identifier("Inner", 18),
+            ],
+            Span { start: 10, end: 23 },
+        ));
+
+        let type_segments = file.strip_package(&name).unwrap();
+        let type_names: Vec<_> = type_segments
+            .iter()
+            .map(|identifier| identifier.text.as_str())
+            .collect();
+
+        assert_eq!(type_names, ["Outer", "Inner"]);
+    }
+
+    #[test]
+    fn strip_package_rejects_a_different_package() {
+        let mut file = JavaFile::new();
+        file.package = Some(JavaName::Simple(identifier("p", 0)));
+        let name = JavaName::Qualified(JavaQualifiedName::new(
+            vec![identifier("q", 10), identifier("Outer", 12)],
+            Span { start: 10, end: 17 },
+        ));
+
+        assert_eq!(file.strip_package(&name), None);
+    }
+
+    #[test]
+    fn strip_package_preserves_the_whole_name_in_the_default_package() {
+        let file = JavaFile::new();
+        let name = JavaName::Simple(identifier("Outer", 0));
+
+        assert_eq!(file.strip_package(&name), Some(name.segments()));
     }
 
     #[test]

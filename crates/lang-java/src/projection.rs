@@ -7,7 +7,7 @@ use crate::model::{JavaDeclaration, JavaFile, JavaTypeKind};
 pub fn project_to_jvm(file: &JavaFile) -> Vec<JvmClass> {
     let package = file.package.as_ref().map(|name| name.dotted());
 
-    file.top_level_types
+    file.top_level_declarations
         .iter()
         .filter_map(|id| {
             let JavaDeclaration::Type(declaration) = file.declarations.get(id.0)? else {
