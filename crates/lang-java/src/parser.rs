@@ -49,35 +49,35 @@ fn parse_program(root: Node, src: &str) -> JavaFile {
                 if let Some(declaration) =
                     parse_class_declaration(child, compilation_unit_scope, src, &mut file)
                 {
-                    file.top_level_types.push(declaration);
+                    file.top_level_declarations.push(declaration);
                 }
             }
             "interface_declaration" => {
                 if let Some(declaration) =
                     parse_interface_declaration(child, compilation_unit_scope, src, &mut file)
                 {
-                    file.top_level_types.push(declaration);
+                    file.top_level_declarations.push(declaration);
                 }
             }
             "enum_declaration" => {
                 if let Some(declaration) =
                     parse_enum_declaration(child, compilation_unit_scope, src, &mut file)
                 {
-                    file.top_level_types.push(declaration);
+                    file.top_level_declarations.push(declaration);
                 }
             }
             "record_declaration" => {
                 if let Some(declaration) =
                     parse_record_declaration(child, compilation_unit_scope, src, &mut file)
                 {
-                    file.top_level_types.push(declaration);
+                    file.top_level_declarations.push(declaration);
                 }
             }
             "annotation_type_declaration" => {
                 if let Some(declaration) =
                     parse_annotation_type_declaration(child, compilation_unit_scope, src, &mut file)
                 {
-                    file.top_level_types.push(declaration);
+                    file.top_level_declarations.push(declaration);
                 }
             }
             "module_declaration" | "line_comment" | "block_comment" => {}
@@ -305,7 +305,7 @@ mod tests {
         assert!(matches!(&file.imports[0].name, JavaName::Qualified(_)));
         assert_eq!(file.imports[0].kind, JavaImportKind::Type);
 
-        assert_eq!(file.top_level_types, [JavaDeclarationId(0)]);
+        assert_eq!(file.top_level_declarations, [JavaDeclarationId(0)]);
         assert_eq!(
             file.lexical_scopes[file.compilation_unit_scope.0].declarations,
             [JavaDeclarationId(0)]
@@ -342,7 +342,7 @@ mod tests {
         let file = parser.parse(content);
 
         let kinds: Vec<_> = file
-            .top_level_types
+            .top_level_declarations
             .iter()
             .map(|id| type_declaration(&file, *id).kind)
             .collect();
@@ -364,7 +364,7 @@ mod tests {
         let mut parser = JavaParser::new();
         let file = parser.parse(content);
 
-        assert_eq!(file.top_level_types, [JavaDeclarationId(0)]);
+        assert_eq!(file.top_level_declarations, [JavaDeclarationId(0)]);
         assert_eq!(file.declarations.len(), 3);
 
         let outer = type_declaration(&file, JavaDeclarationId(0));
