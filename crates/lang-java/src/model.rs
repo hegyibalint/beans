@@ -87,7 +87,26 @@ impl JavaFile {
             })
     }
 
-    pub fn iter_declarations<'file>(
+    pub(crate) fn closest_declaration(
+        &self,
+        offset: usize,
+    ) -> Option<(JavaDeclarationId, &JavaDeclaration)> {
+        self.declarations
+            .iter()
+            .enumerate()
+            .filter_map(|(index, declaration)| {
+                let span = declaration.name_span()?;
+                if span.start <= offset && offset < span.end {
+                    Some((JavaDeclarationId(index), declaration, span.end - span.start))
+                } else {
+                    None
+                }
+            })
+            .min_by_key(|(_, _, length)| *length)
+            .map(|(id, declaration, _)| (id, declaration))
+    }
+
+    pub(crate) fn iter_declarations<'file>(
         &'file self,
         ids: &'file [JavaDeclarationId],
     ) -> impl Iterator<Item = (JavaDeclarationId, &'file JavaDeclaration)> + 'file {
@@ -195,6 +214,22 @@ pub enum JavaDeclaration {
     Method(JavaMethodDeclaration),
 }
 
+impl JavaDeclaration {
+    pub fn name(&self) -> Option<&JavaIdentifier> {
+        match self {
+            Self::Type(declaration) => declaration.name.as_ref(),
+            Self::TypeParameter(declaration) => declaration.name.as_ref(),
+            Self::Field(declaration) => declaration.name.as_ref(),
+            Self::Constructor(_) => None,
+            Self::Method(declaration) => declaration.name.as_ref(),
+        }
+    }
+
+    pub fn name_span(&self) -> Option<Span> {
+        self.name().map(|name| name.span)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct JavaTypeDeclaration {
     pub name: Option<JavaIdentifier>,
@@ -257,6 +292,56 @@ mod tests {
                 end: start + text.len(),
             },
         }
+    }
+
+    #[test]
+    fn declarations_expose_their_names_and_name_spans() {
+        let name = identifier("Named", 7);
+        let declarations = [
+            JavaDeclaration::Type(JavaTypeDeclaration {
+                name: Some(name.clone()),
+                kind: JavaTypeKind::Class,
+                declaring_scope: JavaLexicalScopeId(0),
+                body_scope: JavaLexicalScopeId(1),
+            }),
+            JavaDeclaration::TypeParameter(JavaTypeParameterDeclaration {
+                name: Some(name.clone()),
+            }),
+            JavaDeclaration::Field(JavaFieldDeclaration {
+                name: Some(name.clone()),
+            }),
+            JavaDeclaration::Method(JavaMethodDeclaration {
+                name: Some(name.clone()),
+            }),
+        ];
+
+        for declaration in declarations {
+            assert_eq!(declaration.name(), Some(&name));
+            assert_eq!(declaration.name_span(), Some(name.span));
+        }
+
+        let constructor = JavaDeclaration::Constructor(JavaConstructorDeclaration {});
+        assert_eq!(constructor.name(), None);
+        assert_eq!(constructor.name_span(), None);
+    }
+
+    #[test]
+    fn finds_the_tightest_declaration_at_an_offset() {
+        let mut file = JavaFile::new();
+        file.declarations
+            .push(JavaDeclaration::Method(JavaMethodDeclaration {
+                name: Some(identifier("outer", 7)),
+            }));
+        file.declarations
+            .push(JavaDeclaration::Method(JavaMethodDeclaration {
+                name: Some(identifier("in", 8)),
+            }));
+
+        assert_eq!(
+            file.closest_declaration(8).map(|(id, _)| id),
+            Some(JavaDeclarationId(1))
+        );
+        assert!(file.closest_declaration(12).is_none());
     }
 
     #[test]

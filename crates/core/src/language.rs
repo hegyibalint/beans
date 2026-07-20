@@ -28,13 +28,13 @@ pub trait LanguageAnalysis<Source, Platform> {
 }
 
 pub trait LanguageNavigation<Source, Platform> {
-    fn find_declaration_for(
+    fn find_declarations_for(
         &self,
         source: &Source,
         offset: usize,
         revision: Revision,
         platform: &Platform,
-    ) -> Option<NavigationTarget<Source>>;
+    ) -> Vec<NavigationTarget<Source>>;
 }
 
 pub trait LanguageCompletion<Source, Platform> {}
@@ -104,20 +104,20 @@ mod tests {
     }
 
     impl LanguageNavigation<String, ()> for TestLanguage {
-        fn find_declaration_for(
+        fn find_declarations_for(
             &self,
             source: &String,
             offset: usize,
             _revision: Revision,
             _platform: &(),
-        ) -> Option<NavigationTarget<String>> {
-            Some(NavigationTarget {
+        ) -> Vec<NavigationTarget<String>> {
+            vec![NavigationTarget {
                 source: source.clone(),
                 span: Span {
                     start: offset,
                     end: offset,
                 },
-            })
+            }]
         }
     }
 
@@ -136,9 +136,17 @@ mod tests {
         let languages: Vec<Box<dyn Language<String, ()>>> = vec![Box::new(TestLanguage)];
         let language = &languages[0];
 
-        assert!(language.accepts(&"example.test".to_string()));
+        let source = "example.test".to_string();
+        assert!(language.accepts(&source));
         assert!(language.analysis().is_some());
-        assert!(language.navigation().is_some());
+        assert_eq!(
+            language
+                .navigation()
+                .unwrap()
+                .find_declarations_for(&source, 4, Revision::default(), &())
+                .len(),
+            1
+        );
         assert!(language.completion().is_none());
     }
 }

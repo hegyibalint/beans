@@ -114,7 +114,7 @@ fn handle_request_goto_declaration(
     let document = state.document(&source)?;
     let offset = position_to_offset(&document.contents, request.position)?;
 
-    let _declaration = state.beans.find_declaration_for(&source, offset)?;
+    let _declarations = state.beans.find_declarations_for(&source, offset)?;
 
     None
 }
