@@ -5,6 +5,9 @@ mod projection;
 mod resolution;
 
 use beans_core::analysis::FileAnalysis;
+use beans_core::language::{
+    Language, LanguageAnalysis, LanguageNavigation, LanguageProcessing, NavigationTarget,
+};
 use beans_core::storage::Revision;
 use beans_core::storage::RevisionedStorage;
 use beans_platform_jvm::PlatformJvm;
@@ -28,22 +31,23 @@ impl LanguageJava {
         }
     }
 
-    /// Whether this source is Java's to translate.
-    pub fn accepts(&self, source: &JvmSource) -> bool {
-        match source {
-            JvmSource::SourceFile { path } => path.extension().is_some_and(|ext| ext == "java"),
-            _ => false,
-        }
-    }
-
     pub(crate) fn file_models_at(
         &self,
         revision: Revision,
     ) -> impl Iterator<Item = (&JvmSource, &JavaFile)> {
         self.file_models.iter_at(revision)
     }
+}
 
-    pub fn process(
+impl LanguageProcessing<JvmSource, PlatformJvm> for LanguageJava {
+    fn accepts(&self, source: &JvmSource) -> bool {
+        match source {
+            JvmSource::SourceFile { path } => path.extension().is_some_and(|ext| ext == "java"),
+            _ => false,
+        }
+    }
+
+    fn process(
         &mut self,
         java_source: JvmSource,
         revision: Revision,
@@ -55,13 +59,42 @@ impl LanguageJava {
                 .put(revision, java_source.clone(), self.parser.parse(contents));
         platform_jvm.register(revision, java_source, project_to_jvm(java_model));
     }
+}
 
-    pub fn analyze(&self, java_source: &JvmSource, revision: Revision) -> Option<FileAnalysis> {
+impl LanguageAnalysis<JvmSource, PlatformJvm> for LanguageJava {
+    fn analyze(
+        &self,
+        java_source: &JvmSource,
+        revision: Revision,
+        _platform_jvm: &PlatformJvm,
+    ) -> Option<FileAnalysis> {
         let java_model = self.file_models.get(java_source, revision)?;
         Some(FileAnalysis {
             diagnostics: dummy_diagnostic(java_model),
             actions: vec![],
         })
+    }
+}
+
+impl LanguageNavigation<JvmSource, PlatformJvm> for LanguageJava {
+    fn find_declaration_for(
+        &self,
+        _source: &JvmSource,
+        _offset: usize,
+        _revision: Revision,
+        _platform_jvm: &PlatformJvm,
+    ) -> Option<NavigationTarget<JvmSource>> {
+        todo!("find a Java declaration at a source offset")
+    }
+}
+
+impl Language<JvmSource, PlatformJvm> for LanguageJava {
+    fn analysis(&self) -> Option<&dyn LanguageAnalysis<JvmSource, PlatformJvm>> {
+        Some(self)
+    }
+
+    fn navigation(&self) -> Option<&dyn LanguageNavigation<JvmSource, PlatformJvm>> {
+        Some(self)
     }
 }
 

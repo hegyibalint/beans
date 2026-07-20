@@ -3,6 +3,7 @@ mod translation;
 use std::collections::HashMap;
 
 use beans::Beans;
+use beans_platform_jvm::model::JvmSource;
 use lsp_server::{
     Connection, Message, Notification as ServerNotification, Request as ServerRequest,
     Response as ServerResponse,
@@ -19,7 +20,7 @@ use lsp_types::{
 };
 use lsp_types::{DidChangeTextDocumentParams, DidOpenTextDocumentParams};
 
-use crate::translation::{translate_diagnostics, uri_to_source};
+use crate::translation::{position_to_offset, translate_diagnostics, uri_to_source};
 
 fn main() {
     let (conn, _) = Connection::stdio();
@@ -27,27 +28,44 @@ fn main() {
     run(conn, beans);
 }
 
+struct OpenDocument {
+    uri: Uri,
+    version: i32,
+    contents: String,
+}
+
 struct State {
     beans: Beans,
-    versions: HashMap<String, i32>,
+    documents: HashMap<JvmSource, OpenDocument>,
 }
 
 impl State {
     fn new(beans: Beans) -> Self {
         Self {
             beans,
-            versions: HashMap::new(),
+            documents: HashMap::new(),
         }
     }
 
-    fn is_stale(&self, uri: &Uri, version: i32) -> bool {
-        self.versions
-            .get(uri.as_str())
-            .is_some_and(|&current| version <= current)
+    fn document(&self, source: &JvmSource) -> Option<&OpenDocument> {
+        self.documents.get(source)
     }
 
-    fn record(&mut self, uri: &Uri, version: i32) {
-        self.versions.insert(uri.as_str().to_owned(), version);
+    fn is_stale(&self, source: &JvmSource, version: i32) -> bool {
+        self.documents
+            .get(source)
+            .is_some_and(|document| version <= document.version)
+    }
+
+    fn record(&mut self, source: JvmSource, uri: Uri, version: i32, contents: String) {
+        self.documents.insert(
+            source,
+            OpenDocument {
+                uri,
+                version,
+                contents,
+            },
+        );
     }
 }
 
@@ -88,9 +106,16 @@ fn handle_request(conn: &Connection, state: &State, request: ServerRequest) {
 }
 
 fn handle_request_goto_declaration(
-    _state: &State,
-    _params: GotoDeclarationParams,
+    state: &State,
+    params: GotoDeclarationParams,
 ) -> Option<GotoDeclarationResponse> {
+    let request = params.text_document_position_params;
+    let source = uri_to_source(&request.text_document.uri)?;
+    let document = state.document(&source)?;
+    let offset = position_to_offset(&document.contents, request.position)?;
+
+    let _declaration = state.beans.find_declaration_for(&source, offset)?;
+
     None
 }
 
@@ -118,15 +143,20 @@ fn handle_notification_did_open(
     params: DidOpenTextDocumentParams,
 ) {
     let document = params.text_document;
+    let Some(source) = uri_to_source(&document.uri) else {
+        return;
+    };
+
     // Open re-baselines the document: never stale, always processed.
-    state.record(&document.uri, document.version);
     process_document_and_publish_diagnostics(
         conn,
         &mut state.beans,
-        document.uri,
+        source.clone(),
+        document.uri.clone(),
         document.version,
-        document.text,
+        &document.text,
     );
+    state.record(source, document.uri, document.version, document.text);
 }
 
 fn handle_notification_did_change(
@@ -136,7 +166,10 @@ fn handle_notification_did_change(
 ) {
     let uri = params.text_document.uri;
     let version = params.text_document.version;
-    if state.is_stale(&uri, version) {
+    let Some(source) = uri_to_source(&uri) else {
+        return;
+    };
+    if state.is_stale(&source, version) {
         return;
     }
 
@@ -144,22 +177,26 @@ fn handle_notification_did_change(
     let Some(change) = params.content_changes.pop() else {
         return;
     };
-    state.record(&uri, version);
-    process_document_and_publish_diagnostics(conn, &mut state.beans, uri, version, change.text);
+    process_document_and_publish_diagnostics(
+        conn,
+        &mut state.beans,
+        source.clone(),
+        uri.clone(),
+        version,
+        &change.text,
+    );
+    state.record(source, uri, version, change.text);
 }
 
 fn process_document_and_publish_diagnostics(
     conn: &Connection,
     beans: &mut Beans,
+    source: JvmSource,
     uri: Uri,
     version: i32,
-    contents: String,
+    contents: &str,
 ) {
-    // Skip what we cannot source (untitled buffers) or no language claims.
-    let Some(source) = uri_to_source(&uri) else {
-        return;
-    };
-    beans.process(source.clone(), contents.as_str());
+    beans.process(source.clone(), contents);
     let Some(analysis) = beans.analyze(&source) else {
         return;
     };
@@ -191,6 +228,24 @@ mod tests {
         DiagnosticSeverity, DidOpenTextDocumentParams, PublishDiagnosticsParams, TextDocumentItem,
         notification::{DidOpenTextDocument, PublishDiagnostics},
     };
+
+    #[test]
+    fn state_keeps_only_the_latest_open_document() {
+        let mut state = State::new(Beans::new());
+        let uri: lsp_types::Uri = "file:///workspace/Foo.java".parse().unwrap();
+        let source = crate::translation::uri_to_source(&uri).unwrap();
+
+        state.record(source.clone(), uri.clone(), 1, "first".into());
+        state.record(source.clone(), uri.clone(), 2, "second".into());
+
+        assert_eq!(state.documents.len(), 1);
+        let document = state.document(&source).unwrap();
+        assert_eq!(document.uri, uri);
+        assert_eq!(document.version, 2);
+        assert_eq!(document.contents, "second");
+        assert!(state.is_stale(&source, 2));
+        assert!(!state.is_stale(&source, 3));
+    }
 
     #[test]
     fn goto_declaration_request_receives_an_empty_response() {

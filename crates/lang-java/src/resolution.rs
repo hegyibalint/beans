@@ -259,7 +259,7 @@ fn classify_candidates(candidates: impl IntoIterator<Item = JavaTypeTarget>) -> 
 mod tests {
     use std::path::PathBuf;
 
-    use beans_core::model::Span;
+    use beans_core::{language::LanguageProcessing, model::Span};
 
     use super::*;
     use crate::{model::JavaTypeDeclaration, parser::JavaParser};
