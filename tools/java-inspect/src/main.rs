@@ -52,7 +52,10 @@ fn print_java_file(file: &JavaFile) {
         "  compilation_unit_scope: {:?}",
         file.compilation_unit_scope
     );
-    println!("  top_level_types: {:?}", file.top_level_types);
+    println!(
+        "  top_level_declarations: {:?}",
+        file.top_level_declarations
+    );
     println!("  declarations:");
     print_indexed(&file.declarations);
     println!("  lexical_scopes:");

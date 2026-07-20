@@ -1,4 +1,8 @@
-use beans_core::{analysis::FileAnalysis, storage::Revision};
+use beans_core::{
+    analysis::FileAnalysis,
+    language::{Language, LanguageProcessing, NavigationTarget},
+    storage::Revision,
+};
 use beans_lang_java::LanguageJava;
 use beans_platform_jvm::{PlatformJvm, model::JvmSource};
 
@@ -32,21 +36,29 @@ impl Beans {
     /// all kinds of files, and skipping them is not an error.
     pub fn analyze(&self, source: &JvmSource) -> Option<FileAnalysis> {
         if self.lang_java.accepts(source) {
-            return self.lang_java.analyze(source, self.revision);
+            return self
+                .lang_java
+                .analysis()?
+                .analyze(source, self.revision, &self.platform_jvm);
         }
 
         None
     }
-}
 
-struct ProcessingContext<'a> {
-    revision: Revision,
-    platform_jvm: &'a mut PlatformJvm,
-}
+    pub fn find_declaration_for(
+        &self,
+        source: &JvmSource,
+        offset: usize,
+    ) -> Option<NavigationTarget<JvmSource>> {
+        if self.lang_java.accepts(source) {
+            return self.lang_java.navigation()?.find_declaration_for(
+                source,
+                offset,
+                self.revision,
+                &self.platform_jvm,
+            );
+        }
 
-trait LanguageEngine {
-    fn accepts(&self, source: &JvmSource) -> bool;
-
-    fn ingest(&self, context: &mut ProcessingContext, source: JvmSource, contents: &str);
-    fn process(&self, context: &mut ProcessingContext, source: JvmSource, contents: &str);
+        None
+    }
 }
