@@ -77,14 +77,27 @@ impl LanguageAnalysis<JvmSource, PlatformJvm> for LanguageJava {
 }
 
 impl LanguageNavigation<JvmSource, PlatformJvm> for LanguageJava {
-    fn find_declaration_for(
+    fn find_declarations_for(
         &self,
-        _source: &JvmSource,
-        _offset: usize,
-        _revision: Revision,
+        source: &JvmSource,
+        offset: usize,
+        revision: Revision,
         _platform_jvm: &PlatformJvm,
-    ) -> Option<NavigationTarget<JvmSource>> {
-        todo!("find a Java declaration at a source offset")
+    ) -> Vec<NavigationTarget<JvmSource>> {
+        let Some(java_model) = self.file_models.get(source, revision) else {
+            return Vec::new();
+        };
+        let Some((_, declaration)) = java_model.closest_declaration(offset) else {
+            return Vec::new();
+        };
+        let Some(span) = declaration.name_span() else {
+            return Vec::new();
+        };
+
+        vec![NavigationTarget {
+            source: source.clone(),
+            span,
+        }]
     }
 }
 

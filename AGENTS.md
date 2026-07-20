@@ -8,3 +8,5 @@ The `docs/ARCHITECTURE.md` document should not be edited directly.
 Propose changes as text in the conversation; only touch the file when explicitly permitted.
 
 Comments should be used very sparingly; this is an experimental project.
+
+Be critical if the path we are taking is uncommon; there are many language servers out there, and core ideas and patterns are established in the industry.

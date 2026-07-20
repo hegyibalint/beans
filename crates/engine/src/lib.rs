@@ -45,18 +45,18 @@ impl Beans {
         None
     }
 
-    pub fn find_declaration_for(
+    pub fn find_declarations_for(
         &self,
         source: &JvmSource,
         offset: usize,
-    ) -> Option<NavigationTarget<JvmSource>> {
+    ) -> Option<Vec<NavigationTarget<JvmSource>>> {
         if self.lang_java.accepts(source) {
-            return self.lang_java.navigation()?.find_declaration_for(
+            return Some(self.lang_java.navigation()?.find_declarations_for(
                 source,
                 offset,
                 self.revision,
                 &self.platform_jvm,
-            );
+            ));
         }
 
         None
