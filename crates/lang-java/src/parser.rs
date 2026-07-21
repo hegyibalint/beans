@@ -294,7 +294,7 @@ fn parse_field_declaration(node: Node, scope: JavaLexicalScopeId, src: &str, fil
             JavaDeclaration::Field(JavaFieldDeclaration {
                 span: declarator.byte_range().into(),
                 name,
-                ty: ty.clone(),
+                referenced_type: ty.clone(),
                 declaring_scope: scope,
             }),
         );
@@ -469,7 +469,14 @@ fn parse_block(
     for child in node.named_children(&mut cursor) {
         match child.kind() {
             "local_variable_declaration" => {
-                parse_local_variable_declaration(child, block_scope, src, file, builder, &mut statements);
+                parse_local_variable_declaration(
+                    child,
+                    block_scope,
+                    src,
+                    file,
+                    builder,
+                    &mut statements,
+                );
             }
             "expression_statement" => {
                 if let Some(expression) = child
@@ -490,10 +497,9 @@ fn parse_block(
                 let value = child
                     .named_child(0)
                     .and_then(|expression| parse_expression(expression, src, file, builder));
-                statements.push(builder.add_statement(
-                    JavaStatement::Return(value),
-                    child.byte_range().into(),
-                ));
+                statements.push(
+                    builder.add_statement(JavaStatement::Return(value), child.byte_range().into()),
+                );
             }
             _ => {}
         }
@@ -562,7 +568,8 @@ fn parse_expression(
         },
         "this" => JavaExpression::This,
         "field_access" => {
-            let receiver = parse_expression(node.child_by_field_name("object")?, src, file, builder)?;
+            let receiver =
+                parse_expression(node.child_by_field_name("object")?, src, file, builder)?;
             let name = parse_identifier(node.child_by_field_name("field")?, src)?;
             JavaExpression::FieldAccess { receiver, name }
         }
@@ -594,11 +601,20 @@ fn parse_expression(
             let value = parse_expression(node.child_by_field_name("right")?, src, file, builder)?;
             JavaExpression::Assign { target, value }
         }
-        "parenthesized_expression" => return parse_expression(node.named_child(0)?, src, file, builder),
-        "decimal_integer_literal" | "hex_integer_literal" | "octal_integer_literal"
-        | "binary_integer_literal" | "decimal_floating_point_literal"
-        | "hex_floating_point_literal" | "string_literal" | "character_literal" | "true"
-        | "false" | "null_literal" => JavaExpression::Literal,
+        "parenthesized_expression" => {
+            return parse_expression(node.named_child(0)?, src, file, builder);
+        }
+        "decimal_integer_literal"
+        | "hex_integer_literal"
+        | "octal_integer_literal"
+        | "binary_integer_literal"
+        | "decimal_floating_point_literal"
+        | "hex_floating_point_literal"
+        | "string_literal"
+        | "character_literal"
+        | "true"
+        | "false"
+        | "null_literal" => JavaExpression::Literal,
         _ => return None,
     };
     Some(builder.add_expression(expression, span))
@@ -843,17 +859,23 @@ mod tests {
         let JavaDeclaration::Field(field) = &file.declarations[1] else {
             panic!("D1 is the field");
         };
-        assert_eq!(field.name.as_ref().unwrap().span, Span { start: 18, end: 19 });
         assert_eq!(
-            field.ty.as_ref().unwrap().span,
+            field.name.as_ref().unwrap().span,
+            Span { start: 18, end: 19 }
+        );
+        assert_eq!(
+            field.referenced_type.as_ref().unwrap().span,
             Span { start: 14, end: 17 }
         );
-        assert!(field.ty.as_ref().unwrap().primitive);
+        assert!(field.referenced_type.as_ref().unwrap().primitive);
 
         let JavaDeclaration::Method(method) = &file.declarations[2] else {
             panic!("D2 is the method");
         };
-        assert_eq!(method.name.as_ref().unwrap().span, Span { start: 31, end: 32 });
+        assert_eq!(
+            method.name.as_ref().unwrap().span,
+            Span { start: 31, end: 32 }
+        );
         assert_eq!(method.parameters, [JavaDeclarationId(3)]);
         assert!(method.body.is_some());
 
@@ -871,23 +893,23 @@ mod tests {
         let JavaDeclaration::Local(local) = &file.declarations[4] else {
             panic!("D4 is the local");
         };
-        assert_eq!(local.name.as_ref().unwrap().span, Span { start: 52, end: 53 });
+        assert_eq!(
+            local.name.as_ref().unwrap().span,
+            Span { start: 52, end: 53 }
+        );
 
         // Scopes: S0 compilation unit, S1 type body, S2 method, S3 block.
         assert_eq!(file.lexical_scopes.len(), 4);
+        assert_eq!(file.lexical_scopes[1].owner, Some(JavaDeclarationId(0)));
+        assert_eq!(file.lexical_scopes[2].owner, Some(JavaDeclarationId(2)));
         assert_eq!(
-            file.lexical_scopes[1].owner,
-            Some(JavaDeclarationId(0))
+            file.lexical_scopes[3].span,
+            Span {
+                start: 38,
+                end: 100
+            }
         );
-        assert_eq!(
-            file.lexical_scopes[2].owner,
-            Some(JavaDeclarationId(2))
-        );
-        assert_eq!(file.lexical_scopes[3].span, Span { start: 38, end: 100 });
-        assert_eq!(
-            file.lexical_scopes[3].parent,
-            Some(JavaLexicalScopeId(2))
-        );
+        assert_eq!(file.lexical_scopes[3].parent, Some(JavaLexicalScopeId(2)));
 
         // Body: 8 expressions, 4 statements (3 + root block).
         let body = &file.bodies[0];
@@ -961,31 +983,31 @@ mod tests {
         use crate::model::JavaEntityId;
 
         // (6) the `c` in `c.a`
-        let (_, entity) = index.tightest_at(56).unwrap();
+        let (_, entity) = index.tightest_containing(56).unwrap();
         assert!(matches!(entity, JavaEntityId::Expression(_, id) if id == JavaExpressionId(0)));
         // (7) the `a` in `c.a`
-        let (_, entity) = index.tightest_at(58).unwrap();
+        let (_, entity) = index.tightest_containing(58).unwrap();
         assert!(matches!(entity, JavaEntityId::Expression(_, id) if id == JavaExpressionId(1)));
         // (8) this
-        let (_, entity) = index.tightest_at(70).unwrap();
+        let (_, entity) = index.tightest_containing(70).unwrap();
         assert!(matches!(entity, JavaEntityId::Expression(_, id) if id == JavaExpressionId(2)));
         // (10) the `d` value
-        let (_, entity) = index.tightest_at(78).unwrap();
+        let (_, entity) = index.tightest_containing(78).unwrap();
         assert!(matches!(entity, JavaEntityId::Expression(_, id) if id == JavaExpressionId(4)));
         // (11) the `b` call name
-        let (_, entity) = index.tightest_at(89).unwrap();
+        let (_, entity) = index.tightest_containing(89).unwrap();
         assert!(matches!(entity, JavaEntityId::Expression(_, id) if id == JavaExpressionId(7)));
         // (3) the parameter type `B`
-        let (_, entity) = index.tightest_at(33).unwrap();
+        let (_, entity) = index.tightest_containing(33).unwrap();
         assert_eq!(entity, JavaEntityId::TypeRef(JavaDeclarationId(3)));
         // (4) the parameter name `c`
-        let (_, entity) = index.tightest_at(35).unwrap();
+        let (_, entity) = index.tightest_containing(35).unwrap();
         assert_eq!(entity, JavaEntityId::Declaration(JavaDeclarationId(3)));
         // (5) the local name `d`
-        let (_, entity) = index.tightest_at(52).unwrap();
+        let (_, entity) = index.tightest_containing(52).unwrap();
         assert_eq!(entity, JavaEntityId::Declaration(JavaDeclarationId(4)));
         // (1) the field name `a`
-        let (_, entity) = index.tightest_at(18).unwrap();
+        let (_, entity) = index.tightest_containing(18).unwrap();
         assert_eq!(entity, JavaEntityId::Declaration(JavaDeclarationId(1)));
     }
 }

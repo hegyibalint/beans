@@ -24,7 +24,7 @@ pub fn unresolved_name_diagnostics(model: &JavaFile) -> Vec<Diagnostics> {
     for body in &model.bodies {
         // A superclass hides inherited members from us; bare names inherited
         // through it would be false positives.
-        let inherits = model.lexical_scope_chain(body.scope).any(|(_, scope)| {
+        let inherits = model.iter_scope_chain(body.scope).any(|(_, scope)| {
             scope.owner.is_some_and(|owner| {
                 match &model.declarations[owner.0] {
                     JavaDeclaration::Type(declaration) => declaration.superclass.is_some(),

@@ -31,7 +31,7 @@ impl LanguageJava {
         }
     }
 
-    pub(crate) fn file_models_at(
+    pub(crate) fn iter_file_models_at(
         &self,
         revision: Revision,
     ) -> impl Iterator<Item = (&JvmSource, &JavaFile)> {
@@ -40,7 +40,7 @@ impl LanguageJava {
 
     /// A display name for the declaration whose name sits at `span`:
     /// dotted for types (`p.Outer.Inner`), bare otherwise.
-    pub fn describe_declaration(
+    pub fn declaration_label(
         &self,
         source: &JvmSource,
         span: Span,

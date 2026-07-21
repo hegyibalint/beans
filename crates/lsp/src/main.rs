@@ -162,7 +162,7 @@ fn handle_request_hover(state: &State, params: HoverParams) -> Option<Hover> {
 
     let label = state
         .beans
-        .describe_declaration(&declaration.source, declaration.span);
+        .declaration_label(&declaration.source, declaration.span);
 
     Some(Hover {
         contents: HoverContents::Scalar(MarkedString::String(match label {
