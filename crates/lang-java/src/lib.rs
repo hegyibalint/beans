@@ -86,7 +86,7 @@ impl Language<JvmSource, PlatformJvm> for LanguageJava {
         let Some((_, declaration)) = java_model.closest_declaration(offset) else {
             return Some(Vec::new());
         };
-        let Some(span) = declaration.name_span() else {
+        let Some(span) = declaration.span() else {
             return Some(Vec::new());
         };
 
