@@ -6,15 +6,17 @@ mod resolution;
 
 use beans_core::analysis::FileAnalysis;
 use beans_core::language::{Language, LanguageProcessing, NavigationTarget};
+use beans_core::model::Span;
 use beans_core::storage::Revision;
 use beans_core::storage::RevisionedStorage;
 use beans_platform_jvm::PlatformJvm;
 use beans_platform_jvm::model::JvmSource;
 
-use crate::diagnostics::dummy_diagnostic;
-use crate::model::JavaFile;
+use crate::diagnostics::unresolved_name_diagnostics;
+use crate::model::{JavaDeclarationId, JavaFile};
 use crate::parser::JavaParser;
 use crate::projection::project_to_jvm;
+use crate::resolution::resolve_occurrence_at;
 
 pub struct LanguageJava {
     parser: JavaParser,
@@ -34,6 +36,23 @@ impl LanguageJava {
         revision: Revision,
     ) -> impl Iterator<Item = (&JvmSource, &JavaFile)> {
         self.file_models.iter_at(revision)
+    }
+
+    /// A display name for the declaration whose name sits at `span`:
+    /// dotted for types (`p.Outer.Inner`), bare otherwise.
+    pub fn describe_declaration(
+        &self,
+        source: &JvmSource,
+        span: Span,
+        revision: Revision,
+    ) -> Option<String> {
+        let model = self.file_models.get(source, revision)?;
+        let (index, _) = model
+            .declarations
+            .iter()
+            .enumerate()
+            .find(|(_, declaration)| declaration.name_span() == Some(span))?;
+        model.declaration_label(JavaDeclarationId(index))
     }
 }
 
@@ -68,7 +87,7 @@ impl Language<JvmSource, PlatformJvm> for LanguageJava {
     ) -> Option<FileAnalysis> {
         let java_model = self.file_models.get(java_source, revision)?;
         Some(FileAnalysis {
-            diagnostics: dummy_diagnostic(java_model),
+            diagnostics: unresolved_name_diagnostics(java_model),
             actions: vec![],
         })
     }
@@ -78,22 +97,17 @@ impl Language<JvmSource, PlatformJvm> for LanguageJava {
         source: &JvmSource,
         offset: usize,
         revision: Revision,
-        _platform_jvm: &PlatformJvm,
+        platform_jvm: &PlatformJvm,
     ) -> Option<Vec<NavigationTarget<JvmSource>>> {
-        let Some(java_model) = self.file_models.get(source, revision) else {
-            return Some(Vec::new());
-        };
-        let Some((_, declaration)) = java_model.closest_declaration(offset) else {
-            return Some(Vec::new());
-        };
-        let Some(span) = declaration.span() else {
-            return Some(Vec::new());
-        };
-
-        Some(vec![NavigationTarget {
-            source: source.clone(),
-            span,
-        }])
+        let java_model = self.file_models.get(source, revision)?;
+        Some(resolve_occurrence_at(
+            source,
+            java_model,
+            offset,
+            revision,
+            platform_jvm,
+            self,
+        ))
     }
 }
 

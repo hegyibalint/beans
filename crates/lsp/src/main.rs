@@ -12,12 +12,13 @@ use lsp_types::notification::{
     DidChangeTextDocument, DidOpenTextDocument, Notification, PublishDiagnostics,
 };
 use lsp_types::request::{
-    GotoDeclaration, GotoDeclarationParams, GotoDeclarationResponse, HoverRequest, Request as _,
+    GotoDeclaration, GotoDeclarationParams, GotoDeclarationResponse, GotoDefinition,
+    HoverRequest, Request as _,
 };
 use lsp_types::{
-    DeclarationCapability, Hover, HoverContents, HoverParams, HoverProviderCapability,
-    MarkedString, PublishDiagnosticsParams, ServerCapabilities, TextDocumentSyncCapability,
-    TextDocumentSyncKind, Uri,
+    DeclarationCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
+    HoverParams, HoverProviderCapability, MarkedString, OneOf, PublishDiagnosticsParams,
+    ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
 };
 use lsp_types::{DidChangeTextDocumentParams, DidOpenTextDocumentParams};
 
@@ -74,6 +75,7 @@ fn run(conn: Connection, beans: Beans) {
     let capabilities = ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
         declaration_provider: Some(DeclarationCapability::Simple(true)),
+        definition_provider: Some(OneOf::Left(true)),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         ..Default::default()
     };
@@ -100,7 +102,15 @@ fn handle_request(conn: &Connection, state: &State, request: ServerRequest) {
             let (id, params) = request
                 .extract::<GotoDeclarationParams>(GotoDeclaration::METHOD)
                 .unwrap();
-            ServerResponse::new_ok(id, handle_request_goto_declaration(state, params))
+            let locations = resolve_locations(state, params.text_document_position_params);
+            ServerResponse::new_ok(id, locations.map(GotoDeclarationResponse::Array))
+        }
+        GotoDefinition::METHOD => {
+            let (id, params) = request
+                .extract::<GotoDefinitionParams>(GotoDefinition::METHOD)
+                .unwrap();
+            let locations = resolve_locations(state, params.text_document_position_params);
+            ServerResponse::new_ok(id, locations.map(GotoDefinitionResponse::Array))
         }
         HoverRequest::METHOD => {
             let (id, params) = request
@@ -114,18 +124,30 @@ fn handle_request(conn: &Connection, state: &State, request: ServerRequest) {
     conn.sender.send(Message::Response(response)).unwrap();
 }
 
-fn handle_request_goto_declaration(
+fn resolve_locations(
     state: &State,
-    params: GotoDeclarationParams,
-) -> Option<GotoDeclarationResponse> {
-    let request = params.text_document_position_params;
-    let source = uri_to_source(&request.text_document.uri)?;
+    params: lsp_types::TextDocumentPositionParams,
+) -> Option<Vec<lsp_types::Location>> {
+    let source = uri_to_source(&params.text_document.uri)?;
     let document = state.document(&source)?;
-    let offset = position_to_offset(&document.contents, request.position)?;
+    let offset = position_to_offset(&document.contents, params.position)?;
 
-    let _declarations = state.beans.find_declarations_for(&source, offset)?;
+    let declarations = state.beans.find_declarations_for(&source, offset)?;
 
-    None
+    // Cross-file targets need the target's contents to compute ranges; only
+    // the open document is at hand, so cross-file targets are dropped for now.
+    let locations: Vec<lsp_types::Location> = declarations
+        .iter()
+        .filter(|declaration| declaration.source == source)
+        .map(|declaration| lsp_types::Location {
+            uri: params.text_document.uri.clone(),
+            range: span_to_range(&document.contents, &declaration.span),
+        })
+        .collect();
+    if locations.is_empty() {
+        return None;
+    }
+    Some(locations)
 }
 
 fn handle_request_hover(state: &State, params: HoverParams) -> Option<Hover> {
@@ -138,11 +160,21 @@ fn handle_request_hover(state: &State, params: HoverParams) -> Option<Hover> {
         .into_iter()
         .find(|declaration| declaration.source == source)?;
 
+    let label = state
+        .beans
+        .describe_declaration(&declaration.source, declaration.span);
+
     Some(Hover {
-        contents: HoverContents::Scalar(MarkedString::String(format!(
-            "Closest modeled Java declaration\n\nbyte span: {}..{}",
-            declaration.span.start, declaration.span.end
-        ))),
+        contents: HoverContents::Scalar(MarkedString::String(match label {
+            Some(label) => format!(
+                "Java declaration: {label}\n\nbyte span: {}..{}",
+                declaration.span.start, declaration.span.end
+            ),
+            None => format!(
+                "Java declaration\n\nbyte span: {}..{}",
+                declaration.span.start, declaration.span.end
+            ),
+        })),
         range: Some(span_to_range(&document.contents, &declaration.span)),
     })
 }
@@ -278,7 +310,7 @@ mod tests {
     }
 
     #[test]
-    fn hover_highlights_the_closest_declaration() {
+    fn hover_shows_the_resolved_declaration() {
         let uri: lsp_types::Uri = "file:///workspace/Foo.java".parse().unwrap();
         let source = crate::translation::uri_to_source(&uri).unwrap();
         let contents = "class Outer {}";
@@ -300,7 +332,112 @@ mod tests {
 
         assert_eq!(
             hover.range,
-            Some(Range::new(Position::new(0, 0), Position::new(0, 14)))
+            Some(Range::new(Position::new(0, 6), Position::new(0, 11)))
+        );
+    }
+
+    /// Opens `contents` as A.java, requests `method` at `position`, and
+    /// returns the resolved locations. Both goto-declaration and
+    /// goto-definition serialize to plain location arrays.
+    fn request_locations(
+        method: &str,
+        position: Position,
+        contents: &str,
+    ) -> Vec<lsp_types::Location> {
+        use lsp_server::{Request, RequestId};
+        use lsp_types::{PartialResultParams, TextDocumentIdentifier, TextDocumentPositionParams};
+
+        let uri: lsp_types::Uri = "file:///workspace/A.java".parse().unwrap();
+
+        let (server_conn, client) = Connection::memory();
+        let handle = std::thread::spawn(move || {
+            server_loop(server_conn, State::new(Beans::new()));
+        });
+
+        let did_open = DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: uri.clone(),
+                language_id: "java".into(),
+                version: 1,
+                text: contents.into(),
+            },
+        };
+        client
+            .sender
+            .send(Message::Notification(Notification::new(
+                DidOpenTextDocument::METHOD.to_string(),
+                did_open,
+            )))
+            .unwrap();
+        // Drain the diagnostics publish before requesting.
+        client.receiver.recv().unwrap();
+
+        let params = lsp_types::GotoDefinitionParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position,
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+        };
+        client
+            .sender
+            .send(Message::Request(Request::new(
+                RequestId::from(1),
+                method.to_string(),
+                params,
+            )))
+            .unwrap();
+        let response = match client.receiver.recv().unwrap() {
+            Message::Response(response) => response,
+            other => panic!("expected a response, got {other:?}"),
+        };
+
+        drop(client);
+        handle.join().unwrap();
+
+        serde_json::from_value(response.result.unwrap()).unwrap()
+    }
+
+    #[test]
+    fn goto_declaration_resolves_an_occurrence() {
+        use lsp_types::request::{GotoDeclaration, Request as _};
+        use lsp_types::{Location, Range};
+
+        // The `c` in `int d = c;` at line 2, character 16 → parameter c at 1:15.
+        let locations = request_locations(
+            GotoDeclaration::METHOD,
+            Position::new(2, 16),
+            "class A {\n    void b(int c) {\n        int d = c;\n    }\n}\n",
+        );
+
+        assert_eq!(
+            locations,
+            vec![Location {
+                uri: "file:///workspace/A.java".parse().unwrap(),
+                range: Range::new(Position::new(1, 15), Position::new(1, 16)),
+            }]
+        );
+    }
+
+    #[test]
+    fn goto_definition_on_a_field_access_segment_jumps_to_the_field() {
+        use lsp_types::request::{GotoDefinition, Request as _};
+        use lsp_types::{Location, Range};
+
+        // The `a` in `this.a = d;` at line 5, character 13 → field `a` at 1:8.
+        let locations = request_locations(
+            GotoDefinition::METHOD,
+            Position::new(5, 13),
+            "class A {\n    int a;\n\n    void b(B c) {\n        int d = c.a;\n        this.a = d;\n        b(c);\n    }\n}\n",
+        );
+
+        assert_eq!(
+            locations,
+            vec![Location {
+                uri: "file:///workspace/A.java".parse().unwrap(),
+                range: Range::new(Position::new(1, 8), Position::new(1, 9)),
+            }]
         );
     }
 
@@ -432,6 +569,10 @@ mod tests {
         assert_eq!(
             result.capabilities.declaration_provider,
             Some(DeclarationCapability::Simple(true)),
+        );
+        assert_eq!(
+            result.capabilities.definition_provider,
+            Some(lsp_types::OneOf::Left(true)),
         );
         assert_eq!(
             result.capabilities.hover_provider,
