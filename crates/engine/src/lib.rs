@@ -38,7 +38,6 @@ impl Beans {
         if self.lang_java.accepts(source) {
             return self
                 .lang_java
-                .analysis()?
                 .analyze(source, self.revision, &self.platform_jvm);
         }
 
@@ -51,12 +50,12 @@ impl Beans {
         offset: usize,
     ) -> Option<Vec<NavigationTarget<JvmSource>>> {
         if self.lang_java.accepts(source) {
-            return Some(self.lang_java.navigation()?.find_declarations_for(
+            return self.lang_java.find_declarations_for(
                 source,
                 offset,
                 self.revision,
                 &self.platform_jvm,
-            ));
+            );
         }
 
         None
