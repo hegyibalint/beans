@@ -95,7 +95,7 @@ impl JavaFile {
             .iter()
             .enumerate()
             .filter_map(|(index, declaration)| {
-                let span = declaration.name_span()?;
+                let span = declaration.span()?;
                 if span.start <= offset && offset < span.end {
                     Some((JavaDeclarationId(index), declaration, span.end - span.start))
                 } else {
@@ -228,10 +228,18 @@ impl JavaDeclaration {
     pub fn name_span(&self) -> Option<Span> {
         self.name().map(|name| name.span)
     }
+
+    pub fn span(&self) -> Option<Span> {
+        match self {
+            Self::Type(declaration) => Some(declaration.span),
+            _ => self.name_span(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct JavaTypeDeclaration {
+    pub span: Span,
     pub name: Option<JavaIdentifier>,
     pub kind: JavaTypeKind,
     pub declaring_scope: JavaLexicalScopeId,
@@ -299,6 +307,7 @@ mod tests {
         let name = identifier("Named", 7);
         let declarations = [
             JavaDeclaration::Type(JavaTypeDeclaration {
+                span: Span { start: 0, end: 20 },
                 name: Some(name.clone()),
                 kind: JavaTypeKind::Class,
                 declaring_scope: JavaLexicalScopeId(0),

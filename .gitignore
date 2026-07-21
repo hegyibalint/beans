@@ -11,3 +11,6 @@ __pycache__/
 /.agent/
 beans-vscode/node_modules/
 beans-vscode/out/
+
+# Ephemeral agentic files
+PLAN.md

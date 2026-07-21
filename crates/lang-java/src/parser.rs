@@ -193,6 +193,7 @@ fn add_type_declaration(
     let declaration = JavaDeclarationId(file.declarations.len());
     file.declarations
         .push(JavaDeclaration::Type(JavaTypeDeclaration {
+            span: node.byte_range().into(),
             name: Some(name),
             kind,
             declaring_scope,

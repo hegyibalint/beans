@@ -12,15 +12,16 @@ use lsp_types::notification::{
     DidChangeTextDocument, DidOpenTextDocument, Notification, PublishDiagnostics,
 };
 use lsp_types::request::{
-    GotoDeclaration, GotoDeclarationParams, GotoDeclarationResponse, Request as _,
+    GotoDeclaration, GotoDeclarationParams, GotoDeclarationResponse, HoverRequest, Request as _,
 };
 use lsp_types::{
-    DeclarationCapability, PublishDiagnosticsParams, ServerCapabilities,
-    TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
+    DeclarationCapability, Hover, HoverContents, HoverParams, HoverProviderCapability,
+    MarkedString, PublishDiagnosticsParams, ServerCapabilities, TextDocumentSyncCapability,
+    TextDocumentSyncKind, Uri,
 };
 use lsp_types::{DidChangeTextDocumentParams, DidOpenTextDocumentParams};
 
-use crate::translation::{position_to_offset, translate_diagnostics, uri_to_source};
+use crate::translation::{position_to_offset, span_to_range, translate_diagnostics, uri_to_source};
 
 fn main() {
     let (conn, _) = Connection::stdio();
@@ -73,6 +74,7 @@ fn run(conn: Connection, beans: Beans) {
     let capabilities = ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
         declaration_provider: Some(DeclarationCapability::Simple(true)),
+        hover_provider: Some(HoverProviderCapability::Simple(true)),
         ..Default::default()
     };
     let server_capabilities = serde_json::to_value(&capabilities).unwrap();
@@ -93,15 +95,22 @@ fn server_loop(conn: Connection, mut state: State) {
 }
 
 fn handle_request(conn: &Connection, state: &State, request: ServerRequest) {
-    if request.method != GotoDeclaration::METHOD {
-        return;
-    }
+    let response = match request.method.as_str() {
+        GotoDeclaration::METHOD => {
+            let (id, params) = request
+                .extract::<GotoDeclarationParams>(GotoDeclaration::METHOD)
+                .unwrap();
+            ServerResponse::new_ok(id, handle_request_goto_declaration(state, params))
+        }
+        HoverRequest::METHOD => {
+            let (id, params) = request
+                .extract::<HoverParams>(HoverRequest::METHOD)
+                .unwrap();
+            ServerResponse::new_ok(id, handle_request_hover(state, params))
+        }
+        _ => return,
+    };
 
-    let (id, params) = request
-        .extract::<GotoDeclarationParams>(GotoDeclaration::METHOD)
-        .unwrap();
-    let result = handle_request_goto_declaration(state, params);
-    let response = ServerResponse::new_ok(id, result);
     conn.sender.send(Message::Response(response)).unwrap();
 }
 
@@ -117,6 +126,25 @@ fn handle_request_goto_declaration(
     let _declarations = state.beans.find_declarations_for(&source, offset)?;
 
     None
+}
+
+fn handle_request_hover(state: &State, params: HoverParams) -> Option<Hover> {
+    let request = params.text_document_position_params;
+    let source = uri_to_source(&request.text_document.uri)?;
+    let document = state.document(&source)?;
+    let offset = position_to_offset(&document.contents, request.position)?;
+    let declarations = state.beans.find_declarations_for(&source, offset)?;
+    let declaration = declarations
+        .into_iter()
+        .find(|declaration| declaration.source == source)?;
+
+    Some(Hover {
+        contents: HoverContents::Scalar(MarkedString::String(format!(
+            "Closest modeled Java declaration\n\nbyte span: {}..{}",
+            declaration.span.start, declaration.span.end
+        ))),
+        range: Some(span_to_range(&document.contents, &declaration.span)),
+    })
 }
 
 fn handle_notification(conn: &Connection, state: &mut State, notification: ServerNotification) {
@@ -220,12 +248,14 @@ fn process_document_and_publish_diagnostics(
 
 #[cfg(test)]
 mod tests {
-    use crate::{State, server_loop};
+    use crate::{State, handle_request_hover, server_loop};
     use beans::Beans;
     use lsp_server::{Connection, Message, Notification};
     use lsp_types::notification::Notification as _;
     use lsp_types::{
-        DiagnosticSeverity, DidOpenTextDocumentParams, PublishDiagnosticsParams, TextDocumentItem,
+        DidOpenTextDocumentParams, HoverParams, Position, PublishDiagnosticsParams, Range,
+        TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams,
+        WorkDoneProgressParams,
         notification::{DidOpenTextDocument, PublishDiagnostics},
     };
 
@@ -245,6 +275,33 @@ mod tests {
         assert_eq!(document.contents, "second");
         assert!(state.is_stale(&source, 2));
         assert!(!state.is_stale(&source, 3));
+    }
+
+    #[test]
+    fn hover_highlights_the_closest_declaration() {
+        let uri: lsp_types::Uri = "file:///workspace/Foo.java".parse().unwrap();
+        let source = crate::translation::uri_to_source(&uri).unwrap();
+        let contents = "class Outer {}";
+        let mut state = State::new(Beans::new());
+        state.beans.process(source.clone(), contents);
+        state.record(source, uri.clone(), 1, contents.into());
+
+        let hover = handle_request_hover(
+            &state,
+            HoverParams {
+                text_document_position_params: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri },
+                    position: Position::new(0, 8),
+                },
+                work_done_progress_params: WorkDoneProgressParams::default(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            hover.range,
+            Some(Range::new(Position::new(0, 0), Position::new(0, 14)))
+        );
     }
 
     #[test]
@@ -291,7 +348,7 @@ mod tests {
     }
 
     #[test]
-    fn open_file_publishes_dummy_diagnostic() {
+    fn open_file_publishes_diagnostics() {
         let (server_conn, client) = Connection::memory();
 
         let beans = Beans::new();
@@ -334,13 +391,7 @@ mod tests {
         let params: PublishDiagnosticsParams = published
             .extract(PublishDiagnostics::METHOD)
             .expect("payload is PublishDiagnosticsParams");
-        // The `Bar bar;` field is the file's single type reference.
-        assert_eq!(params.diagnostics.len(), 1);
-        assert_eq!(params.diagnostics[0].message, "type reference: Bar");
-        assert_eq!(
-            params.diagnostics[0].severity,
-            Some(DiagnosticSeverity::WARNING)
-        );
+        assert!(params.diagnostics.is_empty());
 
         drop(client);
         handle.join().unwrap();
@@ -350,8 +401,8 @@ mod tests {
     fn initialize_advertises_sync_then_publishes_on_open() {
         use lsp_server::{Request, RequestId};
         use lsp_types::{
-            DeclarationCapability, InitializeParams, InitializeResult, InitializedParams,
-            TextDocumentSyncCapability, TextDocumentSyncKind,
+            DeclarationCapability, HoverProviderCapability, InitializeParams, InitializeResult,
+            InitializedParams, TextDocumentSyncCapability, TextDocumentSyncKind,
         };
 
         let (server_conn, client) = Connection::memory();
@@ -382,6 +433,10 @@ mod tests {
             result.capabilities.declaration_provider,
             Some(DeclarationCapability::Simple(true)),
         );
+        assert_eq!(
+            result.capabilities.hover_provider,
+            Some(HoverProviderCapability::Simple(true)),
+        );
 
         let initialized = Notification::new("initialized".to_string(), InitializedParams {});
         client
@@ -408,7 +463,7 @@ mod tests {
         let params: PublishDiagnosticsParams = published
             .extract(PublishDiagnostics::METHOD)
             .expect("payload is PublishDiagnosticsParams");
-        assert_eq!(params.diagnostics.len(), 1);
+        assert!(params.diagnostics.is_empty());
 
         drop(client);
         handle.join().unwrap();
