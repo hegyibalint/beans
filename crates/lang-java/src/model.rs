@@ -97,16 +97,6 @@ impl JavaFile {
         ids.iter().copied().map(|id| (id, &self.declarations[id.0]))
     }
 
-    /// The tightest scope containing `offset`; occurrences resolve from here.
-    pub fn scope_containing(&self, offset: usize) -> Option<JavaLexicalScopeId> {
-        self.lexical_scopes
-            .iter()
-            .enumerate()
-            .filter(|(_, scope)| scope.span.start <= offset && offset < scope.span.end)
-            .min_by_key(|(_, scope)| scope.span.end - scope.span.start)
-            .map(|(index, _)| JavaLexicalScopeId(index))
-    }
-
     /// The nearest type whose body encloses `scope`: what `this` refers to.
     pub fn enclosing_type_declaration(
         &self,
@@ -162,10 +152,7 @@ pub struct JavaLexicalScopeId(pub usize);
 pub struct JavaBodyId(pub usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct JavaExpressionId(pub usize);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct JavaStatementId(pub usize);
+pub struct JavaBodyNodeId(pub usize);
 
 /// JLS 6.1: different entities can share a spelling; resolution filters by this axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -419,41 +406,59 @@ pub struct JavaLexicalScope {
 }
 
 /// The executable content of a method, constructor, or initializer.
-/// Statements and expressions live in flat arenas; spans sit in parallel
-/// columns indexed by the same ids.
+/// Statements and expressions share one arena; span and enclosing scope
+/// are inline on every node.
 #[derive(Debug, Clone)]
 pub struct JavaBody {
     /// The scope of the root block.
     pub scope: JavaLexicalScopeId,
-    pub root: JavaStatementId,
-    pub statements: Vec<JavaStatement>,
-    pub statement_spans: Vec<Span>,
-    pub expressions: Vec<JavaExpression>,
-    pub expression_spans: Vec<Span>,
+    pub root: JavaBodyNodeId,
+    pub nodes: Vec<JavaBodyNode>,
 }
 
 impl JavaBody {
-    pub fn expression(&self, id: JavaExpressionId) -> &JavaExpression {
-        &self.expressions[id.0]
+    pub fn node(&self, id: JavaBodyNodeId) -> &JavaBodyNode {
+        &self.nodes[id.0]
     }
 
-    pub fn expression_span(&self, id: JavaExpressionId) -> Span {
-        self.expression_spans[id.0]
+    pub fn expression(&self, id: JavaBodyNodeId) -> Option<&JavaExpression> {
+        match &self.node(id).kind {
+            JavaBodyNodeKind::Expression(expression) => Some(expression),
+            _ => None,
+        }
     }
+}
+
+/// Span and scope are stamped at extraction: the parser knows both, and
+/// later queries should never re-derive what was free at parse time.
+#[derive(Debug, Clone)]
+pub struct JavaBodyNode {
+    pub span: Span,
+    /// The scope this node lives in. Note a `Block` *introduces* a deeper
+    /// scope (its payload), but is stamped with the scope it lives in.
+    pub scope: JavaLexicalScopeId,
+    pub kind: JavaBodyNodeKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum JavaBodyNodeKind {
+    Statement(JavaStatement),
+    Expression(JavaExpression),
 }
 
 #[derive(Debug, Clone)]
 pub enum JavaStatement {
     Block {
         scope: JavaLexicalScopeId,
-        statements: Vec<JavaStatementId>,
+        statements: Vec<JavaBodyNodeId>,
     },
+    TypeDeclaration(JavaDeclarationId),
     LocalDeclaration {
         declaration: JavaDeclarationId,
-        initializer: Option<JavaExpressionId>,
+        initializer: Option<JavaBodyNodeId>,
     },
-    Expression(JavaExpressionId),
-    Return(Option<JavaExpressionId>),
+    Expression(JavaBodyNodeId),
+    Return(Option<JavaBodyNodeId>),
 }
 
 #[derive(Debug, Clone)]
@@ -462,23 +467,23 @@ pub enum JavaExpression {
         name: JavaIdentifier,
     },
     FieldAccess {
-        receiver: JavaExpressionId,
+        receiver: JavaBodyNodeId,
         name: JavaIdentifier,
     },
     MethodCall {
         /// `None` is the implicit `this` receiver.
-        receiver: Option<JavaExpressionId>,
+        receiver: Option<JavaBodyNodeId>,
         name: JavaIdentifier,
-        arguments: Vec<JavaExpressionId>,
+        arguments: Vec<JavaBodyNodeId>,
     },
     ObjectCreation {
         ty: JavaTypeRef,
-        arguments: Vec<JavaExpressionId>,
+        arguments: Vec<JavaBodyNodeId>,
     },
     This,
     Assign {
-        target: JavaExpressionId,
-        value: JavaExpressionId,
+        target: JavaBodyNodeId,
+        value: JavaBodyNodeId,
     },
     Literal,
 }
@@ -490,8 +495,7 @@ pub enum JavaEntityId {
     /// The type annotation owned by a declaration (field/parameter/local type,
     /// method return type, superclass).
     TypeRef(JavaDeclarationId),
-    Expression(JavaBodyId, JavaExpressionId),
-    Statement(JavaBodyId, JavaStatementId),
+    BodyNode(JavaBodyId, JavaBodyNodeId),
     Scope(JavaLexicalScopeId),
     Import(usize),
 }
@@ -529,20 +533,14 @@ impl JavaPositionIndex {
 
         for (body_index, body) in file.bodies.iter().enumerate() {
             let body_id = JavaBodyId(body_index);
-            for (index, _) in body.statements.iter().enumerate() {
-                entries.push((
-                    body.statement_spans[index],
-                    JavaEntityId::Statement(body_id, JavaStatementId(index)),
-                ));
-            }
-            for (index, expression) in body.expressions.iter().enumerate() {
-                let id = JavaExpressionId(index);
-                entries.push((
-                    body.expression_spans[index],
-                    JavaEntityId::Expression(body_id, id),
-                ));
+            for (index, node) in body.nodes.iter().enumerate() {
+                let id = JavaBodyNodeId(index);
+                entries.push((node.span, JavaEntityId::BodyNode(body_id, id)));
                 // Name segments are the F12 surface of chains: `c` and `a` in
                 // `c.a` are separate occurrences of one expression.
+                let JavaBodyNodeKind::Expression(expression) = &node.kind else {
+                    continue;
+                };
                 let name_span = match expression {
                     JavaExpression::FieldAccess { name, .. } => Some(name.span),
                     JavaExpression::MethodCall { name, .. } => Some(name.span),
@@ -550,7 +548,7 @@ impl JavaPositionIndex {
                     _ => None,
                 };
                 if let Some(span) = name_span {
-                    entries.push((span, JavaEntityId::Expression(body_id, id)));
+                    entries.push((span, JavaEntityId::BodyNode(body_id, id)));
                 }
             }
         }
