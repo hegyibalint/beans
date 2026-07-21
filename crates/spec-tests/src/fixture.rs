@@ -174,12 +174,23 @@ impl Fixture {
                                 && cursor.offset < diagnostic.span.end as usize
                         })
                     }
-                    // The engine has no resolution query yet; every
-                    // resolution expectation is unmet until it grows one.
-                    Expect::ResolvesTo { cursor, .. }
-                    | Expect::ResolvesToTypeParam { cursor, .. }
+                    Expect::ResolvesTo { cursor, fqn } => {
+                        let cursor = find_cursor(&cursors, cursor, &analysis.file);
+                        resolution_labels(&beans, &analysis.file, cursor.offset)
+                            .iter()
+                            .any(|label| label == fqn)
+                    }
+                    Expect::AmbiguousBetween { cursor, fqns } => {
+                        let cursor = find_cursor(&cursors, cursor, &analysis.file);
+                        let mut labels = resolution_labels(&beans, &analysis.file, cursor.offset);
+                        labels.sort();
+                        let mut expected = fqns.clone();
+                        expected.sort();
+                        labels == expected
+                    }
+                    // The engine cannot see these declaration kinds yet.
+                    Expect::ResolvesToTypeParam { cursor, .. }
                     | Expect::ResolvesToLocalType { cursor, .. }
-                    | Expect::AmbiguousBetween { cursor, .. }
                     | Expect::OffersImports { cursor, .. } => {
                         find_cursor(&cursors, cursor, &analysis.file);
                         false
@@ -211,6 +222,15 @@ fn jvm_source(path: &Path) -> JvmSource {
     JvmSource::SourceFile {
         path: path.to_path_buf(),
     }
+}
+
+fn resolution_labels(beans: &Beans, file: &Path, offset: usize) -> Vec<String> {
+    beans
+        .find_declarations_for(&jvm_source(file), offset)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|target| beans.describe_declaration(&target.source, target.span))
+        .collect()
 }
 
 fn find_cursor<'a>(cursors: &'a [Cursor], name: &str, file: &Path) -> &'a Cursor {
@@ -271,10 +291,10 @@ mod tests {
         fixture()
             .file(
                 "com/example/Foo.java",
-                "package com.example;\nclass Foo { <cur:bar>Bar bar; }",
+                "package com.example;\nclass Foo { void m() { <cur:x>x = 1; } }",
             )
             .analyze("com/example/Foo.java")
-            .expect("type-reference")
+            .expect_at("x", "cannot-find-symbol")
             .run();
     }
 
@@ -283,11 +303,11 @@ mod tests {
         fixture()
             .file(
                 "com/example/Foo.java",
-                "package com.example;\nclass Foo { Bar bar; }",
+                "package com.example;\nclass Foo { void m() { x = 1; } }",
             )
             .file("com/example/Bar.java", "package com.example;\nclass Bar {}")
             .analyze("com/example/Foo.java")
-            .expect("type-reference")
+            .expect("cannot-find-symbol")
             .run();
     }
 
@@ -305,7 +325,7 @@ mod tests {
     }
 
     #[test]
-    fn resolution_expectations_are_unmet_until_the_engine_can_answer() {
+    fn resolution_expectations_are_checked_against_the_engine() {
         fixture()
             .file(
                 "com/example/Foo.java",
@@ -314,7 +334,6 @@ mod tests {
             .file("com/example/Bar.java", "package com.example;\nclass Bar {}")
             .analyze("com/example/Foo.java")
             .resolves_to("bar", "com.example.Bar")
-            .expected_failure("the engine has no resolution query yet")
             .run();
     }
 
@@ -324,10 +343,10 @@ mod tests {
         fixture()
             .file(
                 "com/example/Foo.java",
-                "package com.example;\nclass Foo { Bar bar; }",
+                "package com.example;\nclass Foo { void m() { x = 1; } }",
             )
             .analyze("com/example/Foo.java")
-            .expect("type-reference")
+            .expect("cannot-find-symbol")
             .expected_failure("this passes today, so the harness must turn red")
             .run();
     }

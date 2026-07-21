@@ -5,16 +5,15 @@ pub struct JavaFile {
     pub package: Option<JavaName>,
     pub imports: Vec<JavaImport>,
 
-    /// Declarations that appear in this file, including types, fields, methods, and parameters.
-    /// Indexed by their order of appearance in the file, newtyped as `JavaDeclarationId`.
     pub declarations: Vec<JavaDeclaration>,
-    /// Lexical scopes that appear in this file, including the compilation unit scope and nested scopes.
-    /// Indexed by their order of appearance in the file, newtyped as `JavaLexicalScopeId`.
-    /// The first lexical scope is always the compilation unit scope.
     pub lexical_scopes: Vec<JavaLexicalScope>,
+    pub bodies: Vec<JavaBody>,
 
     pub compilation_unit_scope: JavaLexicalScopeId,
     pub top_level_declarations: Vec<JavaDeclarationId>,
+
+    /// Derived from the rest of the model; rebuilt after parsing.
+    pub position_index: JavaPositionIndex,
 }
 
 impl JavaFile {
@@ -25,10 +24,14 @@ impl JavaFile {
             declarations: Vec::new(),
             lexical_scopes: vec![JavaLexicalScope {
                 parent: None,
+                owner: None,
                 declarations: Vec::new(),
+                span: Span { start: 0, end: 0 },
             }],
+            bodies: Vec::new(),
             compilation_unit_scope: JavaLexicalScopeId(0),
             top_level_declarations: Vec::new(),
+            position_index: JavaPositionIndex::default(),
         }
     }
 
@@ -87,30 +90,59 @@ impl JavaFile {
             })
     }
 
-    pub(crate) fn closest_declaration(
-        &self,
-        offset: usize,
-    ) -> Option<(JavaDeclarationId, &JavaDeclaration)> {
-        self.declarations
-            .iter()
-            .enumerate()
-            .filter_map(|(index, declaration)| {
-                let span = declaration.span()?;
-                if span.start <= offset && offset < span.end {
-                    Some((JavaDeclarationId(index), declaration, span.end - span.start))
-                } else {
-                    None
-                }
-            })
-            .min_by_key(|(_, _, length)| *length)
-            .map(|(id, declaration, _)| (id, declaration))
-    }
-
     pub(crate) fn iter_declarations<'file>(
         &'file self,
         ids: &'file [JavaDeclarationId],
     ) -> impl Iterator<Item = (JavaDeclarationId, &'file JavaDeclaration)> + 'file {
         ids.iter().copied().map(|id| (id, &self.declarations[id.0]))
+    }
+
+    /// The tightest scope containing `offset`; occurrences resolve from here.
+    pub fn scope_at(&self, offset: usize) -> Option<JavaLexicalScopeId> {
+        self.lexical_scopes
+            .iter()
+            .enumerate()
+            .filter(|(_, scope)| scope.span.start <= offset && offset < scope.span.end)
+            .min_by_key(|(_, scope)| scope.span.end - scope.span.start)
+            .map(|(index, _)| JavaLexicalScopeId(index))
+    }
+
+    /// The nearest type whose body encloses `scope`: what `this` refers to.
+    pub fn enclosing_type_declaration(
+        &self,
+        scope: JavaLexicalScopeId,
+    ) -> Option<JavaDeclarationId> {
+        self.lexical_scope_chain(scope)
+            .filter_map(|(_, scope)| scope.owner)
+            .find(|owner| matches!(self.declarations[owner.0], JavaDeclaration::Type(_)))
+    }
+
+    /// A display name for a declaration: dotted for types (`p.Outer.Inner`),
+    /// the bare name for everything else.
+    pub fn declaration_label(&self, declaration: JavaDeclarationId) -> Option<String> {
+        let name = self.declarations[declaration.0].name()?;
+        let JavaDeclaration::Type(_) = self.declarations[declaration.0] else {
+            return Some(name.text.clone());
+        };
+
+        let mut segments = vec![name.text.clone()];
+        let mut declaring = match &self.declarations[declaration.0] {
+            JavaDeclaration::Type(declaration) => declaration.declaring_scope,
+            _ => unreachable!(),
+        };
+        while let Some(owner) = self.lexical_scopes[declaring.0].owner {
+            let JavaDeclaration::Type(owner_type) = &self.declarations[owner.0] else {
+                break;
+            };
+            segments.push(owner_type.name.as_ref()?.text.clone());
+            declaring = owner_type.declaring_scope;
+        }
+        segments.reverse();
+
+        match &self.package {
+            Some(package) => Some(format!("{}.{}", package.dotted(), segments.join("."))),
+            None => Some(segments.join(".")),
+        }
     }
 }
 
@@ -125,6 +157,23 @@ pub struct JavaDeclarationId(pub usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct JavaLexicalScopeId(pub usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct JavaBodyId(pub usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct JavaExpressionId(pub usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct JavaStatementId(pub usize);
+
+/// JLS 6.1: different entities can share a spelling; resolution filters by this axis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JavaNamespace {
+    Type,
+    Variable,
+    Method,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct JavaIdentifier {
@@ -212,6 +261,8 @@ pub enum JavaDeclaration {
     Field(JavaFieldDeclaration),
     Constructor(JavaConstructorDeclaration),
     Method(JavaMethodDeclaration),
+    Parameter(JavaParameterDeclaration),
+    Local(JavaLocalDeclaration),
 }
 
 impl JavaDeclaration {
@@ -222,6 +273,8 @@ impl JavaDeclaration {
             Self::Field(declaration) => declaration.name.as_ref(),
             Self::Constructor(_) => None,
             Self::Method(declaration) => declaration.name.as_ref(),
+            Self::Parameter(declaration) => declaration.name.as_ref(),
+            Self::Local(declaration) => declaration.name.as_ref(),
         }
     }
 
@@ -232,9 +285,58 @@ impl JavaDeclaration {
     pub fn span(&self) -> Option<Span> {
         match self {
             Self::Type(declaration) => Some(declaration.span),
-            _ => self.name_span(),
+            Self::TypeParameter(declaration) => declaration.name.as_ref().map(|name| name.span),
+            Self::Field(declaration) => Some(declaration.span),
+            Self::Constructor(declaration) => Some(declaration.span),
+            Self::Method(declaration) => Some(declaration.span),
+            Self::Parameter(declaration) => Some(declaration.span),
+            Self::Local(declaration) => Some(declaration.span),
         }
     }
+
+    pub fn namespace(&self) -> JavaNamespace {
+        match self {
+            Self::Type(_) | Self::TypeParameter(_) => JavaNamespace::Type,
+            Self::Field(_) | Self::Parameter(_) | Self::Local(_) => JavaNamespace::Variable,
+            Self::Constructor(_) | Self::Method(_) => JavaNamespace::Method,
+        }
+    }
+
+    pub fn declaring_scope(&self) -> JavaLexicalScopeId {
+        match self {
+            Self::Type(declaration) => declaration.declaring_scope,
+            // Type parameters are not parsed yet; when they are, they must
+            // carry the scope of their generic declaration.
+            Self::TypeParameter(_) => JavaLexicalScopeId(0),
+            Self::Field(declaration) => declaration.declaring_scope,
+            Self::Constructor(declaration) => declaration.declaring_scope,
+            Self::Method(declaration) => declaration.declaring_scope,
+            Self::Parameter(declaration) => declaration.declaring_scope,
+            Self::Local(declaration) => declaration.declaring_scope,
+        }
+    }
+
+    /// The type annotation owned by this declaration, if any.
+    pub fn type_ref(&self) -> Option<&JavaTypeRef> {
+        match self {
+            Self::Field(declaration) => declaration.ty.as_ref(),
+            Self::Method(declaration) => declaration.return_type.as_ref(),
+            Self::Parameter(declaration) => declaration.ty.as_ref(),
+            Self::Local(declaration) => declaration.ty.as_ref(),
+            Self::Type(declaration) => declaration.superclass.as_ref(),
+            _ => None,
+        }
+    }
+}
+
+/// A type as written in source. Resolution against the model happens later.
+#[derive(Debug, Clone)]
+pub struct JavaTypeRef {
+    pub span: Span,
+    /// The erased head of the type: `List` for `List<String>`, `String` for `String[]`.
+    pub name: JavaName,
+    /// Primitives and `void` never resolve to declarations.
+    pub primitive: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -242,6 +344,7 @@ pub struct JavaTypeDeclaration {
     pub span: Span,
     pub name: Option<JavaIdentifier>,
     pub kind: JavaTypeKind,
+    pub superclass: Option<JavaTypeRef>,
     pub declaring_scope: JavaLexicalScopeId,
     pub body_scope: JavaLexicalScopeId,
 }
@@ -262,21 +365,215 @@ pub struct JavaTypeParameterDeclaration {
 
 #[derive(Debug, Clone)]
 pub struct JavaFieldDeclaration {
+    pub span: Span,
     pub name: Option<JavaIdentifier>,
+    pub ty: Option<JavaTypeRef>,
+    pub declaring_scope: JavaLexicalScopeId,
 }
 
 #[derive(Debug, Clone)]
-pub struct JavaConstructorDeclaration {}
+pub struct JavaConstructorDeclaration {
+    pub span: Span,
+    pub parameters: Vec<JavaDeclarationId>,
+    pub declaring_scope: JavaLexicalScopeId,
+    pub body_scope: JavaLexicalScopeId,
+    pub body: Option<JavaBodyId>,
+}
 
 #[derive(Debug, Clone)]
 pub struct JavaMethodDeclaration {
+    pub span: Span,
     pub name: Option<JavaIdentifier>,
+    pub return_type: Option<JavaTypeRef>,
+    pub parameters: Vec<JavaDeclarationId>,
+    pub declaring_scope: JavaLexicalScopeId,
+    pub body_scope: JavaLexicalScopeId,
+    pub body: Option<JavaBodyId>,
+}
+
+#[derive(Debug, Clone)]
+pub struct JavaParameterDeclaration {
+    pub span: Span,
+    pub name: Option<JavaIdentifier>,
+    pub ty: Option<JavaTypeRef>,
+    pub declaring_scope: JavaLexicalScopeId,
+}
+
+#[derive(Debug, Clone)]
+pub struct JavaLocalDeclaration {
+    pub span: Span,
+    pub name: Option<JavaIdentifier>,
+    pub ty: Option<JavaTypeRef>,
+    pub declaring_scope: JavaLexicalScopeId,
 }
 
 #[derive(Debug, Clone)]
 pub struct JavaLexicalScope {
     pub parent: Option<JavaLexicalScopeId>,
+    /// The declaration that introduced this scope (type bodies, methods), if any.
+    pub owner: Option<JavaDeclarationId>,
     pub declarations: Vec<JavaDeclarationId>,
+    pub span: Span,
+}
+
+/// The executable content of a method, constructor, or initializer.
+/// Statements and expressions live in flat arenas; spans sit in parallel
+/// columns indexed by the same ids.
+#[derive(Debug, Clone)]
+pub struct JavaBody {
+    /// The scope of the root block.
+    pub scope: JavaLexicalScopeId,
+    pub root: JavaStatementId,
+    pub statements: Vec<JavaStatement>,
+    pub statement_spans: Vec<Span>,
+    pub expressions: Vec<JavaExpression>,
+    pub expression_spans: Vec<Span>,
+}
+
+impl JavaBody {
+    pub fn expression(&self, id: JavaExpressionId) -> &JavaExpression {
+        &self.expressions[id.0]
+    }
+
+    pub fn expression_span(&self, id: JavaExpressionId) -> Span {
+        self.expression_spans[id.0]
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum JavaStatement {
+    Block {
+        scope: JavaLexicalScopeId,
+        statements: Vec<JavaStatementId>,
+    },
+    LocalDeclaration {
+        declaration: JavaDeclarationId,
+        initializer: Option<JavaExpressionId>,
+    },
+    Expression(JavaExpressionId),
+    Return(Option<JavaExpressionId>),
+}
+
+#[derive(Debug, Clone)]
+pub enum JavaExpression {
+    NameRef {
+        name: JavaIdentifier,
+    },
+    FieldAccess {
+        receiver: JavaExpressionId,
+        name: JavaIdentifier,
+    },
+    MethodCall {
+        /// `None` is the implicit `this` receiver.
+        receiver: Option<JavaExpressionId>,
+        name: JavaIdentifier,
+        arguments: Vec<JavaExpressionId>,
+    },
+    ObjectCreation {
+        ty: JavaTypeRef,
+        arguments: Vec<JavaExpressionId>,
+    },
+    This,
+    Assign {
+        target: JavaExpressionId,
+        value: JavaExpressionId,
+    },
+    Literal,
+}
+
+/// Anything the position index can hand back for an offset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum JavaEntityId {
+    Declaration(JavaDeclarationId),
+    /// The type annotation owned by a declaration (field/parameter/local type,
+    /// method return type, superclass).
+    TypeRef(JavaDeclarationId),
+    Expression(JavaBodyId, JavaExpressionId),
+    Statement(JavaBodyId, JavaStatementId),
+    Scope(JavaLexicalScopeId),
+    Import(usize),
+}
+
+/// Per-file position index: the persistent skeleton of the syntax tree.
+/// Derived data, rebuilt from the model after every parse.
+#[derive(Debug, Clone, Default)]
+pub struct JavaPositionIndex {
+    /// Sorted by span start, then end. Spans from one parse are well-nested.
+    entries: Vec<(Span, JavaEntityId)>,
+}
+
+impl JavaPositionIndex {
+    pub fn build(file: &JavaFile) -> Self {
+        let mut entries = Vec::new();
+
+        for (index, declaration) in file.declarations.iter().enumerate() {
+            let id = JavaDeclarationId(index);
+            if let Some(span) = declaration.span() {
+                entries.push((span, JavaEntityId::Declaration(id)));
+            }
+            if let Some(name_span) = declaration.name_span() {
+                entries.push((name_span, JavaEntityId::Declaration(id)));
+            }
+            if let Some(type_ref) = declaration.type_ref() {
+                entries.push((type_ref.span, JavaEntityId::TypeRef(id)));
+            }
+        }
+
+        for (index, scope) in file.lexical_scopes.iter().enumerate() {
+            entries.push((scope.span, JavaEntityId::Scope(JavaLexicalScopeId(index))));
+        }
+
+        for (index, import) in file.imports.iter().enumerate() {
+            entries.push((import.name.span(), JavaEntityId::Import(index)));
+        }
+
+        for (body_index, body) in file.bodies.iter().enumerate() {
+            let body_id = JavaBodyId(body_index);
+            for (index, _) in body.statements.iter().enumerate() {
+                entries.push((
+                    body.statement_spans[index],
+                    JavaEntityId::Statement(body_id, JavaStatementId(index)),
+                ));
+            }
+            for (index, expression) in body.expressions.iter().enumerate() {
+                let id = JavaExpressionId(index);
+                entries.push((
+                    body.expression_spans[index],
+                    JavaEntityId::Expression(body_id, id),
+                ));
+                // Name segments are the F12 surface of chains: `c` and `a` in
+                // `c.a` are separate occurrences of one expression.
+                let name_span = match expression {
+                    JavaExpression::FieldAccess { name, .. } => Some(name.span),
+                    JavaExpression::MethodCall { name, .. } => Some(name.span),
+                    JavaExpression::ObjectCreation { ty, .. } => Some(ty.span),
+                    _ => None,
+                };
+                if let Some(span) = name_span {
+                    entries.push((span, JavaEntityId::Expression(body_id, id)));
+                }
+            }
+        }
+
+        entries.sort_by_key(|(span, _)| (span.start, span.end));
+        Self { entries }
+    }
+
+    pub fn tightest_at(&self, offset: usize) -> Option<(Span, JavaEntityId)> {
+        self.iter_at(offset).into_iter().next()
+    }
+
+    /// Every entry containing `offset`, tightest first.
+    pub fn iter_at(&self, offset: usize) -> Vec<(Span, JavaEntityId)> {
+        let mut containing: Vec<_> = self
+            .entries
+            .iter()
+            .filter(|(span, _)| span.start <= offset && offset < span.end)
+            .copied()
+            .collect();
+        containing.sort_by_key(|(span, _)| (span.end - span.start, span.start));
+        containing
+    }
 }
 
 #[cfg(test)]
@@ -287,7 +584,9 @@ mod tests {
         let scope_id = JavaLexicalScopeId(file.lexical_scopes.len());
         file.lexical_scopes.push(JavaLexicalScope {
             parent: Some(parent),
+            owner: None,
             declarations: Vec::new(),
+            span: Span { start: 0, end: 0 },
         });
         scope_id
     }
@@ -302,25 +601,43 @@ mod tests {
         }
     }
 
+    fn type_declaration(
+        name: JavaIdentifier,
+        declaring: JavaLexicalScopeId,
+        body: JavaLexicalScopeId,
+    ) -> JavaDeclaration {
+        JavaDeclaration::Type(JavaTypeDeclaration {
+            span: Span { start: 0, end: 20 },
+            name: Some(name),
+            kind: JavaTypeKind::Class,
+            superclass: None,
+            declaring_scope: declaring,
+            body_scope: body,
+        })
+    }
+
     #[test]
     fn declarations_expose_their_names_and_name_spans() {
         let name = identifier("Named", 7);
         let declarations = [
-            JavaDeclaration::Type(JavaTypeDeclaration {
-                span: Span { start: 0, end: 20 },
-                name: Some(name.clone()),
-                kind: JavaTypeKind::Class,
-                declaring_scope: JavaLexicalScopeId(0),
-                body_scope: JavaLexicalScopeId(1),
-            }),
+            type_declaration(name.clone(), JavaLexicalScopeId(0), JavaLexicalScopeId(1)),
             JavaDeclaration::TypeParameter(JavaTypeParameterDeclaration {
                 name: Some(name.clone()),
             }),
             JavaDeclaration::Field(JavaFieldDeclaration {
+                span: Span { start: 0, end: 10 },
                 name: Some(name.clone()),
+                ty: None,
+                declaring_scope: JavaLexicalScopeId(0),
             }),
             JavaDeclaration::Method(JavaMethodDeclaration {
+                span: Span { start: 0, end: 10 },
                 name: Some(name.clone()),
+                return_type: None,
+                parameters: Vec::new(),
+                declaring_scope: JavaLexicalScopeId(0),
+                body_scope: JavaLexicalScopeId(1),
+                body: None,
             }),
         ];
 
@@ -329,28 +646,15 @@ mod tests {
             assert_eq!(declaration.name_span(), Some(name.span));
         }
 
-        let constructor = JavaDeclaration::Constructor(JavaConstructorDeclaration {});
+        let constructor = JavaDeclaration::Constructor(JavaConstructorDeclaration {
+            span: Span { start: 0, end: 10 },
+            parameters: Vec::new(),
+            declaring_scope: JavaLexicalScopeId(0),
+            body_scope: JavaLexicalScopeId(1),
+            body: None,
+        });
         assert_eq!(constructor.name(), None);
         assert_eq!(constructor.name_span(), None);
-    }
-
-    #[test]
-    fn finds_the_tightest_declaration_at_an_offset() {
-        let mut file = JavaFile::new();
-        file.declarations
-            .push(JavaDeclaration::Method(JavaMethodDeclaration {
-                name: Some(identifier("outer", 7)),
-            }));
-        file.declarations
-            .push(JavaDeclaration::Method(JavaMethodDeclaration {
-                name: Some(identifier("in", 8)),
-            }));
-
-        assert_eq!(
-            file.closest_declaration(8).map(|(id, _)| id),
-            Some(JavaDeclarationId(1))
-        );
-        assert!(file.closest_declaration(12).is_none());
     }
 
     #[test]
@@ -428,5 +732,35 @@ mod tests {
                 .iter()
                 .all(|(scope_id, scope)| std::ptr::eq(*scope, &file.lexical_scopes[scope_id.0]))
         );
+    }
+
+    #[test]
+    fn position_index_returns_tightest_first() {
+        let mut file = JavaFile::new();
+        let compilation_unit = file.compilation_unit_scope;
+        let outer = add_lexical_scope(&mut file, compilation_unit);
+        file.lexical_scopes[outer.0].span = Span { start: 5, end: 50 };
+        file.lexical_scopes[compilation_unit.0].span = Span { start: 0, end: 100 };
+        file.declarations
+            .push(JavaDeclaration::Local(JavaLocalDeclaration {
+                span: Span { start: 10, end: 15 },
+                name: Some(identifier("x", 10)),
+                ty: None,
+                declaring_scope: outer,
+            }));
+        file.position_index = JavaPositionIndex::build(&file);
+
+        let entries = file.position_index.iter_at(10);
+        assert_eq!(
+            entries[0],
+            (
+                Span { start: 10, end: 11 },
+                JavaEntityId::Declaration(JavaDeclarationId(0))
+            )
+        );
+        assert!(entries.iter().any(|(_, entity)| matches!(
+            entity,
+            JavaEntityId::Scope(scope) if *scope == outer
+        )));
     }
 }

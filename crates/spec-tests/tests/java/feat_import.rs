@@ -16,7 +16,6 @@ mod scope_of_declarations {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "p.Later")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -27,7 +26,6 @@ mod scope_of_declarations {
             .file("p/Test.java", "package p; class Test { <cur:target>X f; }")
             .analyze("p/Test.java")
             .resolves_to("target", "p.X")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -40,7 +38,6 @@ mod scope_of_declarations {
             )
             .analyze("p/Outer.java")
             .resolves_to("target", "p.Outer.Inner")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -53,7 +50,6 @@ mod scope_of_declarations {
             )
             .analyze("p/Outer.java")
             .resolves_to("target", "p.Outer.X")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -146,7 +142,6 @@ mod scope_of_declarations {
             .file("p/Test.java", "package p; class Local {} class Test { void m() { <cur:target>Local before; class Local {} } }")
             .analyze("p/Test.java")
             .resolves_to("target", "p.Local")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -156,7 +151,6 @@ mod scope_of_declarations {
             .file("p/Test.java", "package p; class Local {} class Test { void m() { { class Local {} } <cur:target>Local after; } }")
             .analyze("p/Test.java")
             .resolves_to("target", "p.Local")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -200,7 +194,6 @@ mod shadowing {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "p.Test.X")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -214,7 +207,6 @@ mod shadowing {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "p.Test.X")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -271,7 +263,6 @@ mod shadowing {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "q.X")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -286,7 +277,6 @@ mod shadowing {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "p.X")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -304,7 +294,6 @@ mod shadowing {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "p.X")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -322,7 +311,6 @@ mod shadowing {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "p.String")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -337,7 +325,6 @@ mod shadowing {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "q.X")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -355,7 +342,6 @@ mod shadowing {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "q.X")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -719,7 +705,6 @@ mod single_type_imports {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "q.X")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -733,7 +718,6 @@ mod single_type_imports {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "q.X")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -761,7 +745,6 @@ mod single_type_imports {
             )
             .analyze("p/X.java")
             .resolves_to("target", "p.X")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -824,7 +807,6 @@ mod single_type_imports {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "q.Outer.Inner")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -853,7 +835,6 @@ mod single_type_imports {
             .file("p/Test.java", "package p; import q.Host.X; import static q.Host.X; class Test { <cur:target>X f; }")
             .analyze("p/Test.java")
             .resolves_to("target", "q.Host.X")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -883,7 +864,6 @@ mod single_type_imports {
             .file("p/Test.java", "package p; import java.util.Vector; import Vector.Mosquito; class Test { <cur:target>Mosquito f; }")
             .analyze("p/Test.java")
             .resolves_to("target", "Vector.Mosquito")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -1003,7 +983,6 @@ mod type_imports_on_demand {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "p.X")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -1209,7 +1188,6 @@ mod accessibility {
             .file("p/Test.java", "package p; class Test { <cur:target>X f; }")
             .analyze("p/Test.java")
             .resolves_to("target", "p.X")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -1233,7 +1211,6 @@ mod accessibility {
             )
             .analyze("p/Outer.java")
             .resolves_to("target", "p.Outer.X")
-            .expected_failure("resolution is not implemented")
             .run();
     }
 
@@ -1388,7 +1365,6 @@ mod module_imports {
             )
             .analyze("app/p/Test.java")
             .resolves_to("target", "q.X")
-            .expected_failure("module imports and fixture module roots are not implemented")
             .run();
     }
 
@@ -1436,7 +1412,6 @@ mod module_imports {
             )
             .analyze("app/p/Test.java")
             .resolves_to("target", "p.X")
-            .expected_failure("module imports and fixture module roots are not implemented")
             .run();
     }
 
