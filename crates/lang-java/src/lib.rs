@@ -5,9 +5,7 @@ mod projection;
 mod resolution;
 
 use beans_core::analysis::FileAnalysis;
-use beans_core::language::{
-    Language, LanguageAnalysis, LanguageNavigation, LanguageProcessing, NavigationTarget,
-};
+use beans_core::language::{Language, LanguageProcessing, NavigationTarget};
 use beans_core::storage::Revision;
 use beans_core::storage::RevisionedStorage;
 use beans_platform_jvm::PlatformJvm;
@@ -61,7 +59,7 @@ impl LanguageProcessing<JvmSource, PlatformJvm> for LanguageJava {
     }
 }
 
-impl LanguageAnalysis<JvmSource, PlatformJvm> for LanguageJava {
+impl Language<JvmSource, PlatformJvm> for LanguageJava {
     fn analyze(
         &self,
         java_source: &JvmSource,
@@ -74,40 +72,28 @@ impl LanguageAnalysis<JvmSource, PlatformJvm> for LanguageJava {
             actions: vec![],
         })
     }
-}
 
-impl LanguageNavigation<JvmSource, PlatformJvm> for LanguageJava {
     fn find_declarations_for(
         &self,
         source: &JvmSource,
         offset: usize,
         revision: Revision,
         _platform_jvm: &PlatformJvm,
-    ) -> Vec<NavigationTarget<JvmSource>> {
+    ) -> Option<Vec<NavigationTarget<JvmSource>>> {
         let Some(java_model) = self.file_models.get(source, revision) else {
-            return Vec::new();
+            return Some(Vec::new());
         };
         let Some((_, declaration)) = java_model.closest_declaration(offset) else {
-            return Vec::new();
+            return Some(Vec::new());
         };
         let Some(span) = declaration.name_span() else {
-            return Vec::new();
+            return Some(Vec::new());
         };
 
-        vec![NavigationTarget {
+        Some(vec![NavigationTarget {
             source: source.clone(),
             span,
-        }]
-    }
-}
-
-impl Language<JvmSource, PlatformJvm> for LanguageJava {
-    fn analysis(&self) -> Option<&dyn LanguageAnalysis<JvmSource, PlatformJvm>> {
-        Some(self)
-    }
-
-    fn navigation(&self) -> Option<&dyn LanguageNavigation<JvmSource, PlatformJvm>> {
-        Some(self)
+        }])
     }
 }
 

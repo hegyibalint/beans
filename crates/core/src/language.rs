@@ -18,55 +18,23 @@ pub trait LanguageProcessing<Source, Platform> {
     );
 }
 
-pub trait LanguageAnalysis<Source, Platform> {
+pub trait Language<Source, Platform>: LanguageProcessing<Source, Platform> {
     fn analyze(
         &self,
-        source: &Source,
-        revision: Revision,
-        platform: &Platform,
-    ) -> Option<FileAnalysis>;
-}
+        _source: &Source,
+        _revision: Revision,
+        _platform: &Platform,
+    ) -> Option<FileAnalysis> {
+        None
+    }
 
-pub trait LanguageNavigation<Source, Platform> {
     fn find_declarations_for(
         &self,
-        source: &Source,
-        offset: usize,
-        revision: Revision,
-        platform: &Platform,
-    ) -> Vec<NavigationTarget<Source>>;
-}
-
-pub trait LanguageCompletion<Source, Platform> {}
-
-pub trait LanguageSymbols<Source, Platform> {}
-
-pub trait LanguageRefactoring<Source, Platform> {}
-
-pub trait LanguageFormatting<Source, Platform> {}
-
-pub trait Language<Source, Platform>: LanguageProcessing<Source, Platform> {
-    fn analysis(&self) -> Option<&dyn LanguageAnalysis<Source, Platform>> {
-        None
-    }
-
-    fn navigation(&self) -> Option<&dyn LanguageNavigation<Source, Platform>> {
-        None
-    }
-
-    fn completion(&self) -> Option<&dyn LanguageCompletion<Source, Platform>> {
-        None
-    }
-
-    fn symbols(&self) -> Option<&dyn LanguageSymbols<Source, Platform>> {
-        None
-    }
-
-    fn refactoring(&self) -> Option<&dyn LanguageRefactoring<Source, Platform>> {
-        None
-    }
-
-    fn formatting(&self) -> Option<&dyn LanguageFormatting<Source, Platform>> {
+        _source: &Source,
+        _offset: usize,
+        _revision: Revision,
+        _platform: &Platform,
+    ) -> Option<Vec<NavigationTarget<Source>>> {
         None
     }
 }
@@ -92,61 +60,42 @@ mod tests {
         }
     }
 
-    impl LanguageAnalysis<String, ()> for TestLanguage {
-        fn analyze(
-            &self,
-            _source: &String,
-            _revision: Revision,
-            _platform: &(),
-        ) -> Option<FileAnalysis> {
-            None
-        }
-    }
-
-    impl LanguageNavigation<String, ()> for TestLanguage {
+    impl Language<String, ()> for TestLanguage {
         fn find_declarations_for(
             &self,
             source: &String,
             offset: usize,
             _revision: Revision,
             _platform: &(),
-        ) -> Vec<NavigationTarget<String>> {
-            vec![NavigationTarget {
+        ) -> Option<Vec<NavigationTarget<String>>> {
+            Some(vec![NavigationTarget {
                 source: source.clone(),
                 span: Span {
                     start: offset,
                     end: offset,
                 },
-            }]
-        }
-    }
-
-    impl Language<String, ()> for TestLanguage {
-        fn analysis(&self) -> Option<&dyn LanguageAnalysis<String, ()>> {
-            Some(self)
-        }
-
-        fn navigation(&self) -> Option<&dyn LanguageNavigation<String, ()>> {
-            Some(self)
+            }])
         }
     }
 
     #[test]
-    fn languages_expose_supported_capabilities() {
+    fn languages_override_optional_operations() {
         let languages: Vec<Box<dyn Language<String, ()>>> = vec![Box::new(TestLanguage)];
         let language = &languages[0];
 
         let source = "example.test".to_string();
         assert!(language.accepts(&source));
-        assert!(language.analysis().is_some());
+        assert!(
+            language
+                .analyze(&source, Revision::default(), &())
+                .is_none()
+        );
         assert_eq!(
             language
-                .navigation()
-                .unwrap()
                 .find_declarations_for(&source, 4, Revision::default(), &())
+                .unwrap()
                 .len(),
             1
         );
-        assert!(language.completion().is_none());
     }
 }
