@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use beans_core::analysis::diagnostic::{DiagnosticSeverity, Diagnostics};
 
-use crate::model::{JavaDeclaration, JavaExpression, JavaFile, JavaImportKind};
+use crate::model::{JavaBodyNodeKind, JavaDeclaration, JavaExpression, JavaFile, JavaImportKind};
 use crate::resolution::resolve_variable_name;
 
 /// Flags bare name references that resolve to nothing. Deliberately shallow:
@@ -39,7 +39,10 @@ pub fn unresolved_name_diagnostics(model: &JavaFile) -> Vec<Diagnostics> {
         // Receivers of field accesses and calls may be type names
         // (`Bar.asd`); `java.lang` is not modeled, so never flag them.
         let mut receivers = HashSet::new();
-        for expression in &body.expressions {
+        for node in &body.nodes {
+            let JavaBodyNodeKind::Expression(expression) = &node.kind else {
+                continue;
+            };
             match expression {
                 JavaExpression::FieldAccess { receiver, .. } => {
                     receivers.insert(receiver.0);
@@ -54,16 +57,17 @@ pub fn unresolved_name_diagnostics(model: &JavaFile) -> Vec<Diagnostics> {
             }
         }
 
-        for (index, expression) in body.expressions.iter().enumerate() {
-            let JavaExpression::NameRef { name } = expression else {
+        for (index, node) in body.nodes.iter().enumerate() {
+            let JavaBodyNodeKind::Expression(JavaExpression::NameRef { name }) = &node.kind
+            else {
                 continue;
             };
             if receivers.contains(&index) {
                 continue;
             }
-            if resolve_variable_name(model, name).is_empty() {
+            if resolve_variable_name(model, name, node.scope).is_empty() {
                 diagnostics.push(Diagnostics {
-                    span: body.expression_spans[index],
+                    span: node.span,
                     severity: DiagnosticSeverity::Error,
                     code: "cannot-find-symbol",
                     message: format!("cannot find symbol: {}", name.text),

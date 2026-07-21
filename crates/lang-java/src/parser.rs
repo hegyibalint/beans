@@ -2,11 +2,12 @@ use beans_core::model::Span;
 use tree_sitter::{Node, Parser};
 
 use crate::model::{
-    JavaBody, JavaConstructorDeclaration, JavaDeclaration, JavaDeclarationId, JavaExpression,
-    JavaExpressionId, JavaFieldDeclaration, JavaFile, JavaIdentifier, JavaImport, JavaImportKind,
-    JavaLexicalScope, JavaLexicalScopeId, JavaLocalDeclaration, JavaMethodDeclaration, JavaName,
-    JavaParameterDeclaration, JavaPositionIndex, JavaQualifiedName, JavaStatement, JavaStatementId,
-    JavaTypeDeclaration, JavaTypeKind, JavaTypeRef,
+    JavaBody, JavaBodyNode, JavaBodyNodeId, JavaBodyNodeKind, JavaConstructorDeclaration,
+    JavaDeclaration, JavaDeclarationId, JavaExpression, JavaFieldDeclaration, JavaFile,
+    JavaIdentifier, JavaImport, JavaImportKind, JavaLexicalScope, JavaLexicalScopeId,
+    JavaLocalDeclaration, JavaMethodDeclaration, JavaName, JavaParameterDeclaration,
+    JavaPositionIndex, JavaQualifiedName, JavaStatement, JavaTypeDeclaration, JavaTypeKind,
+    JavaTypeRef,
 };
 
 pub struct JavaParser {
@@ -421,34 +422,43 @@ fn parse_body(
     file.bodies.push(JavaBody {
         scope: block_scope,
         root,
-        statements: builder.statements,
-        statement_spans: builder.statement_spans,
-        expressions: builder.expressions,
-        expression_spans: builder.expression_spans,
+        nodes: builder.nodes,
     });
     Some(body_id)
 }
 
 #[derive(Default)]
 struct BodyBuilder {
-    statements: Vec<JavaStatement>,
-    statement_spans: Vec<Span>,
-    expressions: Vec<JavaExpression>,
-    expression_spans: Vec<Span>,
+    nodes: Vec<JavaBodyNode>,
 }
 
 impl BodyBuilder {
-    fn add_statement(&mut self, statement: JavaStatement, span: Span) -> JavaStatementId {
-        let id = JavaStatementId(self.statements.len());
-        self.statements.push(statement);
-        self.statement_spans.push(span);
-        id
+    fn add_statement(
+        &mut self,
+        statement: JavaStatement,
+        span: Span,
+        scope: JavaLexicalScopeId,
+    ) -> JavaBodyNodeId {
+        self.add(JavaBodyNodeKind::Statement(statement), span, scope)
     }
 
-    fn add_expression(&mut self, expression: JavaExpression, span: Span) -> JavaExpressionId {
-        let id = JavaExpressionId(self.expressions.len());
-        self.expressions.push(expression);
-        self.expression_spans.push(span);
+    fn add_expression(
+        &mut self,
+        expression: JavaExpression,
+        span: Span,
+        scope: JavaLexicalScopeId,
+    ) -> JavaBodyNodeId {
+        self.add(JavaBodyNodeKind::Expression(expression), span, scope)
+    }
+
+    fn add(
+        &mut self,
+        kind: JavaBodyNodeKind,
+        span: Span,
+        scope: JavaLexicalScopeId,
+    ) -> JavaBodyNodeId {
+        let id = JavaBodyNodeId(self.nodes.len());
+        self.nodes.push(JavaBodyNode { span, scope, kind });
         id
     }
 }
@@ -459,7 +469,7 @@ fn parse_block(
     src: &str,
     file: &mut JavaFile,
     builder: &mut BodyBuilder,
-) -> (JavaStatementId, JavaLexicalScopeId) {
+) -> (JavaBodyNodeId, JavaLexicalScopeId) {
     debug_assert_eq!(node.kind(), "block");
 
     let block_scope = new_scope(file, parent_scope, None, node.byte_range().into());
@@ -468,6 +478,18 @@ fn parse_block(
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         match child.kind() {
+            "class_declaration" | "interface_declaration" | "enum_declaration"
+            | "record_declaration" | "annotation_type_declaration" => {
+                if let Some(declaration) =
+                    parse_local_type_declaration(child, block_scope, src, file)
+                {
+                    statements.push(builder.add_statement(
+                        JavaStatement::TypeDeclaration(declaration),
+                        child.byte_range().into(),
+                        block_scope,
+                    ));
+                }
+            }
             "local_variable_declaration" => {
                 parse_local_variable_declaration(
                     child,
@@ -481,11 +503,12 @@ fn parse_block(
             "expression_statement" => {
                 if let Some(expression) = child
                     .named_child(0)
-                    .and_then(|expression| parse_expression(expression, src, file, builder))
+                    .and_then(|expression| parse_expression(expression, block_scope, src, file, builder))
                 {
                     statements.push(builder.add_statement(
                         JavaStatement::Expression(expression),
                         child.byte_range().into(),
+                        block_scope,
                     ));
                 }
             }
@@ -496,10 +519,12 @@ fn parse_block(
             "return_statement" => {
                 let value = child
                     .named_child(0)
-                    .and_then(|expression| parse_expression(expression, src, file, builder));
-                statements.push(
-                    builder.add_statement(JavaStatement::Return(value), child.byte_range().into()),
-                );
+                    .and_then(|expression| parse_expression(expression, block_scope, src, file, builder));
+                statements.push(builder.add_statement(
+                    JavaStatement::Return(value),
+                    child.byte_range().into(),
+                    block_scope,
+                ));
             }
             _ => {}
         }
@@ -511,8 +536,27 @@ fn parse_block(
             statements,
         },
         node.byte_range().into(),
+        parent_scope,
     );
     (block, block_scope)
+}
+
+fn parse_local_type_declaration(
+    node: Node,
+    scope: JavaLexicalScopeId,
+    src: &str,
+    file: &mut JavaFile,
+) -> Option<JavaDeclarationId> {
+    match node.kind() {
+        "class_declaration" => parse_class_declaration(node, scope, src, file),
+        "interface_declaration" => parse_interface_declaration(node, scope, src, file),
+        "enum_declaration" => parse_enum_declaration(node, scope, src, file),
+        "record_declaration" => parse_record_declaration(node, scope, src, file),
+        "annotation_type_declaration" => {
+            parse_annotation_type_declaration(node, scope, src, file)
+        }
+        _ => None,
+    }
 }
 
 fn parse_local_variable_declaration(
@@ -521,7 +565,7 @@ fn parse_local_variable_declaration(
     src: &str,
     file: &mut JavaFile,
     builder: &mut BodyBuilder,
-    statements: &mut Vec<JavaStatementId>,
+    statements: &mut Vec<JavaBodyNodeId>,
 ) {
     let ty = node
         .child_by_field_name("type")
@@ -544,23 +588,25 @@ fn parse_local_variable_declaration(
         );
         let initializer = declarator
             .child_by_field_name("value")
-            .and_then(|value| parse_expression(value, src, file, builder));
+            .and_then(|value| parse_expression(value, scope, src, file, builder));
         statements.push(builder.add_statement(
             JavaStatement::LocalDeclaration {
                 declaration,
                 initializer,
             },
             declarator.byte_range().into(),
+            scope,
         ));
     }
 }
 
 fn parse_expression(
     node: Node,
+    scope: JavaLexicalScopeId,
     src: &str,
     file: &mut JavaFile,
     builder: &mut BodyBuilder,
-) -> Option<JavaExpressionId> {
+) -> Option<JavaBodyNodeId> {
     let span = node.byte_range().into();
     let expression = match node.kind() {
         "identifier" => JavaExpression::NameRef {
@@ -569,18 +615,18 @@ fn parse_expression(
         "this" => JavaExpression::This,
         "field_access" => {
             let receiver =
-                parse_expression(node.child_by_field_name("object")?, src, file, builder)?;
+                parse_expression(node.child_by_field_name("object")?, scope, src, file, builder)?;
             let name = parse_identifier(node.child_by_field_name("field")?, src)?;
             JavaExpression::FieldAccess { receiver, name }
         }
         "method_invocation" => {
             let receiver = node
                 .child_by_field_name("object")
-                .and_then(|object| parse_expression(object, src, file, builder));
+                .and_then(|object| parse_expression(object, scope, src, file, builder));
             let name = parse_identifier(node.child_by_field_name("name")?, src)?;
             let arguments = node
                 .child_by_field_name("arguments")
-                .map(|arguments| parse_argument_list(arguments, src, file, builder))
+                .map(|arguments| parse_argument_list(arguments, scope, src, file, builder))
                 .unwrap_or_default();
             JavaExpression::MethodCall {
                 receiver,
@@ -592,17 +638,19 @@ fn parse_expression(
             let ty = parse_type_ref(node.child_by_field_name("type")?, src)?;
             let arguments = node
                 .child_by_field_name("arguments")
-                .map(|arguments| parse_argument_list(arguments, src, file, builder))
+                .map(|arguments| parse_argument_list(arguments, scope, src, file, builder))
                 .unwrap_or_default();
             JavaExpression::ObjectCreation { ty, arguments }
         }
         "assignment_expression" => {
-            let target = parse_expression(node.child_by_field_name("left")?, src, file, builder)?;
-            let value = parse_expression(node.child_by_field_name("right")?, src, file, builder)?;
+            let target =
+                parse_expression(node.child_by_field_name("left")?, scope, src, file, builder)?;
+            let value =
+                parse_expression(node.child_by_field_name("right")?, scope, src, file, builder)?;
             JavaExpression::Assign { target, value }
         }
         "parenthesized_expression" => {
-            return parse_expression(node.named_child(0)?, src, file, builder);
+            return parse_expression(node.named_child(0)?, scope, src, file, builder);
         }
         "decimal_integer_literal"
         | "hex_integer_literal"
@@ -617,18 +665,19 @@ fn parse_expression(
         | "null_literal" => JavaExpression::Literal,
         _ => return None,
     };
-    Some(builder.add_expression(expression, span))
+    Some(builder.add_expression(expression, span, scope))
 }
 
 fn parse_argument_list(
     node: Node,
+    scope: JavaLexicalScopeId,
     src: &str,
     file: &mut JavaFile,
     builder: &mut BodyBuilder,
-) -> Vec<JavaExpressionId> {
+) -> Vec<JavaBodyNodeId> {
     let mut cursor = node.walk();
     node.named_children(&mut cursor)
-        .filter_map(|argument| parse_expression(argument, src, file, builder))
+        .filter_map(|argument| parse_expression(argument, scope, src, file, builder))
         .collect()
 }
 
@@ -911,63 +960,76 @@ mod tests {
         );
         assert_eq!(file.lexical_scopes[3].parent, Some(JavaLexicalScopeId(2)));
 
-        // Body: 8 expressions, 4 statements (3 + root block).
+        // Body: 12 nodes — expressions and statements share one arena.
         let body = &file.bodies[0];
-        assert_eq!(body.expressions.len(), 8);
-        assert_eq!(body.statements.len(), 4);
+        assert_eq!(body.nodes.len(), 12);
 
-        let JavaStatement::Block { statements, scope } = &body.statements[body.root.0] else {
+        let JavaBodyNodeKind::Statement(JavaStatement::Block { statements, scope }) =
+            &body.node(body.root).kind
+        else {
             panic!("root is a block");
         };
         assert_eq!(*scope, JavaLexicalScopeId(3));
         assert_eq!(statements.len(), 3);
 
-        // T0: int d = c.a;
-        let JavaStatement::LocalDeclaration {
+        // Every node is stamped with the scope it lives in.
+        assert!(body.nodes.iter().all(|node| node.scope == JavaLexicalScopeId(3)
+            || node.scope == JavaLexicalScopeId(2)));
+
+        // N2: int d = c.a;
+        let JavaBodyNodeKind::Statement(JavaStatement::LocalDeclaration {
             declaration,
             initializer: Some(initializer),
-        } = &body.statements[0]
+        }) = &body.nodes[2].kind
         else {
-            panic!("T0 declares d with an initializer");
+            panic!("N2 declares d with an initializer");
         };
         assert_eq!(*declaration, JavaDeclarationId(4));
-        let JavaExpression::FieldAccess { receiver, name } = body.expression(*initializer) else {
+        let JavaExpression::FieldAccess { receiver, name } =
+            body.expression(*initializer).unwrap()
+        else {
             panic!("initializer is c.a");
         };
         assert_eq!(name.span, Span { start: 58, end: 59 });
-        let JavaExpression::NameRef { name } = body.expression(*receiver) else {
+        let JavaExpression::NameRef { name } = body.expression(*receiver).unwrap() else {
             panic!("receiver is c");
         };
         assert_eq!(name.span, Span { start: 56, end: 57 });
 
-        // T1: this.a = d;
-        let JavaStatement::Expression(assign) = &body.statements[1] else {
-            panic!("T1 is an expression statement");
+        // N7: this.a = d;
+        let JavaBodyNodeKind::Statement(JavaStatement::Expression(assign)) = &body.nodes[7].kind
+        else {
+            panic!("N7 is an expression statement");
         };
-        let JavaExpression::Assign { target, value } = body.expression(*assign) else {
-            panic!("T1 is an assignment");
+        let JavaExpression::Assign { target, value } = body.expression(*assign).unwrap() else {
+            panic!("N7 is an assignment");
         };
-        let JavaExpression::FieldAccess { receiver, name } = body.expression(*target) else {
+        let JavaExpression::FieldAccess { receiver, name } = body.expression(*target).unwrap()
+        else {
             panic!("target is this.a");
         };
-        assert!(matches!(body.expression(*receiver), JavaExpression::This));
+        assert!(matches!(
+            body.expression(*receiver),
+            Some(JavaExpression::This)
+        ));
         assert_eq!(name.span, Span { start: 74, end: 75 });
-        let JavaExpression::NameRef { name } = body.expression(*value) else {
+        let JavaExpression::NameRef { name } = body.expression(*value).unwrap() else {
             panic!("value is d");
         };
         assert_eq!(name.span, Span { start: 78, end: 79 });
 
-        // T2: b(c);
-        let JavaStatement::Expression(call) = &body.statements[2] else {
-            panic!("T2 is an expression statement");
+        // N10: b(c);
+        let JavaBodyNodeKind::Statement(JavaStatement::Expression(call)) = &body.nodes[10].kind
+        else {
+            panic!("N10 is an expression statement");
         };
         let JavaExpression::MethodCall {
             receiver,
             name,
             arguments,
-        } = body.expression(*call)
+        } = body.expression(*call).unwrap()
         else {
-            panic!("T2 is a method call");
+            panic!("N10 is a method call");
         };
         assert!(receiver.is_none());
         assert_eq!(name.span, Span { start: 89, end: 90 });
@@ -984,19 +1046,19 @@ mod tests {
 
         // (6) the `c` in `c.a`
         let (_, entity) = index.tightest_containing(56).unwrap();
-        assert!(matches!(entity, JavaEntityId::Expression(_, id) if id == JavaExpressionId(0)));
+        assert!(matches!(entity, JavaEntityId::BodyNode(_, id) if id == JavaBodyNodeId(0)));
         // (7) the `a` in `c.a`
         let (_, entity) = index.tightest_containing(58).unwrap();
-        assert!(matches!(entity, JavaEntityId::Expression(_, id) if id == JavaExpressionId(1)));
+        assert!(matches!(entity, JavaEntityId::BodyNode(_, id) if id == JavaBodyNodeId(1)));
         // (8) this
         let (_, entity) = index.tightest_containing(70).unwrap();
-        assert!(matches!(entity, JavaEntityId::Expression(_, id) if id == JavaExpressionId(2)));
+        assert!(matches!(entity, JavaEntityId::BodyNode(_, id) if id == JavaBodyNodeId(3)));
         // (10) the `d` value
         let (_, entity) = index.tightest_containing(78).unwrap();
-        assert!(matches!(entity, JavaEntityId::Expression(_, id) if id == JavaExpressionId(4)));
+        assert!(matches!(entity, JavaEntityId::BodyNode(_, id) if id == JavaBodyNodeId(5)));
         // (11) the `b` call name
         let (_, entity) = index.tightest_containing(89).unwrap();
-        assert!(matches!(entity, JavaEntityId::Expression(_, id) if id == JavaExpressionId(7)));
+        assert!(matches!(entity, JavaEntityId::BodyNode(_, id) if id == JavaBodyNodeId(9)));
         // (3) the parameter type `B`
         let (_, entity) = index.tightest_containing(33).unwrap();
         assert_eq!(entity, JavaEntityId::TypeRef(JavaDeclarationId(3)));

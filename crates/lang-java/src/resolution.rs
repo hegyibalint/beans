@@ -8,9 +8,9 @@ use beans_platform_jvm::{
 use crate::{
     LanguageJava,
     model::{
-        JavaBodyId, JavaDeclaration, JavaDeclarationId, JavaEntityId, JavaExpression,
-        JavaExpressionId, JavaFile, JavaIdentifier, JavaImport, JavaImportKind, JavaLexicalScopeId,
-        JavaName, JavaNamespace, JavaTypeRef,
+        JavaBodyId, JavaBodyNodeId, JavaBodyNodeKind, JavaDeclaration, JavaDeclarationId,
+        JavaEntityId, JavaExpression, JavaFile, JavaIdentifier, JavaImport, JavaImportKind,
+        JavaLexicalScopeId, JavaName, JavaNamespace, JavaTypeRef,
     },
 };
 
@@ -270,7 +270,7 @@ pub fn resolve_occurrence_at(
     jvm: &PlatformJvm,
     java: &LanguageJava,
 ) -> Vec<NavigationTarget<JvmSource>> {
-    let Some((_, entity)) = file.position_index.tightest_at(offset) else {
+    let Some((_, entity)) = file.position_index.tightest_containing(offset) else {
         return Vec::new();
     };
 
@@ -291,12 +291,13 @@ pub fn resolve_occurrence_at(
                 java,
             )
         }
-        JavaEntityId::Expression(body, expression) => {
-            resolve_expression(source, file, body, expression, revision, jvm, java)
+        JavaEntityId::BodyNode(body, node) => {
+            let JavaBodyNodeKind::Expression(_) = &file.bodies[body.0].node(node).kind else {
+                return Vec::new();
+            };
+            resolve_expression(source, file, body, node, revision, jvm, java)
         }
-        JavaEntityId::Statement(..) | JavaEntityId::Scope(..) | JavaEntityId::Import(..) => {
-            Vec::new()
-        }
+        JavaEntityId::Scope(..) | JavaEntityId::Import(..) => Vec::new(),
     };
 
     targets
@@ -316,24 +317,25 @@ fn resolve_expression(
     source: &JvmSource,
     file: &JavaFile,
     body_id: JavaBodyId,
-    expression_id: JavaExpressionId,
+    expression_id: JavaBodyNodeId,
     revision: Revision,
     jvm: &PlatformJvm,
     java: &LanguageJava,
 ) -> Vec<(JvmSource, JavaDeclarationId)> {
     let body = &file.bodies[body_id.0];
-    match body.expression(expression_id) {
-        JavaExpression::NameRef { name } => resolve_variable_name(file, name)
+    let scope = body.node(expression_id).scope;
+    let Some(expression) = body.expression(expression_id) else {
+        return Vec::new();
+    };
+    match expression {
+        JavaExpression::NameRef { name } => resolve_variable_name(file, name, scope)
             .into_iter()
             .map(|declaration| (source.clone(), declaration))
             .collect(),
-        JavaExpression::This => {
-            let span = body.expression_span(expression_id);
-            file.scope_containing(span.start)
-                .and_then(|scope| file.enclosing_type_declaration(scope))
-                .map(|declaration| vec![(source.clone(), declaration)])
-                .unwrap_or_default()
-        }
+        JavaExpression::This => file
+            .enclosing_type_declaration(scope)
+            .map(|declaration| vec![(source.clone(), declaration)])
+            .unwrap_or_default(),
         JavaExpression::FieldAccess { receiver, name } => {
             let Some((class_source, class)) =
                 resolve_receiver_class(source, file, body_id, *receiver, revision, jvm, java)
@@ -354,8 +356,7 @@ fn resolve_expression(
                     resolve_receiver_class(source, file, body_id, *receiver, revision, jvm, java)
                 }
                 None => file
-                    .scope_containing(name.span.start)
-                    .and_then(|scope| file.enclosing_type_declaration(scope))
+                    .enclosing_type_declaration(scope)
                     .map(|declaration| (source.clone(), declaration)),
             };
             let Some((class_source, class)) = receiver_class else {
@@ -370,9 +371,6 @@ fn resolve_expression(
                 .collect()
         }
         JavaExpression::ObjectCreation { ty, .. } => {
-            let Some(scope) = file.scope_containing(ty.span.start) else {
-                return Vec::new();
-            };
             resolve_type_reference(source, file, ty, scope, revision, jvm, java)
         }
         JavaExpression::Assign { .. } | JavaExpression::Literal => Vec::new(),
@@ -385,22 +383,23 @@ fn resolve_receiver_class(
     source: &JvmSource,
     file: &JavaFile,
     body_id: JavaBodyId,
-    expression_id: JavaExpressionId,
+    expression_id: JavaBodyNodeId,
     revision: Revision,
     jvm: &PlatformJvm,
     java: &LanguageJava,
 ) -> Option<(JvmSource, JavaDeclarationId)> {
     let body = &file.bodies[body_id.0];
-    match body.expression(expression_id) {
+    let scope = body.node(expression_id).scope;
+    let Some(expression) = body.expression(expression_id) else {
+        return None;
+    };
+    match expression {
         JavaExpression::This => {
-            let span = body.expression_span(expression_id);
-            let declaration = file
-                .scope_containing(span.start)
-                .and_then(|scope| file.enclosing_type_declaration(scope))?;
+            let declaration = file.enclosing_type_declaration(scope)?;
             Some((source.clone(), declaration))
         }
         JavaExpression::NameRef { name } => {
-            if let Some(variable) = resolve_variable_name(file, name).into_iter().next() {
+            if let Some(variable) = resolve_variable_name(file, name, scope).into_iter().next() {
                 let declaration = &file.declarations[variable.0];
                 let type_ref = declaration.type_ref()?;
                 return resolve_type_reference(
@@ -417,7 +416,6 @@ fn resolve_receiver_class(
             }
 
             // Not a variable: try a type name for static access (`Bar.asd`).
-            let scope = file.scope_containing(name.span.start)?;
             match resolve_type_name(
                 &JavaName::Simple(name.clone()),
                 source,
@@ -460,8 +458,7 @@ fn resolve_receiver_class(
                     resolve_receiver_class(source, file, body_id, *receiver, revision, jvm, java)
                 }
                 None => file
-                    .scope_containing(name.span.start)
-                    .and_then(|scope| file.enclosing_type_declaration(scope))
+                    .enclosing_type_declaration(scope)
                     .map(|declaration| (source.clone(), declaration)),
             }?;
             let (class_source, class) = receiver_class;
@@ -483,7 +480,6 @@ fn resolve_receiver_class(
             .next()
         }
         JavaExpression::ObjectCreation { ty, .. } => {
-            let scope = file.scope_containing(ty.span.start)?;
             resolve_type_reference(source, file, ty, scope, revision, jvm, java)
                 .into_iter()
                 .next()
@@ -530,11 +526,8 @@ fn resolve_type_reference(
 pub(crate) fn resolve_variable_name(
     file: &JavaFile,
     name: &JavaIdentifier,
+    scope: JavaLexicalScopeId,
 ) -> Vec<JavaDeclarationId> {
-    let Some(scope) = file.scope_containing(name.span.start) else {
-        return Vec::new();
-    };
-
     for (_, scope) in file.iter_scope_chain(scope) {
         let hits: Vec<JavaDeclarationId> = scope
             .declarations
@@ -1148,6 +1141,30 @@ mod tests {
         // `x` at offset 33, used before the declarator at 52
         let targets = resolve_at(&java, &jvm, revision, &a, 33);
         assert!(targets.is_empty());
+    }
+
+    #[test]
+    fn a_local_class_captures_and_resolves() {
+        let revision = Revision::default();
+        let mut java = LanguageJava::new();
+        let mut jvm = PlatformJvm::new();
+        let contents = "class A {\n    int g(int h) {\n        class Local {\n            int get() {\n                return h;\n            }\n        }\n        return new Local().get();\n    }\n}\n";
+        let a = process(&mut java, &mut jvm, revision, "A.java", contents);
+
+        // The captured `h` in `return h;` → the parameter of the outer method
+        let targets = resolve_at(&java, &jvm, revision, &a, 98);
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].span, Span { start: 24, end: 25 });
+
+        // `get` in `new Local().get()` → the local class's method
+        let targets = resolve_at(&java, &jvm, revision, &a, 152);
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].span, Span { start: 67, end: 70 });
+
+        // `Local` in `new Local()` → the local class declaration
+        let targets = resolve_at(&java, &jvm, revision, &a, 144);
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].span, Span { start: 43, end: 48 });
     }
 
     #[test]
