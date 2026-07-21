@@ -77,7 +77,7 @@ fn resolve_lexical_type_name(
     file: &JavaFile,
     current_lexical_scope_id: JavaLexicalScopeId,
 ) -> JavaTypeResolution {
-    for (_, scope) in file.lexical_scope_chain(current_lexical_scope_id) {
+    for (_, scope) in file.iter_scope_chain(current_lexical_scope_id) {
         let candidates = scope
             .declarations
             .iter()
@@ -86,7 +86,7 @@ fn resolve_lexical_type_name(
                 let declaration = file.declarations.get(declaration_id.0)?;
                 let declaration_name = match declaration {
                     JavaDeclaration::Type(declaration) => declaration.name.as_ref(),
-                    JavaDeclaration::TypeParameter(declaration) => declaration.name.as_ref(),
+                    JavaDeclaration::TypeParameter(declaration) => Some(&declaration.name),
                     _ => None,
                 }?;
 
@@ -117,7 +117,7 @@ fn resolve_exact_imports(
         .filter(|import| exact_import_introduces_name(import, name));
 
     let imported_java_files = matching_imports.flat_map(|import| {
-        java.file_models_at(revision)
+        java.iter_file_models_at(revision)
             .filter(move |(_, imported_file)| {
                 let Some(type_segments) = imported_file.strip_package(&import.name) else {
                     return false;
@@ -131,21 +131,22 @@ fn resolve_exact_imports(
         let type_segments = imported_file.strip_package(&import.name)?;
         let (first, member_path) = type_segments.split_first()?;
 
-        let mut current = imported_file
-            .top_level_declarations
-            .iter()
-            .copied()
-            .find(|declaration_id| {
-                let JavaDeclaration::Type(declaration) =
-                    &imported_file.declarations[declaration_id.0]
-                else {
-                    return false;
-                };
-                declaration
-                    .name
-                    .as_ref()
-                    .is_some_and(|name| name.text == first.text)
-            })?;
+        let mut current =
+            imported_file
+                .top_level_declarations
+                .iter()
+                .copied()
+                .find(|declaration_id| {
+                    let JavaDeclaration::Type(declaration) =
+                        &imported_file.declarations[declaration_id.0]
+                    else {
+                        return false;
+                    };
+                    declaration
+                        .name
+                        .as_ref()
+                        .is_some_and(|name| name.text == first.text)
+                })?;
         for segment in member_path {
             current = find_member(imported_file, current, segment, JavaNamespace::Type)
                 .into_iter()
@@ -176,7 +177,7 @@ fn resolve_from_same_package(
     java: &LanguageJava,
 ) -> JavaTypeResolution {
     let candidates = java
-        .file_models_at(revision)
+        .iter_file_models_at(revision)
         // Keep files in the same package
         .filter(|(_, model)| package_names_match(model.package.as_ref(), file.package.as_ref()))
         // Find top level declarations that match
@@ -254,8 +255,7 @@ fn find_member(
         .copied()
         .filter(|member_id| {
             let member = &file.declarations[member_id.0];
-            member.namespace() == namespace
-                && member.name().is_some_and(|n| n.text == name.text)
+            member.namespace() == namespace && member.name().is_some_and(|n| n.text == name.text)
         })
         .collect()
 }
@@ -329,7 +329,7 @@ fn resolve_expression(
             .collect(),
         JavaExpression::This => {
             let span = body.expression_span(expression_id);
-            file.scope_at(span.start)
+            file.scope_containing(span.start)
                 .and_then(|scope| file.enclosing_type_declaration(scope))
                 .map(|declaration| vec![(source.clone(), declaration)])
                 .unwrap_or_default()
@@ -348,15 +348,13 @@ fn resolve_expression(
                 .map(|member| (class_source.clone(), member))
                 .collect()
         }
-        JavaExpression::MethodCall {
-            receiver, name, ..
-        } => {
+        JavaExpression::MethodCall { receiver, name, .. } => {
             let receiver_class = match receiver {
                 Some(receiver) => {
                     resolve_receiver_class(source, file, body_id, *receiver, revision, jvm, java)
                 }
                 None => file
-                    .scope_at(name.span.start)
+                    .scope_containing(name.span.start)
                     .and_then(|scope| file.enclosing_type_declaration(scope))
                     .map(|declaration| (source.clone(), declaration)),
             };
@@ -372,7 +370,7 @@ fn resolve_expression(
                 .collect()
         }
         JavaExpression::ObjectCreation { ty, .. } => {
-            let Some(scope) = file.scope_at(ty.span.start) else {
+            let Some(scope) = file.scope_containing(ty.span.start) else {
                 return Vec::new();
             };
             resolve_type_reference(source, file, ty, scope, revision, jvm, java)
@@ -397,7 +395,7 @@ fn resolve_receiver_class(
         JavaExpression::This => {
             let span = body.expression_span(expression_id);
             let declaration = file
-                .scope_at(span.start)
+                .scope_containing(span.start)
                 .and_then(|scope| file.enclosing_type_declaration(scope))?;
             Some((source.clone(), declaration))
         }
@@ -419,7 +417,7 @@ fn resolve_receiver_class(
             }
 
             // Not a variable: try a type name for static access (`Bar.asd`).
-            let scope = file.scope_at(name.span.start)?;
+            let scope = file.scope_containing(name.span.start)?;
             match resolve_type_name(
                 &JavaName::Simple(name.clone()),
                 source,
@@ -456,15 +454,13 @@ fn resolve_receiver_class(
             .into_iter()
             .next()
         }
-        JavaExpression::MethodCall {
-            receiver, name, ..
-        } => {
+        JavaExpression::MethodCall { receiver, name, .. } => {
             let receiver_class = match receiver {
                 Some(receiver) => {
                     resolve_receiver_class(source, file, body_id, *receiver, revision, jvm, java)
                 }
                 None => file
-                    .scope_at(name.span.start)
+                    .scope_containing(name.span.start)
                     .and_then(|scope| file.enclosing_type_declaration(scope))
                     .map(|declaration| (source.clone(), declaration)),
             }?;
@@ -487,7 +483,7 @@ fn resolve_receiver_class(
             .next()
         }
         JavaExpression::ObjectCreation { ty, .. } => {
-            let scope = file.scope_at(ty.span.start)?;
+            let scope = file.scope_containing(ty.span.start)?;
             resolve_type_reference(source, file, ty, scope, revision, jvm, java)
                 .into_iter()
                 .next()
@@ -535,11 +531,11 @@ pub(crate) fn resolve_variable_name(
     file: &JavaFile,
     name: &JavaIdentifier,
 ) -> Vec<JavaDeclarationId> {
-    let Some(scope) = file.scope_at(name.span.start) else {
+    let Some(scope) = file.scope_containing(name.span.start) else {
         return Vec::new();
     };
 
-    for (_, scope) in file.lexical_scope_chain(scope) {
+    for (_, scope) in file.iter_scope_chain(scope) {
         let hits: Vec<JavaDeclarationId> = scope
             .declarations
             .iter()
@@ -552,8 +548,8 @@ pub(crate) fn resolve_variable_name(
                             local.text == name.text && local.span.start <= name.span.start
                         })
                     }
-                    JavaDeclaration::Parameter(_) | JavaDeclaration::Field(_) => file
-                        .declarations[declaration_id.0]
+                    JavaDeclaration::Parameter(_) | JavaDeclaration::Field(_) => file.declarations
+                        [declaration_id.0]
                         .name()
                         .is_some_and(|candidate| candidate.text == name.text),
                     _ => false,
@@ -573,7 +569,7 @@ pub(crate) fn model_of<'java>(
     revision: Revision,
     source: &JvmSource,
 ) -> Option<&'java JavaFile> {
-    java.file_models_at(revision)
+    java.iter_file_models_at(revision)
         .find_map(|(candidate, file)| (candidate == source).then_some(file))
 }
 
@@ -858,8 +854,8 @@ mod tests {
             "package q; import p.Outer.Inner; class Test {}",
         );
         let outer_file = file_model(&java, revision, &outer_source);
-        let outer_scope = type_declaration(outer_file, outer_file.top_level_declarations[0])
-            .body_scope;
+        let outer_scope =
+            type_declaration(outer_file, outer_file.top_level_declarations[0]).body_scope;
         let inner = type_in_scope(outer_file, outer_scope, "Inner");
         let importing_file = file_model(&java, revision, &importing_source);
 
@@ -1073,7 +1069,13 @@ mod tests {
         let mut java = LanguageJava::new();
         let mut jvm = PlatformJvm::new();
         let a = process(&mut java, &mut jvm, revision, "A.java", WORKED);
-        let b = process(&mut java, &mut jvm, revision, "B.java", "class B {\n    int a;\n}\n");
+        let b = process(
+            &mut java,
+            &mut jvm,
+            revision,
+            "B.java",
+            "class B {\n    int a;\n}\n",
+        );
         (java, jvm, revision, a, b)
     }
 

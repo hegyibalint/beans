@@ -229,7 +229,7 @@ fn resolution_labels(beans: &Beans, file: &Path, offset: usize) -> Vec<String> {
         .find_declarations_for(&jvm_source(file), offset)
         .unwrap_or_default()
         .iter()
-        .filter_map(|target| beans.describe_declaration(&target.source, target.span))
+        .filter_map(|target| beans.declaration_label(&target.source, target.span))
         .collect()
 }
 

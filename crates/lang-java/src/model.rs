@@ -62,7 +62,7 @@ impl JavaFile {
         Some(&name_segments[package_segments.len()..])
     }
 
-    pub fn lexical_scope_chain<'file>(
+    pub fn iter_scope_chain<'file>(
         &'file self,
         start: JavaLexicalScopeId,
     ) -> impl Iterator<Item = (JavaLexicalScopeId, &'file JavaLexicalScope)> + 'file {
@@ -82,7 +82,7 @@ impl JavaFile {
             &'file JavaDeclaration,
         ),
     > + 'file {
-        self.lexical_scope_chain(start)
+        self.iter_scope_chain(start)
             .flat_map(move |(scope_id, scope)| {
                 scope.declarations.iter().copied().map(move |decl_id| {
                     (scope_id, decl_id, self.declarations.get(decl_id.0).unwrap())
@@ -98,7 +98,7 @@ impl JavaFile {
     }
 
     /// The tightest scope containing `offset`; occurrences resolve from here.
-    pub fn scope_at(&self, offset: usize) -> Option<JavaLexicalScopeId> {
+    pub fn scope_containing(&self, offset: usize) -> Option<JavaLexicalScopeId> {
         self.lexical_scopes
             .iter()
             .enumerate()
@@ -112,7 +112,7 @@ impl JavaFile {
         &self,
         scope: JavaLexicalScopeId,
     ) -> Option<JavaDeclarationId> {
-        self.lexical_scope_chain(scope)
+        self.iter_scope_chain(scope)
             .filter_map(|(_, scope)| scope.owner)
             .find(|owner| matches!(self.declarations[owner.0], JavaDeclaration::Type(_)))
     }
@@ -269,7 +269,7 @@ impl JavaDeclaration {
     pub fn name(&self) -> Option<&JavaIdentifier> {
         match self {
             Self::Type(declaration) => declaration.name.as_ref(),
-            Self::TypeParameter(declaration) => declaration.name.as_ref(),
+            Self::TypeParameter(declaration) => Some(&declaration.name),
             Self::Field(declaration) => declaration.name.as_ref(),
             Self::Constructor(_) => None,
             Self::Method(declaration) => declaration.name.as_ref(),
@@ -282,15 +282,16 @@ impl JavaDeclaration {
         self.name().map(|name| name.span)
     }
 
-    pub fn span(&self) -> Option<Span> {
+    /// Total: every declaration is rooted in written source.
+    pub fn span(&self) -> Span {
         match self {
-            Self::Type(declaration) => Some(declaration.span),
-            Self::TypeParameter(declaration) => declaration.name.as_ref().map(|name| name.span),
-            Self::Field(declaration) => Some(declaration.span),
-            Self::Constructor(declaration) => Some(declaration.span),
-            Self::Method(declaration) => Some(declaration.span),
-            Self::Parameter(declaration) => Some(declaration.span),
-            Self::Local(declaration) => Some(declaration.span),
+            Self::Type(declaration) => declaration.span,
+            Self::TypeParameter(declaration) => declaration.name.span,
+            Self::Field(declaration) => declaration.span,
+            Self::Constructor(declaration) => declaration.span,
+            Self::Method(declaration) => declaration.span,
+            Self::Parameter(declaration) => declaration.span,
+            Self::Local(declaration) => declaration.span,
         }
     }
 
@@ -319,7 +320,7 @@ impl JavaDeclaration {
     /// The type annotation owned by this declaration, if any.
     pub fn type_ref(&self) -> Option<&JavaTypeRef> {
         match self {
-            Self::Field(declaration) => declaration.ty.as_ref(),
+            Self::Field(declaration) => declaration.referenced_type.as_ref(),
             Self::Method(declaration) => declaration.return_type.as_ref(),
             Self::Parameter(declaration) => declaration.ty.as_ref(),
             Self::Local(declaration) => declaration.ty.as_ref(),
@@ -360,14 +361,15 @@ pub enum JavaTypeKind {
 
 #[derive(Debug, Clone)]
 pub struct JavaTypeParameterDeclaration {
-    pub name: Option<JavaIdentifier>,
+    /// Total: the name is the entire payload of a type parameter today.
+    pub name: JavaIdentifier,
 }
 
 #[derive(Debug, Clone)]
 pub struct JavaFieldDeclaration {
     pub span: Span,
     pub name: Option<JavaIdentifier>,
-    pub ty: Option<JavaTypeRef>,
+    pub referenced_type: Option<JavaTypeRef>,
     pub declaring_scope: JavaLexicalScopeId,
 }
 
@@ -508,9 +510,7 @@ impl JavaPositionIndex {
 
         for (index, declaration) in file.declarations.iter().enumerate() {
             let id = JavaDeclarationId(index);
-            if let Some(span) = declaration.span() {
-                entries.push((span, JavaEntityId::Declaration(id)));
-            }
+            entries.push((declaration.span(), JavaEntityId::Declaration(id)));
             if let Some(name_span) = declaration.name_span() {
                 entries.push((name_span, JavaEntityId::Declaration(id)));
             }
@@ -559,12 +559,12 @@ impl JavaPositionIndex {
         Self { entries }
     }
 
-    pub fn tightest_at(&self, offset: usize) -> Option<(Span, JavaEntityId)> {
-        self.iter_at(offset).into_iter().next()
+    pub fn tightest_containing(&self, offset: usize) -> Option<(Span, JavaEntityId)> {
+        self.iter_containing(offset).into_iter().next()
     }
 
     /// Every entry containing `offset`, tightest first.
-    pub fn iter_at(&self, offset: usize) -> Vec<(Span, JavaEntityId)> {
+    pub fn iter_containing(&self, offset: usize) -> Vec<(Span, JavaEntityId)> {
         let mut containing: Vec<_> = self
             .entries
             .iter()
@@ -621,13 +621,11 @@ mod tests {
         let name = identifier("Named", 7);
         let declarations = [
             type_declaration(name.clone(), JavaLexicalScopeId(0), JavaLexicalScopeId(1)),
-            JavaDeclaration::TypeParameter(JavaTypeParameterDeclaration {
-                name: Some(name.clone()),
-            }),
+            JavaDeclaration::TypeParameter(JavaTypeParameterDeclaration { name: name.clone() }),
             JavaDeclaration::Field(JavaFieldDeclaration {
                 span: Span { start: 0, end: 10 },
                 name: Some(name.clone()),
-                ty: None,
+                referenced_type: None,
                 declaring_scope: JavaLexicalScopeId(0),
             }),
             JavaDeclaration::Method(JavaMethodDeclaration {
@@ -700,11 +698,9 @@ mod tests {
     }
 
     #[test]
-    fn lexical_scope_chain_from_the_compilation_unit_contains_only_itself() {
+    fn iter_scope_chain_from_the_compilation_unit_contains_only_itself() {
         let file = JavaFile::new();
-        let entries: Vec<_> = file
-            .lexical_scope_chain(file.compilation_unit_scope)
-            .collect();
+        let entries: Vec<_> = file.iter_scope_chain(file.compilation_unit_scope).collect();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].0, file.compilation_unit_scope);
@@ -715,14 +711,14 @@ mod tests {
     }
 
     #[test]
-    fn lexical_scope_chain_walks_from_innermost_to_outermost() {
+    fn iter_scope_chain_walks_from_innermost_to_outermost() {
         let mut file = JavaFile::new();
         let compilation_unit = file.compilation_unit_scope;
         let outer = add_lexical_scope(&mut file, compilation_unit);
         let sibling = add_lexical_scope(&mut file, compilation_unit);
         let inner = add_lexical_scope(&mut file, outer);
 
-        let entries: Vec<_> = file.lexical_scope_chain(inner).collect();
+        let entries: Vec<_> = file.iter_scope_chain(inner).collect();
         let scope_ids: Vec<_> = entries.iter().map(|(scope_id, _)| *scope_id).collect();
 
         assert_eq!(scope_ids, [inner, outer, compilation_unit]);
@@ -750,7 +746,7 @@ mod tests {
             }));
         file.position_index = JavaPositionIndex::build(&file);
 
-        let entries = file.position_index.iter_at(10);
+        let entries = file.position_index.iter_containing(10);
         assert_eq!(
             entries[0],
             (

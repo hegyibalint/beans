@@ -64,11 +64,11 @@ impl Beans {
 
     /// A display name for the declaration whose name sits at `span`,
     /// e.g. `p.Outer.Inner` for a member type.
-    pub fn describe_declaration(&self, source: &JvmSource, span: Span) -> Option<String> {
+    pub fn declaration_label(&self, source: &JvmSource, span: Span) -> Option<String> {
         if self.lang_java.accepts(source) {
             return self
                 .lang_java
-                .describe_declaration(source, span, self.revision);
+                .declaration_label(source, span, self.revision);
         }
 
         None
