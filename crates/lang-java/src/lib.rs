@@ -6,7 +6,7 @@ mod resolution;
 
 use beans_core::analysis::FileAnalysis;
 use beans_core::language::{Language, LanguageProcessing, NavigationTarget};
-use beans_core::model::Span;
+use beans_core::model::{Offset, OffsetSpan};
 use beans_core::storage::Revision;
 use beans_core::storage::RevisionedStorage;
 use beans_platform_jvm::PlatformJvm;
@@ -43,7 +43,7 @@ impl LanguageJava {
     pub fn declaration_label(
         &self,
         source: &JvmSource,
-        span: Span,
+        span: OffsetSpan,
         revision: Revision,
     ) -> Option<String> {
         let model = self.file_models.get(source, revision)?;
@@ -95,7 +95,7 @@ impl Language<JvmSource, PlatformJvm> for LanguageJava {
     fn find_declarations_for(
         &self,
         source: &JvmSource,
-        offset: usize,
+        offset: Offset,
         revision: Revision,
         platform_jvm: &PlatformJvm,
     ) -> Option<Vec<NavigationTarget<JvmSource>>> {

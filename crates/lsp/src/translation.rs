@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use beans_core::analysis::diagnostic::{DiagnosticSeverity, Diagnostics};
-use beans_core::model::Span;
+use beans_core::model::{LineColumnPosition, LineColumnSpan};
 use beans_platform_jvm::model::JvmSource;
 use lsp_types::{Position, Uri};
 
@@ -17,45 +17,47 @@ pub fn uri_to_source(uri: &Uri) -> Option<JvmSource> {
     })
 }
 
-pub fn position_to_offset(contents: &str, position: Position) -> Option<usize> {
-    let mut line_start = 0;
-    for _ in 0..position.line {
-        let newline = contents[line_start..].find('\n')?;
-        line_start += newline + 1;
+/// The inverse of `uri_to_source` for on-disk sources. Only `SourceFile`
+/// names a real path; the virtual JVM sources have no `file:` URI.
+pub fn source_to_uri(source: &JvmSource) -> Option<Uri> {
+    match source {
+        JvmSource::SourceFile { path } => format!("file://{}", path.to_str()?).parse().ok(),
+        _ => None,
     }
-
-    let mut line_end = contents[line_start..]
-        .find('\n')
-        .map_or(contents.len(), |newline| line_start + newline);
-    if line_end > line_start && contents.as_bytes()[line_end - 1] == b'\r' {
-        line_end -= 1;
-    }
-
-    let line = &contents[line_start..line_end];
-    let character = usize::try_from(position.character).ok()?;
-    if line.is_ascii() {
-        return (character <= line.len()).then_some(line_start + character);
-    }
-
-    let mut utf16_offset = 0;
-    for (byte_offset, character_value) in line.char_indices() {
-        if utf16_offset == character {
-            return Some(line_start + byte_offset);
-        }
-
-        utf16_offset += character_value.len_utf16();
-        if utf16_offset > character {
-            return None;
-        }
-    }
-
-    (utf16_offset == character).then_some(line_end)
 }
 
-/// Translates an internal diagnostic into its `lsp_types` counterpart.
-pub fn translate_diagnostics(contents: &str, diagnostic: &Diagnostics) -> lsp_types::Diagnostic {
+/// The line/column an editor sends us, in our own coordinate type. The engine
+/// turns it into a byte offset — the LSP layer itself holds no text.
+pub fn position_to_line_column(position: Position) -> LineColumnPosition {
+    LineColumnPosition {
+        line: position.line,
+        character: position.character,
+    }
+}
+
+pub fn text_range_to_range(range: LineColumnSpan) -> lsp_types::Range {
+    lsp_types::Range {
+        start: line_column_to_position(range.start),
+        end: line_column_to_position(range.end),
+    }
+}
+
+fn line_column_to_position(position: LineColumnPosition) -> Position {
+    Position {
+        line: position.line,
+        character: position.character,
+    }
+}
+
+/// Translates an internal diagnostic into its `lsp_types` counterpart. The
+/// range is computed by the engine from the file's text and handed in, so the
+/// translation itself stays text-free.
+pub fn translate_diagnostics(
+    range: lsp_types::Range,
+    diagnostic: &Diagnostics,
+) -> lsp_types::Diagnostic {
     lsp_types::Diagnostic {
-        range: span_to_range(contents, &diagnostic.span),
+        range,
         severity: Some(translate_severity(diagnostic.severity)),
         code: Some(lsp_types::NumberOrString::String(
             diagnostic.code.to_string(),
@@ -75,70 +77,12 @@ fn translate_severity(severity: DiagnosticSeverity) -> lsp_types::DiagnosticSeve
     }
 }
 
-pub fn span_to_range(contents: &str, span: &Span) -> lsp_types::Range {
-    lsp_types::Range {
-        start: offset_to_position(contents, span.start),
-        end: offset_to_position(contents, span.end),
-    }
-}
-
-fn offset_to_position(contents: &str, offset: usize) -> lsp_types::Position {
-    let before = &contents[..offset];
-    let line = before.bytes().filter(|&b| b == b'\n').count();
-    let line_start = before.rfind('\n').map_or(0, |nl| nl + 1);
-    let character = contents[line_start..offset].encode_utf16().count();
-    lsp_types::Position {
-        line: line as u32,
-        character: character as u32,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn source_of(raw: &str) -> Option<JvmSource> {
         uri_to_source(&raw.parse().expect("valid uri"))
-    }
-
-    #[test]
-    fn position_to_offset_finds_ascii_lines_and_columns() {
-        let contents = "first\nsecond\n";
-
-        assert_eq!(position_to_offset(contents, Position::new(1, 3)), Some(9));
-        assert_eq!(
-            position_to_offset(contents, Position::new(2, 0)),
-            Some(contents.len())
-        );
-    }
-
-    #[test]
-    fn position_to_offset_counts_utf16_code_units() {
-        let contents = "a😀b";
-
-        assert_eq!(position_to_offset(contents, Position::new(0, 1)), Some(1));
-        assert_eq!(position_to_offset(contents, Position::new(0, 3)), Some(5));
-        assert_eq!(position_to_offset(contents, Position::new(0, 4)), Some(6));
-        assert_eq!(position_to_offset(contents, Position::new(0, 2)), None);
-    }
-
-    #[test]
-    fn position_to_offset_handles_multibyte_bmp_characters() {
-        assert_eq!(position_to_offset("éx", Position::new(0, 1)), Some(2));
-    }
-
-    #[test]
-    fn position_to_offset_rejects_positions_outside_the_document() {
-        assert_eq!(position_to_offset("abc", Position::new(0, 4)), None);
-        assert_eq!(position_to_offset("abc", Position::new(1, 0)), None);
-    }
-
-    #[test]
-    fn position_to_offset_excludes_the_carriage_return_from_crlf_lines() {
-        let contents = "ab\r\nc";
-
-        assert_eq!(position_to_offset(contents, Position::new(0, 2)), Some(2));
-        assert_eq!(position_to_offset(contents, Position::new(1, 0)), Some(4));
     }
 
     #[test]

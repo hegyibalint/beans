@@ -1,4 +1,4 @@
-use crate::model::Span;
+use crate::model::OffsetSpan;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagnosticSeverity {
@@ -9,7 +9,7 @@ pub enum DiagnosticSeverity {
 }
 
 pub struct Diagnostics {
-    pub span: Span,
+    pub span: OffsetSpan,
     pub severity: DiagnosticSeverity,
     pub code: &'static str,
     pub message: String,

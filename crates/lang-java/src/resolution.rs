@@ -1,4 +1,5 @@
 use beans_core::language::NavigationTarget;
+use beans_core::model::Offset;
 use beans_core::storage::Revision;
 use beans_platform_jvm::{
     PlatformJvm,
@@ -265,7 +266,7 @@ fn find_member(
 pub fn resolve_occurrence_at(
     source: &JvmSource,
     file: &JavaFile,
-    offset: usize,
+    offset: Offset,
     revision: Revision,
     jvm: &PlatformJvm,
     java: &LanguageJava,
@@ -570,7 +571,10 @@ pub(crate) fn model_of<'java>(
 mod tests {
     use std::path::PathBuf;
 
-    use beans_core::{language::LanguageProcessing, model::Span};
+    use beans_core::{
+        language::LanguageProcessing,
+        model::{Offset, OffsetSpan},
+    };
 
     use super::*;
     use crate::{model::JavaTypeDeclaration, parser::JavaParser};
@@ -578,9 +582,9 @@ mod tests {
     fn identifier(text: &str) -> JavaIdentifier {
         JavaIdentifier {
             text: text.into(),
-            span: Span {
-                start: 0,
-                end: text.len(),
+            span: OffsetSpan {
+                start: Offset(0),
+                end: Offset(text.len()),
             },
         }
     }
@@ -1080,7 +1084,7 @@ mod tests {
         offset: usize,
     ) -> Vec<NavigationTarget<JvmSource>> {
         let file = file_model(java, revision, source);
-        resolve_occurrence_at(source, file, offset, revision, jvm, java)
+        resolve_occurrence_at(source, file, Offset(offset), revision, jvm, java)
     }
 
     #[test]
@@ -1091,44 +1095,92 @@ mod tests {
         let targets = resolve_at(&java, &jvm, revision, &a_source, 56);
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0].source, a_source);
-        assert_eq!(targets[0].span, Span { start: 35, end: 36 });
+        assert_eq!(
+            targets[0].span,
+            OffsetSpan {
+                start: Offset(35),
+                end: Offset(36)
+            }
+        );
 
         // (7) `a` in `c.a` → field a in B.java @ 18..19
         let targets = resolve_at(&java, &jvm, revision, &a_source, 58);
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0].source, b_source);
-        assert_eq!(targets[0].span, Span { start: 18, end: 19 });
+        assert_eq!(
+            targets[0].span,
+            OffsetSpan {
+                start: Offset(18),
+                end: Offset(19)
+            }
+        );
 
         // (8) `this` → class A @ 6..7
         let targets = resolve_at(&java, &jvm, revision, &a_source, 70);
         assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].span, Span { start: 6, end: 7 });
+        assert_eq!(
+            targets[0].span,
+            OffsetSpan {
+                start: Offset(6),
+                end: Offset(7)
+            }
+        );
 
         // (9) `a` in `this.a` → field a in A.java @ 18..19
         let targets = resolve_at(&java, &jvm, revision, &a_source, 74);
         assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].span, Span { start: 18, end: 19 });
+        assert_eq!(
+            targets[0].span,
+            OffsetSpan {
+                start: Offset(18),
+                end: Offset(19)
+            }
+        );
 
         // (10) `d` → local d @ 52..53
         let targets = resolve_at(&java, &jvm, revision, &a_source, 78);
         assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].span, Span { start: 52, end: 53 });
+        assert_eq!(
+            targets[0].span,
+            OffsetSpan {
+                start: Offset(52),
+                end: Offset(53)
+            }
+        );
 
         // (11) `b` in `b(c)` → method b @ 31..32
         let targets = resolve_at(&java, &jvm, revision, &a_source, 89);
         assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].span, Span { start: 31, end: 32 });
+        assert_eq!(
+            targets[0].span,
+            OffsetSpan {
+                start: Offset(31),
+                end: Offset(32)
+            }
+        );
 
         // (12) `c` argument → parameter c @ 35..36
         let targets = resolve_at(&java, &jvm, revision, &a_source, 91);
         assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].span, Span { start: 35, end: 36 });
+        assert_eq!(
+            targets[0].span,
+            OffsetSpan {
+                start: Offset(35),
+                end: Offset(36)
+            }
+        );
 
         // (3) parameter type `B` → class B in B.java @ 6..7
         let targets = resolve_at(&java, &jvm, revision, &a_source, 33);
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0].source, b_source);
-        assert_eq!(targets[0].span, Span { start: 6, end: 7 });
+        assert_eq!(
+            targets[0].span,
+            OffsetSpan {
+                start: Offset(6),
+                end: Offset(7)
+            }
+        );
     }
 
     #[test]
@@ -1154,17 +1206,35 @@ mod tests {
         // The captured `h` in `return h;` → the parameter of the outer method
         let targets = resolve_at(&java, &jvm, revision, &a, 98);
         assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].span, Span { start: 24, end: 25 });
+        assert_eq!(
+            targets[0].span,
+            OffsetSpan {
+                start: Offset(24),
+                end: Offset(25)
+            }
+        );
 
         // `get` in `new Local().get()` → the local class's method
         let targets = resolve_at(&java, &jvm, revision, &a, 152);
         assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].span, Span { start: 67, end: 70 });
+        assert_eq!(
+            targets[0].span,
+            OffsetSpan {
+                start: Offset(67),
+                end: Offset(70)
+            }
+        );
 
         // `Local` in `new Local()` → the local class declaration
         let targets = resolve_at(&java, &jvm, revision, &a, 144);
         assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].span, Span { start: 43, end: 48 });
+        assert_eq!(
+            targets[0].span,
+            OffsetSpan {
+                start: Offset(43),
+                end: Offset(48)
+            }
+        );
     }
 
     #[test]
@@ -1177,6 +1247,12 @@ mod tests {
         // `x` in the body @ 49 → the parameter @ 36..37, not the field @ 18..19
         let targets = resolve_at(&java, &jvm, revision, &a, 49);
         assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].span, Span { start: 36, end: 37 });
+        assert_eq!(
+            targets[0].span,
+            OffsetSpan {
+                start: Offset(36),
+                end: Offset(37)
+            }
+        );
     }
 }

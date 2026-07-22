@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use beans::Beans;
 use beans_core::analysis::diagnostic::Diagnostics;
+use beans_core::model::Offset;
 use beans_platform_jvm::model::JvmSource;
 
 use crate::markers::{Cursor, strip_markers};
@@ -170,8 +171,8 @@ impl Fixture {
                         let cursor = find_cursor(&cursors, cursor, &analysis.file);
                         result.diagnostics.iter().any(|diagnostic| {
                             diagnostic.code == code
-                                && diagnostic.span.start as usize <= cursor.offset
-                                && cursor.offset < diagnostic.span.end as usize
+                                && diagnostic.span.start.0 <= cursor.offset
+                                && cursor.offset < diagnostic.span.end.0
                         })
                     }
                     Expect::ResolvesTo { cursor, fqn } => {
@@ -226,7 +227,7 @@ fn jvm_source(path: &Path) -> JvmSource {
 
 fn resolution_labels(beans: &Beans, file: &Path, offset: usize) -> Vec<String> {
     beans
-        .find_declarations_for(&jvm_source(file), offset)
+        .find_declarations_for(&jvm_source(file), Offset(offset))
         .unwrap_or_default()
         .iter()
         .filter_map(|target| beans.declaration_label(&target.source, target.span))

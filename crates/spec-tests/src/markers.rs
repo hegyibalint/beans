@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 /// A `<cur>` or `<cur:name>` position in a fixture file, as a byte offset
-/// into the stripped source — the same coordinates as `Span`.
+/// into the stripped source — the same coordinates as `OffsetSpan`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Cursor {
     pub name: Option<String>,

@@ -1,9 +1,9 @@
-use crate::{analysis::FileAnalysis, model::Span, storage::Revision};
+use crate::{analysis::FileAnalysis, model::Offset, model::OffsetSpan, storage::Revision};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NavigationTarget<Source> {
     pub source: Source,
-    pub span: Span,
+    pub span: OffsetSpan,
 }
 
 pub trait LanguageProcessing<Source, Platform> {
@@ -31,7 +31,7 @@ pub trait Language<Source, Platform>: LanguageProcessing<Source, Platform> {
     fn find_declarations_for(
         &self,
         _source: &Source,
-        _offset: usize,
+        _offset: Offset,
         _revision: Revision,
         _platform: &Platform,
     ) -> Option<Vec<NavigationTarget<Source>>> {
@@ -64,13 +64,13 @@ mod tests {
         fn find_declarations_for(
             &self,
             source: &String,
-            offset: usize,
+            offset: Offset,
             _revision: Revision,
             _platform: &(),
         ) -> Option<Vec<NavigationTarget<String>>> {
             Some(vec![NavigationTarget {
                 source: source.clone(),
-                span: Span {
+                span: OffsetSpan {
                     start: offset,
                     end: offset,
                 },
@@ -92,7 +92,7 @@ mod tests {
         );
         assert_eq!(
             language
-                .find_declarations_for(&source, 4, Revision::default(), &())
+                .find_declarations_for(&source, Offset(4), Revision::default(), &())
                 .unwrap()
                 .len(),
             1

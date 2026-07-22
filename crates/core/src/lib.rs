@@ -6,8 +6,3 @@ pub mod storage;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
 pub struct EntryId(usize);
-
-pub struct VirtualFile {
-    pub uri: String,
-    pub contents: String,
-}
