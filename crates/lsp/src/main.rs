@@ -22,7 +22,10 @@ use lsp_types::{
 };
 use lsp_types::{DidChangeTextDocumentParams, DidOpenTextDocumentParams};
 
-use crate::translation::{position_to_offset, span_to_range, translate_diagnostics, uri_to_source};
+use crate::translation::{
+    position_to_line_column, source_to_uri, text_range_to_range, translate_diagnostics,
+    uri_to_source,
+};
 
 fn main() {
     let (conn, _) = Connection::stdio();
@@ -30,10 +33,11 @@ fn main() {
     run(conn, beans);
 }
 
+/// Lifecycle bookkeeping only: the last protocol version seen per open source,
+/// so stale `didChange` notifications can be dropped. The text itself lives in
+/// the engine, keyed by source.
 struct OpenDocument {
-    uri: Uri,
     version: i32,
-    contents: String,
 }
 
 struct State {
@@ -49,25 +53,14 @@ impl State {
         }
     }
 
-    fn document(&self, source: &JvmSource) -> Option<&OpenDocument> {
-        self.documents.get(source)
-    }
-
     fn is_stale(&self, source: &JvmSource, version: i32) -> bool {
         self.documents
             .get(source)
             .is_some_and(|document| version <= document.version)
     }
 
-    fn record(&mut self, source: JvmSource, uri: Uri, version: i32, contents: String) {
-        self.documents.insert(
-            source,
-            OpenDocument {
-                uri,
-                version,
-                contents,
-            },
-        );
+    fn record(&mut self, source: JvmSource, version: i32) {
+        self.documents.insert(source, OpenDocument { version });
     }
 }
 
@@ -129,19 +122,24 @@ fn resolve_locations(
     params: lsp_types::TextDocumentPositionParams,
 ) -> Option<Vec<lsp_types::Location>> {
     let source = uri_to_source(&params.text_document.uri)?;
-    let document = state.document(&source)?;
-    let offset = position_to_offset(&document.contents, params.position)?;
+    let offset = state
+        .beans
+        .offset_at(&source, position_to_line_column(params.position))?;
 
     let declarations = state.beans.find_declarations_for(&source, offset)?;
 
-    // Cross-file targets need the target's contents to compute ranges; only
-    // the open document is at hand, so cross-file targets are dropped for now.
+    // A target may live in another file. Its range comes from that file's
+    // stored line index in the engine, so no open buffer is required — the
+    // target need only have been parsed.
     let locations: Vec<lsp_types::Location> = declarations
         .iter()
-        .filter(|declaration| declaration.source == source)
-        .map(|declaration| lsp_types::Location {
-            uri: params.text_document.uri.clone(),
-            range: span_to_range(&document.contents, &declaration.span),
+        .filter_map(|target| {
+            let uri = source_to_uri(&target.source)?;
+            let range = state.beans.text_range(&target.source, target.span)?;
+            Some(lsp_types::Location {
+                uri,
+                range: text_range_to_range(range),
+            })
         })
         .collect();
     if locations.is_empty() {
@@ -153,8 +151,9 @@ fn resolve_locations(
 fn handle_request_hover(state: &State, params: HoverParams) -> Option<Hover> {
     let request = params.text_document_position_params;
     let source = uri_to_source(&request.text_document.uri)?;
-    let document = state.document(&source)?;
-    let offset = position_to_offset(&document.contents, request.position)?;
+    let offset = state
+        .beans
+        .offset_at(&source, position_to_line_column(request.position))?;
     let declarations = state.beans.find_declarations_for(&source, offset)?;
     let declaration = declarations
         .into_iter()
@@ -175,7 +174,10 @@ fn handle_request_hover(state: &State, params: HoverParams) -> Option<Hover> {
                 declaration.span.start, declaration.span.end
             ),
         })),
-        range: Some(span_to_range(&document.contents, &declaration.span)),
+        range: state
+            .beans
+            .text_range(&declaration.source, declaration.span)
+            .map(text_range_to_range),
     })
 }
 
@@ -216,7 +218,7 @@ fn handle_notification_did_open(
         document.version,
         &document.text,
     );
-    state.record(source, document.uri, document.version, document.text);
+    state.record(source, document.version);
 }
 
 fn handle_notification_did_change(
@@ -245,7 +247,7 @@ fn handle_notification_did_change(
         version,
         &change.text,
     );
-    state.record(source, uri, version, change.text);
+    state.record(source, version);
 }
 
 fn process_document_and_publish_diagnostics(
@@ -261,11 +263,18 @@ fn process_document_and_publish_diagnostics(
         return;
     };
 
-    // Map and send off all diagnostics
+    // Map and send off all diagnostics. The range comes from the engine's
+    // stored text, so the LSP layer never touches the buffer itself.
     let lsp_diagnostics = analysis
         .diagnostics
         .iter()
-        .map(|d| translate_diagnostics(&contents, d))
+        .map(|d| {
+            let range = beans
+                .text_range(&source, d.span)
+                .map(text_range_to_range)
+                .unwrap_or_default();
+            translate_diagnostics(range, d)
+        })
         .collect();
     let params = PublishDiagnosticsParams {
         uri,
@@ -297,14 +306,11 @@ mod tests {
         let uri: lsp_types::Uri = "file:///workspace/Foo.java".parse().unwrap();
         let source = crate::translation::uri_to_source(&uri).unwrap();
 
-        state.record(source.clone(), uri.clone(), 1, "first".into());
-        state.record(source.clone(), uri.clone(), 2, "second".into());
+        state.record(source.clone(), 1);
+        state.record(source.clone(), 2);
 
         assert_eq!(state.documents.len(), 1);
-        let document = state.document(&source).unwrap();
-        assert_eq!(document.uri, uri);
-        assert_eq!(document.version, 2);
-        assert_eq!(document.contents, "second");
+        assert_eq!(state.documents.get(&source).map(|d| d.version), Some(2));
         assert!(state.is_stale(&source, 2));
         assert!(!state.is_stale(&source, 3));
     }
@@ -316,7 +322,6 @@ mod tests {
         let contents = "class Outer {}";
         let mut state = State::new(Beans::new());
         state.beans.process(source.clone(), contents);
-        state.record(source, uri.clone(), 1, contents.into());
 
         let hover = handle_request_hover(
             &state,
@@ -437,6 +442,99 @@ mod tests {
             vec![Location {
                 uri: "file:///workspace/A.java".parse().unwrap(),
                 range: Range::new(Position::new(1, 8), Position::new(1, 9)),
+            }]
+        );
+    }
+
+    /// Opens each `(uri, contents)` file, then requests `method` at `position`
+    /// in `request_uri`. Every open publishes diagnostics, which we drain so
+    /// the goto response is the next message on the channel.
+    fn request_locations_across_files(
+        method: &str,
+        files: &[(&str, &str)],
+        request_uri: &str,
+        position: Position,
+    ) -> Vec<lsp_types::Location> {
+        use lsp_server::{Request, RequestId};
+        use lsp_types::{PartialResultParams, TextDocumentIdentifier, TextDocumentPositionParams};
+
+        let (server_conn, client) = Connection::memory();
+        let handle = std::thread::spawn(move || {
+            server_loop(server_conn, State::new(Beans::new()));
+        });
+
+        for (uri, text) in files {
+            let did_open = DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: uri.parse().unwrap(),
+                    language_id: "java".into(),
+                    version: 1,
+                    text: (*text).into(),
+                },
+            };
+            client
+                .sender
+                .send(Message::Notification(Notification::new(
+                    DidOpenTextDocument::METHOD.to_string(),
+                    did_open,
+                )))
+                .unwrap();
+            client.receiver.recv().unwrap();
+        }
+
+        let params = lsp_types::GotoDefinitionParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: request_uri.parse().unwrap(),
+                },
+                position,
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+        };
+        client
+            .sender
+            .send(Message::Request(Request::new(
+                RequestId::from(1),
+                method.to_string(),
+                params,
+            )))
+            .unwrap();
+        let response = match client.receiver.recv().unwrap() {
+            Message::Response(response) => response,
+            other => panic!("expected a response, got {other:?}"),
+        };
+
+        drop(client);
+        handle.join().unwrap();
+
+        serde_json::from_value(response.result.unwrap()).unwrap()
+    }
+
+    #[test]
+    fn goto_definition_crosses_into_another_open_file() {
+        use lsp_types::request::{GotoDefinition, Request as _};
+        use lsp_types::{Location, Range};
+
+        // `A` references type `B`, declared in a second file. Both are open.
+        // Goto on the `B` in `    B field;` (line 1, char 4) lands on the
+        // class declaration in B.java — a range computed from B's line index,
+        // never from A's buffer.
+        let locations = request_locations_across_files(
+            GotoDefinition::METHOD,
+            &[
+                ("file:///workspace/A.java", "class A {\n    B field;\n}\n"),
+                ("file:///workspace/B.java", "class B {}\n"),
+            ],
+            "file:///workspace/A.java",
+            Position::new(1, 4),
+        );
+
+        assert_eq!(
+            locations,
+            vec![Location {
+                uri: "file:///workspace/B.java".parse().unwrap(),
+                range: Range::new(Position::new(0, 6), Position::new(0, 7)),
             }]
         );
     }

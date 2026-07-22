@@ -1,4 +1,4 @@
-use beans_core::model::Span;
+use beans_core::model::{Offset, OffsetSpan};
 use tree_sitter::{Node, Parser};
 
 use crate::model::{
@@ -89,9 +89,9 @@ fn parse_program(root: Node, src: &str) -> JavaFile {
         }
     }
 
-    file.lexical_scopes[compilation_unit_scope.0].span = Span {
-        start: 0,
-        end: src.len(),
+    file.lexical_scopes[compilation_unit_scope.0].span = OffsetSpan {
+        start: Offset(0),
+        end: Offset(src.len()),
     };
     file.position_index = JavaPositionIndex::build(&file);
     file
@@ -137,7 +137,7 @@ fn new_scope(
     file: &mut JavaFile,
     parent: JavaLexicalScopeId,
     owner: Option<JavaDeclarationId>,
-    span: Span,
+    span: OffsetSpan,
 ) -> JavaLexicalScopeId {
     let scope_id = JavaLexicalScopeId(file.lexical_scopes.len());
     file.lexical_scopes.push(JavaLexicalScope {
@@ -436,7 +436,7 @@ impl BodyBuilder {
     fn add_statement(
         &mut self,
         statement: JavaStatement,
-        span: Span,
+        span: OffsetSpan,
         scope: JavaLexicalScopeId,
     ) -> JavaBodyNodeId {
         self.add(JavaBodyNodeKind::Statement(statement), span, scope)
@@ -445,7 +445,7 @@ impl BodyBuilder {
     fn add_expression(
         &mut self,
         expression: JavaExpression,
-        span: Span,
+        span: OffsetSpan,
         scope: JavaLexicalScopeId,
     ) -> JavaBodyNodeId {
         self.add(JavaBodyNodeKind::Expression(expression), span, scope)
@@ -454,7 +454,7 @@ impl BodyBuilder {
     fn add(
         &mut self,
         kind: JavaBodyNodeKind,
-        span: Span,
+        span: OffsetSpan,
         scope: JavaLexicalScopeId,
     ) -> JavaBodyNodeId {
         let id = JavaBodyNodeId(self.nodes.len());
@@ -902,19 +902,37 @@ mod tests {
         let JavaDeclaration::Type(class) = &file.declarations[0] else {
             panic!("D0 is the class");
         };
-        assert_eq!(class.span, Span { start: 0, end: 102 });
-        assert_eq!(class.name.as_ref().unwrap().span, Span { start: 6, end: 7 });
+        assert_eq!(
+            class.span,
+            OffsetSpan {
+                start: Offset(0),
+                end: Offset(102)
+            }
+        );
+        assert_eq!(
+            class.name.as_ref().unwrap().span,
+            OffsetSpan {
+                start: Offset(6),
+                end: Offset(7)
+            }
+        );
 
         let JavaDeclaration::Field(field) = &file.declarations[1] else {
             panic!("D1 is the field");
         };
         assert_eq!(
             field.name.as_ref().unwrap().span,
-            Span { start: 18, end: 19 }
+            OffsetSpan {
+                start: Offset(18),
+                end: Offset(19)
+            }
         );
         assert_eq!(
             field.referenced_type.as_ref().unwrap().span,
-            Span { start: 14, end: 17 }
+            OffsetSpan {
+                start: Offset(14),
+                end: Offset(17)
+            }
         );
         assert!(field.referenced_type.as_ref().unwrap().primitive);
 
@@ -923,7 +941,10 @@ mod tests {
         };
         assert_eq!(
             method.name.as_ref().unwrap().span,
-            Span { start: 31, end: 32 }
+            OffsetSpan {
+                start: Offset(31),
+                end: Offset(32)
+            }
         );
         assert_eq!(method.parameters, [JavaDeclarationId(3)]);
         assert!(method.body.is_some());
@@ -933,18 +954,30 @@ mod tests {
         };
         assert_eq!(
             parameter.name.as_ref().unwrap().span,
-            Span { start: 35, end: 36 }
+            OffsetSpan {
+                start: Offset(35),
+                end: Offset(36)
+            }
         );
         let param_ty = parameter.ty.as_ref().unwrap();
         assert!(!param_ty.primitive);
-        assert_eq!(param_ty.span, Span { start: 33, end: 34 });
+        assert_eq!(
+            param_ty.span,
+            OffsetSpan {
+                start: Offset(33),
+                end: Offset(34)
+            }
+        );
 
         let JavaDeclaration::Local(local) = &file.declarations[4] else {
             panic!("D4 is the local");
         };
         assert_eq!(
             local.name.as_ref().unwrap().span,
-            Span { start: 52, end: 53 }
+            OffsetSpan {
+                start: Offset(52),
+                end: Offset(53)
+            }
         );
 
         // Scopes: S0 compilation unit, S1 type body, S2 method, S3 block.
@@ -953,9 +986,9 @@ mod tests {
         assert_eq!(file.lexical_scopes[2].owner, Some(JavaDeclarationId(2)));
         assert_eq!(
             file.lexical_scopes[3].span,
-            Span {
-                start: 38,
-                end: 100
+            OffsetSpan {
+                start: Offset(38),
+                end: Offset(100),
             }
         );
         assert_eq!(file.lexical_scopes[3].parent, Some(JavaLexicalScopeId(2)));
@@ -990,11 +1023,23 @@ mod tests {
         else {
             panic!("initializer is c.a");
         };
-        assert_eq!(name.span, Span { start: 58, end: 59 });
+        assert_eq!(
+            name.span,
+            OffsetSpan {
+                start: Offset(58),
+                end: Offset(59)
+            }
+        );
         let JavaExpression::NameRef { name } = body.expression(*receiver).unwrap() else {
             panic!("receiver is c");
         };
-        assert_eq!(name.span, Span { start: 56, end: 57 });
+        assert_eq!(
+            name.span,
+            OffsetSpan {
+                start: Offset(56),
+                end: Offset(57)
+            }
+        );
 
         // N7: this.a = d;
         let JavaBodyNodeKind::Statement(JavaStatement::Expression(assign)) = &body.nodes[7].kind
@@ -1012,11 +1057,23 @@ mod tests {
             body.expression(*receiver),
             Some(JavaExpression::This)
         ));
-        assert_eq!(name.span, Span { start: 74, end: 75 });
+        assert_eq!(
+            name.span,
+            OffsetSpan {
+                start: Offset(74),
+                end: Offset(75)
+            }
+        );
         let JavaExpression::NameRef { name } = body.expression(*value).unwrap() else {
             panic!("value is d");
         };
-        assert_eq!(name.span, Span { start: 78, end: 79 });
+        assert_eq!(
+            name.span,
+            OffsetSpan {
+                start: Offset(78),
+                end: Offset(79)
+            }
+        );
 
         // N10: b(c);
         let JavaBodyNodeKind::Statement(JavaStatement::Expression(call)) = &body.nodes[10].kind
@@ -1032,7 +1089,13 @@ mod tests {
             panic!("N10 is a method call");
         };
         assert!(receiver.is_none());
-        assert_eq!(name.span, Span { start: 89, end: 90 });
+        assert_eq!(
+            name.span,
+            OffsetSpan {
+                start: Offset(89),
+                end: Offset(90)
+            }
+        );
         assert_eq!(arguments.len(), 1);
     }
 
@@ -1045,31 +1108,31 @@ mod tests {
         use crate::model::JavaEntityId;
 
         // (6) the `c` in `c.a`
-        let (_, entity) = index.tightest_containing(56).unwrap();
+        let (_, entity) = index.tightest_containing(Offset(56)).unwrap();
         assert!(matches!(entity, JavaEntityId::BodyNode(_, id) if id == JavaBodyNodeId(0)));
         // (7) the `a` in `c.a`
-        let (_, entity) = index.tightest_containing(58).unwrap();
+        let (_, entity) = index.tightest_containing(Offset(58)).unwrap();
         assert!(matches!(entity, JavaEntityId::BodyNode(_, id) if id == JavaBodyNodeId(1)));
         // (8) this
-        let (_, entity) = index.tightest_containing(70).unwrap();
+        let (_, entity) = index.tightest_containing(Offset(70)).unwrap();
         assert!(matches!(entity, JavaEntityId::BodyNode(_, id) if id == JavaBodyNodeId(3)));
         // (10) the `d` value
-        let (_, entity) = index.tightest_containing(78).unwrap();
+        let (_, entity) = index.tightest_containing(Offset(78)).unwrap();
         assert!(matches!(entity, JavaEntityId::BodyNode(_, id) if id == JavaBodyNodeId(5)));
         // (11) the `b` call name
-        let (_, entity) = index.tightest_containing(89).unwrap();
+        let (_, entity) = index.tightest_containing(Offset(89)).unwrap();
         assert!(matches!(entity, JavaEntityId::BodyNode(_, id) if id == JavaBodyNodeId(9)));
         // (3) the parameter type `B`
-        let (_, entity) = index.tightest_containing(33).unwrap();
+        let (_, entity) = index.tightest_containing(Offset(33)).unwrap();
         assert_eq!(entity, JavaEntityId::TypeRef(JavaDeclarationId(3)));
         // (4) the parameter name `c`
-        let (_, entity) = index.tightest_containing(35).unwrap();
+        let (_, entity) = index.tightest_containing(Offset(35)).unwrap();
         assert_eq!(entity, JavaEntityId::Declaration(JavaDeclarationId(3)));
         // (5) the local name `d`
-        let (_, entity) = index.tightest_containing(52).unwrap();
+        let (_, entity) = index.tightest_containing(Offset(52)).unwrap();
         assert_eq!(entity, JavaEntityId::Declaration(JavaDeclarationId(4)));
         // (1) the field name `a`
-        let (_, entity) = index.tightest_containing(18).unwrap();
+        let (_, entity) = index.tightest_containing(Offset(18)).unwrap();
         assert_eq!(entity, JavaEntityId::Declaration(JavaDeclarationId(1)));
     }
 }

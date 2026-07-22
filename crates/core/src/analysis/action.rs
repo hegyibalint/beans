@@ -1,4 +1,4 @@
-use crate::model::Span;
+use crate::model::OffsetSpan;
 
 pub enum ActionKind {
     Terminal,
@@ -6,7 +6,7 @@ pub enum ActionKind {
 }
 
 pub struct Action {
-    pub span: Span,
+    pub span: OffsetSpan,
     pub title: String,
     pub command: String,
     pub arguments: Vec<String>,

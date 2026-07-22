@@ -1,4 +1,4 @@
-use beans_core::model::Span;
+use beans_core::model::{Offset, OffsetSpan};
 
 #[derive(Debug, Clone)]
 pub struct JavaFile {
@@ -26,7 +26,10 @@ impl JavaFile {
                 parent: None,
                 owner: None,
                 declarations: Vec::new(),
-                span: Span { start: 0, end: 0 },
+                span: OffsetSpan {
+                    start: Offset(0),
+                    end: Offset(0),
+                },
             }],
             bodies: Vec::new(),
             compilation_unit_scope: JavaLexicalScopeId(0),
@@ -165,7 +168,7 @@ pub enum JavaNamespace {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct JavaIdentifier {
     pub text: String,
-    pub span: Span,
+    pub span: OffsetSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -182,7 +185,7 @@ impl JavaName {
         }
     }
 
-    pub fn span(&self) -> Span {
+    pub fn span(&self) -> OffsetSpan {
         match self {
             Self::Simple(identifier) => identifier.span,
             Self::Qualified(name) => name.span,
@@ -197,11 +200,11 @@ impl JavaName {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct JavaQualifiedName {
     segments: Vec<JavaIdentifier>,
-    pub span: Span,
+    pub span: OffsetSpan,
 }
 
 impl JavaQualifiedName {
-    pub(crate) fn new(segments: Vec<JavaIdentifier>, span: Span) -> Self {
+    pub(crate) fn new(segments: Vec<JavaIdentifier>, span: OffsetSpan) -> Self {
         assert!(
             segments.len() >= 2,
             "a qualified Java name has at least two identifiers"
@@ -265,12 +268,12 @@ impl JavaDeclaration {
         }
     }
 
-    pub fn name_span(&self) -> Option<Span> {
+    pub fn name_span(&self) -> Option<OffsetSpan> {
         self.name().map(|name| name.span)
     }
 
     /// Total: every declaration is rooted in written source.
-    pub fn span(&self) -> Span {
+    pub fn span(&self) -> OffsetSpan {
         match self {
             Self::Type(declaration) => declaration.span,
             Self::TypeParameter(declaration) => declaration.name.span,
@@ -320,7 +323,7 @@ impl JavaDeclaration {
 /// A type as written in source. Resolution against the model happens later.
 #[derive(Debug, Clone)]
 pub struct JavaTypeRef {
-    pub span: Span,
+    pub span: OffsetSpan,
     /// The erased head of the type: `List` for `List<String>`, `String` for `String[]`.
     pub name: JavaName,
     /// Primitives and `void` never resolve to declarations.
@@ -329,7 +332,7 @@ pub struct JavaTypeRef {
 
 #[derive(Debug, Clone)]
 pub struct JavaTypeDeclaration {
-    pub span: Span,
+    pub span: OffsetSpan,
     pub name: Option<JavaIdentifier>,
     pub kind: JavaTypeKind,
     pub superclass: Option<JavaTypeRef>,
@@ -354,7 +357,7 @@ pub struct JavaTypeParameterDeclaration {
 
 #[derive(Debug, Clone)]
 pub struct JavaFieldDeclaration {
-    pub span: Span,
+    pub span: OffsetSpan,
     pub name: Option<JavaIdentifier>,
     pub referenced_type: Option<JavaTypeRef>,
     pub declaring_scope: JavaLexicalScopeId,
@@ -362,7 +365,7 @@ pub struct JavaFieldDeclaration {
 
 #[derive(Debug, Clone)]
 pub struct JavaConstructorDeclaration {
-    pub span: Span,
+    pub span: OffsetSpan,
     pub parameters: Vec<JavaDeclarationId>,
     pub declaring_scope: JavaLexicalScopeId,
     pub body_scope: JavaLexicalScopeId,
@@ -371,7 +374,7 @@ pub struct JavaConstructorDeclaration {
 
 #[derive(Debug, Clone)]
 pub struct JavaMethodDeclaration {
-    pub span: Span,
+    pub span: OffsetSpan,
     pub name: Option<JavaIdentifier>,
     pub return_type: Option<JavaTypeRef>,
     pub parameters: Vec<JavaDeclarationId>,
@@ -382,7 +385,7 @@ pub struct JavaMethodDeclaration {
 
 #[derive(Debug, Clone)]
 pub struct JavaParameterDeclaration {
-    pub span: Span,
+    pub span: OffsetSpan,
     pub name: Option<JavaIdentifier>,
     pub ty: Option<JavaTypeRef>,
     pub declaring_scope: JavaLexicalScopeId,
@@ -390,7 +393,7 @@ pub struct JavaParameterDeclaration {
 
 #[derive(Debug, Clone)]
 pub struct JavaLocalDeclaration {
-    pub span: Span,
+    pub span: OffsetSpan,
     pub name: Option<JavaIdentifier>,
     pub ty: Option<JavaTypeRef>,
     pub declaring_scope: JavaLexicalScopeId,
@@ -402,7 +405,7 @@ pub struct JavaLexicalScope {
     /// The declaration that introduced this scope (type bodies, methods), if any.
     pub owner: Option<JavaDeclarationId>,
     pub declarations: Vec<JavaDeclarationId>,
-    pub span: Span,
+    pub span: OffsetSpan,
 }
 
 /// The executable content of a method, constructor, or initializer.
@@ -429,11 +432,11 @@ impl JavaBody {
     }
 }
 
-/// Span and scope are stamped at extraction: the parser knows both, and
+/// OffsetSpan and scope are stamped at extraction: the parser knows both, and
 /// later queries should never re-derive what was free at parse time.
 #[derive(Debug, Clone)]
 pub struct JavaBodyNode {
-    pub span: Span,
+    pub span: OffsetSpan,
     /// The scope this node lives in. Note a `Block` *introduces* a deeper
     /// scope (its payload), but is stamped with the scope it lives in.
     pub scope: JavaLexicalScopeId,
@@ -505,7 +508,7 @@ pub enum JavaEntityId {
 #[derive(Debug, Clone, Default)]
 pub struct JavaPositionIndex {
     /// Sorted by span start, then end. Spans from one parse are well-nested.
-    entries: Vec<(Span, JavaEntityId)>,
+    entries: Vec<(OffsetSpan, JavaEntityId)>,
 }
 
 impl JavaPositionIndex {
@@ -557,19 +560,19 @@ impl JavaPositionIndex {
         Self { entries }
     }
 
-    pub fn tightest_containing(&self, offset: usize) -> Option<(Span, JavaEntityId)> {
+    pub fn tightest_containing(&self, offset: Offset) -> Option<(OffsetSpan, JavaEntityId)> {
         self.iter_containing(offset).into_iter().next()
     }
 
     /// Every entry containing `offset`, tightest first.
-    pub fn iter_containing(&self, offset: usize) -> Vec<(Span, JavaEntityId)> {
+    pub fn iter_containing(&self, offset: Offset) -> Vec<(OffsetSpan, JavaEntityId)> {
         let mut containing: Vec<_> = self
             .entries
             .iter()
             .filter(|(span, _)| span.start <= offset && offset < span.end)
             .copied()
             .collect();
-        containing.sort_by_key(|(span, _)| (span.end - span.start, span.start));
+        containing.sort_by_key(|(span, _)| (span.len(), span.start));
         containing
     }
 }
@@ -584,7 +587,10 @@ mod tests {
             parent: Some(parent),
             owner: None,
             declarations: Vec::new(),
-            span: Span { start: 0, end: 0 },
+            span: OffsetSpan {
+                start: Offset(0),
+                end: Offset(0),
+            },
         });
         scope_id
     }
@@ -592,9 +598,9 @@ mod tests {
     fn identifier(text: &str, start: usize) -> JavaIdentifier {
         JavaIdentifier {
             text: text.into(),
-            span: Span {
-                start,
-                end: start + text.len(),
+            span: OffsetSpan {
+                start: Offset(start),
+                end: Offset(start + text.len()),
             },
         }
     }
@@ -605,7 +611,10 @@ mod tests {
         body: JavaLexicalScopeId,
     ) -> JavaDeclaration {
         JavaDeclaration::Type(JavaTypeDeclaration {
-            span: Span { start: 0, end: 20 },
+            span: OffsetSpan {
+                start: Offset(0),
+                end: Offset(20),
+            },
             name: Some(name),
             kind: JavaTypeKind::Class,
             superclass: None,
@@ -621,13 +630,19 @@ mod tests {
             type_declaration(name.clone(), JavaLexicalScopeId(0), JavaLexicalScopeId(1)),
             JavaDeclaration::TypeParameter(JavaTypeParameterDeclaration { name: name.clone() }),
             JavaDeclaration::Field(JavaFieldDeclaration {
-                span: Span { start: 0, end: 10 },
+                span: OffsetSpan {
+                    start: Offset(0),
+                    end: Offset(10),
+                },
                 name: Some(name.clone()),
                 referenced_type: None,
                 declaring_scope: JavaLexicalScopeId(0),
             }),
             JavaDeclaration::Method(JavaMethodDeclaration {
-                span: Span { start: 0, end: 10 },
+                span: OffsetSpan {
+                    start: Offset(0),
+                    end: Offset(10),
+                },
                 name: Some(name.clone()),
                 return_type: None,
                 parameters: Vec::new(),
@@ -643,7 +658,10 @@ mod tests {
         }
 
         let constructor = JavaDeclaration::Constructor(JavaConstructorDeclaration {
-            span: Span { start: 0, end: 10 },
+            span: OffsetSpan {
+                start: Offset(0),
+                end: Offset(10),
+            },
             parameters: Vec::new(),
             declaring_scope: JavaLexicalScopeId(0),
             body_scope: JavaLexicalScopeId(1),
@@ -663,7 +681,10 @@ mod tests {
                 identifier("Outer", 12),
                 identifier("Inner", 18),
             ],
-            Span { start: 10, end: 23 },
+            OffsetSpan {
+                start: Offset(10),
+                end: Offset(23),
+            },
         ));
 
         let type_segments = file.strip_package(&name).unwrap();
@@ -681,7 +702,10 @@ mod tests {
         file.package = Some(JavaName::Simple(identifier("p", 0)));
         let name = JavaName::Qualified(JavaQualifiedName::new(
             vec![identifier("q", 10), identifier("Outer", 12)],
-            Span { start: 10, end: 17 },
+            OffsetSpan {
+                start: Offset(10),
+                end: Offset(17),
+            },
         ));
 
         assert_eq!(file.strip_package(&name), None);
@@ -733,22 +757,34 @@ mod tests {
         let mut file = JavaFile::new();
         let compilation_unit = file.compilation_unit_scope;
         let outer = add_lexical_scope(&mut file, compilation_unit);
-        file.lexical_scopes[outer.0].span = Span { start: 5, end: 50 };
-        file.lexical_scopes[compilation_unit.0].span = Span { start: 0, end: 100 };
+        file.lexical_scopes[outer.0].span = OffsetSpan {
+            start: Offset(5),
+            end: Offset(50),
+        };
+        file.lexical_scopes[compilation_unit.0].span = OffsetSpan {
+            start: Offset(0),
+            end: Offset(100),
+        };
         file.declarations
             .push(JavaDeclaration::Local(JavaLocalDeclaration {
-                span: Span { start: 10, end: 15 },
+                span: OffsetSpan {
+                    start: Offset(10),
+                    end: Offset(15),
+                },
                 name: Some(identifier("x", 10)),
                 ty: None,
                 declaring_scope: outer,
             }));
         file.position_index = JavaPositionIndex::build(&file);
 
-        let entries = file.position_index.iter_containing(10);
+        let entries = file.position_index.iter_containing(Offset(10));
         assert_eq!(
             entries[0],
             (
-                Span { start: 10, end: 11 },
+                OffsetSpan {
+                    start: Offset(10),
+                    end: Offset(11),
+                },
                 JavaEntityId::Declaration(JavaDeclarationId(0))
             )
         );

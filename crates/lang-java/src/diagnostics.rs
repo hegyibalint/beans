@@ -96,7 +96,13 @@ mod tests {
 
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code, "cannot-find-symbol");
-        assert_eq!(diagnostics[0].span, beans_core::model::Span { start: 41, end: 42 });
+        assert_eq!(
+            diagnostics[0].span,
+            beans_core::model::OffsetSpan {
+                start: beans_core::model::Offset(41),
+                end: beans_core::model::Offset(42),
+            }
+        );
         assert_eq!(diagnostics[0].severity, DiagnosticSeverity::Error);
     }
 
