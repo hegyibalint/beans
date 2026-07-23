@@ -470,7 +470,11 @@ fn parse_block(
     file: &mut JavaFile,
     builder: &mut BodyBuilder,
 ) -> (JavaBodyNodeId, JavaLexicalScopeId) {
-    debug_assert_eq!(node.kind(), "block");
+    debug_assert!(
+        matches!(node.kind(), "block" | "constructor_body"),
+        "expected block or constructor_body, got {}",
+        node.kind(),
+    );
 
     let block_scope = new_scope(file, parent_scope, None, node.byte_range().into());
     let mut statements = Vec::new();
@@ -1134,5 +1138,52 @@ mod tests {
         // (1) the field name `a`
         let (_, entity) = index.tightest_containing(Offset(18)).unwrap();
         assert_eq!(entity, JavaEntityId::Declaration(JavaDeclarationId(1)));
+    }
+
+    #[test]
+    fn parses_a_constructor_body() {
+        // tree-sitter-java models a constructor's body as `constructor_body`,
+        // not `block`. The parser must still walk its statements so references
+        // inside a constructor resolve.
+        let mut parser = JavaParser::new();
+        let file = parser.parse("class A {\n    int a;\n    A(int c) {\n        this.a = c;\n    }\n}\n");
+
+        // D0 class A, D1 field a, D2 constructor A, D3 param c.
+        let JavaDeclaration::Constructor(constructor) = &file.declarations[2] else {
+            panic!("D2 is the constructor");
+        };
+        assert_eq!(constructor.parameters, [JavaDeclarationId(3)]);
+        let body_id = constructor.body.expect("the constructor has a body");
+
+        let body = &file.bodies[body_id.0];
+        let JavaBodyNodeKind::Statement(JavaStatement::Block { statements, .. }) =
+            &body.node(body.root).kind
+        else {
+            panic!("root is a block");
+        };
+        assert_eq!(statements.len(), 1);
+
+        // `this.a = c;` inside the constructor body parses into an assignment.
+        let JavaBodyNodeKind::Statement(JavaStatement::Expression(assign)) =
+            &body.node(statements[0]).kind
+        else {
+            panic!("the sole statement is an expression statement");
+        };
+        let JavaExpression::Assign { target, value } = body.expression(*assign).unwrap() else {
+            panic!("the expression is an assignment");
+        };
+        let JavaExpression::FieldAccess { receiver, name } = body.expression(*target).unwrap()
+        else {
+            panic!("the target is this.a");
+        };
+        assert!(matches!(
+            body.expression(*receiver),
+            Some(JavaExpression::This)
+        ));
+        assert_eq!(name.text, "a");
+        let JavaExpression::NameRef { name } = body.expression(*value).unwrap() else {
+            panic!("the value is the parameter c");
+        };
+        assert_eq!(name.text, "c");
     }
 }
