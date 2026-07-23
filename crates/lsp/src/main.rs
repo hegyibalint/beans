@@ -1,7 +1,5 @@
 mod translation;
 
-use std::collections::HashMap;
-
 use beans::Beans;
 use beans_platform_jvm::model::JvmSource;
 use lsp_server::{
@@ -9,7 +7,8 @@ use lsp_server::{
     Response as ServerResponse,
 };
 use lsp_types::notification::{
-    DidChangeTextDocument, DidOpenTextDocument, Notification, PublishDiagnostics,
+    DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, Notification,
+    PublishDiagnostics,
 };
 use lsp_types::request::{
     GotoDeclaration, GotoDeclarationParams, GotoDeclarationResponse, GotoDefinition,
@@ -20,7 +19,9 @@ use lsp_types::{
     HoverParams, HoverProviderCapability, MarkedString, OneOf, PublishDiagnosticsParams,
     ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
 };
-use lsp_types::{DidChangeTextDocumentParams, DidOpenTextDocumentParams};
+use lsp_types::{
+    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
+};
 
 use crate::translation::{
     position_to_line_column, source_to_uri, text_range_to_range, translate_diagnostics,
@@ -33,34 +34,16 @@ fn main() {
     run(conn, beans);
 }
 
-/// Lifecycle bookkeeping only: the last protocol version seen per open source,
-/// so stale `didChange` notifications can be dropped. The text itself lives in
-/// the engine, keyed by source.
-struct OpenDocument {
-    version: i32,
-}
-
+/// The engine owns the model — text keyed by source. Protocol versions and
+/// staleness carry no meaning in a synchronous, ordered notification loop, so
+/// the LSP holds nothing but the engine handle.
 struct State {
     beans: Beans,
-    documents: HashMap<JvmSource, OpenDocument>,
 }
 
 impl State {
     fn new(beans: Beans) -> Self {
-        Self {
-            beans,
-            documents: HashMap::new(),
-        }
-    }
-
-    fn is_stale(&self, source: &JvmSource, version: i32) -> bool {
-        self.documents
-            .get(source)
-            .is_some_and(|document| version <= document.version)
-    }
-
-    fn record(&mut self, source: JvmSource, version: i32) {
-        self.documents.insert(source, OpenDocument { version });
+        Self { beans }
     }
 }
 
@@ -195,6 +178,12 @@ fn handle_notification(conn: &Connection, state: &mut State, notification: Serve
                 .unwrap();
             handle_notification_did_change(conn, state, params);
         }
+        DidCloseTextDocument::METHOD => {
+            let params = notification
+                .extract::<DidCloseTextDocumentParams>(DidCloseTextDocument::METHOD)
+                .unwrap();
+            handle_notification_did_close(conn, params);
+        }
         _ => {}
     }
 }
@@ -208,17 +197,8 @@ fn handle_notification_did_open(
     let Some(source) = uri_to_source(&document.uri) else {
         return;
     };
-
-    // Open re-baselines the document: never stale, always processed.
-    process_document_and_publish_diagnostics(
-        conn,
-        &mut state.beans,
-        source.clone(),
-        document.uri.clone(),
-        document.version,
-        &document.text,
-    );
-    state.record(source, document.version);
+    state.beans.process(source.clone(), &document.text);
+    publish_diagnostics(conn, &state.beans, &source, document.uri, document.version);
 }
 
 fn handle_notification_did_change(
@@ -231,55 +211,58 @@ fn handle_notification_did_change(
     let Some(source) = uri_to_source(&uri) else {
         return;
     };
-    if state.is_stale(&source, version) {
-        return;
-    }
 
     // FULL sync sends the whole document as a single change entry.
     let Some(change) = params.content_changes.pop() else {
         return;
     };
-    process_document_and_publish_diagnostics(
-        conn,
-        &mut state.beans,
-        source.clone(),
-        uri.clone(),
-        version,
-        &change.text,
-    );
-    state.record(source, version);
+    state.beans.process(source.clone(), &change.text);
+    publish_diagnostics(conn, &state.beans, &source, uri, version);
 }
 
-fn process_document_and_publish_diagnostics(
+fn handle_notification_did_close(conn: &Connection, params: DidCloseTextDocumentParams) {
+    // The engine keeps the file's text so it stays resolvable as a navigation
+    // target; closing only clears the editor's squiggles.
+    send_diagnostics(conn, params.text_document.uri, vec![], None);
+}
+
+fn publish_diagnostics(
     conn: &Connection,
-    beans: &mut Beans,
-    source: JvmSource,
+    beans: &Beans,
+    source: &JvmSource,
     uri: Uri,
     version: i32,
-    contents: &str,
 ) {
-    beans.process(source.clone(), contents);
-    let Some(analysis) = beans.analyze(&source) else {
+    let Some(analysis) = beans.analyze(source) else {
         return;
     };
 
-    // Map and send off all diagnostics. The range comes from the engine's
-    // stored text, so the LSP layer never touches the buffer itself.
-    let lsp_diagnostics = analysis
+    // The range comes from the engine's stored text, so the LSP layer never
+    // touches the buffer itself.
+    let diagnostics = analysis
         .diagnostics
         .iter()
         .map(|d| {
             let range = beans
-                .text_range(&source, d.span)
+                .text_range(source, d.span)
                 .map(text_range_to_range)
                 .unwrap_or_default();
             translate_diagnostics(range, d)
         })
         .collect();
+    send_diagnostics(conn, uri, diagnostics, Some(version));
+}
+
+fn send_diagnostics(
+    conn: &Connection,
+    uri: Uri,
+    diagnostics: Vec<lsp_types::Diagnostic>,
+    version: Option<i32>,
+) {
     let params = PublishDiagnosticsParams {
         uri,
-        diagnostics: lsp_diagnostics,
-        version: Some(version),
+        diagnostics,
+        version,
     };
     let notification = ServerNotification::new(PublishDiagnostics::METHOD.to_string(), params);
     conn.sender
@@ -299,21 +282,6 @@ mod tests {
         WorkDoneProgressParams,
         notification::{DidOpenTextDocument, PublishDiagnostics},
     };
-
-    #[test]
-    fn state_keeps_only_the_latest_open_document() {
-        let mut state = State::new(Beans::new());
-        let uri: lsp_types::Uri = "file:///workspace/Foo.java".parse().unwrap();
-        let source = crate::translation::uri_to_source(&uri).unwrap();
-
-        state.record(source.clone(), 1);
-        state.record(source.clone(), 2);
-
-        assert_eq!(state.documents.len(), 1);
-        assert_eq!(state.documents.get(&source).map(|d| d.version), Some(2));
-        assert!(state.is_stale(&source, 2));
-        assert!(!state.is_stale(&source, 3));
-    }
 
     #[test]
     fn hover_shows_the_resolved_declaration() {
@@ -627,6 +595,60 @@ mod tests {
             .extract(PublishDiagnostics::METHOD)
             .expect("payload is PublishDiagnosticsParams");
         assert!(params.diagnostics.is_empty());
+
+        drop(client);
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn closing_a_file_clears_its_diagnostics() {
+        use lsp_types::DidCloseTextDocumentParams;
+        use lsp_types::notification::DidCloseTextDocument;
+
+        let uri: lsp_types::Uri = "file:///workspace/Foo.java".parse().unwrap();
+        let (server_conn, client) = Connection::memory();
+        let handle = std::thread::spawn(move || {
+            server_loop(server_conn, State::new(Beans::new()));
+        });
+
+        let did_open = DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: uri.clone(),
+                language_id: "java".into(),
+                version: 1,
+                text: "class Foo {}\n".into(),
+            },
+        };
+        client
+            .sender
+            .send(Message::Notification(Notification::new(
+                DidOpenTextDocument::METHOD.to_string(),
+                did_open,
+            )))
+            .unwrap();
+        client.receiver.recv().unwrap(); // drain the open publish
+
+        let did_close = DidCloseTextDocumentParams {
+            text_document: TextDocumentIdentifier { uri },
+        };
+        client
+            .sender
+            .send(Message::Notification(Notification::new(
+                DidCloseTextDocument::METHOD.to_string(),
+                did_close,
+            )))
+            .unwrap();
+
+        let published = match client.receiver.recv().unwrap() {
+            Message::Notification(published) => published,
+            other => panic!("expected a publish notification, got {other:?}"),
+        };
+        assert_eq!(published.method, PublishDiagnostics::METHOD);
+        let params: PublishDiagnosticsParams = published
+            .extract(PublishDiagnostics::METHOD)
+            .expect("payload is PublishDiagnosticsParams");
+        assert!(params.diagnostics.is_empty());
+        assert_eq!(params.version, None);
 
         drop(client);
         handle.join().unwrap();
