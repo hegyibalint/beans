@@ -82,19 +82,6 @@ fn send(conn: &Connection, msg: Message) {
     conn.sender.send(msg).unwrap();
 }
 
-/// The engine owns the model — text keyed by source. Protocol versions and
-/// staleness carry no meaning in a synchronous, ordered notification loop, so
-/// the LSP holds nothing but the engine handle.
-struct State {
-    beans: Beans,
-}
-
-impl State {
-    fn new(beans: Beans) -> Self {
-        Self { beans }
-    }
-}
-
 fn run(conn: Connection, beans: Beans) {
     let capabilities = ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
@@ -106,42 +93,41 @@ fn run(conn: Connection, beans: Beans) {
     let server_capabilities = serde_json::to_value(&capabilities).unwrap();
     let _initialization_params = conn.initialize(server_capabilities).unwrap();
 
-    // Session begins here: one initialize per connection, so State starts empty.
-    server_loop(conn, State::new(beans));
+    server_loop(conn, beans);
 }
 
-fn server_loop(conn: Connection, mut state: State) {
+fn server_loop(conn: Connection, mut beans: Beans) {
     for msg in &conn.receiver {
         trace("in", &msg);
         match msg {
-            Message::Request(req) => handle_request(&conn, &state, req),
+            Message::Request(req) => handle_request(&conn, &beans, req),
             Message::Response(_res) => {}
-            Message::Notification(notif) => handle_notification(&conn, &mut state, notif),
+            Message::Notification(notif) => handle_notification(&conn, &mut beans, notif),
         }
     }
 }
 
-fn handle_request(conn: &Connection, state: &State, request: ServerRequest) {
+fn handle_request(conn: &Connection, beans: &Beans, request: ServerRequest) {
     let response = match request.method.as_str() {
         GotoDeclaration::METHOD => {
             let (id, params) = request
                 .extract::<GotoDeclarationParams>(GotoDeclaration::METHOD)
                 .unwrap();
-            let locations = resolve_locations(state, params.text_document_position_params);
+            let locations = resolve_locations(beans, params.text_document_position_params);
             ServerResponse::new_ok(id, locations.map(GotoDeclarationResponse::Array))
         }
         GotoDefinition::METHOD => {
             let (id, params) = request
                 .extract::<GotoDefinitionParams>(GotoDefinition::METHOD)
                 .unwrap();
-            let locations = resolve_locations(state, params.text_document_position_params);
+            let locations = resolve_locations(beans, params.text_document_position_params);
             ServerResponse::new_ok(id, locations.map(GotoDefinitionResponse::Array))
         }
         HoverRequest::METHOD => {
             let (id, params) = request
                 .extract::<HoverParams>(HoverRequest::METHOD)
                 .unwrap();
-            ServerResponse::new_ok(id, handle_request_hover(state, params))
+            ServerResponse::new_ok(id, handle_request_hover(beans, params))
         }
         _ => return,
     };
@@ -150,15 +136,13 @@ fn handle_request(conn: &Connection, state: &State, request: ServerRequest) {
 }
 
 fn resolve_locations(
-    state: &State,
+    beans: &Beans,
     params: lsp_types::TextDocumentPositionParams,
 ) -> Option<Vec<lsp_types::Location>> {
     let source = uri_to_source(&params.text_document.uri)?;
-    let offset = state
-        .beans
-        .offset_at(&source, position_to_line_column(params.position))?;
+    let offset = beans.offset_at(&source, position_to_line_column(params.position))?;
 
-    let declarations = state.beans.find_declarations_for(&source, offset)?;
+    let declarations = beans.find_declarations_for(&source, offset)?;
 
     // A target may live in another file. Its range comes from that file's
     // stored line index in the engine, so no open buffer is required — the
@@ -167,7 +151,7 @@ fn resolve_locations(
         .iter()
         .filter_map(|target| {
             let uri = source_to_uri(&target.source)?;
-            let range = state.beans.text_range(&target.source, target.span)?;
+            let range = beans.text_range(&target.source, target.span)?;
             Some(lsp_types::Location {
                 uri,
                 range: text_range_to_range(range),
@@ -180,20 +164,16 @@ fn resolve_locations(
     Some(locations)
 }
 
-fn handle_request_hover(state: &State, params: HoverParams) -> Option<Hover> {
+fn handle_request_hover(beans: &Beans, params: HoverParams) -> Option<Hover> {
     let request = params.text_document_position_params;
     let source = uri_to_source(&request.text_document.uri)?;
-    let offset = state
-        .beans
-        .offset_at(&source, position_to_line_column(request.position))?;
-    let declarations = state.beans.find_declarations_for(&source, offset)?;
+    let offset = beans.offset_at(&source, position_to_line_column(request.position))?;
+    let declarations = beans.find_declarations_for(&source, offset)?;
     let declaration = declarations
         .into_iter()
         .find(|declaration| declaration.source == source)?;
 
-    let label = state
-        .beans
-        .declaration_label(&declaration.source, declaration.span);
+    let label = beans.declaration_label(&declaration.source, declaration.span);
 
     Some(Hover {
         contents: HoverContents::Scalar(MarkedString::String(match label {
@@ -206,26 +186,25 @@ fn handle_request_hover(state: &State, params: HoverParams) -> Option<Hover> {
                 declaration.span.start, declaration.span.end
             ),
         })),
-        range: state
-            .beans
+        range: beans
             .text_range(&declaration.source, declaration.span)
             .map(text_range_to_range),
     })
 }
 
-fn handle_notification(conn: &Connection, state: &mut State, notification: ServerNotification) {
+fn handle_notification(conn: &Connection, beans: &mut Beans, notification: ServerNotification) {
     match notification.method.as_str() {
         DidOpenTextDocument::METHOD => {
             let params = notification
                 .extract::<DidOpenTextDocumentParams>(DidOpenTextDocument::METHOD)
                 .unwrap();
-            handle_notification_did_open(conn, state, params);
+            handle_notification_did_open(conn, beans, params);
         }
         DidChangeTextDocument::METHOD => {
             let params = notification
                 .extract::<DidChangeTextDocumentParams>(DidChangeTextDocument::METHOD)
                 .unwrap();
-            handle_notification_did_change(conn, state, params);
+            handle_notification_did_change(conn, beans, params);
         }
         DidCloseTextDocument::METHOD => {
             let params = notification
@@ -239,20 +218,20 @@ fn handle_notification(conn: &Connection, state: &mut State, notification: Serve
 
 fn handle_notification_did_open(
     conn: &Connection,
-    state: &mut State,
+    beans: &mut Beans,
     params: DidOpenTextDocumentParams,
 ) {
     let document = params.text_document;
     let Some(source) = uri_to_source(&document.uri) else {
         return;
     };
-    state.beans.process(source.clone(), &document.text);
-    publish_diagnostics(conn, &state.beans, &source, document.uri, document.version);
+    beans.process(source.clone(), &document.text);
+    publish_diagnostics(conn, beans, &source, document.uri, document.version);
 }
 
 fn handle_notification_did_change(
     conn: &Connection,
-    state: &mut State,
+    beans: &mut Beans,
     mut params: DidChangeTextDocumentParams,
 ) {
     let uri = params.text_document.uri;
@@ -265,8 +244,8 @@ fn handle_notification_did_change(
     let Some(change) = params.content_changes.pop() else {
         return;
     };
-    state.beans.process(source.clone(), &change.text);
-    publish_diagnostics(conn, &state.beans, &source, uri, version);
+    beans.process(source.clone(), &change.text);
+    publish_diagnostics(conn, beans, &source, uri, version);
 }
 
 fn handle_notification_did_close(conn: &Connection, params: DidCloseTextDocumentParams) {
@@ -319,7 +298,7 @@ fn send_diagnostics(
 
 #[cfg(test)]
 mod tests {
-    use crate::{State, handle_request_hover, server_loop};
+    use crate::{handle_request_hover, server_loop};
     use beans::Beans;
     use lsp_server::{Connection, Message, Notification};
     use lsp_types::notification::Notification as _;
@@ -335,11 +314,11 @@ mod tests {
         let uri: lsp_types::Uri = "file:///workspace/Foo.java".parse().unwrap();
         let source = crate::translation::uri_to_source(&uri).unwrap();
         let contents = "class Outer {}";
-        let mut state = State::new(Beans::new());
-        state.beans.process(source.clone(), contents);
+        let mut beans = Beans::new();
+        beans.process(source.clone(), contents);
 
         let hover = handle_request_hover(
-            &state,
+            &beans,
             HoverParams {
                 text_document_position_params: TextDocumentPositionParams {
                     text_document: TextDocumentIdentifier { uri },
@@ -371,7 +350,7 @@ mod tests {
 
         let (server_conn, client) = Connection::memory();
         let handle = std::thread::spawn(move || {
-            server_loop(server_conn, State::new(Beans::new()));
+            server_loop(server_conn, Beans::new());
         });
 
         let did_open = DidOpenTextDocumentParams {
@@ -475,7 +454,7 @@ mod tests {
 
         let (server_conn, client) = Connection::memory();
         let handle = std::thread::spawn(move || {
-            server_loop(server_conn, State::new(Beans::new()));
+            server_loop(server_conn, Beans::new());
         });
 
         for (uri, text) in files {
@@ -565,7 +544,7 @@ mod tests {
 
         let (server_conn, client) = Connection::memory();
         let handle = std::thread::spawn(move || {
-            server_loop(server_conn, State::new(Beans::new()));
+            server_loop(server_conn, Beans::new());
         });
         let params = GotoDeclarationParams {
             text_document_position_params: TextDocumentPositionParams {
@@ -603,7 +582,7 @@ mod tests {
 
         let beans = Beans::new();
         let handle = std::thread::spawn(move || {
-            server_loop(server_conn, State::new(beans));
+            server_loop(server_conn, beans);
         });
 
         let did_open = DidOpenTextDocumentParams {
@@ -655,7 +634,7 @@ mod tests {
         let uri: lsp_types::Uri = "file:///workspace/Foo.java".parse().unwrap();
         let (server_conn, client) = Connection::memory();
         let handle = std::thread::spawn(move || {
-            server_loop(server_conn, State::new(Beans::new()));
+            server_loop(server_conn, Beans::new());
         });
 
         let did_open = DidOpenTextDocumentParams {
