@@ -11,7 +11,7 @@ use crate::model::{LineColumnPosition, LineColumnSpan, Offset, OffsetSpan};
 pub struct TextFile {
     /// Byte offset of each line start; always begins with 0.
     line_starts: Vec<usize>,
-    text: Box<str>,
+    contents: Box<str>,
 }
 
 impl TextFile {
@@ -26,22 +26,22 @@ impl TextFile {
             .collect();
         Self {
             line_starts,
-            text: text.into(),
+            contents: text.into(),
         }
     }
 
     pub fn contents(&self) -> &str {
-        &self.text
+        &self.contents
     }
 
     /// Byte offset → line/column (egress: the coordinate LSP wants).
     pub fn line_column(&self, offset: Offset) -> LineColumnPosition {
-        let offset = offset.0.min(self.text.len());
+        let offset = offset.0.min(self.contents.len());
         // The last line start not past `offset`. line_starts[0] == 0 <= offset,
         // so partition_point is always >= 1 and the subtraction never wraps.
         let line = self.line_starts.partition_point(|&start| start <= offset) - 1;
         let line_start = self.line_starts[line];
-        let character = self.text[line_start..offset].encode_utf16().count();
+        let character = self.contents[line_start..offset].encode_utf16().count();
         LineColumnPosition {
             line: line as u32,
             character: character as u32,
@@ -66,12 +66,12 @@ impl TextFile {
         let mut line_end = self
             .line_starts
             .get(line + 1)
-            .map_or(self.text.len(), |&next| next - 1);
-        if line_end > line_start && self.text.as_bytes()[line_end - 1] == b'\r' {
+            .map_or(self.contents.len(), |&next| next - 1);
+        if line_end > line_start && self.contents.as_bytes()[line_end - 1] == b'\r' {
             line_end -= 1;
         }
 
-        let line_text = &self.text[line_start..line_end];
+        let line_text = &self.contents[line_start..line_end];
         let character = position.character as usize;
         if line_text.is_ascii() {
             return (character <= line_text.len()).then_some(Offset(line_start + character));
