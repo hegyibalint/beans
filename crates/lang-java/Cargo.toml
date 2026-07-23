@@ -13,3 +13,6 @@ core = { path = "../core" }
 platform-jvm = { path = "../platform-jvm" }
 tree-sitter = { workspace = true }
 tree-sitter-java = { workspace = true }
+
+[dev-dependencies]
+test-support = { path = "../test-support" }

@@ -569,7 +569,7 @@ impl JavaPositionIndex {
         let mut containing: Vec<_> = self
             .entries
             .iter()
-            .filter(|(span, _)| span.start <= offset && offset < span.end)
+            .filter(|(span, _)| span.start <= offset && offset <= span.end)
             .copied()
             .collect();
         containing.sort_by_key(|(span, _)| (span.len(), span.start));
