@@ -23,15 +23,63 @@ use lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
 };
 
+use std::fs::OpenOptions;
+use std::io::{LineWriter, Write};
+use std::sync::{Mutex, OnceLock};
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use crate::translation::{
     position_to_line_column, source_to_uri, text_range_to_range, translate_diagnostics,
     uri_to_source,
 };
 
 fn main() {
+    init_trace();
     let (conn, _) = Connection::stdio();
     let beans = Beans::new();
     run(conn, beans);
+}
+
+/// A process-global JSONL sink for raw protocol traffic, in the shape of a
+/// logger: set once from the environment, then written from the single message
+/// loop. Absent because there is nothing per-connection to carry.
+static TRACE: OnceLock<Mutex<LineWriter<std::fs::File>>> = OnceLock::new();
+
+/// Opens the trace file named by `BEANS_TRACE`, if set. An unset variable or an
+/// unopenable path leaves the sink empty, so [`trace`] stays a silent no-op —
+/// tracing is opt-in and never a reason to fail startup.
+fn init_trace() {
+    let Some(path) = std::env::var_os("BEANS_TRACE") else {
+        return;
+    };
+    if let Ok(file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = TRACE.set(Mutex::new(LineWriter::new(file)));
+    }
+}
+
+/// Appends one message to the trace as a single JSONL record tagged with its
+/// direction and a millisecond timestamp. Every step is best-effort: a broken
+/// trace must never take the server down.
+fn trace(dir: &str, msg: &Message) {
+    let Some(sink) = TRACE.get() else {
+        return;
+    };
+    let at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis())
+        .unwrap_or(0);
+    let record = serde_json::json!({ "dir": dir, "at": at, "msg": msg });
+    if let Ok(mut sink) = sink.lock() {
+        let _ = writeln!(sink, "{record}");
+    }
+}
+
+/// Sends an outbound message, tracing it first so responses and server
+/// notifications share the JSONL stream with the inbound traffic that provoked
+/// them.
+fn send(conn: &Connection, msg: Message) {
+    trace("out", &msg);
+    conn.sender.send(msg).unwrap();
 }
 
 /// The engine owns the model — text keyed by source. Protocol versions and
@@ -64,6 +112,7 @@ fn run(conn: Connection, beans: Beans) {
 
 fn server_loop(conn: Connection, mut state: State) {
     for msg in &conn.receiver {
+        trace("in", &msg);
         match msg {
             Message::Request(req) => handle_request(&conn, &state, req),
             Message::Response(_res) => {}
@@ -97,7 +146,7 @@ fn handle_request(conn: &Connection, state: &State, request: ServerRequest) {
         _ => return,
     };
 
-    conn.sender.send(Message::Response(response)).unwrap();
+    send(conn, Message::Response(response));
 }
 
 fn resolve_locations(
@@ -265,9 +314,7 @@ fn send_diagnostics(
         version,
     };
     let notification = ServerNotification::new(PublishDiagnostics::METHOD.to_string(), params);
-    conn.sender
-        .send(Message::Notification(notification))
-        .unwrap();
+    send(conn, Message::Notification(notification));
 }
 
 #[cfg(test)]
