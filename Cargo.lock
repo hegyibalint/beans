@@ -292,6 +292,7 @@ dependencies = [
  "core",
  "engine",
  "platform-jvm",
+ "test-support",
 ]
 
 [[package]]
@@ -310,6 +311,10 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "test-support"
+version = "0.0.1"
 
 [[package]]
 name = "tree-sitter"
