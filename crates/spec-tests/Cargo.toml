@@ -12,3 +12,4 @@ name = "beans_spec_tests"
 core = { path = "../core" }
 engine = { path = "../engine" }
 platform-jvm = { path = "../platform-jvm" }
+test-support = { path = "../test-support" }

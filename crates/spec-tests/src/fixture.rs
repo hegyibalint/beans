@@ -5,7 +5,7 @@ use beans_core::analysis::diagnostic::Diagnostics;
 use beans_core::model::Offset;
 use beans_platform_jvm::model::JvmSource;
 
-use crate::markers::{Cursor, strip_markers};
+use beans_test_support::markers::{Cursor, strip_markers};
 
 pub fn fixture() -> Fixture {
     Fixture {
