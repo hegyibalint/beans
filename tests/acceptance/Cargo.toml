@@ -1,0 +1,15 @@
+[package]
+name = "acceptance"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+name = "beans_acceptance"
+
+[dependencies]
+core = { path = "../../crates/core" }
+engine = { path = "../../crates/engine" }
+platform-jvm = { path = "../../crates/platform-jvm" }
+test-support = { path = "../support" }

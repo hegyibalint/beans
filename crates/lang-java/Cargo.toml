@@ -15,4 +15,4 @@ tree-sitter = { workspace = true }
 tree-sitter-java = { workspace = true }
 
 [dev-dependencies]
-test-support = { path = "../test-support" }
+test-support = { path = "../../tests/support" }

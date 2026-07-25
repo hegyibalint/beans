@@ -1,4 +1,4 @@
-use beans_spec_tests::fixture::fixture;
+use beans_acceptance::fixture::fixture;
 
 // Type import resolution is one observable feature assembled from rules across the JLS.
 // Every expectation starts as an expected failure and is promoted independently.

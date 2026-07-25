@@ -24,6 +24,8 @@ beans/
 ├── Cargo.toml
 ├── crates/
 │   ├── ...
+├── tests/
+│   ├── ...
 ├── sidecar/
 │       ...
 ├── extensions/
@@ -40,6 +42,10 @@ This project layout ensures good separation between all the different verticals:
    - Crate `platform-jvm` being the underlying common JVM platform vertical, used by all languages that run on the JVM
    - Crate `engine` as the frontend of the diagnostics engine, but not yet LSP specific
    - Crate `lsp` as the LSP frontend of the diagnostics engine; quite thin, as most of the work is done in `engine`
+ - `tests` contains standalone test packages that belong to no single crate
+   - Package `support` holding engine-neutral test mechanics, and depending on no production crate
+   - Package `acceptance` driving the composed engine as a black box
+   - Tests owned by one crate stay in that crate; production crates may only reach into `tests` as dev-dependencies
  - `sidecar` could contain a multi-project Java build implementing functionality over the JVM
    - Example project could be `integration-gradle`, `integration-maven`
  - `schema` could contain definitions between the `crates` and `sidecar`
@@ -130,7 +136,7 @@ Wider-scoped, batched runs are still possible, but they are not the default. The
 
 Testing in Beans follows typical testing patterns, with some additions. Code should be tested in typical unit, integration, and end-to-end tests. However, because a lot of behavior is based on language specifications, we need to add a fourth type of test: specification tests. Specification tests are acceptance tests written from the spec, often ahead of the implementation.
 
-Specification tests are written from the specification alone. Imagine a QA developer who reads the spec and encodes what it promises, knowing nothing about how Beans works inside: the test treats Beans as a black box and asserts only observable behavior. Because of this, spec tests naturally exercise the whole system — needing the composed engine is a side-effect of the perspective, not a design choice. They live in the `spec-tests` crate, above the engine; tests that peek inside a vertical are not spec tests and stay in that vertical. Spec tests drive the engine, never the LSP: the LSP is just one frontend, and other consumers like a CLI fork from the engine level, so maximum precision must already hold at that surface. The LSP keeps its own thin end-to-end tests for translation and transport.
+Specification tests are written from the specification alone. Imagine a QA developer who reads the spec and encodes what it promises, knowing nothing about how Beans works inside: the test treats Beans as a black box and asserts only observable behavior. Because of this, spec tests naturally exercise the whole system — needing the composed engine is a side-effect of the perspective, not a design choice. They live in the `acceptance` package under `tests/`, above the engine; tests that peek inside a vertical are not spec tests and stay in that vertical. Spec tests drive the engine, never the LSP: the LSP is just one frontend, and other consumers like a CLI fork from the engine level, so maximum precision must already hold at that surface. The LSP keeps its own thin end-to-end tests for translation and transport.
 
 The suite mirrors the specification's structure: one area per language (`java/`, later `interop/` with `<producer>_<consumer>` folders), one file per chapter (`jls07_packages.rs`), one module per section (`jls_7_4_package_declarations`). Section numbers cite a single pinned edition of the spec. Spec versions are not directories: most rules hold across all versions, and behavior that genuinely varies by language level is a parameter on the individual test.
 
