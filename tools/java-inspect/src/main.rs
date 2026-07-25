@@ -9,6 +9,17 @@ use model::JavaFile;
 use parser::JavaParser;
 use tree_sitter::{Node, Parser as TreeSitterParser};
 
+// TODO: depend on `lang-java` instead of recompiling its source.
+//
+// `model` and `parser` are private in lang-java's lib.rs, so this tool cannot
+// reach them as a dependent. `#[path]` sidesteps that by compiling those files
+// again as our own modules — a second build of production source, with a
+// different dependency graph than the one that ships.
+//
+// The fix is a public surface, which README.md § Reusability says Beans owes
+// third-party tools anyway. What it should expose is undecided: semantic
+// answers (`core`'s Language/NavigationTarget, over the engine) or the Java
+// arena this tool actually prints. Only the former is safe to keep stable.
 #[allow(dead_code)]
 #[path = "../../../crates/lang-java/src/model.rs"]
 mod model;
