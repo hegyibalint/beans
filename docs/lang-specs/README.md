@@ -1,0 +1,1 @@
+Use the `scripts/specs/update.py` to fill in the content here.

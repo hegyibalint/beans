@@ -28,6 +28,10 @@ README_HEADER = f"""\
 **Source:** {BASE_URL}/index.html
 """
 
-if __name__ == "__main__":
+def main():
     print("=== Downloading JVM Specification (SE 26) ===")
     download_spec("jvms", EDITION, BASE_URL, CHAPTERS, README_HEADER)
+
+
+if __name__ == "__main__":
+    main()
