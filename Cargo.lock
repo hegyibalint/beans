@@ -66,6 +66,8 @@ dependencies = [
  "core",
  "lang-java",
  "platform-jvm",
+ "workspace",
+ "workspace-beans",
 ]
 
 [[package]]

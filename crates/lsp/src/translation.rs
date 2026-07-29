@@ -5,16 +5,20 @@ use beans_core::model::{LineColumnPosition, LineColumnSpan};
 use beans_platform_jvm::model::JvmSource;
 use lsp_types::{Position, Uri};
 
+pub fn uri_to_source(uri: &Uri) -> Option<JvmSource> {
+    Some(JvmSource::SourceFile {
+        path: uri_to_path(uri)?,
+    })
+}
+
 /// Only `file:` URIs name something we can read; `untitled:`, `git:` and the
 /// virtual-filesystem schemes have no path behind them.
-pub fn uri_to_source(uri: &Uri) -> Option<JvmSource> {
+pub fn uri_to_path(uri: &Uri) -> Option<PathBuf> {
     if !uri.scheme()?.as_str().eq_ignore_ascii_case("file") {
         return None;
     }
     let path = uri.path().as_estr().decode().into_string_lossy();
-    Some(JvmSource::SourceFile {
-        path: PathBuf::from(path.as_ref()),
-    })
+    Some(PathBuf::from(path.as_ref()))
 }
 
 /// The inverse of `uri_to_source` for on-disk sources. Only `SourceFile`

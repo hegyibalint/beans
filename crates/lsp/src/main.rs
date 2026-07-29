@@ -11,8 +11,8 @@ use lsp_types::notification::{
     PublishDiagnostics,
 };
 use lsp_types::request::{
-    GotoDeclaration, GotoDeclarationParams, GotoDeclarationResponse, GotoDefinition,
-    HoverRequest, Request as _,
+    GotoDeclaration, GotoDeclarationParams, GotoDeclarationResponse, GotoDefinition, HoverRequest,
+    Request as _,
 };
 use lsp_types::{
     DeclarationCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
@@ -25,12 +25,13 @@ use lsp_types::{
 
 use std::fs::OpenOptions;
 use std::io::{LineWriter, Write};
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::translation::{
     position_to_line_column, source_to_uri, text_range_to_range, translate_diagnostics,
-    uri_to_source,
+    uri_to_path, uri_to_source,
 };
 
 fn main() {
@@ -82,7 +83,7 @@ fn send(conn: &Connection, msg: Message) {
     conn.sender.send(msg).unwrap();
 }
 
-fn run(conn: Connection, beans: Beans) {
+fn run(conn: Connection, mut beans: Beans) {
     let capabilities = ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
         declaration_provider: Some(DeclarationCapability::Simple(true)),
@@ -91,9 +92,28 @@ fn run(conn: Connection, beans: Beans) {
         ..Default::default()
     };
     let server_capabilities = serde_json::to_value(&capabilities).unwrap();
-    let _initialization_params = conn.initialize(server_capabilities).unwrap();
+    let initialization_params = conn.initialize(server_capabilities).unwrap();
+
+    if let Some(root) = workspace_root(&initialization_params) {
+        match beans.open_workspace(&root) {
+            Ok(loaded) => eprintln!("workspace {}: {loaded} sources", root.display()),
+            Err(error) => eprintln!("workspace {}: {error}", root.display()),
+        }
+    }
 
     server_loop(conn, beans);
+}
+
+/// The first folder the client opened. `rootUri` is deprecated in favour of
+/// `workspaceFolders`, so try that first and fall back for older clients.
+fn workspace_root(params: &serde_json::Value) -> Option<PathBuf> {
+    let folder = params
+        .get("workspaceFolders")
+        .and_then(|folders| folders.get(0))
+        .and_then(|folder| folder.get("uri"))
+        .or_else(|| params.get("rootUri"))?;
+
+    uri_to_path(&folder.as_str()?.parse().ok()?)
 }
 
 fn server_loop(conn: Connection, mut beans: Beans) {

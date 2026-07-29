@@ -1,0 +1,4 @@
+# Everything in this folder is one unit. Beans reads this at startup, so a file
+# is known before any editor opens it.
+[unit.sample]
+sources = ["."]

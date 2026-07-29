@@ -12,3 +12,5 @@ name = "beans"
 core = { path = "../core" }
 lang-java = { path = "../lang-java" }
 platform-jvm = { path = "../platform-jvm" }
+workspace = { path = "../workspace" }
+workspace-beans = { path = "../workspace-beans" }

@@ -7,6 +7,14 @@ use beans_core::{
 };
 use beans_lang_java::LanguageJava;
 use beans_platform_jvm::{PlatformJvm, model::JvmSource};
+use std::fs;
+use std::path::Path;
+
+use crate::workspace::java_sources;
+
+mod workspace;
+
+pub use beans_workspace_beans::LoadError;
 
 pub struct Beans {
     revision: Revision,
@@ -31,7 +39,37 @@ impl Beans {
 impl Beans {
     pub fn process(&mut self, source: JvmSource, contents: &str) {
         let revision = self.revision.bump();
+        self.process_at(revision, source, contents);
+    }
 
+    /// Load everything `beans.toml` at `root` declares, if there is one, and
+    /// answer how many sources that was. Without a descriptor we know nothing
+    /// about the project and wait for an editor to hand us files, which is the
+    /// behaviour this replaces.
+    ///
+    /// The whole batch shares one revision, so no query sees a project that is
+    /// half loaded, and one load is one change rather than one per file.
+    pub fn open_workspace(&mut self, root: &Path) -> Result<usize, LoadError> {
+        let Some(workspace) = beans_workspace_beans::load(root)? else {
+            return Ok(0);
+        };
+
+        let revision = self.revision.bump();
+        let mut loaded = 0;
+        for path in java_sources(&workspace) {
+            // A file that vanished between listing and reading is not worth
+            // failing an import over.
+            let Ok(contents) = fs::read_to_string(&path) else {
+                continue;
+            };
+            self.process_at(revision, JvmSource::SourceFile { path }, &contents);
+            loaded += 1;
+        }
+
+        Ok(loaded)
+    }
+
+    fn process_at(&mut self, revision: Revision, source: JvmSource, contents: &str) {
         // Text is language-agnostic: store it for every source so coordinates
         // resolve even for files no language claims.
         self.text_files
