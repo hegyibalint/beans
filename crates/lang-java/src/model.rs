@@ -279,6 +279,9 @@ pub struct JavaTypeDeclaration {
     pub span: OffsetSpan,
     pub name: Option<JavaIdentifier>,
     pub kind: JavaTypeKind,
+    /// `None` where §8.1.1 says access control does not apply: local and
+    /// anonymous classes.
+    pub access: Option<JavaAccess>,
     pub superclass: Option<JavaTypeRef>,
     pub declaring_scope: JavaLexicalScopeId,
     pub body_scope: JavaLexicalScopeId,
@@ -293,6 +296,29 @@ pub enum JavaTypeKind {
     AnnotationInterface,
 }
 
+/// JLS 26 §6.6.1's four levels. Exactly one applies: §8.1.1 makes more than one
+/// access modifier a compile-time error, so this is an enum and not a flag set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JavaAccessLevel {
+    Public,
+    Protected,
+    Package,
+    Private,
+}
+
+/// The level that applies, and where it came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JavaAccess {
+    pub level: JavaAccessLevel,
+    /// Where the modifier was written. `None` means the position supplied it:
+    ///
+    /// - top-level type, or class member: package (§6.6.1)
+    /// - anything in an interface body: `public` (§9.3, §9.4, §9.5)
+    /// - normal class constructor: package (§8.8.3)
+    /// - enum constructor: `private` (§8.9)
+    pub declared_at: Option<OffsetSpan>,
+}
+
 #[derive(Debug, Clone)]
 pub struct JavaTypeParameterDeclaration {
     /// Total: the name is the entire payload of a type parameter today.
@@ -303,6 +329,7 @@ pub struct JavaTypeParameterDeclaration {
 pub struct JavaFieldDeclaration {
     pub span: OffsetSpan,
     pub name: Option<JavaIdentifier>,
+    pub access: Option<JavaAccess>,
     pub referenced_type: Option<JavaTypeRef>,
     pub declaring_scope: JavaLexicalScopeId,
 }
@@ -447,8 +474,8 @@ pub enum JavaEntityId {
     Import(usize),
 }
 
-/// Per-file position index: the persistent skeleton of the syntax tree.
-/// Derived data, rebuilt from the model after every parse.
+/// When the user clicks around, we need to answer one question fast: what is the tightest, most fitting _something_ at this offset?
+/// The position index is a fast answer to that question.
 #[derive(Debug, Clone, Default)]
 pub struct JavaPositionIndex {
     /// Sorted by span start, then end. Spans from one parse are well-nested.
@@ -561,6 +588,7 @@ mod tests {
             },
             name: Some(name),
             kind: JavaTypeKind::Class,
+            access: None,
             superclass: None,
             declaring_scope: declaring,
             body_scope: body,
@@ -579,6 +607,7 @@ mod tests {
                     end: Offset(10),
                 },
                 name: Some(name.clone()),
+                access: None,
                 referenced_type: None,
                 declaring_scope: JavaLexicalScopeId(0),
             }),

@@ -2,12 +2,12 @@ use beans_core::model::{Offset, OffsetSpan};
 use tree_sitter::{Node, Parser};
 
 use crate::model::{
-    JavaBody, JavaBodyNode, JavaBodyNodeId, JavaBodyNodeKind, JavaConstructorDeclaration,
-    JavaDeclaration, JavaDeclarationId, JavaExpression, JavaFieldDeclaration, JavaFile,
-    JavaIdentifier, JavaImport, JavaImportKind, JavaLexicalScope, JavaLexicalScopeId,
-    JavaLocalDeclaration, JavaMethodDeclaration, JavaName, JavaParameterDeclaration,
-    JavaPositionIndex, JavaQualifiedName, JavaStatement, JavaTypeDeclaration, JavaTypeKind,
-    JavaTypeRef,
+    JavaAccess, JavaAccessLevel, JavaBody, JavaBodyNode, JavaBodyNodeId, JavaBodyNodeKind,
+    JavaConstructorDeclaration, JavaDeclaration, JavaDeclarationId, JavaExpression,
+    JavaFieldDeclaration, JavaFile, JavaIdentifier, JavaImport, JavaImportKind, JavaLexicalScope,
+    JavaLexicalScopeId, JavaLocalDeclaration, JavaMethodDeclaration, JavaName,
+    JavaParameterDeclaration, JavaPositionIndex, JavaQualifiedName, JavaStatement,
+    JavaTypeDeclaration, JavaTypeKind, JavaTypeRef,
 };
 
 pub struct JavaParser {
@@ -213,6 +213,48 @@ fn parse_annotation_type_declaration(
     )
 }
 
+fn parse_access(node: Node) -> Option<JavaAccess> {
+    let implicit = implicit_access_level(node)?;
+    let declared = declared_access_level(node);
+
+    Some(JavaAccess {
+        level: declared.map_or(implicit, |(level, _)| level),
+        declared_at: declared.map(|(_, span)| span),
+    })
+}
+
+/// What the position means when nothing is written.
+fn implicit_access_level(node: Node) -> Option<JavaAccessLevel> {
+    match node.parent()?.kind() {
+        // §6.6.1. A record body and an anonymous class body are both
+        // `class_body`; an enum's members sit after its constants.
+        "program" | "class_body" | "enum_body_declarations" => Some(JavaAccessLevel::Package),
+        // §9.5, which §9.6 extends to annotation interfaces.
+        "interface_body" | "annotation_type_body" => Some(JavaAccessLevel::Public),
+        // §8.1.1: no access level here at all. A local or anonymous class is
+        // reached through its scope (§6.3), never through access control.
+        _ => None,
+    }
+}
+
+fn declared_access_level(node: Node) -> Option<(JavaAccessLevel, OffsetSpan)> {
+    let mut cursor = node.walk();
+    let modifiers = node
+        .children(&mut cursor)
+        .find(|child| child.kind() == "modifiers")?;
+
+    let mut cursor = modifiers.walk();
+    modifiers.children(&mut cursor).find_map(|child| {
+        let level = match child.kind() {
+            "public" => JavaAccessLevel::Public,
+            "protected" => JavaAccessLevel::Protected,
+            "private" => JavaAccessLevel::Private,
+            _ => return None,
+        };
+        Some((level, child.byte_range().into()))
+    })
+}
+
 fn add_type_declaration(
     node: Node,
     kind: JavaTypeKind,
@@ -235,6 +277,7 @@ fn add_type_declaration(
             span: node.byte_range().into(),
             name: Some(name),
             kind,
+            access: parse_access(node),
             superclass,
             declaring_scope,
             body_scope,
@@ -284,6 +327,10 @@ fn parse_field_declaration(node: Node, scope: JavaLexicalScopeId, src: &str, fil
         .child_by_field_name("type")
         .and_then(|ty| parse_type_ref(ty, src));
 
+    // The modifiers sit on the declaration, so every declarator in
+    // `int a, b;` shares one access level.
+    let access = parse_access(node);
+
     let mut cursor = node.walk();
     for declarator in node.children_by_field_name("declarator", &mut cursor) {
         let name = declarator
@@ -295,6 +342,7 @@ fn parse_field_declaration(node: Node, scope: JavaLexicalScopeId, src: &str, fil
             JavaDeclaration::Field(JavaFieldDeclaration {
                 span: declarator.byte_range().into(),
                 name,
+                access,
                 referenced_type: ty.clone(),
                 declaring_scope: scope,
             }),
@@ -866,6 +914,154 @@ mod tests {
                 JavaTypeKind::AnnotationInterface,
             ]
         );
+    }
+
+    // JLS 26 §6.6.1 gives four levels and no fifth for "nothing was written".
+    // What absence means is decided by the position, so each case below fixes a
+    // position and asks what the parser resolved it to.
+    mod access {
+        use super::*;
+
+        fn access_of(file: &JavaFile, name: &str) -> Option<JavaAccess> {
+            file.declarations
+                .iter()
+                .find_map(|declaration| match declaration {
+                    JavaDeclaration::Type(ty)
+                        if ty.name.as_ref().is_some_and(|it| it.text == name) =>
+                    {
+                        Some(ty.access)
+                    }
+                    _ => None,
+                })
+                .expect("the fixture declares this type")
+        }
+
+        fn package_private(file: &JavaFile, name: &str) {
+            assert_eq!(
+                access_of(file, name),
+                Some(JavaAccess {
+                    level: JavaAccessLevel::Package,
+                    declared_at: None,
+                })
+            );
+        }
+
+        fn implicitly_public(file: &JavaFile, name: &str) {
+            assert_eq!(
+                access_of(file, name),
+                Some(JavaAccess {
+                    level: JavaAccessLevel::Public,
+                    declared_at: None,
+                })
+            );
+        }
+
+        #[test]
+        fn a_top_level_type_without_a_modifier_is_package_private() {
+            let mut parser = JavaParser::new();
+            let file = parser.parse("class C {}");
+
+            package_private(&file, "C");
+        }
+
+        // A record body and an anonymous class body are both `class_body`, and
+        // an enum's members sit in `enum_body_declarations` after the constants,
+        // so each container is its own case even though all four are classes.
+        #[test]
+        fn a_member_of_any_class_without_a_modifier_is_package_private() {
+            let mut parser = JavaParser::new();
+            let file = parser.parse(
+                "class C { class InClass {} }\
+                 record R() { class InRecord {} }\
+                 enum E { A; class InEnum {} }",
+            );
+
+            package_private(&file, "InClass");
+            package_private(&file, "InRecord");
+            package_private(&file, "InEnum");
+        }
+
+        // §9.5: every member class or interface in an interface body is
+        // implicitly public, and §9.6 hands the same rule to annotation
+        // interfaces. The same absence means the opposite of the case above,
+        // which is why the position has to be part of the answer.
+        #[test]
+        fn a_member_of_any_interface_without_a_modifier_is_public() {
+            let mut parser = JavaParser::new();
+            let file = parser.parse(
+                "interface I { class InInterface {} }\
+                 @interface A { class InAnnotation {} }",
+            );
+
+            implicitly_public(&file, "InInterface");
+            implicitly_public(&file, "InAnnotation");
+        }
+
+        // §8.1.1: public pertains only to top level and member classes, and
+        // protected and private only to member classes. A local class has no
+        // level to carry; it is reached through its scope or not at all.
+        #[test]
+        fn a_local_class_has_no_access_level() {
+            let mut parser = JavaParser::new();
+            let file = parser.parse("class C { void m() { class L {} } }");
+
+            assert_eq!(access_of(&file, "L"), None);
+        }
+
+        #[test]
+        fn every_level_is_recognised_where_it_is_legal() {
+            let mut parser = JavaParser::new();
+            let file = parser.parse(
+                "class C { public class Pub {} protected class Prot {} private class Priv {} }",
+            );
+
+            let levels = ["Pub", "Prot", "Priv"]
+                .map(|name| access_of(&file, name).map(|access| access.level));
+            assert_eq!(
+                levels,
+                [
+                    Some(JavaAccessLevel::Public),
+                    Some(JavaAccessLevel::Protected),
+                    Some(JavaAccessLevel::Private),
+                ]
+            );
+        }
+
+        #[test]
+        fn an_explicit_modifier_records_where_it_was_written() {
+            let mut parser = JavaParser::new();
+            let file = parser.parse("public class C {}");
+
+            assert_eq!(
+                access_of(&file, "C"),
+                Some(JavaAccess {
+                    level: JavaAccessLevel::Public,
+                    declared_at: Some(OffsetSpan {
+                        start: Offset(0),
+                        end: Offset(6),
+                    }),
+                })
+            );
+        }
+
+        // §9.5 permits redundantly writing what the position already implies,
+        // so the level is unchanged and only the provenance differs.
+        #[test]
+        fn a_redundant_modifier_is_still_recorded_as_written() {
+            let mut parser = JavaParser::new();
+            let file = parser.parse("interface I { public class Inner {} }");
+
+            assert_eq!(
+                access_of(&file, "Inner"),
+                Some(JavaAccess {
+                    level: JavaAccessLevel::Public,
+                    declared_at: Some(OffsetSpan {
+                        start: Offset(14),
+                        end: Offset(20),
+                    }),
+                })
+            );
+        }
     }
 
     #[test]
