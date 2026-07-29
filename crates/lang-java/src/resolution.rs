@@ -1,18 +1,14 @@
 use beans_core::language::NavigationTarget;
 use beans_core::model::Offset;
-use beans_core::storage::Revision;
-use beans_platform_jvm::{
-    PlatformJvm,
-    model::{JvmQualifiedName, JvmSource},
-};
+use beans_platform_jvm::model::{JvmQualifiedName, JvmSource};
 
 use crate::{
-    LanguageJava,
     model::{
         JavaBodyId, JavaBodyNodeId, JavaBodyNodeKind, JavaDeclaration, JavaDeclarationId,
         JavaEntityId, JavaExpression, JavaFile, JavaIdentifier, JavaImport, JavaImportKind,
         JavaLexicalScopeId, JavaName, JavaNamespace, JavaTypeRef,
     },
+    query::JavaQuery,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,42 +27,62 @@ pub enum JavaTypeResolution {
     Unresolved,
 }
 
+/// JLS 26 §6.5.5.1 does not stage this. It asks only that a simple type name
+/// occur in the scope of exactly one declaration of a class, interface, or type
+/// parameter (§6.3). The staging below is where that "exactly one" comes from:
+/// several declarations are usually in scope at once, and §6.4.1 says which of
+/// them shadows which. So each stage cites the rule that puts it where it is,
+/// and the order is a reading of §6.4.1 rather than a procedure the spec spells
+/// out.
 pub fn resolve_type_name(
     name: &JavaName,
     source: &JvmSource,
     file: &JavaFile,
     current_lexical_scope_id: JavaLexicalScopeId,
-    revision: Revision,
-    _jvm: &PlatformJvm,
-    java: &LanguageJava,
+    query: &JavaQuery,
 ) -> JavaTypeResolution {
-    // Qualified names follow a separate path that classifies their prefix and
-    // resolves members; not implemented yet.
+    // §6.5.5.2. A qualified name classifies its prefix as a package or a type
+    // first; `resolve_canonical_name` walks that, but only for import names so
+    // far.
     let JavaName::Simple(name) = name else {
         return JavaTypeResolution::Unresolved;
     };
 
-    // Stage 1. Resolve declarations through the lexical scope chain, nearest scope first.
+    // Stage 1. Type parameters, member types and local types, nearest scope
+    // first. §6.4.1: a type declaration shadows every other type of that name
+    // in scope where it occurs, which is what makes nearest-first right.
     let lexical = resolve_lexical_type_name(name, source, file, current_lexical_scope_id);
     if !matches!(lexical, JavaTypeResolution::Unresolved) {
         return lexical;
     }
 
-    // Stage 2. Resolve single-type and single-static imports.
-    let exact_import = resolve_exact_imports(name, file, revision, java);
+    // Stage 2. Single-type (§7.5.1) and single-static (§7.5.3) imports. §6.4.1
+    // has a single-type import shadow a top-level type of that name in
+    // *another* compilation unit of this package, so it outranks stage 3 while
+    // stage 1 keeps whatever this file declares.
+    let exact_import = resolve_exact_imports(name, file, query);
     if !matches!(exact_import, JavaTypeResolution::Unresolved) {
         return exact_import;
     }
 
-    // Stage 3. Resolve top-level types in the current package.
-    let same_package = resolve_from_same_package(name, file, revision, java);
+    // Stage 3. Top-level types of the current package, in scope by §6.3: "all
+    // the class and interface declarations in the package in which the top
+    // level class or interface is declared".
+    let same_package = resolve_from_same_package(name, file, query);
     if !matches!(same_package, JavaTypeResolution::Unresolved) {
         return same_package;
     }
 
-    // Stage 4. Resolve ordinary on-demand imports, static on-demand imports, and java.lang.
-    // Stage 5. Resolve module imports.
-    // Stage 6. Search accessible declarations for import suggestions.
+    // Stage 4. Type-import-on-demand (§7.5.2), static-import-on-demand
+    // (§7.5.4), and the implicit `import java.lang.*` (§7.3). Below stage 3 on
+    // §7.5.2's own reading, where an on-demand import is shadowed "by a class
+    // or interface [...] declared in the package to which the compilation unit
+    // belongs". That sentence is example prose, not a rule in §6.4.1, which
+    // says nothing about this pair.
+    // Stage 5. Single-module imports (§7.5.5). Last because §6.4.1 has both
+    // on-demand forms shadow them and has them shadow nothing at all.
+    // Stage 6. Import suggestions. No JLS rule: the spec ends a failed lookup
+    // in a compile-time error, and offering to fix it is ours.
     // Not implemented yet: absence of the later stages means unresolved,
     // never a guess.
     JavaTypeResolution::Unresolved
@@ -108,59 +124,194 @@ fn resolve_lexical_type_name(
 fn resolve_exact_imports(
     name: &JavaIdentifier,
     file: &JavaFile,
-    revision: Revision,
-    java: &LanguageJava,
+    query: &JavaQuery,
 ) -> JavaTypeResolution {
-    let matching_imports = file
+    let candidates = file
         .imports
         .iter()
         .filter(|import| import.kind == JavaImportKind::Type)
-        .filter(|import| exact_import_introduces_name(import, name));
-
-    let imported_java_files = matching_imports.flat_map(|import| {
-        java.iter_file_models_at(revision)
-            .filter(move |(_, imported_file)| {
-                let Some(type_segments) = imported_file.strip_package(&import.name) else {
-                    return false;
-                };
-                !type_segments.is_empty()
-            })
-            .map(move |(source, file)| (import, source, file))
-    });
-
-    let candidates = imported_java_files.filter_map(|(import, source, imported_file)| {
-        let type_segments = imported_file.strip_package(&import.name)?;
-        let (first, member_path) = type_segments.split_first()?;
-
-        let mut current =
-            imported_file
-                .top_level_declarations
-                .iter()
-                .copied()
-                .find(|declaration_id| {
-                    let JavaDeclaration::Type(declaration) =
-                        &imported_file.declarations[declaration_id.0]
-                    else {
-                        return false;
-                    };
-                    declaration
-                        .name
-                        .as_ref()
-                        .is_some_and(|name| name.text == first.text)
-                })?;
-        for segment in member_path {
-            current = find_member(imported_file, current, segment, JavaNamespace::Type)
-                .into_iter()
-                .next()?;
-        }
-
-        Some(JavaTypeTarget::Java {
-            source: source.clone(),
-            declaration: current,
-        })
-    });
+        .filter(|import| exact_import_introduces_name(import, name))
+        .flat_map(|import| resolve_canonical_name(&import.name, query));
 
     classify_candidates(candidates)
+}
+
+/// A dotted name hides where the package stops and the type begins. JLS 26
+/// §6.5.4.2 answers it with one question asked left to right: does whatever `Q`
+/// denotes so far have a member class or interface named `Id`? A package and a
+/// type are the same question there, so the walk below only has to remember
+/// which of the two it is holding. It starts on the unnamed package (§6.5.4.1)
+/// and switches to type mode the first time the answer is yes. Segments join
+/// with `.` before the switch and with `$` after it (§13.1). Nothing is guessed
+/// and no prefix is tried twice.
+///
+/// Package existence is never probed. §6.5.2 defers it ("A later step
+/// determines whether or not a package of that name actually exists"), and
+/// §6.5.4.2 only ever falls back to reclassifying as a package name, so ending
+/// the walk in package mode is unresolved and nothing more. §6.5.5.2 is what
+/// makes that final: a type name `Q.Id` is a compile-time error unless `Id`
+/// names exactly one accessible member of `Q`, and its "more than one" clause is
+/// where case 8's ambiguity comes from. Note §6.5.4.2 asks only about a member
+/// class or interface; the field and method arms belong to ambiguous names
+/// (§6.5.2), and a type name is not an ambiguous name.
+///
+/// 1. The spec's own worked example.
+///
+/// ```text
+/// lake: java.util.Date
+///
+/// java   probe java            miss  -> package java
+/// util   probe java.util       miss  -> package java.util
+/// Date   probe java.util.Date  hit   -> type
+/// ```
+///
+/// 2. A nested type in a Java file. Projection registers the top-level class
+///    only, so the member step walks the model and no `$` is ever spelled.
+///
+/// ```text
+/// lake: p.Outer            (Outer.java declares Inner inside it)
+///
+/// p      probe p             miss  -> package p
+/// Outer  probe p.Outer       hit   -> type, Java arm
+/// Inner  find_member(Inner)  hit   -> type, Java arm
+/// ```
+///
+/// 3. The same spelling against a class file. Nesting is flat in the lake, and
+///    the mode change is where the dot becomes a dollar.
+///
+/// ```text
+/// lake: java.util.Map, java.util.Map$Entry
+///
+/// java   probe java                 miss  -> package java
+/// util   probe java.util            miss  -> package java.util
+/// Map    probe java.util.Map        hit   -> type, Jvm arm
+/// Entry  probe java.util.Map$Entry  hit   -> type, Jvm arm
+/// ```
+///
+/// 4. Deeper nesting is the same step repeated.
+///
+/// ```text
+/// lake: p.A, p.A$B, p.A$B$C
+///
+/// p  probe p        miss  -> package p
+/// A  probe p.A      hit   -> type
+/// B  probe p.A$B    hit   -> type
+/// C  probe p.A$B$C  hit   -> type
+/// ```
+///
+/// 5. The unnamed package, where the empty prefix joins without a leading dot.
+///
+/// ```text
+/// lake: Outer, Outer$Inner
+///
+/// Outer  probe Outer        hit  -> type
+/// Inner  probe Outer$Inner  hit  -> type
+/// ```
+///
+/// 6. A name nothing declares reaches the end still in package mode.
+///
+/// ```text
+/// lake: (nothing under com)
+///
+/// com      probe com                  miss  -> package com
+/// example  probe com.example          miss  -> package com.example
+/// Missing  probe com.example.Missing  miss  -> package com.example.Missing
+///                                           -> unresolved
+/// ```
+///
+/// 7. A type and a package sharing a name. Once `p.Outer` reclassifies as a
+///    type, §6.5.4.2 offers only a member type, so the top-level
+///    `p.Outer.Inner` is unreachable by that spelling even though the lake
+///    holds exactly that binary name. §7.1 makes the collision a compile-time
+///    error, so only a broken program gets here; the walk still has to answer,
+///    and it answers by the same rule as everything else.
+///
+/// ```text
+/// lake: p.Outer        (a class)
+///       p.Outer.Inner  (a top-level class in package p.Outer)
+///
+/// p      probe p             miss  -> package p
+/// Outer  probe p.Outer       hit   -> type
+/// Inner  member type Inner?  no    -> unresolved
+/// ```
+///
+/// 8. Two containers declaring one name. The probe answers with a set, so the
+///    walk fans out over it and any ambiguity survives to the end instead of
+///    being settled on the way.
+///
+/// ```text
+/// lake: p.B in app/src, p.B in lib/src   (scope holds both trees)
+///
+/// p  probe p    miss    -> package p
+/// B  probe p.B  2 hits  -> type {app, lib}  -> ambiguous
+/// ```
+///
+///    Two class files instead collapse to one answer, because a `Jvm` target
+///    carries the binary name alone and drops which container it came from.
+///    The platform reports both; this vertical cannot tell them apart.
+fn resolve_canonical_name(name: &JavaName, query: &JavaQuery) -> Vec<JavaTypeTarget> {
+    let mut mode = Mode::Package(String::new());
+
+    for segment in name.segments() {
+        mode = match mode {
+            Mode::Package(prefix) => {
+                let candidate = JvmQualifiedName::in_package(&prefix, &segment.text);
+                let targets = query.types_named(&candidate);
+                if targets.is_empty() {
+                    Mode::Package(candidate.as_str().to_owned())
+                } else {
+                    Mode::Type(targets)
+                }
+            }
+            Mode::Type(targets) => Mode::Type(
+                targets
+                    .into_iter()
+                    .flat_map(|target| member_types(target, segment, query))
+                    .collect(),
+            ),
+        };
+    }
+
+    match mode {
+        Mode::Type(targets) => targets,
+        Mode::Package(_) => Vec::new(),
+    }
+}
+
+enum Mode {
+    /// The dotted package name walked so far; empty is the unnamed package.
+    Package(String),
+    /// What the switch to type mode produced. There is no way back, so an
+    /// empty set here means the rest of the name has nothing to attach to.
+    Type(Vec<JavaTypeTarget>),
+}
+
+/// §6.5.4.2's TypeName branch: a member type, or nothing. A file this vertical
+/// parsed holds its members in the model; anything else holds them in the lake
+/// under a nested binary name.
+fn member_types(
+    target: JavaTypeTarget,
+    name: &JavaIdentifier,
+    query: &JavaQuery,
+) -> Vec<JavaTypeTarget> {
+    match target {
+        JavaTypeTarget::Java {
+            source,
+            declaration,
+        } => {
+            let Some(file) = query.model_of(&source) else {
+                return Vec::new();
+            };
+            find_member(file, declaration, name, JavaNamespace::Type)
+                .into_iter()
+                .map(|declaration| JavaTypeTarget::Java {
+                    source: source.clone(),
+                    declaration,
+                })
+                .collect()
+        }
+        JavaTypeTarget::Jvm(fqn) => query.types_named(&fqn.nested(&name.text)),
+    }
 }
 
 fn exact_import_introduces_name(import: &JavaImport, name: &JavaIdentifier) -> bool {
@@ -171,56 +322,21 @@ fn exact_import_introduces_name(import: &JavaImport, name: &JavaIdentifier) -> b
         .is_some_and(|imported| imported.text == name.text)
 }
 
+/// The current package plus the simple name is the binary name the lake was
+/// told about at projection time, so this is one lookup rather than a walk
+/// over every file comparing package declarations.
 fn resolve_from_same_package(
     name: &JavaIdentifier,
     file: &JavaFile,
-    revision: Revision,
-    java: &LanguageJava,
+    query: &JavaQuery,
 ) -> JavaTypeResolution {
-    let candidates = java
-        .iter_file_models_at(revision)
-        // Keep files in the same package
-        .filter(|(_, model)| package_names_match(model.package.as_ref(), file.package.as_ref()))
-        // Find top level declarations that match
-        .flat_map(|(source, model)| {
-            model
-                .iter_declarations(&model.top_level_declarations)
-                .filter_map(move |(declaration_id, declaration)| {
-                    let JavaDeclaration::Type(declaration) = declaration else {
-                        return None;
-                    };
-                    let declaration_name = declaration.name.as_ref()?;
+    let package = file
+        .package
+        .as_ref()
+        .map(JavaName::dotted)
+        .unwrap_or_default();
 
-                    (declaration_name.text == name.text).then(|| JavaTypeTarget::Java {
-                        source: source.clone(),
-                        declaration: declaration_id,
-                    })
-                })
-        });
-
-    classify_candidates(candidates)
-}
-
-fn package_names_match(left: Option<&JavaName>, right: Option<&JavaName>) -> bool {
-    match (left, right) {
-        (None, None) => true,
-        (Some(left), Some(right)) => {
-            let left_segments = left.segments();
-            let right_segments = right.segments();
-            if left_segments.len() != right_segments.len() {
-                return false;
-            }
-
-            for index in 0..left_segments.len() {
-                if left_segments[index].text != right_segments[index].text {
-                    return false;
-                }
-            }
-
-            true
-        }
-        _ => false,
-    }
+    classify_candidates(query.types_named(&JvmQualifiedName::in_package(&package, &name.text)))
 }
 
 fn classify_candidates(candidates: impl IntoIterator<Item = JavaTypeTarget>) -> JavaTypeResolution {
@@ -267,9 +383,7 @@ pub fn resolve_occurrence_at(
     source: &JvmSource,
     file: &JavaFile,
     offset: Offset,
-    revision: Revision,
-    jvm: &PlatformJvm,
-    java: &LanguageJava,
+    query: &JavaQuery,
 ) -> Vec<NavigationTarget<JvmSource>> {
     let Some((_, entity)) = file.position_index.tightest_containing(offset) else {
         return Vec::new();
@@ -282,21 +396,13 @@ pub fn resolve_occurrence_at(
             let Some(type_ref) = declaration.type_ref() else {
                 return Vec::new();
             };
-            resolve_type_reference(
-                source,
-                file,
-                type_ref,
-                declaration.declaring_scope(),
-                revision,
-                jvm,
-                java,
-            )
+            resolve_type_reference(source, file, type_ref, declaration.declaring_scope(), query)
         }
         JavaEntityId::BodyNode(body, node) => {
             let JavaBodyNodeKind::Expression(_) = &file.bodies[body.0].node(node).kind else {
                 return Vec::new();
             };
-            resolve_expression(source, file, body, node, revision, jvm, java)
+            resolve_expression(source, file, body, node, query)
         }
         JavaEntityId::Scope(..) | JavaEntityId::Import(..) => Vec::new(),
     };
@@ -304,7 +410,7 @@ pub fn resolve_occurrence_at(
     targets
         .iter()
         .filter_map(|(target_source, declaration_id)| {
-            let target_file = model_of(java, revision, target_source)?;
+            let target_file = query.model_of(target_source)?;
             let span = target_file.declarations[declaration_id.0].name_span()?;
             Some(NavigationTarget {
                 source: target_source.clone(),
@@ -319,9 +425,7 @@ fn resolve_expression(
     file: &JavaFile,
     body_id: JavaBodyId,
     expression_id: JavaBodyNodeId,
-    revision: Revision,
-    jvm: &PlatformJvm,
-    java: &LanguageJava,
+    query: &JavaQuery,
 ) -> Vec<(JvmSource, JavaDeclarationId)> {
     let body = &file.bodies[body_id.0];
     let scope = body.node(expression_id).scope;
@@ -339,11 +443,11 @@ fn resolve_expression(
             .unwrap_or_default(),
         JavaExpression::FieldAccess { receiver, name } => {
             let Some((class_source, class)) =
-                resolve_receiver_class(source, file, body_id, *receiver, revision, jvm, java)
+                resolve_receiver_class(source, file, body_id, *receiver, query)
             else {
                 return Vec::new();
             };
-            let Some(class_file) = model_of(java, revision, &class_source) else {
+            let Some(class_file) = query.model_of(&class_source) else {
                 return Vec::new();
             };
             find_member(class_file, class, name, JavaNamespace::Variable)
@@ -353,9 +457,7 @@ fn resolve_expression(
         }
         JavaExpression::MethodCall { receiver, name, .. } => {
             let receiver_class = match receiver {
-                Some(receiver) => {
-                    resolve_receiver_class(source, file, body_id, *receiver, revision, jvm, java)
-                }
+                Some(receiver) => resolve_receiver_class(source, file, body_id, *receiver, query),
                 None => file
                     .enclosing_type_declaration(scope)
                     .map(|declaration| (source.clone(), declaration)),
@@ -363,7 +465,7 @@ fn resolve_expression(
             let Some((class_source, class)) = receiver_class else {
                 return Vec::new();
             };
-            let Some(class_file) = model_of(java, revision, &class_source) else {
+            let Some(class_file) = query.model_of(&class_source) else {
                 return Vec::new();
             };
             find_member(class_file, class, name, JavaNamespace::Method)
@@ -372,7 +474,7 @@ fn resolve_expression(
                 .collect()
         }
         JavaExpression::ObjectCreation { ty, .. } => {
-            resolve_type_reference(source, file, ty, scope, revision, jvm, java)
+            resolve_type_reference(source, file, ty, scope, query)
         }
         JavaExpression::Assign { .. } | JavaExpression::Literal => Vec::new(),
     }
@@ -385,9 +487,7 @@ fn resolve_receiver_class(
     file: &JavaFile,
     body_id: JavaBodyId,
     expression_id: JavaBodyNodeId,
-    revision: Revision,
-    jvm: &PlatformJvm,
-    java: &LanguageJava,
+    query: &JavaQuery,
 ) -> Option<(JvmSource, JavaDeclarationId)> {
     let body = &file.bodies[body_id.0];
     let scope = body.node(expression_id).scope;
@@ -408,24 +508,14 @@ fn resolve_receiver_class(
                     file,
                     type_ref,
                     declaration.declaring_scope(),
-                    revision,
-                    jvm,
-                    java,
+                    query,
                 )
                 .into_iter()
                 .next();
             }
 
             // Not a variable: try a type name for static access (`Bar.asd`).
-            match resolve_type_name(
-                &JavaName::Simple(name.clone()),
-                source,
-                file,
-                scope,
-                revision,
-                jvm,
-                java,
-            ) {
+            match resolve_type_name(&JavaName::Simple(name.clone()), source, file, scope, query) {
                 JavaTypeResolution::Resolved(JavaTypeTarget::Java {
                     source,
                     declaration,
@@ -435,8 +525,8 @@ fn resolve_receiver_class(
         }
         JavaExpression::FieldAccess { receiver, name } => {
             let (class_source, class) =
-                resolve_receiver_class(source, file, body_id, *receiver, revision, jvm, java)?;
-            let class_file = model_of(java, revision, &class_source)?;
+                resolve_receiver_class(source, file, body_id, *receiver, query)?;
+            let class_file = query.model_of(&class_source)?;
             let member = find_member(class_file, class, name, JavaNamespace::Variable)
                 .into_iter()
                 .next()?;
@@ -446,24 +536,20 @@ fn resolve_receiver_class(
                 class_file,
                 declaration.type_ref()?,
                 declaration.declaring_scope(),
-                revision,
-                jvm,
-                java,
+                query,
             )
             .into_iter()
             .next()
         }
         JavaExpression::MethodCall { receiver, name, .. } => {
             let receiver_class = match receiver {
-                Some(receiver) => {
-                    resolve_receiver_class(source, file, body_id, *receiver, revision, jvm, java)
-                }
+                Some(receiver) => resolve_receiver_class(source, file, body_id, *receiver, query),
                 None => file
                     .enclosing_type_declaration(scope)
                     .map(|declaration| (source.clone(), declaration)),
             }?;
             let (class_source, class) = receiver_class;
-            let class_file = model_of(java, revision, &class_source)?;
+            let class_file = query.model_of(&class_source)?;
             let member = find_member(class_file, class, name, JavaNamespace::Method)
                 .into_iter()
                 .next()?;
@@ -473,15 +559,13 @@ fn resolve_receiver_class(
                 class_file,
                 declaration.type_ref()?,
                 declaration.declaring_scope(),
-                revision,
-                jvm,
-                java,
+                query,
             )
             .into_iter()
             .next()
         }
         JavaExpression::ObjectCreation { ty, .. } => {
-            resolve_type_reference(source, file, ty, scope, revision, jvm, java)
+            resolve_type_reference(source, file, ty, scope, query)
                 .into_iter()
                 .next()
         }
@@ -495,15 +579,13 @@ fn resolve_type_reference(
     file: &JavaFile,
     type_ref: &JavaTypeRef,
     scope: JavaLexicalScopeId,
-    revision: Revision,
-    jvm: &PlatformJvm,
-    java: &LanguageJava,
+    query: &JavaQuery,
 ) -> Vec<(JvmSource, JavaDeclarationId)> {
     if type_ref.primitive {
         return Vec::new();
     }
 
-    match resolve_type_name(&type_ref.name, source, file, scope, revision, jvm, java) {
+    match resolve_type_name(&type_ref.name, source, file, scope, query) {
         JavaTypeResolution::Resolved(JavaTypeTarget::Java {
             source,
             declaration,
@@ -558,701 +640,5 @@ pub(crate) fn resolve_variable_name(
     Vec::new()
 }
 
-pub(crate) fn model_of<'java>(
-    java: &'java LanguageJava,
-    revision: Revision,
-    source: &JvmSource,
-) -> Option<&'java JavaFile> {
-    java.iter_file_models_at(revision)
-        .find_map(|(candidate, file)| (candidate == source).then_some(file))
-}
-
 #[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use beans_core::{
-        language::LanguageProcessing,
-        model::{Offset, OffsetSpan},
-    };
-
-    use super::*;
-    use crate::{model::JavaTypeDeclaration, parser::JavaParser};
-
-    fn identifier(text: &str) -> JavaIdentifier {
-        JavaIdentifier {
-            text: text.into(),
-            span: OffsetSpan {
-                start: Offset(0),
-                end: Offset(text.len()),
-            },
-        }
-    }
-
-    fn source(path: &str) -> JvmSource {
-        JvmSource::SourceFile {
-            path: PathBuf::from(path),
-        }
-    }
-
-    fn type_declaration(
-        file: &JavaFile,
-        declaration_id: JavaDeclarationId,
-    ) -> &JavaTypeDeclaration {
-        let JavaDeclaration::Type(declaration) = &file.declarations[declaration_id.0] else {
-            panic!("expected a type declaration");
-        };
-        declaration
-    }
-
-    fn type_in_scope(
-        file: &JavaFile,
-        scope_id: JavaLexicalScopeId,
-        name: &str,
-    ) -> JavaDeclarationId {
-        file.lexical_scopes[scope_id.0]
-            .declarations
-            .iter()
-            .copied()
-            .find(|declaration_id| {
-                type_declaration(file, *declaration_id)
-                    .name
-                    .as_ref()
-                    .is_some_and(|identifier| identifier.text == name)
-            })
-            .unwrap()
-    }
-
-    fn file_model<'java>(
-        java: &'java LanguageJava,
-        revision: Revision,
-        source: &JvmSource,
-    ) -> &'java JavaFile {
-        model_of(java, revision, source).unwrap()
-    }
-
-    fn process(
-        java: &mut LanguageJava,
-        jvm: &mut PlatformJvm,
-        revision: Revision,
-        path: &str,
-        contents: &str,
-    ) -> JvmSource {
-        let source = source(path);
-        java.process(source.clone(), revision, jvm, contents);
-        source
-    }
-
-    #[test]
-    fn lexical_resolution_prefers_the_innermost_scope() {
-        let mut parser = JavaParser::new();
-        let file = parser.parse("class Outer { class X {} class Inner { class X {} } }");
-        let outer = file.top_level_declarations[0];
-        let outer_scope = type_declaration(&file, outer).body_scope;
-        let inner = type_in_scope(&file, outer_scope, "Inner");
-        let inner_scope = type_declaration(&file, inner).body_scope;
-        let inner_x = type_in_scope(&file, inner_scope, "X");
-        let source = source("Outer.java");
-
-        assert_eq!(
-            resolve_lexical_type_name(&identifier("X"), &source, &file, inner_scope),
-            JavaTypeResolution::Resolved(JavaTypeTarget::Java {
-                source,
-                declaration: inner_x,
-            })
-        );
-    }
-
-    #[test]
-    fn lexical_resolution_continues_to_the_parent_scope() {
-        let mut parser = JavaParser::new();
-        let file = parser.parse("class Outer { class X {} class Inner {} }");
-        let outer = file.top_level_declarations[0];
-        let outer_scope = type_declaration(&file, outer).body_scope;
-        let outer_x = type_in_scope(&file, outer_scope, "X");
-        let inner = type_in_scope(&file, outer_scope, "Inner");
-        let inner_scope = type_declaration(&file, inner).body_scope;
-        let source = source("Outer.java");
-
-        assert_eq!(
-            resolve_lexical_type_name(&identifier("X"), &source, &file, inner_scope),
-            JavaTypeResolution::Resolved(JavaTypeTarget::Java {
-                source,
-                declaration: outer_x,
-            })
-        );
-    }
-
-    #[test]
-    fn same_package_resolves_a_top_level_type_by_package_spelling() {
-        let revision = Revision::default();
-        let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
-        let resolved_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "p/X.java",
-            "/* shift the package span */ package p; class X {}",
-        );
-        let current_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "p/Test.java",
-            "package p; class Test {}",
-        );
-        let resolved_declaration =
-            file_model(&java, revision, &resolved_source).top_level_declarations[0];
-        let current_file = file_model(&java, revision, &current_source);
-
-        assert_eq!(
-            resolve_from_same_package(&identifier("X"), current_file, revision, &java),
-            JavaTypeResolution::Resolved(JavaTypeTarget::Java {
-                source: resolved_source,
-                declaration: resolved_declaration,
-            })
-        );
-    }
-
-    #[test]
-    fn same_package_ignores_a_type_from_another_package() {
-        let revision = Revision::default();
-        let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
-        process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "p/X.java",
-            "package p; class X {}",
-        );
-        let current_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "q/Test.java",
-            "package q; class Test {}",
-        );
-        let current_file = file_model(&java, revision, &current_source);
-
-        assert_eq!(
-            resolve_from_same_package(&identifier("X"), current_file, revision, &java),
-            JavaTypeResolution::Unresolved
-        );
-    }
-
-    #[test]
-    fn same_package_resolves_a_type_from_the_unnamed_package() {
-        let revision = Revision::default();
-        let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
-        let resolved_source = process(&mut java, &mut jvm, revision, "X.java", "class X {}");
-        let current_source = process(&mut java, &mut jvm, revision, "Test.java", "class Test {}");
-        let resolved_declaration =
-            file_model(&java, revision, &resolved_source).top_level_declarations[0];
-        let current_file = file_model(&java, revision, &current_source);
-
-        assert_eq!(
-            resolve_from_same_package(&identifier("X"), current_file, revision, &java),
-            JavaTypeResolution::Resolved(JavaTypeTarget::Java {
-                source: resolved_source,
-                declaration: resolved_declaration,
-            })
-        );
-    }
-
-    #[test]
-    fn same_package_collects_candidates_from_every_matching_file() {
-        let revision = Revision::default();
-        let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
-        let first_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "p/First.java",
-            "package p; class X {}",
-        );
-        let second_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "p/Second.java",
-            "package p; class X {}",
-        );
-        let current_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "p/Test.java",
-            "package p; class Test {}",
-        );
-        let first_declaration =
-            file_model(&java, revision, &first_source).top_level_declarations[0];
-        let second_declaration =
-            file_model(&java, revision, &second_source).top_level_declarations[0];
-        let current_file = file_model(&java, revision, &current_source);
-
-        let JavaTypeResolution::Ambiguous(candidates) =
-            resolve_from_same_package(&identifier("X"), current_file, revision, &java)
-        else {
-            panic!("expected ambiguous same-package types");
-        };
-
-        assert_eq!(candidates.len(), 2);
-        assert!(candidates.contains(&JavaTypeTarget::Java {
-            source: first_source,
-            declaration: first_declaration,
-        }));
-        assert!(candidates.contains(&JavaTypeTarget::Java {
-            source: second_source,
-            declaration: second_declaration,
-        }));
-    }
-
-    #[test]
-    fn static_imports_do_not_introduce_type_names_yet() {
-        let revision = Revision::default();
-        let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
-        let current_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "q/Test.java",
-            "package q; import static p.Outer.Inner; class Test {}",
-        );
-        let current_file = file_model(&java, revision, &current_source);
-
-        assert_eq!(
-            resolve_exact_imports(&identifier("Inner"), current_file, revision, &java),
-            JavaTypeResolution::Unresolved
-        );
-    }
-
-    #[test]
-    fn exact_import_resolves_a_member_type() {
-        let revision = Revision::default();
-        let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
-        let outer_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "p/Outer.java",
-            "package p; class Outer { class Inner {} }",
-        );
-        let importing_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "q/Test.java",
-            "package q; import p.Outer.Inner; class Test {}",
-        );
-        let outer_file = file_model(&java, revision, &outer_source);
-        let outer_scope =
-            type_declaration(outer_file, outer_file.top_level_declarations[0]).body_scope;
-        let inner = type_in_scope(outer_file, outer_scope, "Inner");
-        let importing_file = file_model(&java, revision, &importing_source);
-
-        assert_eq!(
-            resolve_exact_imports(&identifier("Inner"), importing_file, revision, &java),
-            JavaTypeResolution::Resolved(JavaTypeTarget::Java {
-                source: outer_source,
-                declaration: inner,
-            })
-        );
-    }
-
-    #[test]
-    fn unimplemented_stages_yield_unresolved() {
-        let revision = Revision::default();
-        let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
-        let current_source = process(&mut java, &mut jvm, revision, "Test.java", "class Test {}");
-        let current_file = file_model(&java, revision, &current_source);
-
-        assert_eq!(
-            resolve_type_name(
-                &JavaName::Simple(identifier("Missing")),
-                &current_source,
-                current_file,
-                current_file.compilation_unit_scope,
-                revision,
-                &jvm,
-                &java,
-            ),
-            JavaTypeResolution::Unresolved
-        );
-    }
-
-    #[test]
-    fn exact_import_resolves_a_java_top_level_type() {
-        let revision = Revision::default();
-        let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
-        let imported_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "p/X.java",
-            "package p; class X {}",
-        );
-        let importing_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "q/Test.java",
-            "package q; import p.X; class Test {}",
-        );
-        let imported_declaration =
-            file_model(&java, revision, &imported_source).top_level_declarations[0];
-        let importing_file = file_model(&java, revision, &importing_source);
-
-        assert_eq!(
-            resolve_exact_imports(&identifier("X"), importing_file, revision, &java),
-            JavaTypeResolution::Resolved(JavaTypeTarget::Java {
-                source: imported_source,
-                declaration: imported_declaration,
-            })
-        );
-    }
-
-    #[test]
-    fn exact_import_does_not_skip_an_intermediate_name_segment() {
-        let revision = Revision::default();
-        let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
-        process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "p/Inner.java",
-            "package p; class Inner {}",
-        );
-        let importing_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "q/Test.java",
-            "package q; import p.Outer.Inner; class Test {}",
-        );
-        let importing_file = file_model(&java, revision, &importing_source);
-
-        assert_eq!(
-            resolve_exact_imports(&identifier("Inner"), importing_file, revision, &java),
-            JavaTypeResolution::Unresolved
-        );
-    }
-
-    #[test]
-    fn exact_import_uses_the_file_package_as_the_type_boundary() {
-        let revision = Revision::default();
-        let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
-        let imported_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "p/Outer/Inner.java",
-            "package p.Outer; class Inner {}",
-        );
-        let importing_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "q/Test.java",
-            "package q; import p.Outer.Inner; class Test {}",
-        );
-        let imported_declaration =
-            file_model(&java, revision, &imported_source).top_level_declarations[0];
-        let importing_file = file_model(&java, revision, &importing_source);
-
-        assert_eq!(
-            resolve_exact_imports(&identifier("Inner"), importing_file, revision, &java),
-            JavaTypeResolution::Resolved(JavaTypeTarget::Java {
-                source: imported_source,
-                declaration: imported_declaration,
-            })
-        );
-    }
-
-    #[test]
-    fn duplicate_exact_imports_are_deduplicated() {
-        let revision = Revision::default();
-        let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
-        let imported_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "p/X.java",
-            "package p; class X {}",
-        );
-        let importing_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "q/Test.java",
-            "package q; import p.X; import p.X; class Test {}",
-        );
-        let imported_declaration =
-            file_model(&java, revision, &imported_source).top_level_declarations[0];
-        let importing_file = file_model(&java, revision, &importing_source);
-
-        assert_eq!(
-            resolve_exact_imports(&identifier("X"), importing_file, revision, &java),
-            JavaTypeResolution::Resolved(JavaTypeTarget::Java {
-                source: imported_source,
-                declaration: imported_declaration,
-            })
-        );
-    }
-
-    #[test]
-    fn distinct_exact_imports_are_ambiguous() {
-        let revision = Revision::default();
-        let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
-        let p_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "p/X.java",
-            "package p; class X {}",
-        );
-        let r_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "r/X.java",
-            "package r; class X {}",
-        );
-        let importing_source = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "q/Test.java",
-            "package q; import p.X; import r.X; class Test {}",
-        );
-        let p_declaration = file_model(&java, revision, &p_source).top_level_declarations[0];
-        let r_declaration = file_model(&java, revision, &r_source).top_level_declarations[0];
-        let importing_file = file_model(&java, revision, &importing_source);
-
-        let JavaTypeResolution::Ambiguous(candidates) =
-            resolve_exact_imports(&identifier("X"), importing_file, revision, &java)
-        else {
-            panic!("expected ambiguous exact imports");
-        };
-
-        assert_eq!(candidates.len(), 2);
-        assert!(candidates.contains(&JavaTypeTarget::Java {
-            source: p_source,
-            declaration: p_declaration,
-        }));
-        assert!(candidates.contains(&JavaTypeTarget::Java {
-            source: r_source,
-            declaration: r_declaration,
-        }));
-    }
-
-    // The worked example from PLAN.md, with `B` in a second file so member
-    // lookup crosses files. Offsets are load-bearing.
-    const WORKED: &str = "class A {\n    int a;\n\n    void b(B c) {\n        int d = c.a;\n        this.a = d;\n        b(c);\n    }\n}\n";
-
-    fn worked_fixture() -> (LanguageJava, PlatformJvm, Revision, JvmSource, JvmSource) {
-        let revision = Revision::default();
-        let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
-        let a = process(&mut java, &mut jvm, revision, "A.java", WORKED);
-        let b = process(
-            &mut java,
-            &mut jvm,
-            revision,
-            "B.java",
-            "class B {\n    int a;\n}\n",
-        );
-        (java, jvm, revision, a, b)
-    }
-
-    fn resolve_at(
-        java: &LanguageJava,
-        jvm: &PlatformJvm,
-        revision: Revision,
-        source: &JvmSource,
-        offset: usize,
-    ) -> Vec<NavigationTarget<JvmSource>> {
-        let file = file_model(java, revision, source);
-        resolve_occurrence_at(source, file, Offset(offset), revision, jvm, java)
-    }
-
-    #[test]
-    fn occurrence_resolution_walks_the_worked_example() {
-        let (java, jvm, revision, a_source, b_source) = worked_fixture();
-
-        // (6) `c` in `c.a` → parameter c @ 35..36 in A.java
-        let targets = resolve_at(&java, &jvm, revision, &a_source, 56);
-        assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].source, a_source);
-        assert_eq!(
-            targets[0].span,
-            OffsetSpan {
-                start: Offset(35),
-                end: Offset(36)
-            }
-        );
-
-        // (7) `a` in `c.a` → field a in B.java @ 18..19
-        let targets = resolve_at(&java, &jvm, revision, &a_source, 58);
-        assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].source, b_source);
-        assert_eq!(
-            targets[0].span,
-            OffsetSpan {
-                start: Offset(18),
-                end: Offset(19)
-            }
-        );
-
-        // (8) `this` → class A @ 6..7
-        let targets = resolve_at(&java, &jvm, revision, &a_source, 70);
-        assert_eq!(targets.len(), 1);
-        assert_eq!(
-            targets[0].span,
-            OffsetSpan {
-                start: Offset(6),
-                end: Offset(7)
-            }
-        );
-
-        // (9) `a` in `this.a` → field a in A.java @ 18..19
-        let targets = resolve_at(&java, &jvm, revision, &a_source, 74);
-        assert_eq!(targets.len(), 1);
-        assert_eq!(
-            targets[0].span,
-            OffsetSpan {
-                start: Offset(18),
-                end: Offset(19)
-            }
-        );
-
-        // (10) `d` → local d @ 52..53
-        let targets = resolve_at(&java, &jvm, revision, &a_source, 78);
-        assert_eq!(targets.len(), 1);
-        assert_eq!(
-            targets[0].span,
-            OffsetSpan {
-                start: Offset(52),
-                end: Offset(53)
-            }
-        );
-
-        // (11) `b` in `b(c)` → method b @ 31..32
-        let targets = resolve_at(&java, &jvm, revision, &a_source, 89);
-        assert_eq!(targets.len(), 1);
-        assert_eq!(
-            targets[0].span,
-            OffsetSpan {
-                start: Offset(31),
-                end: Offset(32)
-            }
-        );
-
-        // (12) `c` argument → parameter c @ 35..36
-        let targets = resolve_at(&java, &jvm, revision, &a_source, 91);
-        assert_eq!(targets.len(), 1);
-        assert_eq!(
-            targets[0].span,
-            OffsetSpan {
-                start: Offset(35),
-                end: Offset(36)
-            }
-        );
-
-        // (3) parameter type `B` → class B in B.java @ 6..7
-        let targets = resolve_at(&java, &jvm, revision, &a_source, 33);
-        assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].source, b_source);
-        assert_eq!(
-            targets[0].span,
-            OffsetSpan {
-                start: Offset(6),
-                end: Offset(7)
-            }
-        );
-    }
-
-    #[test]
-    fn a_local_is_not_visible_before_its_declarator() {
-        let revision = Revision::default();
-        let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
-        let contents = "class A {\n    void m() {\n        x = 1;\n        int x;\n    }\n}\n";
-        let a = process(&mut java, &mut jvm, revision, "A.java", contents);
-        // `x` at offset 33, used before the declarator at 52
-        let targets = resolve_at(&java, &jvm, revision, &a, 33);
-        assert!(targets.is_empty());
-    }
-
-    #[test]
-    fn a_local_class_captures_and_resolves() {
-        let revision = Revision::default();
-        let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
-        let contents = "class A {\n    int g(int h) {\n        class Local {\n            int get() {\n                return h;\n            }\n        }\n        return new Local().get();\n    }\n}\n";
-        let a = process(&mut java, &mut jvm, revision, "A.java", contents);
-
-        // The captured `h` in `return h;` → the parameter of the outer method
-        let targets = resolve_at(&java, &jvm, revision, &a, 98);
-        assert_eq!(targets.len(), 1);
-        assert_eq!(
-            targets[0].span,
-            OffsetSpan {
-                start: Offset(24),
-                end: Offset(25)
-            }
-        );
-
-        // `get` in `new Local().get()` → the local class's method
-        let targets = resolve_at(&java, &jvm, revision, &a, 152);
-        assert_eq!(targets.len(), 1);
-        assert_eq!(
-            targets[0].span,
-            OffsetSpan {
-                start: Offset(67),
-                end: Offset(70)
-            }
-        );
-
-        // `Local` in `new Local()` → the local class declaration
-        let targets = resolve_at(&java, &jvm, revision, &a, 144);
-        assert_eq!(targets.len(), 1);
-        assert_eq!(
-            targets[0].span,
-            OffsetSpan {
-                start: Offset(43),
-                end: Offset(48)
-            }
-        );
-    }
-
-    #[test]
-    fn a_parameter_shadows_a_field() {
-        let revision = Revision::default();
-        let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
-        let contents = "class A {\n    int x;\n    void m(int x) {\n        x = 1;\n    }\n}\n";
-        let a = process(&mut java, &mut jvm, revision, "A.java", contents);
-        // `x` in the body @ 49 → the parameter @ 36..37, not the field @ 18..19
-        let targets = resolve_at(&java, &jvm, revision, &a, 49);
-        assert_eq!(targets.len(), 1);
-        assert_eq!(
-            targets[0].span,
-            OffsetSpan {
-                start: Offset(36),
-                end: Offset(37)
-            }
-        );
-    }
-}
+mod tests;

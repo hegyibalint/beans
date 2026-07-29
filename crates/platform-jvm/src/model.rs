@@ -112,6 +112,23 @@ impl JvmQualifiedName {
             None => &self.0,
         }
     }
+
+    /// A top-level type in `package`, whose binary name is its canonical name
+    /// (JLS 26 §13.1). An empty package is the unnamed one, with no dot to add.
+    pub fn in_package(package: &str, simple_name: &str) -> JvmQualifiedName {
+        if package.is_empty() {
+            JvmQualifiedName(simple_name.to_string())
+        } else {
+            JvmQualifiedName(format!("{package}.{simple_name}"))
+        }
+    }
+
+    /// A member type of this one: the enclosing binary name, `$`, the simple
+    /// name (JLS 26 §13.1). Local and anonymous classes take a digit sequence
+    /// after the `$` and cannot be spelled this way.
+    pub fn nested(&self, simple_name: &str) -> JvmQualifiedName {
+        JvmQualifiedName(format!("{}${simple_name}", self.0))
+    }
 }
 
 impl fmt::Display for JvmQualifiedName {

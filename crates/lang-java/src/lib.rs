@@ -2,6 +2,7 @@ mod diagnostics;
 mod model;
 mod parser;
 mod projection;
+mod query;
 mod resolution;
 
 use beans_core::analysis::FileAnalysis;
@@ -10,12 +11,15 @@ use beans_core::model::{Offset, OffsetSpan};
 use beans_core::storage::Revision;
 use beans_core::storage::RevisionedStorage;
 use beans_platform_jvm::PlatformJvm;
+
 use beans_platform_jvm::model::JvmSource;
+use beans_platform_jvm::query::{JvmQuery, JvmScopeQuery};
 
 use crate::diagnostics::unresolved_name_diagnostics;
 use crate::model::{JavaDeclarationId, JavaFile};
 use crate::parser::JavaParser;
 use crate::projection::project_to_jvm;
+use crate::query::JavaQuery;
 use crate::resolution::resolve_occurrence_at;
 
 pub struct LanguageJava {
@@ -29,13 +33,6 @@ impl LanguageJava {
             parser: JavaParser::new(),
             file_models: RevisionedStorage::new(),
         }
-    }
-
-    pub(crate) fn iter_file_models_at(
-        &self,
-        revision: Revision,
-    ) -> impl Iterator<Item = (&JvmSource, &JavaFile)> {
-        self.file_models.iter_at(revision)
     }
 
     /// A display name for the declaration whose name sits at `span`:
@@ -53,6 +50,10 @@ impl LanguageJava {
             .enumerate()
             .find(|(_, declaration)| declaration.name_span() == Some(span))?;
         model.declaration_label(JavaDeclarationId(index))
+    }
+
+    pub(crate) fn model_at(&self, source: &JvmSource, revision: Revision) -> Option<&JavaFile> {
+        self.file_models.get(source, revision)
     }
 }
 
@@ -100,13 +101,15 @@ impl Language<JvmSource, PlatformJvm> for LanguageJava {
         platform_jvm: &PlatformJvm,
     ) -> Option<Vec<NavigationTarget<JvmSource>>> {
         let java_model = self.file_models.get(source, revision)?;
+        // TODO: the engine hands down the scope, once it can match a source
+        // against the imported workspace and reconcile that with whatever the
+        // client last navigated through.
+        let jvm = JvmQuery::new(platform_jvm, JvmScopeQuery::unscoped(), revision);
         Some(resolve_occurrence_at(
             source,
             java_model,
             offset,
-            revision,
-            platform_jvm,
-            self,
+            &JavaQuery::new(jvm, self),
         ))
     }
 }

@@ -38,33 +38,6 @@ impl JavaFile {
         }
     }
 
-    pub fn strip_package<'name>(&self, name: &'name JavaName) -> Option<&'name [JavaIdentifier]> {
-        let name_segments = name.segments();
-        let Some(package) = &self.package else {
-            // In an unnamed package, there is nothing to strip (the prefix is [])
-            // We can return the whole name as an identifier
-            return Some(name_segments);
-        };
-
-        let package_segments = package.segments();
-        if name_segments.len() < package_segments.len() {
-            // The prefix we want to strip off is longer than what we are stripping from.
-            // This makes no sense, we can return nothing
-            return None;
-        }
-
-        for index in 0..package_segments.len() {
-            if name_segments[index].text != package_segments[index].text {
-                // The prefix is mismatched, we can give up and return nothing
-                return None;
-            }
-        }
-
-        // If we survived until here, we are sure that the prefix exists
-        // We can just trim it off from the name segments, and return it back
-        Some(&name_segments[package_segments.len()..])
-    }
-
     pub fn iter_scope_chain<'file>(
         &'file self,
         start: JavaLexicalScopeId,
@@ -73,31 +46,6 @@ impl JavaFile {
             self.lexical_scopes.get(scope_id.0).unwrap().parent
         })
         .map(move |scope_id| (scope_id, self.lexical_scopes.get(scope_id.0).unwrap()))
-    }
-
-    pub fn iter_declaration_chain<'file>(
-        &'file self,
-        start: JavaLexicalScopeId,
-    ) -> impl Iterator<
-        Item = (
-            JavaLexicalScopeId,
-            JavaDeclarationId,
-            &'file JavaDeclaration,
-        ),
-    > + 'file {
-        self.iter_scope_chain(start)
-            .flat_map(move |(scope_id, scope)| {
-                scope.declarations.iter().copied().map(move |decl_id| {
-                    (scope_id, decl_id, self.declarations.get(decl_id.0).unwrap())
-                })
-            })
-    }
-
-    pub(crate) fn iter_declarations<'file>(
-        &'file self,
-        ids: &'file [JavaDeclarationId],
-    ) -> impl Iterator<Item = (JavaDeclarationId, &'file JavaDeclaration)> + 'file {
-        ids.iter().copied().map(|id| (id, &self.declarations[id.0]))
     }
 
     /// The nearest type whose body encloses `scope`: what `this` refers to.
@@ -215,13 +163,9 @@ impl JavaQualifiedName {
     pub fn segments(&self) -> &[JavaIdentifier] {
         &self.segments
     }
-
-    pub fn dotted(&self) -> String {
-        dotted(&self.segments)
-    }
 }
 
-fn dotted(segments: &[JavaIdentifier]) -> String {
+pub(crate) fn dotted(segments: &[JavaIdentifier]) -> String {
     segments
         .iter()
         .map(|segment| segment.text.as_str())
@@ -669,54 +613,6 @@ mod tests {
         });
         assert_eq!(constructor.name(), None);
         assert_eq!(constructor.name_span(), None);
-    }
-
-    #[test]
-    fn strip_package_returns_the_type_name_segments() {
-        let mut file = JavaFile::new();
-        file.package = Some(JavaName::Simple(identifier("p", 0)));
-        let name = JavaName::Qualified(JavaQualifiedName::new(
-            vec![
-                identifier("p", 10),
-                identifier("Outer", 12),
-                identifier("Inner", 18),
-            ],
-            OffsetSpan {
-                start: Offset(10),
-                end: Offset(23),
-            },
-        ));
-
-        let type_segments = file.strip_package(&name).unwrap();
-        let type_names: Vec<_> = type_segments
-            .iter()
-            .map(|identifier| identifier.text.as_str())
-            .collect();
-
-        assert_eq!(type_names, ["Outer", "Inner"]);
-    }
-
-    #[test]
-    fn strip_package_rejects_a_different_package() {
-        let mut file = JavaFile::new();
-        file.package = Some(JavaName::Simple(identifier("p", 0)));
-        let name = JavaName::Qualified(JavaQualifiedName::new(
-            vec![identifier("q", 10), identifier("Outer", 12)],
-            OffsetSpan {
-                start: Offset(10),
-                end: Offset(17),
-            },
-        ));
-
-        assert_eq!(file.strip_package(&name), None);
-    }
-
-    #[test]
-    fn strip_package_preserves_the_whole_name_in_the_default_package() {
-        let file = JavaFile::new();
-        let name = JavaName::Simple(identifier("Outer", 0));
-
-        assert_eq!(file.strip_package(&name), Some(name.segments()));
     }
 
     #[test]
