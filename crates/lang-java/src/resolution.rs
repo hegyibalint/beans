@@ -420,7 +420,7 @@ pub fn resolve_occurrence_at(
         .collect()
 }
 
-fn resolve_expression(
+pub(crate) fn resolve_expression(
     source: &JvmSource,
     file: &JavaFile,
     body_id: JavaBodyId,

@@ -1,3 +1,4 @@
+mod accessibility;
 mod diagnostics;
 mod model;
 mod parser;
@@ -15,7 +16,7 @@ use beans_platform_jvm::PlatformJvm;
 use beans_platform_jvm::model::JvmSource;
 use beans_platform_jvm::query::{JvmQuery, JvmScopeQuery};
 
-use crate::diagnostics::unresolved_name_diagnostics;
+use crate::diagnostics::{access_diagnostics, unresolved_name_diagnostics};
 use crate::model::{JavaDeclarationId, JavaFile};
 use crate::parser::JavaParser;
 use crate::projection::project_to_jvm;
@@ -84,11 +85,18 @@ impl Language<JvmSource, PlatformJvm> for LanguageJava {
         &self,
         java_source: &JvmSource,
         revision: Revision,
-        _platform_jvm: &PlatformJvm,
+        platform_jvm: &PlatformJvm,
     ) -> Option<FileAnalysis> {
         let java_model = self.file_models.get(java_source, revision)?;
+        // TODO: the engine hands down the scope, as in `find_declarations_for`.
+        let jvm = JvmQuery::new(platform_jvm, JvmScopeQuery::unscoped(), revision);
+        let query = JavaQuery::new(jvm, self);
+
+        let mut diagnostics = unresolved_name_diagnostics(java_model);
+        diagnostics.extend(access_diagnostics(java_source, java_model, &query));
+
         Some(FileAnalysis {
-            diagnostics: unresolved_name_diagnostics(java_model),
+            diagnostics,
             actions: vec![],
         })
     }

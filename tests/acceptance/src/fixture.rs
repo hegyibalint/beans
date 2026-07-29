@@ -33,6 +33,7 @@ enum Mode {
 
 enum Expect {
     Code { code: String },
+    NoCode { code: String },
     CodeAt { cursor: String, code: String },
     ResolvesTo { cursor: String, fqn: String },
     ResolvesToTypeParam { cursor: String, name: String },
@@ -73,6 +74,15 @@ impl Fixture {
     /// A diagnostic with `code` must be produced by the analysis.
     pub fn expect(self, code: &str) -> Self {
         self.push_expectation(Expect::Code {
+            code: code.to_string(),
+        })
+    }
+
+    /// No diagnostic with `code` may be produced anywhere in the analysis.
+    /// The quiet half of a rule: without it, a check that fires on everything
+    /// passes every positive expectation.
+    pub fn expect_no(self, code: &str) -> Self {
+        self.push_expectation(Expect::NoCode {
             code: code.to_string(),
         })
     }
@@ -167,6 +177,7 @@ impl Fixture {
             for expectation in analysis.expectations {
                 let met = match &expectation.expect {
                     Expect::Code { code } => result.diagnostics.iter().any(|d| d.code == code),
+                    Expect::NoCode { code } => !result.diagnostics.iter().any(|d| d.code == code),
                     Expect::CodeAt { cursor, code } => {
                         let cursor = find_cursor(&cursors, cursor, &analysis.file);
                         result.diagnostics.iter().any(|diagnostic| {
@@ -249,6 +260,7 @@ fn find_cursor<'a>(cursors: &'a [Cursor], name: &str, file: &Path) -> &'a Cursor
 fn describe(expect: &Expect) -> String {
     match expect {
         Expect::Code { code } => format!("expected `{code}`"),
+        Expect::NoCode { code } => format!("expected no `{code}`"),
         Expect::CodeAt { cursor, code } => {
             format!("expected `{code}` at <cur:{cursor}>")
         }

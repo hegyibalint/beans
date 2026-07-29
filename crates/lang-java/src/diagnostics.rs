@@ -1,9 +1,110 @@
 use std::collections::HashSet;
 
 use beans_core::analysis::diagnostic::{DiagnosticSeverity, Diagnostics};
+use beans_platform_jvm::model::JvmSource;
 
-use crate::model::{JavaBodyNodeKind, JavaDeclaration, JavaExpression, JavaFile, JavaImportKind};
-use crate::resolution::resolve_variable_name;
+use crate::accessibility::{JavaSite, is_accessible};
+use crate::model::{
+    JavaAccessLevel, JavaBodyId, JavaBodyNodeId, JavaBodyNodeKind, JavaDeclaration, JavaExpression,
+    JavaFile, JavaImportKind,
+};
+use crate::query::JavaQuery;
+use crate::resolution::{resolve_expression, resolve_variable_name};
+
+/// Flags member accesses that resolve to a declaration JLS 26 §6.6.1 does not
+/// let this site reach. Resolution stays permissive on purpose: navigating to
+/// the thing you may not touch is more useful than pretending it is missing,
+/// so the check runs here rather than inside `resolve_expression`.
+pub fn access_diagnostics(
+    source: &JvmSource,
+    file: &JavaFile,
+    query: &JavaQuery,
+) -> Vec<Diagnostics> {
+    let mut diagnostics = Vec::new();
+
+    for (body_index, body) in file.bodies.iter().enumerate() {
+        for (node_index, node) in body.nodes.iter().enumerate() {
+            let JavaBodyNodeKind::Expression(JavaExpression::FieldAccess { name, .. }) = &node.kind
+            else {
+                continue;
+            };
+
+            let from = JavaSite {
+                source,
+                file,
+                scope: node.scope,
+            };
+            let targets = resolve_expression(
+                source,
+                file,
+                JavaBodyId(body_index),
+                JavaBodyNodeId(node_index),
+                query,
+            );
+
+            // Nothing resolved is `cannot-find-symbol`'s business, and one
+            // reachable target is enough to make the access legal.
+            if targets.is_empty() {
+                continue;
+            }
+            let unreachable: Vec<_> = targets
+                .iter()
+                .filter_map(|(target_source, declaration)| {
+                    let target_file = query.model_of(target_source)?;
+                    let JavaDeclaration::Field(field) = &target_file.declarations[declaration.0]
+                    else {
+                        return None;
+                    };
+                    let declared = JavaSite {
+                        source: target_source,
+                        file: target_file,
+                        scope: field.declaring_scope,
+                    };
+                    let level = field.access?.level;
+                    (!is_accessible(field.access, &declared, &from))
+                        .then(|| (level, owner_name(target_file, field.declaring_scope)))
+                })
+                .collect();
+
+            if unreachable.len() != targets.len() {
+                continue;
+            }
+            let Some((level, owner)) = unreachable.into_iter().next() else {
+                continue;
+            };
+
+            diagnostics.push(Diagnostics {
+                span: name.span,
+                severity: DiagnosticSeverity::Error,
+                code: "inaccessible-member",
+                message: format!(
+                    "{} has {} access in {}",
+                    name.text,
+                    level_word(level),
+                    owner
+                ),
+            });
+        }
+    }
+
+    diagnostics
+}
+
+fn level_word(level: JavaAccessLevel) -> &'static str {
+    match level {
+        JavaAccessLevel::Public => "public",
+        JavaAccessLevel::Protected => "protected",
+        JavaAccessLevel::Package => "package-private",
+        JavaAccessLevel::Private => "private",
+    }
+}
+
+fn owner_name(file: &JavaFile, scope: crate::model::JavaLexicalScopeId) -> String {
+    file.enclosing_type_declaration(scope)
+        .and_then(|declaration| file.declarations[declaration.0].name())
+        .map(|name| name.text.clone())
+        .unwrap_or_else(|| "<unknown>".to_string())
+}
 
 /// Flags bare name references that resolve to nothing. Deliberately shallow:
 /// member lookups on a receiver and type names are never flagged — inheritance
