@@ -68,3 +68,25 @@ Nothing about what a source can see is observable here. The fixture drives
 
 Unblocked by the engine picking a scope per source, plus a fixture verb to say
 which container a file belongs to.
+
+## What kind of type a declaration is
+
+`projection.rs` maps each `JavaTypeKind` onto a `JvmKind`, and nothing reads the
+result. No resolution, diagnostic or query path has ever looked at `JvmClass::kind`,
+so the mapping is write-only. The fixture matches: every expectation it offers is
+about a diagnostic or about which declaration a name reaches, and none of them can
+ask what that declaration *is*.
+
+Blocked claim:
+
+- Five files, one per declaration form, each coming back as its own kind: a class,
+  an interface, an enum class (JLS §8.9), a record class (§8.10) and an annotation
+  interface (§9.6). What this would catch is a form quietly collapsing onto
+  `JvmKind::Class`, which is what dropping a variant from either enum would do.
+
+`parser.rs::parses_each_named_type_kind` pins the five values on the Java side, so
+the gap is the projection alone.
+
+Unblocked by the first real consumer of `kind`, and only then by a fixture
+expectation naming it. The order is the point: an expectation added before a
+consumer would be an observable that exists for the test and for nothing else.

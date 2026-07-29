@@ -23,7 +23,7 @@ pub fn project_to_jvm(file: &JavaFile) -> Vec<JvmClass> {
                 JavaTypeKind::Interface => JvmKind::Interface,
                 JavaTypeKind::Enum => JvmKind::Enum,
                 JavaTypeKind::Record => JvmKind::Record,
-                JavaTypeKind::AnnotationInterface => JvmKind::Annotation,
+                JavaTypeKind::AnnotationInterface => JvmKind::AnnotationInterface,
             };
             Some(JvmClass {
                 fqn: JvmQualifiedName::new(binary_name),

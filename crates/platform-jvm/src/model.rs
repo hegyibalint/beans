@@ -3,7 +3,7 @@ use std::{fmt, path::PathBuf};
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum JvmSource {
     SourceFile {
-        /// The filesystem path to the class file, e.g. `src/main/java/org/beans/app/Foo.class`.
+        /// The filesystem path to the source file, e.g. `src/main/java/org/beans/app/Foo.java`.
         path: PathBuf,
     },
     JarEntry {
@@ -39,15 +39,16 @@ pub struct JvmClass {
     pub methods: Vec<JvmMethod>,
 }
 
-/// Interfaces, enums, records and annotations are all class files with
-/// different access flags; the JVM has no other top-level container.
+/// Projection fills this from a source declaration, so a record costs nothing
+/// here. A reader of real class files gets the other four from `access_flags`
+/// (JVMS §4.1) and has to go find the `Record` attribute for this one (§4.7.30).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JvmKind {
     Class,
     Interface,
     Enum,
-    Annotation,
     Record,
+    AnnotationInterface,
 }
 
 #[derive(Debug, Clone)]
@@ -60,16 +61,23 @@ pub struct JvmField {
 pub struct JvmMethod {
     pub name: String,
     pub params: Vec<JvmType>,
-    pub return_type: JvmType,
+    pub return_type: JvmReturnType,
 }
 
-/// Everything a JVM descriptor can encode, and nothing more.
+/// A field, parameter or array component type: JVMS §4.3.2's `FieldType`.
 /// Generics are erased: `List<String>` projects to `java.util.List`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum JvmType {
     Primitive(JvmPrimitive),
     Class(JvmQualifiedName),
     Array(Box<JvmType>),
+}
+
+/// What a method hands back: JVMS §4.3.3's `ReturnDescriptor`. The one position
+/// where `V` is legal, which is why void is not a `JvmType`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum JvmReturnType {
+    Value(JvmType),
     Void,
 }
 
