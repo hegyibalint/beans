@@ -137,7 +137,10 @@ mod tests {
 
     #[test]
     fn the_empty_file_answers_the_origin() {
-        assert_eq!(TextFile::default().line_column(Offset(0)), line_column(0, 0));
+        assert_eq!(
+            TextFile::default().line_column(Offset(0)),
+            line_column(0, 0)
+        );
     }
 
     #[test]
@@ -161,7 +164,10 @@ mod tests {
 
     #[test]
     fn offset_handles_multibyte_bmp_characters() {
-        assert_eq!(TextFile::new("éx").offset(line_column(0, 1)), Some(Offset(2)));
+        assert_eq!(
+            TextFile::new("éx").offset(line_column(0, 1)),
+            Some(Offset(2))
+        );
     }
 
     #[test]

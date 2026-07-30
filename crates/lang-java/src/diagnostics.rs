@@ -126,12 +126,12 @@ pub fn unresolved_name_diagnostics(model: &JavaFile) -> Vec<Diagnostics> {
         // A superclass hides inherited members from us; bare names inherited
         // through it would be false positives.
         let inherits = model.iter_scope_chain(body.scope).any(|(_, scope)| {
-            scope.owner.is_some_and(|owner| {
-                match &model.declarations[owner.0] {
+            scope
+                .owner
+                .is_some_and(|owner| match &model.declarations[owner.0] {
                     JavaDeclaration::Type(declaration) => declaration.superclass.is_some(),
                     _ => false,
-                }
-            })
+                })
         });
         if inherits {
             continue;
@@ -159,8 +159,7 @@ pub fn unresolved_name_diagnostics(model: &JavaFile) -> Vec<Diagnostics> {
         }
 
         for (index, node) in body.nodes.iter().enumerate() {
-            let JavaBodyNodeKind::Expression(JavaExpression::NameRef { name }) = &node.kind
-            else {
+            let JavaBodyNodeKind::Expression(JavaExpression::NameRef { name }) = &node.kind else {
                 continue;
             };
             if receivers.contains(&index) {
@@ -218,7 +217,8 @@ mod tests {
 
     #[test]
     fn a_superclass_suppresses_the_body() {
-        let file = parse("class A extends Base {\n    void m() {\n        inherited = 1;\n    }\n}\n");
+        let file =
+            parse("class A extends Base {\n    void m() {\n        inherited = 1;\n    }\n}\n");
 
         assert!(unresolved_name_diagnostics(&file).is_empty());
     }

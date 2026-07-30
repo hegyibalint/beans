@@ -530,8 +530,11 @@ fn parse_block(
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         match child.kind() {
-            "class_declaration" | "interface_declaration" | "enum_declaration"
-            | "record_declaration" | "annotation_type_declaration" => {
+            "class_declaration"
+            | "interface_declaration"
+            | "enum_declaration"
+            | "record_declaration"
+            | "annotation_type_declaration" => {
                 if let Some(declaration) =
                     parse_local_type_declaration(child, block_scope, src, file)
                 {
@@ -553,10 +556,9 @@ fn parse_block(
                 );
             }
             "expression_statement" => {
-                if let Some(expression) = child
-                    .named_child(0)
-                    .and_then(|expression| parse_expression(expression, block_scope, src, file, builder))
-                {
+                if let Some(expression) = child.named_child(0).and_then(|expression| {
+                    parse_expression(expression, block_scope, src, file, builder)
+                }) {
                     statements.push(builder.add_statement(
                         JavaStatement::Expression(expression),
                         child.byte_range().into(),
@@ -569,9 +571,9 @@ fn parse_block(
                 statements.push(block);
             }
             "return_statement" => {
-                let value = child
-                    .named_child(0)
-                    .and_then(|expression| parse_expression(expression, block_scope, src, file, builder));
+                let value = child.named_child(0).and_then(|expression| {
+                    parse_expression(expression, block_scope, src, file, builder)
+                });
                 statements.push(builder.add_statement(
                     JavaStatement::Return(value),
                     child.byte_range().into(),
@@ -604,9 +606,7 @@ fn parse_local_type_declaration(
         "interface_declaration" => parse_interface_declaration(node, scope, src, file),
         "enum_declaration" => parse_enum_declaration(node, scope, src, file),
         "record_declaration" => parse_record_declaration(node, scope, src, file),
-        "annotation_type_declaration" => {
-            parse_annotation_type_declaration(node, scope, src, file)
-        }
+        "annotation_type_declaration" => parse_annotation_type_declaration(node, scope, src, file),
         _ => None,
     }
 }
@@ -666,8 +666,13 @@ fn parse_expression(
         },
         "this" => JavaExpression::This,
         "field_access" => {
-            let receiver =
-                parse_expression(node.child_by_field_name("object")?, scope, src, file, builder)?;
+            let receiver = parse_expression(
+                node.child_by_field_name("object")?,
+                scope,
+                src,
+                file,
+                builder,
+            )?;
             let name = parse_identifier(node.child_by_field_name("field")?, src)?;
             JavaExpression::FieldAccess { receiver, name }
         }
@@ -697,8 +702,13 @@ fn parse_expression(
         "assignment_expression" => {
             let target =
                 parse_expression(node.child_by_field_name("left")?, scope, src, file, builder)?;
-            let value =
-                parse_expression(node.child_by_field_name("right")?, scope, src, file, builder)?;
+            let value = parse_expression(
+                node.child_by_field_name("right")?,
+                scope,
+                src,
+                file,
+                builder,
+            )?;
             JavaExpression::Assign { target, value }
         }
         "parenthesized_expression" => {
@@ -1206,8 +1216,12 @@ mod tests {
         assert_eq!(statements.len(), 3);
 
         // Every node is stamped with the scope it lives in.
-        assert!(body.nodes.iter().all(|node| node.scope == JavaLexicalScopeId(3)
-            || node.scope == JavaLexicalScopeId(2)));
+        assert!(
+            body.nodes
+                .iter()
+                .all(|node| node.scope == JavaLexicalScopeId(3)
+                    || node.scope == JavaLexicalScopeId(2))
+        );
 
         // N2: int d = c.a;
         let JavaBodyNodeKind::Statement(JavaStatement::LocalDeclaration {
@@ -1218,8 +1232,7 @@ mod tests {
             panic!("N2 declares d with an initializer");
         };
         assert_eq!(*declaration, JavaDeclarationId(4));
-        let JavaExpression::FieldAccess { receiver, name } =
-            body.expression(*initializer).unwrap()
+        let JavaExpression::FieldAccess { receiver, name } = body.expression(*initializer).unwrap()
         else {
             panic!("initializer is c.a");
         };
@@ -1342,7 +1355,8 @@ mod tests {
         // not `block`. The parser must still walk its statements so references
         // inside a constructor resolve.
         let mut parser = JavaParser::new();
-        let file = parser.parse("class A {\n    int a;\n    A(int c) {\n        this.a = c;\n    }\n}\n");
+        let file =
+            parser.parse("class A {\n    int a;\n    A(int c) {\n        this.a = c;\n    }\n}\n");
 
         // D0 class A, D1 field a, D2 constructor A, D3 param c.
         let JavaDeclaration::Constructor(constructor) = &file.declarations[2] else {
