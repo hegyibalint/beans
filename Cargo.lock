@@ -10,6 +10,7 @@ dependencies = [
  "engine",
  "platform-jvm",
  "test-support",
+ "workspace",
 ]
 
 [[package]]

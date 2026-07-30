@@ -13,3 +13,4 @@ core = { path = "../../crates/core" }
 engine = { path = "../../crates/engine" }
 platform-jvm = { path = "../../crates/platform-jvm" }
 test-support = { path = "../support" }
+workspace = { path = "../../crates/workspace" }

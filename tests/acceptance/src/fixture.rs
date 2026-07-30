@@ -4,12 +4,14 @@ use beans::Beans;
 use beans_core::analysis::diagnostic::Diagnostics;
 use beans_core::model::Offset;
 use beans_platform_jvm::model::JvmSource;
+use beans_workspace::model::{Selector, Unit, Workspace};
 
 use beans_test_support::markers::{Cursor, strip_markers};
 
 pub fn fixture() -> Fixture {
     Fixture {
         files: Vec::new(),
+        units: Vec::new(),
         cursors: Vec::new(),
         analyses: Vec::new(),
     }
@@ -17,6 +19,7 @@ pub fn fixture() -> Fixture {
 
 pub struct Fixture {
     files: Vec<(PathBuf, String)>,
+    units: Vec<Unit>,
     cursors: Vec<Cursor>,
     analyses: Vec<Analysis>,
 }
@@ -36,6 +39,7 @@ enum Expect {
     NoCode { code: String },
     CodeAt { cursor: String, code: String },
     ResolvesTo { cursor: String, fqn: String },
+    DoesNotResolve { cursor: String },
     ResolvesToTypeParam { cursor: String, name: String },
     ResolvesToLocalType { cursor: String, name: String },
     AmbiguousBetween { cursor: String, fqns: Vec<String> },
@@ -60,6 +64,31 @@ impl Fixture {
         }
         self.cursors.extend(stripped.cursors);
         self.files.push((path, stripped.clean));
+        self
+    }
+
+    /// Declare a unit owning the trees at `sources`, depending on the units
+    /// named by `depends_on`.
+    ///
+    /// Flat rather than nested (`.unit("a", |unit| ...)`) so that one tree can
+    /// be claimed by two units, which is the interesting case a builder shape
+    /// would rule out.
+    pub fn unit(mut self, id: &str, sources: &[&str], depends_on: &[&str]) -> Self {
+        self.units.push(Unit {
+            id: id.to_string(),
+            sources: sources
+                .iter()
+                .map(|base| Selector::Tree {
+                    base: root().join(base),
+                    includes: vec!["**/*.java".to_string()],
+                    excludes: Vec::new(),
+                    generated: false,
+                })
+                .collect(),
+            depends_on: depends_on.iter().map(|id| (*id).to_string()).collect(),
+            classpath: Vec::new(),
+            jdk_home: None,
+        });
         self
     }
 
@@ -99,6 +128,15 @@ impl Fixture {
         self.push_expectation(Expect::ResolvesTo {
             cursor: cursor.to_string(),
             fqn: fqn.to_string(),
+        })
+    }
+
+    /// The name at the named cursor must reach nothing at all. The negative of
+    /// `resolves_to`, and the only way to state that something is out of reach
+    /// while no diagnostic reports it.
+    pub fn does_not_resolve(self, cursor: &str) -> Self {
+        self.push_expectation(Expect::DoesNotResolve {
+            cursor: cursor.to_string(),
         })
     }
 
@@ -160,11 +198,23 @@ impl Fixture {
     pub fn run(self) {
         let Fixture {
             files,
+            units,
             cursors,
             analyses,
         } = self;
 
         let mut beans = Beans::new();
+        // A fixture that declares no unit means a project we know nothing
+        // about, not an empty one that owns no file. The distinction is the
+        // difference between every existing test still seeing its files and
+        // none of them seeing anything.
+        if !units.is_empty() {
+            beans.set_workspace(Workspace {
+                tool: "fixture".to_string(),
+                units,
+            });
+        }
+
         for (path, contents) in &files {
             beans.process(jvm_source(path), contents);
         }
@@ -191,6 +241,10 @@ impl Fixture {
                         resolution_labels(&beans, &analysis.file, cursor.offset)
                             .iter()
                             .any(|label| label == fqn)
+                    }
+                    Expect::DoesNotResolve { cursor } => {
+                        let cursor = find_cursor(&cursors, cursor, &analysis.file);
+                        resolution_labels(&beans, &analysis.file, cursor.offset).is_empty()
                     }
                     Expect::AmbiguousBetween { cursor, fqns } => {
                         let cursor = find_cursor(&cursors, cursor, &analysis.file);
@@ -230,9 +284,16 @@ impl Fixture {
     }
 }
 
+/// Tests write relative paths, and `Workspace` promises its consumers absolute
+/// ones. Everything the engine is told sits under this root; everything a test
+/// writes stays relative to it.
+fn root() -> &'static Path {
+    Path::new("/beans-fixture")
+}
+
 fn jvm_source(path: &Path) -> JvmSource {
     JvmSource::SourceFile {
-        path: path.to_path_buf(),
+        path: root().join(path),
     }
 }
 
@@ -267,6 +328,9 @@ fn describe(expect: &Expect) -> String {
         Expect::ResolvesTo { cursor, fqn } => {
             format!("expected <cur:{cursor}> to resolve to `{fqn}`")
         }
+        Expect::DoesNotResolve { cursor } => {
+            format!("expected <cur:{cursor}> to resolve to nothing")
+        }
         Expect::ResolvesToTypeParam { cursor, name } => {
             format!("expected <cur:{cursor}> to resolve to type parameter `{name}`")
         }
@@ -290,7 +354,12 @@ fn render(diagnostics: &[Diagnostics]) -> String {
     }
     diagnostics
         .iter()
-        .map(|d| format!("  {} @ {}..{}: {}", d.code, d.span.start, d.span.end, d.message))
+        .map(|d| {
+            format!(
+                "  {} @ {}..{}: {}",
+                d.code, d.span.start, d.span.end, d.message
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }

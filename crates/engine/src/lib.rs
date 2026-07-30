@@ -7,6 +7,7 @@ use beans_core::{
 };
 use beans_lang_java::LanguageJava;
 use beans_platform_jvm::{PlatformJvm, model::JvmSource};
+use beans_workspace::model::Workspace;
 use std::fs;
 use std::path::Path;
 
@@ -18,6 +19,10 @@ pub use beans_workspace_beans::LoadError;
 
 pub struct Beans {
     revision: Revision,
+    /// What the project looks like: which units exist, what each one owns, and
+    /// which others it depends on. Recorded and not yet consulted; resolution
+    /// still runs unscoped, so every source sees the whole lake.
+    workspace: Option<Workspace>,
     platform_jvm: PlatformJvm,
     lang_java: LanguageJava,
     /// Text of record for every processed source, independent of any parse.
@@ -29,6 +34,7 @@ impl Beans {
     pub fn new() -> Beans {
         Beans {
             revision: Revision::default(),
+            workspace: None,
             platform_jvm: PlatformJvm::new(),
             lang_java: LanguageJava::new(),
             text_files: RevisionedStorage::new(),
@@ -40,6 +46,22 @@ impl Beans {
     pub fn process(&mut self, source: JvmSource, contents: &str) {
         let revision = self.revision.bump();
         self.process_at(revision, source, contents);
+    }
+
+    /// Record what the project looks like, without reading a byte of it.
+    ///
+    /// Separate from `open_workspace` because knowing the structure and holding
+    /// the sources are two different things: an editor hands us text for files
+    /// it has open, a test holds its files in memory, and only a descriptor on
+    /// disk needs both halves.
+    pub fn set_workspace(&mut self, workspace: Workspace) {
+        self.workspace = Some(workspace);
+    }
+
+    /// `None` until someone declares one. Absence is a project we know nothing
+    /// about, which is every editor session without a descriptor.
+    pub fn workspace(&self) -> Option<&Workspace> {
+        self.workspace.as_ref()
     }
 
     /// Load everything `beans.toml` at `root` declares, if there is one, and
@@ -54,9 +76,14 @@ impl Beans {
             return Ok(0);
         };
 
+        // Listed before the workspace is handed over, so the borrow ends and
+        // nothing has to be cloned.
+        let paths = java_sources(&workspace);
+        self.set_workspace(workspace);
+
         let revision = self.revision.bump();
         let mut loaded = 0;
-        for path in java_sources(&workspace) {
+        for path in paths {
             // A file that vanished between listing and reading is not worth
             // failing an import over.
             let Ok(contents) = fs::read_to_string(&path) else {
