@@ -1,7 +1,106 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use beans_workspace::model::{Selector, Workspace};
+use beans_platform_jvm::model::JvmSource;
+use beans_platform_jvm::query::{JvmContainer, JvmScope};
+use beans_workspace::model::{Selector, Unit, Workspace};
+
+/// The dependency graph, flattened into one scope per unit and then forgotten.
+/// This is the only place edges are followed; nothing downstream ever sees one.
+#[derive(Default)]
+pub(crate) struct Scopes {
+    units: Vec<ScopedUnit>,
+}
+
+struct ScopedUnit {
+    /// The trees the unit declares as its own, which is what decides whether a
+    /// file belongs to it. Narrower than `scope`, which also holds everything
+    /// the unit may look at.
+    owns: Vec<PathBuf>,
+    scope: JvmScope,
+}
+
+impl Scopes {
+    pub(crate) fn of(workspace: &Workspace) -> Scopes {
+        Scopes {
+            units: workspace
+                .units
+                .iter()
+                .map(|unit| ScopedUnit {
+                    owns: owned_trees(unit),
+                    scope: JvmScope::of(visible_containers(unit, workspace)),
+                })
+                .collect(),
+        }
+    }
+
+    /// Every scope that claims `source`. Two units declaring one tree means a
+    /// file under it is compiled by both, so it belongs to both.
+    ///
+    /// Empty is not "sees nothing": a caller must leave such a source
+    /// unregistered so it stays unscoped.
+    pub(crate) fn of_source(&self, source: &JvmSource) -> Vec<JvmScope> {
+        let JvmSource::SourceFile { path } = source else {
+            // Only hand written sources are placed by a workspace. A jar entry
+            // is reached through a unit's classpath, never owned by one.
+            return Vec::new();
+        };
+
+        self.units
+            .iter()
+            .filter(|unit| unit.owns.iter().any(|base| path.starts_with(base)))
+            .map(|unit| unit.scope.clone())
+            .collect()
+    }
+}
+
+fn owned_trees(unit: &Unit) -> Vec<PathBuf> {
+    unit.sources
+        .iter()
+        .flat_map(|selector| match selector {
+            Selector::Tree { base, .. } => vec![base.clone()],
+            // A path is a prefix of itself, so a listed file is a tree of one.
+            Selector::Files { files, .. } => files.clone(),
+        })
+        .collect()
+}
+
+/// What a unit may look at: its own sources, whatever it links against, and
+/// the sources of the units it names.
+///
+/// Direct edges only. Whether `depends_on` chains is a question about what a
+/// descriptor means, and it belongs to the workspace layer rather than here;
+/// with `app -> lib -> core` this gives `app` the sources of `lib` and not
+/// those of `core`.
+fn visible_containers(unit: &Unit, workspace: &Workspace) -> Vec<JvmContainer> {
+    let mut containers: Vec<JvmContainer> = owned_trees(unit)
+        .into_iter()
+        .map(JvmContainer::Source)
+        .collect();
+
+    containers.extend(unit.classpath.iter().cloned().map(JvmContainer::Artifact));
+
+    // A JDK is one image, so this says "the whole runtime is visible", which
+    // JPMS says is not true. Splitting it needs the lake to hold modules.
+    if let Some(jdk_home) = &unit.jdk_home {
+        containers.push(JvmContainer::Artifact(jdk_home.join("lib").join("modules")));
+    }
+
+    for dependency in &unit.depends_on {
+        let Some(dependency) = workspace.units.iter().find(|u| u.id == *dependency) else {
+            // An id naming no unit is a descriptor typo. Nothing validates
+            // that yet, and dropping it beats failing the whole import.
+            continue;
+        };
+        containers.extend(
+            owned_trees(dependency)
+                .into_iter()
+                .map(JvmContainer::Source),
+        );
+    }
+
+    containers
+}
 
 /// Every Java source a workspace declares, in the order its units and
 /// selectors name them, and sorted within a directory so the same tree always

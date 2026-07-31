@@ -11,7 +11,7 @@ use beans_workspace::model::Workspace;
 use std::fs;
 use std::path::Path;
 
-use crate::workspace::java_sources;
+use crate::workspace::{Scopes, java_sources};
 
 mod workspace;
 
@@ -20,9 +20,12 @@ pub use beans_workspace_beans::LoadError;
 pub struct Beans {
     revision: Revision,
     /// What the project looks like: which units exist, what each one owns, and
-    /// which others it depends on. Recorded and not yet consulted; resolution
-    /// still runs unscoped, so every source sees the whole lake.
+    /// which others it depends on.
     workspace: Option<Workspace>,
+    /// The same thing with its edges resolved, which is what sources are
+    /// tagged with. Empty until a workspace arrives, and an empty one places
+    /// no file, so every source stays unscoped.
+    scopes: Scopes,
     platform_jvm: PlatformJvm,
     lang_java: LanguageJava,
     /// Text of record for every processed source, independent of any parse.
@@ -35,6 +38,7 @@ impl Beans {
         Beans {
             revision: Revision::default(),
             workspace: None,
+            scopes: Scopes::default(),
             platform_jvm: PlatformJvm::new(),
             lang_java: LanguageJava::new(),
             text_files: RevisionedStorage::new(),
@@ -55,7 +59,20 @@ impl Beans {
     /// it has open, a test holds its files in memory, and only a descriptor on
     /// disk needs both halves.
     pub fn set_workspace(&mut self, workspace: Workspace) {
+        self.scopes = Scopes::of(&workspace);
         self.workspace = Some(workspace);
+
+        // A scope is not parse input, so a project arriving after its files
+        // re-tags what we already hold rather than re-reading any of it.
+        let revision = self.revision.bump();
+        let known: Vec<JvmSource> = self
+            .text_files
+            .iter_latest()
+            .map(|(source, _)| source.clone())
+            .collect();
+        for source in known {
+            self.scope(revision, source);
+        }
     }
 
     /// `None` until someone declares one. Absence is a project we know nothing
@@ -102,9 +119,21 @@ impl Beans {
         self.text_files
             .put(revision, source.clone(), TextFile::new(contents));
 
+        self.scope(revision, source.clone());
+
         if self.lang_java.accepts(&source) {
             self.lang_java
                 .process(source, revision, &mut self.platform_jvm, contents);
+        }
+    }
+
+    /// Tell the platform what `source` can see, if the project places it at
+    /// all. A source no unit owns is left unregistered on purpose: no entry
+    /// means unscoped, whereas an empty one would mean it sees nothing.
+    fn scope(&mut self, revision: Revision, source: JvmSource) {
+        let scopes = self.scopes.of_source(&source);
+        if !scopes.is_empty() {
+            self.platform_jvm.register_scopes(revision, source, scopes);
         }
     }
 

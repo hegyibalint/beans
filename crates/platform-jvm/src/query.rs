@@ -1,5 +1,6 @@
 use beans_core::storage::Revision;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::PlatformJvm;
 use crate::model::{JvmClass, JvmQualifiedName, JvmSource};
@@ -35,9 +36,27 @@ impl JvmContainer {
     }
 }
 
-/// What a source can see. Opaque on purpose: it carries its containers today,
-/// and can become a handle into a persisted scope table without any caller
-/// noticing, because nothing outside reads its shape.
+/// One flattened answer to "what can be seen from here". Dependency edges,
+/// transitivity and build tools are all resolved before this exists, so the
+/// filter never walks a graph.
+///
+/// Shared rather than copied, because every file in a source set sees exactly
+/// the same thing: a unit builds one of these and all of its files point at it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JvmScope(Arc<Vec<JvmContainer>>);
+
+impl JvmScope {
+    pub fn of(containers: Vec<JvmContainer>) -> JvmScope {
+        JvmScope(Arc::new(containers))
+    }
+
+    fn holds(&self, source: &JvmSource) -> bool {
+        self.0.iter().any(|container| container.holds(source))
+    }
+}
+
+/// What one source can see. Opaque on purpose: nothing outside reads its
+/// shape, so it can become a handle into a persisted scope table later.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JvmScopeQuery(Scope);
 
@@ -46,7 +65,9 @@ enum Scope {
     /// Nothing has told us what this source can see. Everything in the lake
     /// is visible, which is what a cold start serves before the first import.
     Unscoped,
-    Containers(Vec<JvmContainer>),
+    /// More than one because a tree can be claimed by two units, and a file
+    /// checked into both is compiled by both.
+    Scopes(Vec<JvmScope>),
 }
 
 impl JvmScopeQuery {
@@ -54,16 +75,17 @@ impl JvmScopeQuery {
         JvmScopeQuery(Scope::Unscoped)
     }
 
-    pub fn of(containers: Vec<JvmContainer>) -> JvmScopeQuery {
-        JvmScopeQuery(Scope::Containers(containers))
+    pub fn of(scopes: Vec<JvmScope>) -> JvmScopeQuery {
+        JvmScopeQuery(Scope::Scopes(scopes))
     }
 
+    /// Visible under any one scope is visible. That is the permissive reading
+    /// of shared code: the strict one analyses the file once per scope and
+    /// reports per context, which needs an analysis to have a context first.
     pub fn contains(&self, source: &JvmSource) -> bool {
         match &self.0 {
             Scope::Unscoped => true,
-            Scope::Containers(containers) => {
-                containers.iter().any(|container| container.holds(source))
-            }
+            Scope::Scopes(scopes) => scopes.iter().any(|scope| scope.holds(source)),
         }
     }
 }

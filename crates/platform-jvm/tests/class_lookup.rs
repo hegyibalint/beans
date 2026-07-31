@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use beans_core::storage::Revision;
 use beans_platform_jvm::PlatformJvm;
 use beans_platform_jvm::model::{JvmClass, JvmKind, JvmQualifiedName, JvmSource};
-use beans_platform_jvm::query::{JvmContainer, JvmQuery, JvmScopeQuery};
+use beans_platform_jvm::query::{JvmContainer, JvmQuery, JvmScope, JvmScopeQuery};
 
 const JAR_ONE: &str = "lib-one-1.0.jar";
 const JAR_TWO: &str = "lib-two-1.0.jar";
@@ -66,7 +66,11 @@ fn whole_lake(jvm: &PlatformJvm, revision: Revision) -> JvmQuery<'_> {
 }
 
 fn holding(jvm: &PlatformJvm, revision: Revision, containers: Vec<JvmContainer>) -> JvmQuery<'_> {
-    JvmQuery::new(jvm, JvmScopeQuery::of(containers), revision)
+    JvmQuery::new(
+        jvm,
+        JvmScopeQuery::of(vec![JvmScope::of(containers)]),
+        revision,
+    )
 }
 
 fn artifact(jar: &str) -> JvmContainer {

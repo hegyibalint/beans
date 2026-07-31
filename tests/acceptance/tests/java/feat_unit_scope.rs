@@ -9,11 +9,8 @@ use beans_acceptance::fixture::fixture;
 // stops a reference; the unit boundary is the only thing left. That is not an
 // exotic arrangement either, it is what a main and a test source set look like.
 //
-// Nothing enforces any of this yet: the engine records the workspace and
-// resolves unscoped, so every source sees the whole lake. The negative claims
-// carry `expected_failure`. The positive ones pass, but for the wrong reason,
-// and would keep passing with the dependency deleted. Both halves become honest
-// the same day the negatives turn red.
+// `depends_on` is followed one hop. A chain of two would tell these tests
+// nothing, because `a -> b` is all they declare.
 
 mod one_way_dependency {
     use super::*;
@@ -45,7 +42,6 @@ mod one_way_dependency {
             .file("b/p/B.java", "package p; public class B {}")
             .analyze("a/p/A.java")
             .does_not_resolve("up")
-            .expected_failure("resolution is unscoped; every source sees the whole lake")
             .run();
     }
 }
@@ -68,10 +64,8 @@ mod unrelated_units {
             )
             .analyze("a/p/A.java")
             .does_not_resolve("to_b")
-            .expected_failure("resolution is unscoped; every source sees the whole lake")
             .analyze("b/p/B.java")
             .does_not_resolve("to_a")
-            .expected_failure("resolution is unscoped; every source sees the whole lake")
             .run();
     }
 }

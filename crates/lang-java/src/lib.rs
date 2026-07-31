@@ -14,7 +14,6 @@ use beans_core::storage::RevisionedStorage;
 use beans_platform_jvm::PlatformJvm;
 
 use beans_platform_jvm::model::JvmSource;
-use beans_platform_jvm::query::{JvmQuery, JvmScopeQuery};
 
 use crate::diagnostics::{access_diagnostics, unresolved_name_diagnostics};
 use crate::model::{JavaDeclarationId, JavaFile};
@@ -88,9 +87,7 @@ impl Language<JvmSource, PlatformJvm> for LanguageJava {
         platform_jvm: &PlatformJvm,
     ) -> Option<FileAnalysis> {
         let java_model = self.file_models.get(java_source, revision)?;
-        // TODO: the engine hands down the scope, as in `find_declarations_for`.
-        let jvm = JvmQuery::new(platform_jvm, JvmScopeQuery::unscoped(), revision);
-        let query = JavaQuery::new(jvm, self);
+        let query = JavaQuery::new(platform_jvm.query_from(java_source, revision), self);
 
         let mut diagnostics = unresolved_name_diagnostics(java_model);
         diagnostics.extend(access_diagnostics(java_source, java_model, &query));
@@ -109,16 +106,8 @@ impl Language<JvmSource, PlatformJvm> for LanguageJava {
         platform_jvm: &PlatformJvm,
     ) -> Option<Vec<NavigationTarget<JvmSource>>> {
         let java_model = self.file_models.get(source, revision)?;
-        // TODO: the engine hands down the scope, once it can match a source
-        // against the imported workspace and reconcile that with whatever the
-        // client last navigated through.
-        let jvm = JvmQuery::new(platform_jvm, JvmScopeQuery::unscoped(), revision);
-        Some(resolve_occurrence_at(
-            source,
-            java_model,
-            offset,
-            &JavaQuery::new(jvm, self),
-        ))
+        let query = JavaQuery::new(platform_jvm.query_from(source, revision), self);
+        Some(resolve_occurrence_at(source, java_model, offset, &query))
     }
 }
 
