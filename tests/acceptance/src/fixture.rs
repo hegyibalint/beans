@@ -14,6 +14,7 @@ pub fn fixture() -> Fixture {
         units: Vec::new(),
         cursors: Vec::new(),
         analyses: Vec::new(),
+        workspace_last: false,
     }
 }
 
@@ -22,6 +23,7 @@ pub struct Fixture {
     units: Vec<Unit>,
     cursors: Vec<Cursor>,
     analyses: Vec<Analysis>,
+    workspace_last: bool,
 }
 
 struct Analysis {
@@ -89,6 +91,14 @@ impl Fixture {
             classpath: Vec::new(),
             jdk_home: None,
         });
+        self
+    }
+
+    /// Hand the project over after the files rather than before it, which is
+    /// the order an editor works in: it sends us what the user had open, and
+    /// the project is read later.
+    pub fn workspace_arrives_last(mut self) -> Self {
+        self.workspace_last = true;
         self
     }
 
@@ -178,6 +188,7 @@ impl Fixture {
             units,
             cursors,
             analyses,
+            workspace_last,
         } = self;
 
         let mut beans = Beans::new();
@@ -185,15 +196,26 @@ impl Fixture {
         // about, not an empty one that owns no file. The distinction is the
         // difference between every existing test still seeing its files and
         // none of them seeing anything.
-        if !units.is_empty() {
-            beans.set_workspace(Workspace {
-                tool: "fixture".to_string(),
-                units,
-            });
+        let workspace = (!units.is_empty()).then(|| Workspace {
+            tool: "fixture".to_string(),
+            units,
+        });
+        let (before, after) = if workspace_last {
+            (None, workspace)
+        } else {
+            (workspace, None)
+        };
+
+        if let Some(workspace) = before {
+            beans.set_workspace(workspace);
         }
 
         for (path, contents) in &files {
             beans.process(jvm_source(path), contents);
+        }
+
+        if let Some(workspace) = after {
+            beans.set_workspace(workspace);
         }
 
         let mut promotable = Vec::new();

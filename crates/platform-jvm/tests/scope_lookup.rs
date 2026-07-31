@@ -162,3 +162,35 @@ fn re_registering_replaces_the_whole_scope() {
     assert!(sees(&jvm, revision, &core(), "p.App"));
     assert!(!sees(&jvm, revision, &core(), "p.Core"));
 }
+
+/// Registering no scopes is not the same as registering nothing: an entry with
+/// an empty list says the source sees nothing at all, where no entry says
+/// nobody has placed it and it sees everything. Whoever flattens a workspace
+/// has to leave an unplaced file unregistered, and this is the difference that
+/// makes it matter.
+#[test]
+fn an_empty_scope_list_sees_nothing() {
+    let (mut jvm, mut revision) = lake();
+
+    let revision = revision.bump();
+    jvm.register_scopes(revision, app(), Vec::new());
+
+    assert!(!sees(&jvm, revision, &app(), "p.App"));
+    assert!(
+        sees(&jvm, revision, &lib(), "p.App"),
+        "lib is still unscoped"
+    );
+}
+
+/// Nothing places a jar entry, so one asking a question is unscoped and the
+/// whole lake answers.
+#[test]
+fn a_source_a_workspace_never_places_stays_unscoped() {
+    let (jvm, revision) = scoped();
+    let entry = JvmSource::JarEntry {
+        jar_path: PathBuf::from("lib.jar"),
+        entry_path: "p/Other.class".to_string(),
+    };
+
+    assert!(sees(&jvm, revision, &entry, "p.App"));
+}
