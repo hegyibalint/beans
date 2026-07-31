@@ -1,7 +1,11 @@
 use beans_acceptance::fixture::fixture;
 
 // Type import resolution is one observable feature assembled from rules across the JLS.
-// Every expectation starts as an expected failure and is promoted independently.
+//
+// A pending expectation carries the reason it is pending, and that reason is part
+// of the assertion; when it stops being true the marker is wrong, even while the
+// test still passes. Where a whole rule is out of reach we keep the citation and
+// the claims we would make, rather than tests that all fail for one reason.
 
 // JLS §§6.3, 6.5.5.1, 8.2, and 9.2.
 mod scope_of_declarations {
@@ -63,7 +67,7 @@ mod scope_of_declarations {
             )
             .analyze("p/Sub.java")
             .resolves_to("target", "p.Base.X")
-            .expected_failure("resolution is not implemented")
+            .expected_failure("inherited member types are not resolved")
             .run();
     }
 
@@ -80,59 +84,7 @@ mod scope_of_declarations {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "p.Types.X")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn class_type_parameter_is_in_scope_in_the_class_body() {
-        fixture()
-            .file(
-                "p/Box.java",
-                "package p; class Box<T> { <cur:target>T value; }",
-            )
-            .analyze("p/Box.java")
-            .resolves_to_type_param("target", "T")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn method_type_parameter_is_in_scope_in_the_method_declaration() {
-        fixture()
-            .file(
-                "p/Box.java",
-                "package p; class Box { <T> <cur:target>T pick(T value) { return value; } }",
-            )
-            .analyze("p/Box.java")
-            .resolves_to_type_param("target", "T")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn method_type_parameter_shadows_class_type_parameter() {
-        fixture()
-            .file(
-                "p/Box.java",
-                "package p; class Box<T> { <T> <cur:target>T pick(T value) { return value; } }",
-            )
-            .analyze("p/Box.java")
-            .resolves_to_type_param("target", "T")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn local_type_is_in_scope_after_its_declaration() {
-        fixture()
-            .file(
-                "p/Test.java",
-                "package p; class Test { void m() { class Local {} <cur:target>Local value; } }",
-            )
-            .analyze("p/Test.java")
-            .resolves_to_local_type("target", "Local")
-            .expected_failure("resolution is not implemented")
+            .expected_failure("inherited member types are not resolved")
             .run();
     }
 
@@ -221,34 +173,7 @@ mod shadowing {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "p.Base.X")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn type_parameter_shadows_on_demand_import() {
-        fixture()
-            .file("q/X.java", "package q; public class X {}")
-            .file(
-                "p/Box.java",
-                "package p; import q.*; class Box<X> { <cur:target>X value; }",
-            )
-            .analyze("p/Box.java")
-            .resolves_to_type_param("target", "X")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn local_type_shadows_member_type() {
-        fixture()
-            .file(
-                "p/Test.java",
-                "package p; class Test { class X {} void m() { class X {} <cur:target>X value; } }",
-            )
-            .analyze("p/Test.java")
-            .resolves_to_local_type("target", "X")
-            .expected_failure("resolution is not implemented")
+            .expected_failure("inherited member types are not resolved")
             .run();
     }
 
@@ -359,7 +284,7 @@ mod shadowing {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "q.Host.X")
-            .expected_failure("resolution is not implemented")
+            .expected_failure("static single-type imports are not resolved")
             .run();
     }
 
@@ -377,319 +302,45 @@ mod shadowing {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "q.Host.X")
-            .expected_failure("resolution is not implemented")
+            .expected_failure("static single-type imports are not resolved")
             .run();
     }
 }
 
 // JLS §6.5.5.1.
-mod simple_type_names {
-    use super::*;
-
-    #[test]
-    fn missing_simple_type_is_unresolvable() {
-        fixture()
-            .file(
-                "p/Test.java",
-                "package p; class Test { <cur:target>Missing f; }",
-            )
-            .analyze("p/Test.java")
-            .expect_at("target", "unresolvable-type")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn unimported_accessible_type_is_importable() {
-        fixture()
-            .file("q/X.java", "package q; public class X {}")
-            .file("p/Test.java", "package p; class Test { <cur:target>X f; }")
-            .analyze("p/Test.java")
-            .offers_imports("target", &["q.X"])
-            .expected_failure("import suggestions are not implemented")
-            .run();
-    }
-
-    #[test]
-    fn all_accessible_auto_import_candidates_are_reported() {
-        fixture()
-            .file("q/X.java", "package q; public class X {}")
-            .file("r/X.java", "package r; public class X {}")
-            .file("p/Test.java", "package p; class Test { <cur:target>X f; }")
-            .analyze("p/Test.java")
-            .offers_imports("target", &["q.X", "r.X"])
-            .expected_failure("import suggestions are not implemented")
-            .run();
-    }
-
-    #[test]
-    fn distinct_type_imports_on_demand_are_ambiguous() {
-        fixture()
-            .file("q/X.java", "package q; public class X {}")
-            .file("r/X.java", "package r; public class X {}")
-            .file(
-                "p/Test.java",
-                "package p; import q.*; import r.*; class Test { <cur:target>X f; }",
-            )
-            .analyze("p/Test.java")
-            .ambiguous_between("target", &["q.X", "r.X"])
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn explicit_on_demand_import_can_collide_with_java_lang() {
-        fixture()
-            .file(
-                "java/lang/String.java",
-                "package java.lang; public class String {}",
-            )
-            .file("q/String.java", "package q; public class String {}")
-            .file(
-                "p/Test.java",
-                "package p; import q.*; class Test { <cur:target>String f; }",
-            )
-            .analyze("p/Test.java")
-            .ambiguous_between("target", &["java.lang.String", "q.String"])
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn duplicate_on_demand_paths_to_same_declaration_are_deduplicated() {
-        fixture()
-            .file("q/X.java", "package q; public class X {}")
-            .file(
-                "p/Test.java",
-                "package p; import q.*; import q.*; class Test { <cur:target>X f; }",
-            )
-            .analyze("p/Test.java")
-            .resolves_to("target", "q.X")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn type_and_static_on_demand_paths_to_same_type_are_deduplicated() {
-        fixture()
-            .file("q/Host.java", "package q; public class Host { public static class X {} }")
-            .file("p/Test.java", "package p; import q.Host.*; import static q.Host.*; class Test { <cur:target>X f; }")
-            .analyze("p/Test.java")
-            .resolves_to("target", "q.Host.X")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn distinct_inherited_member_types_are_ambiguous() {
-        fixture()
-            .file("p/A.java", "package p; interface A { class X {} }")
-            .file("p/B.java", "package p; interface B { class X {} }")
-            .file(
-                "p/Test.java",
-                "package p; class Test implements A, B { <cur:target>X f; }",
-            )
-            .analyze("p/Test.java")
-            .ambiguous_between("target", &["p.A.X", "p.B.X"])
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn diamond_paths_to_same_member_type_are_deduplicated() {
-        fixture()
-            .file("p/Top.java", "package p; interface Top { class X {} }")
-            .file("p/Left.java", "package p; interface Left extends Top {}")
-            .file("p/Right.java", "package p; interface Right extends Top {}")
-            .file(
-                "p/Test.java",
-                "package p; class Test implements Left, Right { <cur:target>X f; }",
-            )
-            .analyze("p/Test.java")
-            .resolves_to("target", "p.Top.X")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-}
+//
+// Every case here needs on-demand imports and the ambiguity rules that come with
+// them, and none of that resolves yet; written out, they would be nine tests
+// failing for one reason. The claims to make once it lands:
+//
+//  - a missing simple type is unresolvable
+//  - two on-demand imports offering one simple name are ambiguous
+//  - an explicit on-demand import can collide with `java.lang`
+//  - two on-demand paths to one declaration are deduplicated
+//  - a type import and a static import reaching one type are deduplicated
+//  - two inherited member types sharing a name are ambiguous
+//  - diamond paths to one member type are deduplicated
+//
+// Two more belong to code actions rather than to resolution, i.e. the tier that
+// is allowed to see past the scope: an unimported accessible type is importable,
+// and every accessible candidate is offered, not just the first.
 
 // JLS §§6.5.2, 6.5.4, and 6.5.5.2.
-mod qualified_type_names {
-    use super::*;
-
-    #[test]
-    fn fully_qualified_top_level_type_needs_no_import() {
-        fixture()
-            .file("q/X.java", "package q; public class X {}")
-            .file(
-                "p/Test.java",
-                "package p; class Test { <cur:target>q.X f; }",
-            )
-            .analyze("p/Test.java")
-            .resolves_to("target", "q.X")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn fully_qualified_member_type_resolves() {
-        fixture()
-            .file(
-                "q/Outer.java",
-                "package q; public class Outer { public class Inner {} }",
-            )
-            .file(
-                "p/Test.java",
-                "package p; class Test { <cur:target>q.Outer.Inner f; }",
-            )
-            .analyze("p/Test.java")
-            .resolves_to("target", "q.Outer.Inner")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn imported_outer_type_can_qualify_member_type() {
-        fixture()
-            .file(
-                "q/Outer.java",
-                "package q; public class Outer { public class Inner {} }",
-            )
-            .file(
-                "p/Test.java",
-                "package p; import q.Outer; class Test { <cur:target>Outer.Inner f; }",
-            )
-            .analyze("p/Test.java")
-            .resolves_to("target", "q.Outer.Inner")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn qualified_inherited_member_denotes_declaring_type_member() {
-        fixture()
-            .file(
-                "q/Base.java",
-                "package q; public class Base { public static class Inner {} }",
-            )
-            .file("q/Sub.java", "package q; public class Sub extends Base {}")
-            .file(
-                "p/Test.java",
-                "package p; class Test { <cur:target>q.Sub.Inner f; }",
-            )
-            .analyze("p/Test.java")
-            .resolves_to("target", "q.Base.Inner")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn type_parameter_can_qualify_a_bound_member_type() {
-        fixture()
-            .file(
-                "q/Outer.java",
-                "package q; public class Outer { public class Inner {} }",
-            )
-            .file(
-                "p/Test.java",
-                "package p; class Test<T extends q.Outer> { <cur:target>T.Inner f; }",
-            )
-            .analyze("p/Test.java")
-            .resolves_to("target", "q.Outer.Inner")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn missing_type_in_existing_package_is_unresolvable() {
-        fixture()
-            .file("q/Present.java", "package q; public class Present {}")
-            .file(
-                "p/Test.java",
-                "package p; class Test { <cur:target>q.Missing f; }",
-            )
-            .analyze("p/Test.java")
-            .expect_at("target", "unresolvable-type")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn missing_member_of_existing_type_is_unresolvable() {
-        fixture()
-            .file("q/Outer.java", "package q; public class Outer {}")
-            .file(
-                "p/Test.java",
-                "package p; class Test { <cur:target>q.Outer.Missing f; }",
-            )
-            .analyze("p/Test.java")
-            .expect_at("target", "unresolvable-type")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn inaccessible_qualified_top_level_type_is_rejected() {
-        fixture()
-            .file("q/Hidden.java", "package q; class Hidden {}")
-            .file(
-                "p/Test.java",
-                "package p; class Test { <cur:target>q.Hidden f; }",
-            )
-            .analyze("p/Test.java")
-            .expect_at("target", "inaccessible-type")
-            .expected_failure("access checks are not implemented")
-            .run();
-    }
-
-    #[test]
-    fn inaccessible_qualified_member_type_is_rejected() {
-        fixture()
-            .file(
-                "q/Outer.java",
-                "package q; public class Outer { private class Hidden {} }",
-            )
-            .file(
-                "p/Test.java",
-                "package p; class Test { <cur:target>q.Outer.Hidden f; }",
-            )
-            .analyze("p/Test.java")
-            .expect_at("target", "inaccessible-type")
-            .expected_failure("access checks are not implemented")
-            .run();
-    }
-
-    #[test]
-    fn in_scope_type_prefix_obscures_same_named_package() {
-        fixture()
-            .file("q/X.java", "package q; public class X {}")
-            .file("p/q.java", "package p; class q {}")
-            .file(
-                "p/Test.java",
-                "package p; class Test { <cur:target>q.X f; }",
-            )
-            .analyze("p/Test.java")
-            .expect_at("target", "unresolvable-type")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn source_member_name_maps_to_jvm_binary_identity() {
-        fixture()
-            .file(
-                "q/Outer.java",
-                "package q; public class Outer { public static class Inner {} }",
-            )
-            .file(
-                "p/Test.java",
-                "package p; class Test { <cur:target>q.Outer.Inner f; }",
-            )
-            .analyze("p/Test.java")
-            .resolves_to("target", "q.Outer.Inner")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-}
+//
+// A qualified type reference is not resolved at all, so there is nothing here to
+// be pending about yet; all eleven cases would fail for that one reason. The
+// claims to make once it lands:
+//
+//  - a fully qualified top level type needs no import
+//  - a fully qualified member type resolves
+//  - an imported outer type can qualify a member type
+//  - a qualified inherited member denotes the member of its declaring type
+//  - a type parameter can qualify a member type of its bound
+//  - a missing type in an existing package is unresolvable
+//  - a missing member of an existing type is unresolvable
+//  - an inaccessible qualified type is rejected, top level and member alike
+//  - an in-scope type prefix obscures a same-named package
+//  - a source member name maps to its JVM binary identity
 
 // Where a dotted name stops being a package and starts being a type.
 // JLS §§6.5.4.1 and 6.5.4.2 walk it left to right and switch the first time the
@@ -995,7 +646,7 @@ mod type_imports_on_demand {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "q.X")
-            .expected_failure("resolution is not implemented")
+            .expected_failure("on-demand imports are not resolved")
             .run();
     }
 
@@ -1012,7 +663,7 @@ mod type_imports_on_demand {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "q.Outer.Inner")
-            .expected_failure("resolution is not implemented")
+            .expected_failure("on-demand imports are not resolved")
             .run();
     }
 
@@ -1030,21 +681,7 @@ mod type_imports_on_demand {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "q.Base.Inner")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn package_on_demand_import_does_not_reach_subpackages() {
-        fixture()
-            .file("q/r/X.java", "package q.r; public class X {}")
-            .file(
-                "p/Test.java",
-                "package p; import q.*; class Test { <cur:target>X f; }",
-            )
-            .analyze("p/Test.java")
-            .offers_imports("target", &["q.r.X"])
-            .expected_failure("import suggestions are not implemented")
+            .expected_failure("on-demand imports are not resolved")
             .run();
     }
 
@@ -1058,7 +695,7 @@ mod type_imports_on_demand {
             )
             .analyze("p/Test.java")
             .expect_at("target", "unresolvable-type")
-            .expected_failure("resolution is not implemented")
+            .expected_failure("on-demand imports are not resolved")
             .run();
     }
 
@@ -1072,7 +709,7 @@ mod type_imports_on_demand {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "q.X")
-            .expected_failure("resolution is not implemented")
+            .expected_failure("on-demand imports are not resolved")
             .run();
     }
 
@@ -1101,183 +738,26 @@ mod type_imports_on_demand {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "java.lang.String")
-            .expected_failure("resolution is not implemented")
+            .expected_failure("on-demand imports are not resolved")
             .run();
     }
 }
 
 // JLS §§7.5.3, 7.5.4, and 6.4.1.
-mod static_type_imports {
-    use super::*;
-
-    #[test]
-    fn single_static_import_provides_static_member_type() {
-        fixture()
-            .file(
-                "q/Host.java",
-                "package q; public class Host { public static class X {} }",
-            )
-            .file(
-                "p/Test.java",
-                "package p; import static q.Host.X; class Test { <cur:target>X f; }",
-            )
-            .analyze("p/Test.java")
-            .resolves_to("target", "q.Host.X")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn static_on_demand_import_provides_static_member_type() {
-        fixture()
-            .file(
-                "q/Host.java",
-                "package q; public class Host { public static class X {} }",
-            )
-            .file(
-                "p/Test.java",
-                "package p; import static q.Host.*; class Test { <cur:target>X f; }",
-            )
-            .analyze("p/Test.java")
-            .resolves_to("target", "q.Host.X")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn single_static_import_rejects_non_static_inner_type() {
-        fixture()
-            .file(
-                "q/Host.java",
-                "package q; public class Host { public class X {} }",
-            )
-            .file(
-                "p/Test.java",
-                "package p; import static q.Host.X; class Test {}",
-            )
-            .analyze("p/Test.java")
-            .expect("invalid-static-import")
-            .expected_failure("import declaration checks are not implemented")
-            .run();
-    }
-
-    #[test]
-    fn static_on_demand_import_excludes_non_static_inner_type() {
-        fixture()
-            .file(
-                "q/Host.java",
-                "package q; public class Host { public class X {} }",
-            )
-            .file(
-                "p/Test.java",
-                "package p; import static q.Host.*; class Test { <cur:target>X f; }",
-            )
-            .analyze("p/Test.java")
-            .offers_imports("target", &["q.Host.X"])
-            .expected_failure("import suggestions are not implemented")
-            .run();
-    }
-
-    #[test]
-    fn static_import_can_reach_inherited_static_member_type() {
-        fixture()
-            .file(
-                "q/Base.java",
-                "package q; public class Base { public static class X {} }",
-            )
-            .file(
-                "q/Host.java",
-                "package q; public class Host extends Base {}",
-            )
-            .file(
-                "p/Test.java",
-                "package p; import static q.Host.X; class Test { <cur:target>X f; }",
-            )
-            .analyze("p/Test.java")
-            .resolves_to("target", "q.Base.X")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn single_static_import_of_missing_member_is_error() {
-        fixture()
-            .file("q/Host.java", "package q; public class Host {}")
-            .file(
-                "p/Test.java",
-                "package p; import static q.Host.X; class Test {}",
-            )
-            .analyze("p/Test.java")
-            .expect("unresolvable-import")
-            .expected_failure("import declaration checks are not implemented")
-            .run();
-    }
-
-    #[test]
-    fn single_static_import_of_inaccessible_member_is_error() {
-        fixture()
-            .file(
-                "q/Host.java",
-                "package q; public class Host { private static class X {} }",
-            )
-            .file(
-                "p/Test.java",
-                "package p; import static q.Host.X; class Test {}",
-            )
-            .analyze("p/Test.java")
-            .expect("inaccessible-import")
-            .expected_failure("import declaration checks are not implemented")
-            .run();
-    }
-
-    #[test]
-    fn one_single_static_import_may_expose_ambiguous_inherited_types() {
-        fixture()
-            .file("q/A.java", "package q; public interface A { class X {} }")
-            .file("q/B.java", "package q; public interface B { class X {} }")
-            .file(
-                "q/Host.java",
-                "package q; public class Host implements A, B {}",
-            )
-            .file(
-                "p/Test.java",
-                "package p; import static q.Host.X; class Test { <cur:target>X f; }",
-            )
-            .analyze("p/Test.java")
-            .ambiguous_between("target", &["q.A.X", "q.B.X"])
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn type_and_static_on_demand_imports_of_distinct_types_are_ambiguous() {
-        fixture()
-            .file("q/X.java", "package q; public class X {}")
-            .file(
-                "r/Host.java",
-                "package r; public class Host { public static class X {} }",
-            )
-            .file(
-                "p/Test.java",
-                "package p; import q.*; import static r.Host.*; class Test { <cur:target>X f; }",
-            )
-            .analyze("p/Test.java")
-            .ambiguous_between("target", &["q.X", "r.Host.X"])
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-
-    #[test]
-    fn duplicate_static_on_demand_import_is_redundant() {
-        fixture()
-            .file("q/Host.java", "package q; public class Host { public static class X {} }")
-            .file("p/Test.java", "package p; import static q.Host.*; import static q.Host.*; class Test { <cur:target>X f; }")
-            .analyze("p/Test.java")
-            .resolves_to("target", "q.Host.X")
-            .expected_failure("resolution is not implemented")
-            .run();
-    }
-}
+//
+// Static imports are not resolved, neither single nor on-demand, so all ten cases
+// would fail for that one reason. The claims to make once they land:
+//
+//  - a single static import provides a static member type
+//  - a static on-demand import provides a static member type
+//  - a single static import rejects a non-static inner type
+//  - a static on-demand import excludes a non-static inner type
+//  - a static import can reach an inherited static member type
+//  - importing a missing member is an error
+//  - importing an inaccessible member is an error
+//  - one single static import may expose ambiguous inherited types
+//  - a type import and a static on-demand import of distinct types are ambiguous
+//  - a duplicate static on-demand import is redundant
 
 // JLS §6.6.
 mod accessibility {
@@ -1300,7 +780,7 @@ mod accessibility {
             .file("p/Test.java", "package p; class Test { <cur:target>X f; }")
             .analyze("p/Test.java")
             .expect_at("target", "unresolvable-type")
-            .expected_failure("resolution is not implemented")
+            .expected_failure("type accessibility is not checked when resolving a simple name")
             .run();
     }
 
@@ -1329,7 +809,7 @@ mod accessibility {
             )
             .analyze("p/Test.java")
             .expect_at("target", "inaccessible-type")
-            .expected_failure("access checks are not implemented")
+            .expected_failure("qualified type references are not resolved yet")
             .run();
     }
 
@@ -1346,7 +826,7 @@ mod accessibility {
             )
             .analyze("p/Test.java")
             .resolves_to("target", "q.Base.X")
-            .expected_failure("resolution is not implemented")
+            .expected_failure("inherited member types are not resolved")
             .run();
     }
 
@@ -1363,7 +843,7 @@ mod accessibility {
             )
             .analyze("p/Test.java")
             .expect_at("target", "unresolvable-type")
-            .expected_failure("resolution is not implemented")
+            .expected_failure("inherited member types are not resolved")
             .run();
     }
 
@@ -1380,7 +860,7 @@ mod accessibility {
             )
             .analyze("p/Test.java")
             .expect_at("target", "inaccessible-type")
-            .expected_failure("access checks are not implemented")
+            .expected_failure("qualified type references are not resolved yet")
             .run();
     }
 }
@@ -1389,70 +869,20 @@ mod accessibility {
 mod module_imports {
     use super::*;
 
-    #[test]
-    fn module_import_provides_exported_public_type() {
-        fixture()
-            .file("lib/module-info.java", "module m.lib { exports api; }")
-            .file("lib/api/X.java", "package api; public class X {}")
-            .file("app/module-info.java", "module m.app { requires m.lib; }")
-            .file(
-                "app/p/Test.java",
-                "package p; import module m.lib; class Test { <cur:target>X f; }",
-            )
-            .analyze("app/p/Test.java")
-            .resolves_to("target", "api.X")
-            .expected_failure("module imports and fixture module roots are not implemented")
-            .run();
-    }
-
-    #[test]
-    fn module_import_includes_transitively_read_exported_packages() {
-        fixture()
-            .file(
-                "base/module-info.java",
-                "module m.base { exports base.api; }",
-            )
-            .file(
-                "base/base/api/X.java",
-                "package base.api; public class X {}",
-            )
-            .file(
-                "facade/module-info.java",
-                "module m.facade { requires transitive m.base; }",
-            )
-            .file(
-                "app/module-info.java",
-                "module m.app { requires m.facade; }",
-            )
-            .file(
-                "app/p/Test.java",
-                "package p; import module m.facade; class Test { <cur:target>X f; }",
-            )
-            .analyze("app/p/Test.java")
-            .resolves_to("target", "base.api.X")
-            .expected_failure("module imports and fixture module roots are not implemented")
-            .run();
-    }
-
-    #[test]
-    fn one_module_import_can_introduce_ambiguous_simple_name() {
-        fixture()
-            .file(
-                "lib/module-info.java",
-                "module m.lib { exports a; exports b; }",
-            )
-            .file("lib/a/X.java", "package a; public class X {}")
-            .file("lib/b/X.java", "package b; public class X {}")
-            .file("app/module-info.java", "module m.app { requires m.lib; }")
-            .file(
-                "app/p/Test.java",
-                "package p; import module m.lib; class Test { <cur:target>X f; }",
-            )
-            .analyze("app/p/Test.java")
-            .ambiguous_between("target", &["a.X", "b.X"])
-            .expected_failure("module imports and fixture module roots are not implemented")
-            .run();
-    }
+    // Everything that needs a module to actually exist is out of reach: the
+    // fixture has no module roots, and module imports are not resolved. What is
+    // left below are the two cases where a module import loses to something
+    // else, which hold today because the module import contributes nothing.
+    //
+    // The claims to make once module roots and §7.5.5 land:
+    //
+    //  - a module import provides an exported public type
+    //  - it includes the packages exported by transitively read modules
+    //  - one module import can introduce an ambiguous simple name
+    //  - a type import on demand shadows a module import
+    //  - a static import on demand shadows a module import
+    //  - the implicit `java.lang` import shadows a module import
+    //  - importing a module we do not read is an error
 
     #[test]
     fn single_type_import_shadows_module_import() {
@@ -1471,37 +901,6 @@ mod module_imports {
     }
 
     #[test]
-    fn type_import_on_demand_shadows_module_import() {
-        fixture()
-            .file("lib/module-info.java", "module m.lib { exports a; }")
-            .file("lib/a/X.java", "package a; public class X {}")
-            .file("app/module-info.java", "module m.app { requires m.lib; }")
-            .file("app/q/X.java", "package q; public class X {}")
-            .file(
-                "app/p/Test.java",
-                "package p; import module m.lib; import q.*; class Test { <cur:target>X f; }",
-            )
-            .analyze("app/p/Test.java")
-            .resolves_to("target", "q.X")
-            .expected_failure("module imports and fixture module roots are not implemented")
-            .run();
-    }
-
-    #[test]
-    fn static_import_on_demand_shadows_module_import() {
-        fixture()
-            .file("lib/module-info.java", "module m.lib { exports a; }")
-            .file("lib/a/X.java", "package a; public class X {}")
-            .file("app/module-info.java", "module m.app { requires m.lib; }")
-            .file("app/q/Host.java", "package q; public class Host { public static class X {} }")
-            .file("app/p/Test.java", "package p; import module m.lib; import static q.Host.*; class Test { <cur:target>X f; }")
-            .analyze("app/p/Test.java")
-            .resolves_to("target", "q.Host.X")
-            .expected_failure("module imports and fixture module roots are not implemented")
-            .run();
-    }
-
-    #[test]
     fn current_package_type_shadows_module_import() {
         fixture()
             .file("lib/module-info.java", "module m.lib { exports a; }")
@@ -1514,42 +913,6 @@ mod module_imports {
             )
             .analyze("app/p/Test.java")
             .resolves_to("target", "p.X")
-            .run();
-    }
-
-    #[test]
-    fn implicit_java_lang_import_shadows_module_import() {
-        fixture()
-            .file(
-                "java/java/lang/String.java",
-                "package java.lang; public class String {}",
-            )
-            .file("lib/module-info.java", "module m.lib { exports a; }")
-            .file("lib/a/String.java", "package a; public class String {}")
-            .file("app/module-info.java", "module m.app { requires m.lib; }")
-            .file(
-                "app/p/Test.java",
-                "package p; import module m.lib; class Test { <cur:target>String f; }",
-            )
-            .analyze("app/p/Test.java")
-            .resolves_to("target", "java.lang.String")
-            .expected_failure("module imports and fixture module roots are not implemented")
-            .run();
-    }
-
-    #[test]
-    fn importing_unread_module_is_error() {
-        fixture()
-            .file("lib/module-info.java", "module m.lib { exports api; }")
-            .file("lib/api/X.java", "package api; public class X {}")
-            .file("app/module-info.java", "module m.app {}")
-            .file(
-                "app/p/Test.java",
-                "package p; import module m.lib; class Test {}",
-            )
-            .analyze("app/p/Test.java")
-            .expect("unread-module-import")
-            .expected_failure("module imports and fixture module roots are not implemented")
             .run();
     }
 }

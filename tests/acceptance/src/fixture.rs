@@ -34,16 +34,16 @@ enum Mode {
     ExpectedFailure(String),
 }
 
+/// Every variant has to be answered by asking the engine. A variant that returns
+/// a constant instead is worse than a missing one: marked as an expected failure
+/// it passes forever, and it can never turn red to tell us the engine caught up.
 enum Expect {
     Code { code: String },
     NoCode { code: String },
     CodeAt { cursor: String, code: String },
     ResolvesTo { cursor: String, fqn: String },
     DoesNotResolve { cursor: String },
-    ResolvesToTypeParam { cursor: String, name: String },
-    ResolvesToLocalType { cursor: String, name: String },
     AmbiguousBetween { cursor: String, fqns: Vec<String> },
-    OffersImports { cursor: String, fqns: Vec<String> },
 }
 
 struct Expectation {
@@ -140,31 +140,8 @@ impl Fixture {
         })
     }
 
-    /// The type reference at the named cursor must resolve to the type
-    /// parameter `name`, not to any class or interface.
-    pub fn resolves_to_type_param(self, cursor: &str, name: &str) -> Self {
-        self.push_expectation(Expect::ResolvesToTypeParam {
-            cursor: cursor.to_string(),
-            name: name.to_string(),
-        })
-    }
-
-    pub fn resolves_to_local_type(self, cursor: &str, name: &str) -> Self {
-        self.push_expectation(Expect::ResolvesToLocalType {
-            cursor: cursor.to_string(),
-            name: name.to_string(),
-        })
-    }
-
     pub fn ambiguous_between(self, cursor: &str, fqns: &[&str]) -> Self {
         self.push_expectation(Expect::AmbiguousBetween {
-            cursor: cursor.to_string(),
-            fqns: fqns.iter().map(|fqn| (*fqn).to_string()).collect(),
-        })
-    }
-
-    pub fn offers_imports(self, cursor: &str, fqns: &[&str]) -> Self {
-        self.push_expectation(Expect::OffersImports {
             cursor: cursor.to_string(),
             fqns: fqns.iter().map(|fqn| (*fqn).to_string()).collect(),
         })
@@ -254,13 +231,6 @@ impl Fixture {
                         expected.sort();
                         labels == expected
                     }
-                    // The engine cannot see these declaration kinds yet.
-                    Expect::ResolvesToTypeParam { cursor, .. }
-                    | Expect::ResolvesToLocalType { cursor, .. }
-                    | Expect::OffersImports { cursor, .. } => {
-                        find_cursor(&cursors, cursor, &analysis.file);
-                        false
-                    }
                 };
                 match (met, expectation.mode) {
                     (true, Mode::Normal) => {}
@@ -331,18 +301,8 @@ fn describe(expect: &Expect) -> String {
         Expect::DoesNotResolve { cursor } => {
             format!("expected <cur:{cursor}> to resolve to nothing")
         }
-        Expect::ResolvesToTypeParam { cursor, name } => {
-            format!("expected <cur:{cursor}> to resolve to type parameter `{name}`")
-        }
-        Expect::ResolvesToLocalType { cursor, name } => {
-            format!("expected <cur:{cursor}> to resolve to local type `{name}`")
-        }
         Expect::AmbiguousBetween { cursor, fqns } => format!(
             "expected <cur:{cursor}> to be ambiguous between {}",
-            fqns.join(", ")
-        ),
-        Expect::OffersImports { cursor, fqns } => format!(
-            "expected <cur:{cursor}> to offer imports {}",
             fqns.join(", ")
         ),
     }

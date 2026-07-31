@@ -13,6 +13,24 @@ Beans follows the classical testing vocabulary:
     - E.g. after giving the consumer-facing `Beans` a file and asking for diagnostics, do we get the right answer?
     - E.g. when reading the JLS, already coding down our expectations about resolution, even before implementation
 
+## Where a fact belongs
+
+Test a rule where the code decides it. Higher up, test only that the pieces are connected, not the rule again.
+
+Java says a member type wins over a single-type import (JLS §6.4.1). The `crates/lang-java/src/resolution.rs` is the code that decides it, so that is where the cases belong: the member type alone, the import alone, both together, and the import written first and written last. That module is the only one that has to be exhaustive.
+
+The levels above it can still be wired wrong, so each of them gets one test; not another case, just the connection:
+
+| Test | What it establishes |
+|---|---|
+| `resolution/tests/shadowing.rs` | every case: which declaration wins |
+| `lang-java/tests/type_resolution/shadowing.rs` | one: the answer survives the crate's public API |
+| `acceptance/.../type_resolution/shadowing.rs` | one: the answer reaches a user of Beans |
+
+Without this, tests drift upward. The level furthest from the code is the most comfortable one to write in; the fixture is nice, the setup is familiar, and nothing stops one more case from going there. The result is that the top restates rules the bottom already owns, and a single broken rule fails in three places at once, without telling us which one is wrong.
+
+A fact moves down when the code that decides it moves down; it does not move up as it matures.
+
 ## Levels
 
 Tests in Beans are highly structured. This is necessary because this piece of software touches multiple, complex domains, and tests have to stay discoverable, maintainable and scalable.
@@ -58,7 +76,7 @@ When to split is subjective:
 
 Unit tests live with the module they exercise, but not necessarily in the same file. They have two shapes, and which one we are in decides how much of the test the path can carry.
 
-We follow one fact about Java through both: a member type wins over a single-type import. `crates/lang-java/src/resolution.rs` is the module that decides it, so that is where the test belongs.
+We follow the same fact through both shapes: a member type wins over a single-type import. The `crates/lang-java/src/resolution.rs` decides it, so this is where its cases belong.
 
 #### Embedded
 
@@ -180,7 +198,7 @@ An integration test necessarily composes things from the outside: for example, `
 
 If the attention is on the overall system behaving, i.e. the assertions spread around, the test is an acceptance test rather than an integration test.
 
-Our shadowing test moves here once we decide the fact should hold through `lang-java`'s public API rather than through its internals. The test now spans modules, so the group needs a name that isn't a module name, and that is the capability:
+The same fact gets one test here, checking that `lang-java`'s public API still gives the right answer. It is not a second copy of the cases; those stay with the code that decides them. The test spans modules, so the group needs a name that isn't a module name, and that is the capability:
 
 | Level | Value |
 |---|---|
@@ -256,7 +274,7 @@ Inside a grown capability, each file collects the cases that share a premise: so
 
 A test belongs to the file whose premise is the point of the test. When a test needs two premises, the interaction wins: `member_type_shadows_single_type_import` needs both a member type and an import, but what it establishes is precedence rather than the behavior of either side, so it lives in `shadowing.rs`.
 
-Our shadowing test makes its last move here, once the fact is something we promise a user of Beans rather than something `lang-java` does. This tree holds every language and every tool, so it finally has to say which one we are in: the subject, and the domain above it.
+One last test for the same fact sits here, checking that it reaches a user of Beans. This tree holds every language and every tool, so it finally has to say which one we are in: the subject, and the domain above it.
 
 | Level | Value |
 |---|---|
@@ -270,7 +288,7 @@ Our shadowing test makes its last move here, once the fact is something we promi
 acceptance/tests/languages/java/type_resolution/shadowing.rs::member_type_shadows_single_type_import
 ```
 
-That is the last level to arrive, and the two kinds of absence are now visible next to each other. The premise was missing in the embedded shape only until it grew; one shape later it appeared, without the test itself changing. Domain, subject and capability were missing because there was nothing to name at that reach, and no amount of growth would have added them; only moving the test did.
+That is the last level to arrive, and the two kinds of absence are now visible next to each other. The premise was missing in the embedded shape only until it grew; one shape later it appeared, without the test itself changing. Domain, subject and capability were missing because there was nothing to name at that reach, and no amount of growth would have added them; only testing the fact at a further reach did.
 
 Once a test has a file of its own, that file always turns out to be the deepest level above the claim. And this is not only a filing scheme: minus the leading directories, the same path is what `cargo test` prints and what you pass to filter a run.
 
