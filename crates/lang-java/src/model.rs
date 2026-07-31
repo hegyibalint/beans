@@ -576,146 +576,162 @@ mod tests {
         }
     }
 
-    fn type_declaration(
-        name: JavaIdentifier,
-        declaring: JavaLexicalScopeId,
-        body: JavaLexicalScopeId,
-    ) -> JavaDeclaration {
-        JavaDeclaration::Type(JavaTypeDeclaration {
-            span: OffsetSpan {
-                start: Offset(0),
-                end: Offset(20),
-            },
-            name: Some(name),
-            kind: JavaTypeKind::Class,
-            access: None,
-            superclass: None,
-            declaring_scope: declaring,
-            body_scope: body,
-        })
-    }
+    // What every kind of declaration answers about its own name.
+    mod declarations {
+        use super::*;
 
-    #[test]
-    fn declarations_expose_their_names_and_name_spans() {
-        let name = identifier("Named", 7);
-        let declarations = [
-            type_declaration(name.clone(), JavaLexicalScopeId(0), JavaLexicalScopeId(1)),
-            JavaDeclaration::TypeParameter(JavaTypeParameterDeclaration { name: name.clone() }),
-            JavaDeclaration::Field(JavaFieldDeclaration {
+        fn type_declaration(
+            name: JavaIdentifier,
+            declaring: JavaLexicalScopeId,
+            body: JavaLexicalScopeId,
+        ) -> JavaDeclaration {
+            JavaDeclaration::Type(JavaTypeDeclaration {
                 span: OffsetSpan {
                     start: Offset(0),
-                    end: Offset(10),
+                    end: Offset(20),
                 },
-                name: Some(name.clone()),
+                name: Some(name),
+                kind: JavaTypeKind::Class,
                 access: None,
-                referenced_type: None,
-                declaring_scope: JavaLexicalScopeId(0),
-            }),
-            JavaDeclaration::Method(JavaMethodDeclaration {
+                superclass: None,
+                declaring_scope: declaring,
+                body_scope: body,
+            })
+        }
+
+        #[test]
+        fn expose_their_names_and_name_spans() {
+            let name = identifier("Named", 7);
+            let declarations = [
+                type_declaration(name.clone(), JavaLexicalScopeId(0), JavaLexicalScopeId(1)),
+                JavaDeclaration::TypeParameter(JavaTypeParameterDeclaration { name: name.clone() }),
+                JavaDeclaration::Field(JavaFieldDeclaration {
+                    span: OffsetSpan {
+                        start: Offset(0),
+                        end: Offset(10),
+                    },
+                    name: Some(name.clone()),
+                    access: None,
+                    referenced_type: None,
+                    declaring_scope: JavaLexicalScopeId(0),
+                }),
+                JavaDeclaration::Method(JavaMethodDeclaration {
+                    span: OffsetSpan {
+                        start: Offset(0),
+                        end: Offset(10),
+                    },
+                    name: Some(name.clone()),
+                    return_type: None,
+                    parameters: Vec::new(),
+                    declaring_scope: JavaLexicalScopeId(0),
+                    body_scope: JavaLexicalScopeId(1),
+                    body: None,
+                }),
+            ];
+
+            for declaration in declarations {
+                assert_eq!(declaration.name(), Some(&name));
+                assert_eq!(declaration.name_span(), Some(name.span));
+            }
+
+            let constructor = JavaDeclaration::Constructor(JavaConstructorDeclaration {
                 span: OffsetSpan {
                     start: Offset(0),
                     end: Offset(10),
                 },
-                name: Some(name.clone()),
-                return_type: None,
                 parameters: Vec::new(),
                 declaring_scope: JavaLexicalScopeId(0),
                 body_scope: JavaLexicalScopeId(1),
                 body: None,
-            }),
-        ];
+            });
+            assert_eq!(constructor.name(), None);
+            assert_eq!(constructor.name_span(), None);
+        }
+    }
 
-        for declaration in declarations {
-            assert_eq!(declaration.name(), Some(&name));
-            assert_eq!(declaration.name_span(), Some(name.span));
+    // Walking outwards from a scope, which is how a name is looked up.
+    mod scope_chain {
+        use super::*;
+
+        #[test]
+        fn the_compilation_unit_contains_only_itself() {
+            let file = JavaFile::new();
+            let entries: Vec<_> = file.iter_scope_chain(file.compilation_unit_scope).collect();
+
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].0, file.compilation_unit_scope);
+            assert!(std::ptr::eq(
+                entries[0].1,
+                &file.lexical_scopes[file.compilation_unit_scope.0]
+            ));
         }
 
-        let constructor = JavaDeclaration::Constructor(JavaConstructorDeclaration {
-            span: OffsetSpan {
+        #[test]
+        fn walks_from_innermost_to_outermost() {
+            let mut file = JavaFile::new();
+            let compilation_unit = file.compilation_unit_scope;
+            let outer = add_lexical_scope(&mut file, compilation_unit);
+            let sibling = add_lexical_scope(&mut file, compilation_unit);
+            let inner = add_lexical_scope(&mut file, outer);
+
+            let entries: Vec<_> = file.iter_scope_chain(inner).collect();
+            let scope_ids: Vec<_> = entries.iter().map(|(scope_id, _)| *scope_id).collect();
+
+            assert_eq!(scope_ids, [inner, outer, compilation_unit]);
+            assert!(!scope_ids.contains(&sibling));
+            assert!(
+                entries.iter().all(|(scope_id, scope)| std::ptr::eq(
+                    *scope,
+                    &file.lexical_scopes[scope_id.0]
+                ))
+            );
+        }
+    }
+
+    // Finding what encloses an offset, which is how a caret becomes an entity.
+    mod position_index {
+        use super::*;
+
+        #[test]
+        fn returns_tightest_first() {
+            let mut file = JavaFile::new();
+            let compilation_unit = file.compilation_unit_scope;
+            let outer = add_lexical_scope(&mut file, compilation_unit);
+            file.lexical_scopes[outer.0].span = OffsetSpan {
+                start: Offset(5),
+                end: Offset(50),
+            };
+            file.lexical_scopes[compilation_unit.0].span = OffsetSpan {
                 start: Offset(0),
-                end: Offset(10),
-            },
-            parameters: Vec::new(),
-            declaring_scope: JavaLexicalScopeId(0),
-            body_scope: JavaLexicalScopeId(1),
-            body: None,
-        });
-        assert_eq!(constructor.name(), None);
-        assert_eq!(constructor.name_span(), None);
-    }
+                end: Offset(100),
+            };
+            file.declarations
+                .push(JavaDeclaration::Local(JavaLocalDeclaration {
+                    span: OffsetSpan {
+                        start: Offset(10),
+                        end: Offset(15),
+                    },
+                    name: Some(identifier("x", 10)),
+                    ty: None,
+                    declaring_scope: outer,
+                }));
+            file.position_index = JavaPositionIndex::build(&file);
 
-    #[test]
-    fn iter_scope_chain_from_the_compilation_unit_contains_only_itself() {
-        let file = JavaFile::new();
-        let entries: Vec<_> = file.iter_scope_chain(file.compilation_unit_scope).collect();
-
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].0, file.compilation_unit_scope);
-        assert!(std::ptr::eq(
-            entries[0].1,
-            &file.lexical_scopes[file.compilation_unit_scope.0]
-        ));
-    }
-
-    #[test]
-    fn iter_scope_chain_walks_from_innermost_to_outermost() {
-        let mut file = JavaFile::new();
-        let compilation_unit = file.compilation_unit_scope;
-        let outer = add_lexical_scope(&mut file, compilation_unit);
-        let sibling = add_lexical_scope(&mut file, compilation_unit);
-        let inner = add_lexical_scope(&mut file, outer);
-
-        let entries: Vec<_> = file.iter_scope_chain(inner).collect();
-        let scope_ids: Vec<_> = entries.iter().map(|(scope_id, _)| *scope_id).collect();
-
-        assert_eq!(scope_ids, [inner, outer, compilation_unit]);
-        assert!(!scope_ids.contains(&sibling));
-        assert!(
-            entries
-                .iter()
-                .all(|(scope_id, scope)| std::ptr::eq(*scope, &file.lexical_scopes[scope_id.0]))
-        );
-    }
-
-    #[test]
-    fn position_index_returns_tightest_first() {
-        let mut file = JavaFile::new();
-        let compilation_unit = file.compilation_unit_scope;
-        let outer = add_lexical_scope(&mut file, compilation_unit);
-        file.lexical_scopes[outer.0].span = OffsetSpan {
-            start: Offset(5),
-            end: Offset(50),
-        };
-        file.lexical_scopes[compilation_unit.0].span = OffsetSpan {
-            start: Offset(0),
-            end: Offset(100),
-        };
-        file.declarations
-            .push(JavaDeclaration::Local(JavaLocalDeclaration {
-                span: OffsetSpan {
-                    start: Offset(10),
-                    end: Offset(15),
-                },
-                name: Some(identifier("x", 10)),
-                ty: None,
-                declaring_scope: outer,
-            }));
-        file.position_index = JavaPositionIndex::build(&file);
-
-        let entries = file.position_index.iter_containing(Offset(10));
-        assert_eq!(
-            entries[0],
-            (
-                OffsetSpan {
-                    start: Offset(10),
-                    end: Offset(11),
-                },
-                JavaEntityId::Declaration(JavaDeclarationId(0))
-            )
-        );
-        assert!(entries.iter().any(|(_, entity)| matches!(
-            entity,
-            JavaEntityId::Scope(scope) if *scope == outer
-        )));
+            let entries = file.position_index.iter_containing(Offset(10));
+            assert_eq!(
+                entries[0],
+                (
+                    OffsetSpan {
+                        start: Offset(10),
+                        end: Offset(11),
+                    },
+                    JavaEntityId::Declaration(JavaDeclarationId(0))
+                )
+            );
+            assert!(entries.iter().any(|(_, entity)| matches!(
+                entity,
+                JavaEntityId::Scope(scope) if *scope == outer
+            )));
+        }
     }
 }
