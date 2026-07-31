@@ -1,4 +1,10 @@
 // JLS §§7.3, 7.5.2, and 6.4.1.
+//
+// Nothing resolves an on-demand import yet, so every case below is pending for
+// that one reason and none of them can pass by accident. One case was not:
+// "an on-demand import of the current package is ignored" passed because the
+// import contributed nothing either way, which is not the same as being ignored.
+// It comes back when there is something to ignore.
 
 use beans_acceptance::fixture::fixture;
 
@@ -76,18 +82,6 @@ fn duplicate_package_on_demand_import_is_redundant() {
         .analyze("p/Test.java")
         .resolves_to("target", "q.X")
         .expected_failure("on-demand imports are not resolved")
-        .run();
-}
-
-#[test]
-fn on_demand_import_of_current_package_is_ignored() {
-    fixture()
-        .file(
-            "p/Test.java",
-            "package p; import p.*; class X {} class Test { <cur:target>X f; }",
-        )
-        .analyze("p/Test.java")
-        .resolves_to("target", "p.X")
         .run();
 }
 

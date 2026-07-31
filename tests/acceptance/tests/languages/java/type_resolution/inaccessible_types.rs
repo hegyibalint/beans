@@ -1,4 +1,11 @@
-// JLS §6.6.
+// JLS §6.6, from the resolution side: whether a type being out of reach changes
+// what a name resolves to. It must not; §6.6 decides what may be used, and
+// `accessibility.rs` one level up is where saying so belongs.
+//
+// The two passing cases cannot fail today, because nothing blocks resolution at
+// all. They are here for when something does: each is a type that is accessible
+// and must go on resolving, which is the half of the rule an over-eager access
+// check would break first.
 
 use beans_acceptance::fixture::fixture;
 

@@ -3,40 +3,13 @@
 // package to the left declares a type of that name; §7.1 forbids the two from
 // colliding. A single-type import is the only surface where that walk is
 // observable today, because a qualified type reference is not resolved yet.
+//
+// The walk itself is `resolve_canonical_name`, so its cases live in
+// `resolution/tests/imports.rs`: where the package stops, nesting followed to
+// the end, and a segment that must not be skipped. What is left here is the one
+// thing only this level sees, two trees declaring one name into the same lake.
 
 use beans_acceptance::fixture::fixture;
-
-#[test]
-fn a_package_prefix_walks_through_to_the_type() {
-    fixture()
-        .file(
-            "java/util/Date.java",
-            "package java.util; public class Date {}",
-        )
-        .file(
-            "p/Test.java",
-            "package p; import java.util.Date; class Test { <cur:target>Date f; }",
-        )
-        .analyze("p/Test.java")
-        .resolves_to("target", "java.util.Date")
-        .run();
-}
-
-#[test]
-fn nesting_below_the_boundary_is_walked_to_the_end() {
-    fixture()
-        .file(
-            "p/A.java",
-            "package p; public class A { public static class B { public static class C {} } }",
-        )
-        .file(
-            "q/Test.java",
-            "package q; import p.A.B.C; class Test { <cur:target>C f; }",
-        )
-        .analyze("q/Test.java")
-        .resolves_to("target", "p.A.B.C")
-        .run();
-}
 
 #[test]
 fn a_type_prefix_leaves_no_way_back_to_a_package() {
@@ -83,6 +56,8 @@ fn the_unnamed_package_contributes_no_prefix() {
         .run();
 }
 
+// Both declare `p.B`, so the label cannot tell them apart even though the
+// targets are distinct. Twice the same spelling is the honest expectation.
 // Both declare `p.B`, so the label cannot tell them apart even though the
 // targets are distinct. Twice the same spelling is the honest expectation.
 #[test]

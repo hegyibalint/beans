@@ -57,17 +57,33 @@ would tighten both tests the day it lands.
 `declaration_label` renders both as `p.B`, so the expectation cannot say which
 pair it got, and it would still pass if both halves came from one file.
 
+This has already cost us a real one. `declaration_label` stops walking when a
+scope's owner is not a type, so a local class in `Test.m()` is spelled `p.Local`,
+exactly like a top level `p.Local`. The acceptance test
+`local_type_is_not_in_scope_before_its_declaration` asserted `p.Local` against a
+file holding both and passed whichever one it reached, hiding the fact that
+resolution reaches the local class from above its own declarator, against §6.3.
+The unit test that replaced it, in `resolution/tests/lexical.rs`, records the
+wrong answer on purpose so that fixing resolution turns it red.
+
 Unblocked by an expectation that names the declaring source, not only the label.
 
-## Scopes
+## A loser that does not exist yet
 
-Nothing about what a source can see is observable here. The fixture drives
-`Beans` with one flat file space, and `find_declarations_for` resolves with
-`JvmScopeQuery::unscoped()`, so every file sees the whole lake. A claim like
-"two modules each declare `p.B`, and each sees only its own" has no surface.
+Not a missing observable, but the opposite failure: an expectation that can be
+stated, passes, and proves nothing. Every "A shadows B" test where B is a stage
+we have not built passes because B contributes nothing, and it would pass just as
+well with the precedence backwards.
 
-Unblocked by the engine picking a scope per source, plus a fixture verb to say
-which container a file belongs to.
+There is no mark for this. `expected_failure` says a claim fails today, and these
+do not fail; they are pending while looking settled, which is the worse of the
+two. What each one needs is the other half: show that B would have won on its
+own. `resolution/tests/staging.rs` does exactly that, and it is why the cases
+that had both halves stayed and the ones that could not are listed as claims in
+their file headers instead.
+
+Unblocked per stage, as each one lands. Worth a fixture verb if it keeps
+happening, though two `fixture()` calls in one test already express it.
 
 ## What kind of type a declaration is
 

@@ -1,18 +1,18 @@
 // JLS §§6.3, 6.5.5.1, 8.2, and 9.2.
+//
+// What is in scope where is decided by `resolve_lexical_type_name`, so those
+// cases live in `resolution/tests/lexical.rs`: a member type and a top level
+// type are in scope above their own declaration, a local class is not, and a
+// local class is out of scope again after its block.
+//
+// One of them was here and could not have caught anything.
+// `local_type_is_not_in_scope_before_its_declaration` asserted `p.Local` against
+// a file holding both a top level `Local` and a local class of that name, and
+// `declaration_label` spells both of them `p.Local`. The unit test that replaced
+// it found that resolution reaches the local class, which §6.3 forbids; see
+// `lexical::a_local_type_is_wrongly_in_scope_before_it_is_declared`.
 
 use beans_acceptance::fixture::fixture;
-
-#[test]
-fn top_level_scope_is_not_order_dependent() {
-    fixture()
-        .file(
-            "p/Test.java",
-            "package p; class Test { <cur:target>Later f; } class Later {}",
-        )
-        .analyze("p/Test.java")
-        .resolves_to("target", "p.Later")
-        .run();
-}
 
 #[test]
 fn same_package_top_level_type_is_in_scope() {
@@ -21,30 +21,6 @@ fn same_package_top_level_type_is_in_scope() {
         .file("p/Test.java", "package p; class Test { <cur:target>X f; }")
         .analyze("p/Test.java")
         .resolves_to("target", "p.X")
-        .run();
-}
-
-#[test]
-fn member_type_scope_is_not_order_dependent() {
-    fixture()
-        .file(
-            "p/Outer.java",
-            "package p; class Outer { <cur:target>Inner f; class Inner {} }",
-        )
-        .analyze("p/Outer.java")
-        .resolves_to("target", "p.Outer.Inner")
-        .run();
-}
-
-#[test]
-fn enclosing_member_type_is_in_scope_in_a_nested_type() {
-    fixture()
-        .file(
-            "p/Outer.java",
-            "package p; class Outer { class X {} class Inner { <cur:target>X f; } }",
-        )
-        .analyze("p/Outer.java")
-        .resolves_to("target", "p.Outer.X")
         .run();
 }
 
@@ -76,24 +52,6 @@ fn superinterface_member_type_is_inherited() {
         .analyze("p/Test.java")
         .resolves_to("target", "p.Types.X")
         .expected_failure("inherited member types are not resolved")
-        .run();
-}
-
-#[test]
-fn local_type_is_not_in_scope_before_its_declaration() {
-    fixture()
-        .file("p/Test.java", "package p; class Local {} class Test { void m() { <cur:target>Local before; class Local {} } }")
-        .analyze("p/Test.java")
-        .resolves_to("target", "p.Local")
-        .run();
-}
-
-#[test]
-fn local_type_is_not_in_scope_after_its_block() {
-    fixture()
-        .file("p/Test.java", "package p; class Local {} class Test { void m() { { class Local {} } <cur:target>Local after; } }")
-        .analyze("p/Test.java")
-        .resolves_to("target", "p.Local")
         .run();
 }
 
