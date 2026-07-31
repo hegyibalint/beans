@@ -2,6 +2,7 @@ mod ambiguity;
 mod imports;
 mod lexical;
 mod same_package;
+mod staging;
 
 use std::path::PathBuf;
 
@@ -15,7 +16,10 @@ use beans_platform_jvm::{
     query::{JvmQuery, JvmScopeQuery},
 };
 
-use crate::{LanguageJava, model::JavaTypeDeclaration};
+use crate::{
+    LanguageJava,
+    model::{JavaQualifiedName, JavaTypeDeclaration},
+};
 
 use super::*;
 
@@ -54,6 +58,21 @@ fn type_in_scope(file: &JavaFile, scope_id: JavaLexicalScopeId, name: &str) -> J
                 .is_some_and(|identifier| identifier.text == name)
         })
         .unwrap()
+}
+
+/// The scope a declaration's own type reference is resolved in, which is what
+/// `resolve_occurrence_at` hands over when a caret lands on one. Naming the
+/// declaration rather than an offset keeps a test from counting bytes.
+fn declaring_scope_of(file: &JavaFile, name: &str) -> JavaLexicalScopeId {
+    file.declarations
+        .iter()
+        .find(|declaration| {
+            declaration
+                .name()
+                .is_some_and(|identifier| identifier.text == name)
+        })
+        .expect("no declaration by that name")
+        .declaring_scope()
 }
 
 fn java_query<'a>(
