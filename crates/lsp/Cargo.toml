@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[lib]
+name = "beans_lsp"
+
 [[bin]]
 name = "beans-lsp"
 path = "src/main.rs"
@@ -16,3 +19,6 @@ platform-jvm = { path = "../platform-jvm" }
 lsp-server.workspace = true
 lsp-types.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+serde.workspace = true

@@ -149,6 +149,7 @@ dependencies = [
  "lsp-server",
  "lsp-types",
  "platform-jvm",
+ "serde",
  "serde_json",
 ]
 
