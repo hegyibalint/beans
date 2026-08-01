@@ -9,5 +9,12 @@ The extension activates on `.java` files and launches the `beans-lsp` binary
 
 One-time setup: run `npm install` in this directory.
 
-Then, from the repo root, `scripts/dev-vscode.sh` builds the server and client
-and opens the extension dev host on the `sample/` folder.
+## Demo VSCode
+
+The `scripts/dev-vscode.sh` script builds the server and client and opens the extension dev host on `examples/beans`, which is a simple project showing testcasing Beans. See its README for what to try.
+
+The script can open any directory; just pass the dir after the script:
+
+```sh
+scripts/dev-vscode.sh extensions/vscode/sample
+```
