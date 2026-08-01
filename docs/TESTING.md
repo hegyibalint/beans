@@ -264,7 +264,7 @@ This is the only tree wide enough to need a domain:
 
 Each domain is one Cargo test target rooted in a `main.rs`, because Cargo compiles and links whatever sits directly under `tests/` as its own binary.
 
-Below a subject, tests are grouped by capability, just like integration tests. `type_resolution/` is a directory only because it holds ninety-five tests; `maven/dependencies.rs` stays a single file until it can't.
+Below a subject, tests are grouped by capability, just like integration tests. A capability is a directory only once it holds enough cases to need one; `type_resolution.rs` and `maven/dependencies.rs` stay single files until they can't.
 
 Inside a grown capability, each file collects the cases that share a premise: something that has to hold for the case to make sense at all.
 
@@ -292,22 +292,17 @@ That is the last level to arrive, and the two kinds of absence are now visible n
 
 Once a test has a file of its own, that file always turns out to be the deepest level above the claim. And this is not only a filing scheme: minus the leading directories, the same path is what `cargo test` prints and what you pass to filter a run.
 
-#### Specification tests
+#### A test is green, or it is not in the suite
 
-Some acceptance tests are written before the behavior exists: we read the JLS and code down what resolution should do. These are not a separate tree. They are ordinary acceptance tests, filed by the same levels, marked as pending with `expected_failure`:
+We used to keep tests for behavior we had not written yet, marked with an `expected_failure` that carried the reason. The idea was that the suite would turn red the day the implementation caught up. In practice it fired once, while 47 of the 73 reasons quietly became false, and the mark made it cheap to commit a test nobody had finished thinking about; a third of the acceptance suite ended up asserting things that could not fail either way.
 
-```rust
-.resolves_to("cursor", "com.example.Foo")
-.expected_failure("single-type imports are not resolved yet")
-```
-
-The mark turns the usual cycle around. A pending expectation is green while it fails, and turns the suite **red the moment it starts passing**. That is the signal to drop the mark. So the suite tells us when the implementation caught up with the spec, instead of us having to spot it.
+So we write a test when we write the behavior, and it is red only for as long as we are working on it. What we read in the spec and cannot act on yet goes in the `TODO.md`, which does not pretend to be checked.
 
 The citation rules are still open: when a test should cite a JLS section, and what that citation lets us change later.
 
 ## Naming
 
-Name a test function after the claim it establishes, not after the code it calls. `parses_compilation_unit_declarations` names a method and tells us nothing about what should be true; `declarations_expose_their_names_and_name_spans` names a fact we can agree or disagree with. A test whose claim is hard to phrase is usually a test establishing more than one thing.
+Name a test function after the claim it establishes. `parses_compilation_unit_declarations` says which method ran and nothing about what should be true; `declarations_expose_their_names_and_name_spans` names a fact we can agree or disagree with. Naming the method is fine when the claim is about that method, e.g. `iter_latest_skips_tombstones` says what happens and `iter_latest` is what it happens to. A test whose claim is hard to phrase is usually a test establishing more than one thing.
 
 Since the path is read as a whole, the enclosing modules carry part of the sentence and the function should not repeat them. `lexical::prefers_the_innermost_scope` says everything `lexical_resolution_prefers_the_innermost_scope` said. Sometimes avoiding the repetition costs more in readability than it saves; `shadowing::member_type_shadows_single_type_import` is one of those, so keep it.
 

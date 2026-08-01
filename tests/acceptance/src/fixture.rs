@@ -28,17 +28,11 @@ pub struct Fixture {
 
 struct Analysis {
     file: PathBuf,
-    expectations: Vec<Expectation>,
-}
-
-enum Mode {
-    Normal,
-    ExpectedFailure(String),
+    expectations: Vec<Expect>,
 }
 
 /// Every variant has to be answered by asking the engine. A variant that returns
-/// a constant instead is worse than a missing one: marked as an expected failure
-/// it passes forever, and it can never turn red to tell us the engine caught up.
+/// a constant instead is worse than a missing one, because it can never turn red.
 enum Expect {
     Code { code: String },
     NoCode { code: String },
@@ -46,11 +40,6 @@ enum Expect {
     ResolvesTo { cursor: String, fqn: String },
     DoesNotResolve { cursor: String },
     AmbiguousBetween { cursor: String, fqns: Vec<String> },
-}
-
-struct Expectation {
-    expect: Expect,
-    mode: Mode,
 }
 
 impl Fixture {
@@ -162,23 +151,7 @@ impl Fixture {
             .analyses
             .last_mut()
             .expect("expectations must follow analyze");
-        analysis.expectations.push(Expectation {
-            expect,
-            mode: Mode::Normal,
-        });
-        self
-    }
-
-    /// The engine is expected to miss the previous expectation. Once it
-    /// unexpectedly meets it, the run turns red and asks for promotion:
-    /// remove the marker.
-    pub fn expected_failure(mut self, reason: &str) -> Self {
-        let expectation = self
-            .analyses
-            .last_mut()
-            .and_then(|analysis| analysis.expectations.last_mut())
-            .expect("expected_failure must follow an expectation");
-        expectation.mode = Mode::ExpectedFailure(reason.to_string());
+        analysis.expectations.push(expect);
         self
     }
 
@@ -218,13 +191,12 @@ impl Fixture {
             beans.set_workspace(workspace);
         }
 
-        let mut promotable = Vec::new();
         for analysis in analyses {
             let result = beans
                 .analyze(&jvm_source(&analysis.file))
                 .unwrap_or_else(|| panic!("no analysis for {}", analysis.file.display()));
             for expectation in analysis.expectations {
-                let met = match &expectation.expect {
+                let met = match &expectation {
                     Expect::Code { code } => result.diagnostics.iter().any(|d| d.code == code),
                     Expect::NoCode { code } => !result.diagnostics.iter().any(|d| d.code == code),
                     Expect::CodeAt { cursor, code } => {
@@ -254,25 +226,15 @@ impl Fixture {
                         labels == expected
                     }
                 };
-                match (met, expectation.mode) {
-                    (true, Mode::Normal) => {}
-                    (false, Mode::Normal) => panic!(
-                        "{} in {}; engine produced:\n{}",
-                        describe(&expectation.expect),
-                        analysis.file.display(),
-                        render(&result.diagnostics),
-                    ),
-                    (false, Mode::ExpectedFailure(_)) => {}
-                    (true, Mode::ExpectedFailure(reason)) => promotable.push(reason),
-                }
+                assert!(
+                    met,
+                    "{} in {}; engine produced:\n{}",
+                    describe(&expectation),
+                    analysis.file.display(),
+                    render(&result.diagnostics),
+                );
             }
         }
-
-        assert!(
-            promotable.is_empty(),
-            "expected-to-fail expectations unexpectedly passed, promote them:\n{}",
-            promotable.join("\n")
-        );
     }
 }
 
@@ -376,19 +338,6 @@ mod tests {
     }
 
     #[test]
-    fn failing_expected_failure_holds() {
-        fixture()
-            .file(
-                "com/example/Foo.java",
-                "package com.example;\nclass Foo { Bar bar; }",
-            )
-            .analyze("com/example/Foo.java")
-            .expect("unresolvable-type")
-            .expected_failure("resolution does not exist yet")
-            .run();
-    }
-
-    #[test]
     fn resolution_expectations_are_checked_against_the_engine() {
         fixture()
             .file(
@@ -398,20 +347,6 @@ mod tests {
             .file("com/example/Bar.java", "package com.example;\nclass Bar {}")
             .analyze("com/example/Foo.java")
             .resolves_to("bar", "com.example.Bar")
-            .run();
-    }
-
-    #[test]
-    #[should_panic(expected = "unexpectedly passed")]
-    fn passing_expected_failure_demands_promotion() {
-        fixture()
-            .file(
-                "com/example/Foo.java",
-                "package com.example;\nclass Foo { void m() { x = 1; } }",
-            )
-            .analyze("com/example/Foo.java")
-            .expect("cannot-find-symbol")
-            .expected_failure("this passes today, so the harness must turn red")
             .run();
     }
 

@@ -1,20 +1,68 @@
-// Type resolution is one observable feature assembled from rules across the JLS,
-// so each file below is one premise: the thing that has to hold for its cases to
-// be about anything.
+// Type resolution is assembled from rules across the JLS, and each rule is
+// decided in the `crates/lang-java/src/resolution.rs`; that is where its cases
+// live, in the `resolution/tests/`. What is left for this level is one test per
+// rule, saying the answer reaches a user of Beans.
 //
-// A pending expectation carries the reason it is pending, and that reason is part
-// of the assertion; when it stops being true the marker is wrong, even while the
-// test still passes. Where a whole rule is out of reach we keep the citation and
-// the claims we would make, rather than tests that all fail for one reason.
+// So there is one case per stage of `resolve_type_name` that we have built, one
+// for the order between two stages, and one for the answer being ambiguous. The
+// stages we have not built get nothing here, because a test whose loser does not
+// exist passes without proving anything; see the `TODO.md`.
 
-mod inaccessible_types;
-mod module_imports;
-mod multi_unit;
-mod package_type_boundary;
-mod qualified_type_names;
-mod scope_of_declarations;
-mod shadowing;
-mod simple_type_names;
-mod single_type_imports;
-mod static_type_imports;
-mod type_imports_on_demand;
+use beans_acceptance::fixture::fixture;
+
+/// Stage 2, §7.5.1.
+#[test]
+fn single_type_import_provides_simple_name() {
+    fixture()
+        .file("q/X.java", "package q; public class X {}")
+        .file(
+            "p/Test.java",
+            "package p; import q.X; class Test { <cur:target>X f; }",
+        )
+        .analyze("p/Test.java")
+        .resolves_to("target", "q.X")
+        .run();
+}
+
+/// Stage 3, §6.3.
+#[test]
+fn same_package_top_level_type_is_in_scope() {
+    fixture()
+        .file("p/X.java", "package p; class X {}")
+        .file("p/Test.java", "package p; class Test { <cur:target>X f; }")
+        .analyze("p/Test.java")
+        .resolves_to("target", "p.X")
+        .run();
+}
+
+/// Stage 1 over stage 2, §6.4.1. The order itself is settled in the
+/// `resolution/tests/staging.rs`, where each case also removes the winner.
+#[test]
+fn member_type_shadows_single_type_import() {
+    fixture()
+        .file("q/X.java", "package q; public class X {}")
+        .file(
+            "p/Test.java",
+            "package p; import q.X; class Test { class X {} <cur:target>X f; }",
+        )
+        .analyze("p/Test.java")
+        .resolves_to("target", "p.Test.X")
+        .run();
+}
+
+/// Two trees declaring one name into one lake, which only this level assembles.
+/// Both come back as `p.B`, so the expectation cannot say which pair it got; the
+/// `TODO.md` carries what would fix that.
+#[test]
+fn one_name_declared_in_two_trees_is_ambiguous() {
+    fixture()
+        .file("app/p/B.java", "package p; public class B {}")
+        .file("lib/p/B.java", "package p; public class B {}")
+        .file(
+            "q/Test.java",
+            "package q; import p.B; class Test { <cur:target>B f; }",
+        )
+        .analyze("q/Test.java")
+        .ambiguous_between("target", &["p.B", "p.B"])
+        .run();
+}

@@ -31,18 +31,19 @@ Not built yet. Nothing is wrong; there is just no code.
 
 - **On-demand imports**, stage 4 of `resolve_type_name`. Type-import-on-demand
   (§7.5.2), static-import-on-demand (§7.5.4), and the implicit `java.lang.*`
-  (§7.3). Six acceptance claims wait on this; see the header of the
-  `tests/acceptance/tests/languages/java/type_resolution/type_imports_on_demand.rs`.
+  (§7.3). The stage is written out in the `resolution.rs` as a comment and
+  returns nothing.
+
+- **Static imports** (§§7.5.3 and 7.5.4), single and on-demand alike. The
+  `resolve_exact_imports` handles the single-type case only.
 
 - **Module imports**, stage 5 (§7.5.5). Needs the lake to hold modules first.
-  See the `module_imports.rs` header in the same directory.
 
 - **Import suggestions**, stage 6. No JLS section; this is ours.
 
 - **Inherited member types** (§§8.2 and 9.2). A member type of a superclass or a
   superinterface is in scope in the subclass, and we do not walk the hierarchy.
-  Four claims wait on it, listed in the `scope_of_declarations.rs` and the
-  `shadowing.rs` headers.
+  The same hierarchy is what `Protected` needs above.
 
 - **Qualified type references** (§6.5.5.2). The `resolve_type_name` returns
   `Unresolved` for anything that is not a simple name; the
@@ -118,11 +119,12 @@ these become possible, which is why they are written down.
   `JvmClass` without parsing; the `crates/platform-jvm/tests/class_lookup.rs`
   does this against the platform already.
 
-- **An unresolvable type reference we can observe.** Two claims in the
-  `package_type_boundary.rs` want to say "this name reaches nothing", and the
-  fixture can only ask what a name resolved to. Unblocked by an
-  `unresolvable-type` diagnostic, or more cheaply by a negative expectation on
-  the fixture.
+- **An unresolvable type reference we can observe.** The fixture can ask what a
+  name resolved to and can ask for a diagnostic; it cannot say "this name
+  reaches nothing and that is correct". So every §6.5.4 case about where a
+  package stops being a package is out of reach here, and lives in the
+  `resolution/tests/imports.rs` instead. Unblocked by an `unresolvable-type`
+  diagnostic, or more cheaply by a negative expectation on the fixture.
 
 - **Telling two equally named declarations apart.** The `declaration_label`
   renders both halves of an ambiguity as `p.B`, so
@@ -135,9 +137,9 @@ these become possible, which is why they are written down.
 - **A loser that does not exist yet.** Every "A shadows B" test where B is a
   stage we have not built passes because B contributes nothing, and would pass
   just as well with the precedence backwards. The fix is the other half: show
-  that B wins on its own. The `resolution/tests/staging.rs` does this, and it is
-  why the cases with both halves stayed and the rest are claims in file headers.
-  Unblocked per stage, as each one lands.
+  that B wins on its own. The `resolution/tests/staging.rs` does this, which is
+  why only the pairs with both halves survived the sweep. Unblocked per stage,
+  as each one lands; until then §6.4.1 is written down here and nowhere else.
 
 - **What kind of type a declaration is.** The `projection.rs` maps each
   `JavaTypeKind` onto a `JvmKind` and nothing reads the result, so the mapping
@@ -148,14 +150,10 @@ these become possible, which is why they are written down.
 
 ## Chores
 
-- **Delete `expected_failure`.** 27 marks left, and 17 of them wait on
-  diagnostic codes that have never existed. The mark fired once in the project's
-  life. The prose in each file header is the honest replacement; the fixture
-  loses the verb and the `reason` field.
-
 - **The `parser.rs` and the `model.rs` still keep their tests inline.** 14 tests
   in 1399 lines and 4 in 737. Both will grow.
 
-- **The `docs/TESTING.md` has three stale spots.** The `expected_failure`
-  section goes with the mechanism; "ninety-five tests" is 38 now; and the Naming
-  rule reads as if a test may never name a method, which is not what we meant.
+- **Acceptance is thin on purpose now, and we should watch it.** The Java type
+  resolution capability is four tests, one per rule that reaches a user. If a
+  bug ever gets out that all four missed, that is the signal one of them was not
+  enough, and the answer is a fifth test rather than a return to the old tree.
