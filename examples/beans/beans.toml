@@ -1,0 +1,34 @@
+# The descriptor Beans reads at startup. Paths are relative to this file.
+#
+# Two projects, four units. A unit is one compilation scope, so main and test
+# are separate units: they do not see the same things.
+#
+#   a-main  <--  a-test
+#     ^
+#     |
+#   b-main  <--  b-test
+#
+# Arrows point at what a unit may look at. Two things follow, and the example
+# is built to show both:
+#
+#   1. Nothing points into a test unit. Not the main code of the same project,
+#      not another project's tests.
+#   2. b sees a, so a must not see b.
+
+[unit.a-main]
+sources = ["a/src/main/java"]
+
+[unit.a-test]
+sources = ["a/src/test/java"]
+depends_on = ["a-main"]
+
+[unit.b-main]
+sources = ["b/src/main/java"]
+depends_on = ["a-main"]
+
+[unit.b-test]
+sources = ["b/src/test/java"]
+# `a-main` is spelled out because depends_on does not chain. The edge to
+# `b-main` does not carry what `b-main` itself depends on. Delete it and
+# BTest.toOtherMain goes dark while b-main keeps working.
+depends_on = ["b-main", "a-main"]
