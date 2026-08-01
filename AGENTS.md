@@ -34,3 +34,9 @@ I want to avoid cargo culting, so please explain why a change is better than wha
 ## Testing
 
 Read the dedicated `docs/TESTING.md` to learn more about our testing policy.
+
+## TODOs
+
+The project is not yet using GH Issues as development is mostly single person and local.
+For simplicity, there is a `TODO.md` file.
+Make sure the file is maintained after a feature there is developed.
