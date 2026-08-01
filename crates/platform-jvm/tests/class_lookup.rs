@@ -1,14 +1,16 @@
-//! Two jars both declare `p.B`, and each belongs to a different scope. `A`
-//! looking for `B` must find the one its own scope holds and never the other.
-//! The rest is the lake underneath: what a registration replaces, and what a
-//! read at an older revision sees.
+//! Two jars both declare `p.B`, and each belongs to a different scope.
+//! Discovery returns both; composing it with the asking query's membership
+//! selects the one its scope holds. The rest is the lake underneath: what a
+//! registration replaces, and what a read at an older revision sees.
 
 use std::path::PathBuf;
 
 use beans_core::storage::Revision;
 use beans_platform_jvm::PlatformJvm;
 use beans_platform_jvm::model::{JvmClass, JvmKind, JvmQualifiedName, JvmSource};
-use beans_platform_jvm::query::{JvmContainer, JvmQuery, JvmScope, JvmScopeQuery};
+use beans_platform_jvm::query::{
+    JvmContainer, JvmQuery, JvmScope, JvmScopeMembership, JvmScopeQuery,
+};
 
 const JAR_ONE: &str = "lib-one-1.0.jar";
 const JAR_TWO: &str = "lib-two-1.0.jar";
@@ -81,13 +83,49 @@ fn sources(directory: &str) -> JvmContainer {
     JvmContainer::Source(PathBuf::from(directory))
 }
 
+fn in_scope<'a>(
+    query: &JvmQuery<'a>,
+    fqn: &JvmQualifiedName,
+) -> Vec<(&'a JvmSource, &'a JvmClass)> {
+    query
+        .classes_named(fqn)
+        .into_iter()
+        .filter(|(source, _)| query.scope_membership(source) == JvmScopeMembership::InScope)
+        .collect()
+}
+
 #[test]
 fn a_name_no_container_declares_resolves_to_nothing() {
     let (jvm, revision) = lake();
 
     let found = whole_lake(&jvm, revision).classes_named(&JvmQualifiedName::new("p.Missing"));
 
-    assert!(found.is_empty(), "found {found:?}");
+    assert!(found.is_empty());
+}
+
+#[test]
+fn discovery_retains_candidates_outside_the_scope() {
+    let (jvm, revision) = lake();
+    let query = holding(&jvm, revision, vec![sources(SOURCES)]);
+
+    let found = query.classes_named(&JvmQualifiedName::new("p.B"));
+
+    assert_eq!(found.len(), 2);
+    assert!(
+        found
+            .iter()
+            .all(|(source, _)| query.scope_membership(source) == JvmScopeMembership::OutsideScope)
+    );
+    assert!(
+        found
+            .iter()
+            .any(|(source, _)| **source == jar_entry(JAR_ONE, "p/B.class"))
+    );
+    assert!(
+        found
+            .iter()
+            .any(|(source, _)| **source == jar_entry(JAR_TWO, "p/B.class"))
+    );
 }
 
 /// Registering a source again replaces its whole contribution, so a container
@@ -122,26 +160,39 @@ fn an_older_revision_sees_the_lake_before_the_second_jar_landed() {
 }
 
 #[test]
-fn a_package_lists_the_classes_declared_under_it() {
+fn package_discovery_is_not_filtered_by_scope() {
     let (jvm, revision) = lake();
+    let query = holding(&jvm, revision, vec![sources(SOURCES)]);
 
-    let found = whole_lake(&jvm, revision).classes_in_package("p");
+    let found = query.classes_in_package("p");
     let names: Vec<&str> = found.iter().map(|(_, class)| class.fqn.as_str()).collect();
 
     assert_eq!(names.len(), 3, "found {names:?}");
     assert_eq!(names.iter().filter(|name| **name == "p.B").count(), 2);
+    assert_eq!(
+        found
+            .iter()
+            .filter(|(source, _)|
+                query.scope_membership(source) == JvmScopeMembership::OutsideScope)
+            .count(),
+        2
+    );
 }
 
-/// The whole point of a scope. Two scopes, one jar each, and the same name in
-/// both: the lookup comes back with one answer, and which answer depends only
-/// on which scope asked.
+/// Discovery is independent of scope; composing it with membership selects the
+/// declaration available from each viewpoint.
 #[test]
-fn each_scope_sees_only_the_declaration_its_own_container_holds() {
+fn each_scope_contains_only_the_declaration_its_own_container_holds() {
     let (jvm, revision) = lake();
     let b = JvmQualifiedName::new("p.B");
+    let query_from_one = holding(&jvm, revision, vec![artifact(JAR_ONE)]);
+    let query_from_two = holding(&jvm, revision, vec![artifact(JAR_TWO)]);
 
-    let from_one = holding(&jvm, revision, vec![artifact(JAR_ONE)]).classes_named(&b);
-    let from_two = holding(&jvm, revision, vec![artifact(JAR_TWO)]).classes_named(&b);
+    assert_eq!(query_from_one.classes_named(&b).len(), 2);
+    assert_eq!(query_from_two.classes_named(&b).len(), 2);
+
+    let from_one = in_scope(&query_from_one, &b);
+    let from_two = in_scope(&query_from_two, &b);
 
     assert_eq!(from_one.len(), 1, "found {from_one:?}");
     assert_eq!(from_one[0].0, &jar_entry(JAR_ONE, "p/B.class"));
@@ -156,8 +207,9 @@ fn each_scope_sees_only_the_declaration_its_own_container_holds() {
 fn a_scope_holding_both_containers_still_sees_the_name_twice() {
     let (jvm, revision) = lake();
 
-    let found = holding(&jvm, revision, vec![artifact(JAR_ONE), artifact(JAR_TWO)])
-        .classes_named(&JvmQualifiedName::new("p.B"));
+    let query = holding(&jvm, revision, vec![artifact(JAR_ONE), artifact(JAR_TWO)]);
+    let b = JvmQualifiedName::new("p.B");
+    let found = in_scope(&query, &b);
 
     assert_eq!(found.len(), 2, "found {found:?}");
 }
@@ -170,10 +222,15 @@ fn a_source_tree_is_a_container_of_its_own() {
     let a = JvmQualifiedName::new("p.A");
 
     let jars_only = holding(&jvm, revision, vec![artifact(JAR_ONE), artifact(JAR_TWO)]);
-    assert!(jars_only.classes_named(&a).is_empty());
+    let found = jars_only.classes_named(&a);
+    assert_eq!(found.len(), 1);
+    assert_eq!(
+        jars_only.scope_membership(found[0].0),
+        JvmScopeMembership::OutsideScope
+    );
 
     let with_sources = holding(&jvm, revision, vec![sources(SOURCES)]);
-    assert_eq!(with_sources.classes_named(&a).len(), 1);
+    assert_eq!(in_scope(&with_sources, &a).len(), 1);
 }
 
 /// A tree matches by prefix, so a sibling tree is a different container even
@@ -184,9 +241,10 @@ fn a_source_tree_does_not_reach_into_a_sibling_tree() {
 
     let elsewhere = holding(&jvm, revision, vec![sources("lib/src/main/java")]);
 
-    assert!(
-        elsewhere
-            .classes_named(&JvmQualifiedName::new("p.A"))
-            .is_empty()
+    let found = elsewhere.classes_named(&JvmQualifiedName::new("p.A"));
+    assert_eq!(found.len(), 1);
+    assert_eq!(
+        elsewhere.scope_membership(found[0].0),
+        JvmScopeMembership::OutsideScope
     );
 }

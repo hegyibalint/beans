@@ -13,7 +13,7 @@ use beans_core::{
 };
 use beans_platform_jvm::{
     PlatformJvm,
-    query::{JvmQuery, JvmScopeQuery},
+    query::{JvmContainer, JvmQuery, JvmScope, JvmScopeQuery},
 };
 
 use crate::{

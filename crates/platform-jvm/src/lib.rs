@@ -43,11 +43,12 @@ impl PlatformJvm {
         self.scopes.put(revision, jvm_source, jvm_scopes);
     }
 
-    /// The lake as `jvm_source` sees it.
+    /// One revision of the lake paired with `jvm_source`'s viewpoint.
+    /// Discovery remains unfiltered; the query uses the paired scope to answer
+    /// whether another source is visible from that viewpoint.
     ///
     /// The scope is looked up here rather than passed in, so a caller says
-    /// where it is standing instead of carrying a filter it could have got
-    /// from the wrong file.
+    /// where it is standing instead of carrying a scope from the wrong file.
     pub fn query_from(&self, jvm_source: &JvmSource, revision: Revision) -> JvmQuery<'_> {
         JvmQuery::new(self, self.scope_of(jvm_source, revision), revision)
     }

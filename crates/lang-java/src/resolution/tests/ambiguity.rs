@@ -24,7 +24,7 @@ fn duplicate_exact_imports_name_one_target() {
     let importing_file = file_model(&java, revision, &importing_source);
 
     assert_eq!(
-        resolve_exact_imports(
+        resolve_type_from_exact_imports(
             &identifier("X"),
             importing_file,
             &java_query(&java, &jvm, revision)
@@ -66,7 +66,7 @@ fn distinct_exact_imports_leave_the_name_contested() {
     let r_declaration = file_model(&java, revision, &r_source).top_level_declarations[0];
     let importing_file = file_model(&java, revision, &importing_source);
 
-    let JavaTypeResolution::Ambiguous(candidates) = resolve_exact_imports(
+    let JavaTypeResolution::Ambiguous(candidates) = resolve_type_from_exact_imports(
         &identifier("X"),
         importing_file,
         &java_query(&java, &jvm, revision),

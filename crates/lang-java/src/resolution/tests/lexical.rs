@@ -8,7 +8,7 @@ fn lexical(contents: &str, at: &str, name: &str) -> JavaTypeResolution {
     let file = parser.parse(contents);
     let scope = declaring_scope_of(&file, at);
 
-    resolve_lexical_type_name(&identifier(name), &source("Test.java"), &file, scope)
+    resolve_type_from_lexical_scopes(&identifier(name), &source("Test.java"), &file, scope)
 }
 
 fn resolves_to(contents: &str, at: &str, name: &str) -> bool {
@@ -30,7 +30,7 @@ fn prefers_the_innermost_scope() {
     let source = source("Outer.java");
 
     assert_eq!(
-        resolve_lexical_type_name(&identifier("X"), &source, &file, inner_scope),
+        resolve_type_from_lexical_scopes(&identifier("X"), &source, &file, inner_scope),
         JavaTypeResolution::Resolved(JavaTypeTarget::Java {
             source,
             declaration: inner_x,
@@ -50,7 +50,7 @@ fn continues_to_the_parent_scope() {
     let source = source("Outer.java");
 
     assert_eq!(
-        resolve_lexical_type_name(&identifier("X"), &source, &file, inner_scope),
+        resolve_type_from_lexical_scopes(&identifier("X"), &source, &file, inner_scope),
         JavaTypeResolution::Resolved(JavaTypeTarget::Java {
             source,
             declaration: outer_x,

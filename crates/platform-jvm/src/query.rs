@@ -90,13 +90,19 @@ impl JvmScopeQuery {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JvmScopeMembership {
+    InScope,
+    OutsideScope,
+}
+
 /// One read of the JVM world: what exists, seen through which scope, as of
 /// which revision. The engine builds it per request and hands it to the
 /// language verticals, so resolution asks about names instead of about jars
 /// and classpath order.
 pub struct JvmQuery<'jvm> {
-    pub jvm: &'jvm PlatformJvm,
-    pub scope: JvmScopeQuery,
+    jvm: &'jvm PlatformJvm,
+    scope: JvmScopeQuery,
     pub revision: Revision,
 }
 
@@ -109,31 +115,35 @@ impl<'jvm> JvmQuery<'jvm> {
         }
     }
 
-    /// Everything the scope can see declaring this binary name. Several
-    /// answers means the name is contested; ordering the containers is what
-    /// will decide between them.
+    /// Every declaration of this binary name in the lake at this query's
+    /// revision. Scope membership is a separate question.
     pub fn classes_named(&self, fqn: &JvmQualifiedName) -> Vec<(&'jvm JvmSource, &'jvm JvmClass)> {
-        self.classes()
+        self.all_classes()
             .filter(|(_, class)| class.fqn == *fqn)
             .collect()
+    }
+
+    /// Whether `candidate_source` is visible from this query's viewpoint.
+    pub fn scope_membership(&self, candidate_source: &JvmSource) -> JvmScopeMembership {
+        if self.scope.contains(candidate_source) {
+            JvmScopeMembership::InScope
+        } else {
+            JvmScopeMembership::OutsideScope
+        }
     }
 
     /// Package in the binary-name sense: `p.Outer$Inner` lives in `p`, so
     /// nested classes come back too; languages filter by `enclosing`.
     pub fn classes_in_package(&self, package: &str) -> Vec<(&'jvm JvmSource, &'jvm JvmClass)> {
-        self.classes()
+        self.all_classes()
             .filter(|(_, class)| class.fqn.package() == package)
             .collect()
     }
 
-    // TODO: rank rather than filter. Two containers claiming a name is
-    // shadowing, not ambiguity, and the order here is a HashMap's.
-    fn classes(&self) -> impl Iterator<Item = (&'jvm JvmSource, &'jvm JvmClass)> {
-        let scope = &self.scope;
+    fn all_classes(&self) -> impl Iterator<Item = (&'jvm JvmSource, &'jvm JvmClass)> {
         self.jvm
             .class_lake
             .iter_at(self.revision)
-            .filter(move |(source, _)| scope.contains(source))
             .flat_map(|(source, classes)| classes.iter().map(move |class| (source, class)))
     }
 }

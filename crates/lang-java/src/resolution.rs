@@ -1,6 +1,9 @@
 use beans_core::language::NavigationTarget;
 use beans_core::model::Offset;
-use beans_platform_jvm::model::{JvmQualifiedName, JvmSource};
+use beans_platform_jvm::{
+    model::{JvmQualifiedName, JvmSource},
+    query::JvmScopeMembership,
+};
 
 use crate::{
     model::{
@@ -17,7 +20,18 @@ pub enum JavaTypeTarget {
         source: JvmSource,
         declaration: JavaDeclarationId,
     },
-    Jvm(JvmQualifiedName),
+    Jvm {
+        source: JvmSource,
+        fqn: JvmQualifiedName,
+    },
+}
+
+impl JavaTypeTarget {
+    pub(crate) fn source(&self) -> &JvmSource {
+        match self {
+            Self::Java { source, .. } | Self::Jvm { source, .. } => source,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,7 +65,7 @@ pub fn resolve_type_name(
     // Stage 1. Type parameters, member types and local types, nearest scope
     // first. §6.4.1: a type declaration shadows every other type of that name
     // in scope where it occurs, which is what makes nearest-first right.
-    let lexical = resolve_lexical_type_name(name, source, file, current_lexical_scope_id);
+    let lexical = resolve_type_from_lexical_scopes(name, source, file, current_lexical_scope_id);
     if !matches!(lexical, JavaTypeResolution::Unresolved) {
         return lexical;
     }
@@ -60,7 +74,7 @@ pub fn resolve_type_name(
     // has a single-type import shadow a top-level type of that name in
     // *another* compilation unit of this package, so it outranks stage 3 while
     // stage 1 keeps whatever this file declares.
-    let exact_import = resolve_exact_imports(name, file, query);
+    let exact_import = resolve_type_from_exact_imports(name, file, query);
     if !matches!(exact_import, JavaTypeResolution::Unresolved) {
         return exact_import;
     }
@@ -88,7 +102,7 @@ pub fn resolve_type_name(
     JavaTypeResolution::Unresolved
 }
 
-fn resolve_lexical_type_name(
+fn resolve_type_from_lexical_scopes(
     name: &JavaIdentifier,
     source: &JvmSource,
     file: &JavaFile,
@@ -121,7 +135,7 @@ fn resolve_lexical_type_name(
     JavaTypeResolution::Unresolved
 }
 
-fn resolve_exact_imports(
+fn resolve_type_from_exact_imports(
     name: &JavaIdentifier,
     file: &JavaFile,
     query: &JavaQuery,
@@ -245,10 +259,6 @@ fn resolve_exact_imports(
 /// p  probe p    miss    -> package p
 /// B  probe p.B  2 hits  -> type {app, lib}  -> ambiguous
 /// ```
-///
-///    Two class files instead collapse to one answer, because a `Jvm` target
-///    carries the binary name alone and drops which container it came from.
-///    The platform reports both; this vertical cannot tell them apart.
 fn resolve_canonical_name(name: &JavaName, query: &JavaQuery) -> Vec<JavaTypeTarget> {
     let mut mode = Mode::Package(String::new());
 
@@ -256,7 +266,7 @@ fn resolve_canonical_name(name: &JavaName, query: &JavaQuery) -> Vec<JavaTypeTar
         mode = match mode {
             Mode::Package(prefix) => {
                 let candidate = JvmQualifiedName::in_package(&prefix, &segment.text);
-                let targets = query.types_named(&candidate);
+                let targets = types_named_in_scope(query, &candidate);
                 if targets.is_empty() {
                     Mode::Package(candidate.as_str().to_owned())
                 } else {
@@ -310,7 +320,7 @@ fn member_types(
                 })
                 .collect()
         }
-        JavaTypeTarget::Jvm(fqn) => query.types_named(&fqn.nested(&name.text)),
+        JavaTypeTarget::Jvm { fqn, .. } => types_named_in_scope(query, &fqn.nested(&name.text)),
     }
 }
 
@@ -336,7 +346,18 @@ fn resolve_from_same_package(
         .map(JavaName::dotted)
         .unwrap_or_default();
 
-    classify_candidates(query.types_named(&JvmQualifiedName::in_package(&package, &name.text)))
+    classify_candidates(types_named_in_scope(
+        query,
+        &JvmQualifiedName::in_package(&package, &name.text),
+    ))
+}
+
+fn types_named_in_scope(query: &JavaQuery, fqn: &JvmQualifiedName) -> Vec<JavaTypeTarget> {
+    query
+        .types_named(fqn)
+        .into_iter()
+        .filter(|target| query.scope_membership(target) == JvmScopeMembership::InScope)
+        .collect()
 }
 
 fn classify_candidates(candidates: impl IntoIterator<Item = JavaTypeTarget>) -> JavaTypeResolution {
@@ -597,7 +618,7 @@ fn resolve_type_reference(
                     source,
                     declaration,
                 } => Some((source, declaration)),
-                JavaTypeTarget::Jvm(_) => None,
+                JavaTypeTarget::Jvm { .. } => None,
             })
             .collect(),
         _ => Vec::new(),

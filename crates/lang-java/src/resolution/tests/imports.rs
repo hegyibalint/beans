@@ -15,7 +15,7 @@ fn a_static_import_does_not_introduce_a_type_name_yet() {
     let current_file = file_model(&java, revision, &current_source);
 
     assert_eq!(
-        resolve_exact_imports(
+        resolve_type_from_exact_imports(
             &identifier("Inner"),
             current_file,
             &java_query(&java, &jvm, revision)
@@ -48,7 +48,7 @@ fn an_exact_import_resolves_a_top_level_type() {
     let importing_file = file_model(&java, revision, &importing_source);
 
     assert_eq!(
-        resolve_exact_imports(
+        resolve_type_from_exact_imports(
             &identifier("X"),
             importing_file,
             &java_query(&java, &jvm, revision)
@@ -57,6 +57,55 @@ fn an_exact_import_resolves_a_top_level_type() {
             source: imported_source,
             declaration: imported_declaration,
         })
+    );
+}
+
+#[test]
+fn an_exact_import_outside_the_scope_is_not_a_resolution_candidate() {
+    let revision = Revision::default();
+    let mut java = LanguageJava::new();
+    let mut jvm = PlatformJvm::new();
+    let imported_source = process(
+        &mut java,
+        &mut jvm,
+        revision,
+        "dependency/p/X.java",
+        "package p; class X {}",
+    );
+    let importing_source = process(
+        &mut java,
+        &mut jvm,
+        revision,
+        "app/q/Test.java",
+        "package q; import p.X; class Test {}",
+    );
+    jvm.register_scopes(
+        revision,
+        importing_source.clone(),
+        vec![JvmScope::of(vec![JvmContainer::Source(PathBuf::from(
+            "app",
+        ))])],
+    );
+    let imported_declaration =
+        file_model(&java, revision, &imported_source).top_level_declarations[0];
+    let importing_file = file_model(&java, revision, &importing_source);
+    let query = JavaQuery::new(jvm.query_from(&importing_source, revision), &java);
+
+    let candidates = query.types_named(&JvmQualifiedName::new("p.X"));
+    assert_eq!(
+        candidates,
+        vec![JavaTypeTarget::Java {
+            source: imported_source,
+            declaration: imported_declaration,
+        }]
+    );
+    assert_eq!(
+        query.scope_membership(&candidates[0]),
+        JvmScopeMembership::OutsideScope
+    );
+    assert_eq!(
+        resolve_type_from_exact_imports(&identifier("X"), importing_file, &query),
+        JavaTypeResolution::Unresolved
     );
 }
 
@@ -85,7 +134,7 @@ fn an_exact_import_resolves_a_member_type() {
     let importing_file = file_model(&java, revision, &importing_source);
 
     assert_eq!(
-        resolve_exact_imports(
+        resolve_type_from_exact_imports(
             &identifier("Inner"),
             importing_file,
             &java_query(&java, &jvm, revision)
@@ -119,7 +168,7 @@ fn an_exact_import_does_not_skip_an_intermediate_name_segment() {
     let importing_file = file_model(&java, revision, &importing_source);
 
     assert_eq!(
-        resolve_exact_imports(
+        resolve_type_from_exact_imports(
             &identifier("Inner"),
             importing_file,
             &java_query(&java, &jvm, revision)
@@ -152,7 +201,7 @@ fn an_exact_import_uses_the_file_package_as_the_type_boundary() {
     let importing_file = file_model(&java, revision, &importing_source);
 
     assert_eq!(
-        resolve_exact_imports(
+        resolve_type_from_exact_imports(
             &identifier("Inner"),
             importing_file,
             &java_query(&java, &jvm, revision)
@@ -192,7 +241,7 @@ fn an_exact_import_walks_nesting_below_the_boundary_to_the_end() {
     let importing_file = file_model(&java, revision, &importing_source);
 
     assert_eq!(
-        resolve_exact_imports(
+        resolve_type_from_exact_imports(
             &identifier("C"),
             importing_file,
             &java_query(&java, &jvm, revision)
@@ -237,7 +286,7 @@ fn an_import_is_not_in_scope_in_a_later_import() {
     let importing_file = file_model(&java, revision, &importing_source);
 
     assert_eq!(
-        resolve_exact_imports(
+        resolve_type_from_exact_imports(
             &identifier("Mosquito"),
             importing_file,
             &java_query(&java, &jvm, revision)
@@ -267,7 +316,7 @@ fn an_import_of_the_compilation_units_own_type_names_that_type() {
     let own_declaration = own_file.top_level_declarations[0];
 
     assert_eq!(
-        resolve_exact_imports(
+        resolve_type_from_exact_imports(
             &identifier("X"),
             own_file,
             &java_query(&java, &jvm, revision)

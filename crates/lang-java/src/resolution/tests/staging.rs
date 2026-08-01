@@ -115,6 +115,116 @@ fn a_single_type_import_shadows_a_sibling_of_the_same_package() {
     assert_eq!(resolve(&java, &jvm, &asker, "X").as_deref(), Some("p.X"));
 }
 
+#[test]
+fn an_outside_scope_import_does_not_hide_an_in_scope_package_type() {
+    let revision = Revision::default();
+    let mut java = LanguageJava::new();
+    let mut jvm = PlatformJvm::new();
+    process(
+        &mut java,
+        &mut jvm,
+        revision,
+        "dependency/q/X.java",
+        "package q; public class X {}",
+    );
+    let package_source = process(
+        &mut java,
+        &mut jvm,
+        revision,
+        "app/p/X.java",
+        "package p; class X {}",
+    );
+    let asker = process(
+        &mut java,
+        &mut jvm,
+        revision,
+        "app/p/Test.java",
+        "package p; import q.X; class Test {}",
+    );
+    jvm.register_scopes(
+        revision,
+        asker.clone(),
+        vec![JvmScope::of(vec![JvmContainer::Source(PathBuf::from(
+            "app",
+        ))])],
+    );
+    let file = file_model(&java, revision, &asker);
+    let body = type_declaration(file, file.top_level_declarations[0]).body_scope;
+    let package_declaration =
+        file_model(&java, revision, &package_source).top_level_declarations[0];
+    let query = JavaQuery::new(jvm.query_from(&asker, revision), &java);
+
+    assert_eq!(
+        resolve_type_name(
+            &JavaName::Simple(identifier("X")),
+            &asker,
+            file,
+            body,
+            &query
+        ),
+        JavaTypeResolution::Resolved(JavaTypeTarget::Java {
+            source: package_source,
+            declaration: package_declaration,
+        })
+    );
+}
+
+#[test]
+fn a_name_known_only_outside_scope_is_unresolved() {
+    let revision = Revision::default();
+    let mut java = LanguageJava::new();
+    let mut jvm = PlatformJvm::new();
+    let outside_source = process(
+        &mut java,
+        &mut jvm,
+        revision,
+        "dependency/p/X.java",
+        "package p; class X {}",
+    );
+    let asker = process(
+        &mut java,
+        &mut jvm,
+        revision,
+        "app/p/Test.java",
+        "package p; class Test {}",
+    );
+    jvm.register_scopes(
+        revision,
+        asker.clone(),
+        vec![JvmScope::of(vec![JvmContainer::Source(PathBuf::from(
+            "app",
+        ))])],
+    );
+    let file = file_model(&java, revision, &asker);
+    let body = type_declaration(file, file.top_level_declarations[0]).body_scope;
+    let outside_declaration =
+        file_model(&java, revision, &outside_source).top_level_declarations[0];
+    let query = JavaQuery::new(jvm.query_from(&asker, revision), &java);
+
+    let candidates = query.types_named(&JvmQualifiedName::new("p.X"));
+    assert_eq!(
+        candidates,
+        vec![JavaTypeTarget::Java {
+            source: outside_source,
+            declaration: outside_declaration,
+        }]
+    );
+    assert_eq!(
+        query.scope_membership(&candidates[0]),
+        JvmScopeMembership::OutsideScope
+    );
+    assert_eq!(
+        resolve_type_name(
+            &JavaName::Simple(identifier("X")),
+            &asker,
+            file,
+            body,
+            &query
+        ),
+        JavaTypeResolution::Unresolved
+    );
+}
+
 /// Nothing in scope at all. The stages run out rather than guessing, which is
 /// what keeps a missing import from resolving to whatever else is in the lake.
 #[test]

@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use beans_core::storage::Revision;
 use beans_platform_jvm::PlatformJvm;
 use beans_platform_jvm::model::{JvmClass, JvmKind, JvmQualifiedName, JvmSource};
-use beans_platform_jvm::query::{JvmContainer, JvmScope};
+use beans_platform_jvm::query::{JvmContainer, JvmScope, JvmScopeMembership};
 
 const APP: &str = "app/src";
 const LIB: &str = "lib/src";
@@ -89,9 +89,11 @@ fn scoped() -> (PlatformJvm, Revision) {
 }
 
 fn sees(jvm: &PlatformJvm, revision: Revision, asker: &JvmSource, fqn: &str) -> bool {
-    !jvm.query_from(asker, revision)
+    let query = jvm.query_from(asker, revision);
+    query
         .classes_named(&JvmQualifiedName::new(fqn))
-        .is_empty()
+        .into_iter()
+        .any(|(source, _)| query.scope_membership(source) == JvmScopeMembership::InScope)
 }
 
 #[test]
@@ -109,7 +111,13 @@ fn visibility_runs_one_way() {
     let (jvm, revision) = scoped();
 
     assert!(sees(&jvm, revision, &app(), "p.Core"));
-    assert!(!sees(&jvm, revision, &core(), "p.App"));
+    let query = jvm.query_from(&core(), revision);
+    let app = query.classes_named(&JvmQualifiedName::new("p.App"));
+    assert_eq!(app.len(), 1);
+    assert_eq!(
+        query.scope_membership(app[0].0),
+        JvmScopeMembership::OutsideScope
+    );
 }
 
 #[test]
