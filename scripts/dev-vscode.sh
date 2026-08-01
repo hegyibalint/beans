@@ -1,7 +1,14 @@
 #!/usr/bin/env sh
-# Build the server and client, then open the VS Code extension dev host on the sample.
+# Build the server and client, then open the VS Code extension dev host on a
+# folder. Defaults to the workspace example; pass another one to override, e.g.
+# `scripts/dev-vscode.sh extensions/vscode/sample`.
+#
+# The folder has to be the one holding beans.toml: the server takes the first
+# workspace folder the client reports and looks for the descriptor there.
 set -e
 cd "$(dirname "$0")/.."
+
+PROJECT="${1:-examples/beans}"
 
 cargo build -p lsp
 npm --prefix extensions/vscode run compile
@@ -16,4 +23,4 @@ echo "  watch with: tail -f $BEANS_TRACE"
 
 code --new-window --disable-extensions \
   --extensionDevelopmentPath="$PWD/extensions/vscode" \
-  "$PWD/extensions/vscode/sample"
+  "$PWD/$PROJECT"
