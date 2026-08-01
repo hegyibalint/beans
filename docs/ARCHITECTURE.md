@@ -1,5 +1,23 @@
 # Beans
 
+> [!WARNING]
+> This document is outdated. It is kept for the reasoning it carries, not as a
+> description of the project; do not take anything here as the current state.
+>
+> Known wrong: the layout lists `schema/` and `xtask/`, which do not exist, and
+> names `platform-jvm` twice. The whole testing section describes an
+> `expected_failure` mechanism we have since deleted, and a file-per-chapter
+> layout the suite never used.
+>
+> What is current: the `README.md` says what Beans is and why; the
+> `docs/TESTING.md` is the testing policy; the `TODO.md` lists what is
+> unfinished; and the code decides the rest.
+>
+> The concept sections still hold thinking that lives nowhere else, e.g. why
+> revisions exist, why the JVM model is lossy on purpose, why analysis waits for
+> every file to be processed, and the rule a vacuum has to follow. Those belong
+> in the code they explain; until somebody moves them, they are here.
+
 Beans is an experimental LSP for JVM languages. The realization is that LSPs cannot communicate between each other easily; a separate Java or Kotlin LSP would have a hard time sharing information about. This impacts cross language usability, which is key in the JVM ecosystem:
  - an Android application is often a mix of Kotlin, and Java
  - Groovy is still used for testing
