@@ -66,3 +66,30 @@ fn one_name_declared_in_two_trees_is_ambiguous() {
         .ambiguous_between("target", &["p.B", "p.B"])
         .run();
 }
+
+/// JLS §6.5.5.1 requires the type declaration to be in scope, while §7.3 lets
+/// the host decide which compilation units are observable. The declaration is
+/// indexed, but the main unit cannot observe its test-only source.
+#[test]
+fn a_known_type_outside_the_unit_scope_is_reported() {
+    fixture()
+        .unit("main", &["main"], &[])
+        .unit("test", &["test"], &[])
+        .file(
+            "test/p/TestOnly.java",
+            "package p; public class TestOnly { public int open; }",
+        )
+        .file(
+            "main/p/Main.java",
+            "package p; public class Main {
+                void use(<cur:unavailable>TestOnly target) {
+                    int value = target.<cur:member>open;
+                }
+            }",
+        )
+        .analyze("main/p/Main.java")
+        .does_not_resolve("unavailable")
+        .expect_at("unavailable", "type-outside-scope")
+        .expect_no("inaccessible-member")
+        .run();
+}

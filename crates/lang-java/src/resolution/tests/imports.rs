@@ -17,6 +17,7 @@ fn a_static_import_does_not_introduce_a_type_name_yet() {
     assert_eq!(
         resolve_type_from_exact_imports(
             &identifier("Inner"),
+            &current_source,
             current_file,
             &java_query(&java, &jvm, revision)
         ),
@@ -34,7 +35,7 @@ fn an_exact_import_resolves_a_top_level_type() {
         &mut jvm,
         revision,
         "p/X.java",
-        "package p; class X {}",
+        "package p; public class X {}",
     );
     let importing_source = process(
         &mut java,
@@ -50,6 +51,7 @@ fn an_exact_import_resolves_a_top_level_type() {
     assert_eq!(
         resolve_type_from_exact_imports(
             &identifier("X"),
+            &importing_source,
             importing_file,
             &java_query(&java, &jvm, revision)
         ),
@@ -61,7 +63,7 @@ fn an_exact_import_resolves_a_top_level_type() {
 }
 
 #[test]
-fn an_exact_import_outside_the_scope_is_not_a_resolution_candidate() {
+fn an_exact_import_outside_scope_is_retained_as_invalid() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
     let mut jvm = PlatformJvm::new();
@@ -103,10 +105,10 @@ fn an_exact_import_outside_the_scope_is_not_a_resolution_candidate() {
         query.scope_membership(&candidates[0]),
         JvmScopeMembership::OutsideScope
     );
-    assert_eq!(
-        resolve_type_from_exact_imports(&identifier("X"), importing_file, &query),
-        JavaTypeResolution::Unresolved
-    );
+    let resolved =
+        candidates_from_exact_imports(&identifier("X"), &importing_source, importing_file, &query);
+    assert!(!resolved.has_valid());
+    assert!(resolved.has_invalidity(JavaTypeInvalidity::OutsideScope));
 }
 
 #[test]
@@ -119,7 +121,7 @@ fn an_exact_import_resolves_a_member_type() {
         &mut jvm,
         revision,
         "p/Outer.java",
-        "package p; class Outer { class Inner {} }",
+        "package p; public class Outer { public class Inner {} }",
     );
     let importing_source = process(
         &mut java,
@@ -136,6 +138,7 @@ fn an_exact_import_resolves_a_member_type() {
     assert_eq!(
         resolve_type_from_exact_imports(
             &identifier("Inner"),
+            &importing_source,
             importing_file,
             &java_query(&java, &jvm, revision)
         ),
@@ -144,6 +147,46 @@ fn an_exact_import_resolves_a_member_type() {
             declaration: inner,
         })
     );
+}
+
+#[test]
+fn an_outside_scope_type_path_reaches_its_member_as_invalid_evidence() {
+    let revision = Revision::default();
+    let mut java = LanguageJava::new();
+    let mut jvm = PlatformJvm::new();
+    process(
+        &mut java,
+        &mut jvm,
+        revision,
+        "dependency/p/Outer.java",
+        "package p; public class Outer { public class Inner {} }",
+    );
+    let importing_source = process(
+        &mut java,
+        &mut jvm,
+        revision,
+        "app/q/Test.java",
+        "package q; import p.Outer.Inner; class Test {}",
+    );
+    jvm.register_scopes(
+        revision,
+        importing_source.clone(),
+        vec![JvmScope::of(vec![JvmContainer::Source(PathBuf::from(
+            "app",
+        ))])],
+    );
+    let importing_file = file_model(&java, revision, &importing_source);
+    let query = JavaQuery::new(jvm.query_from(&importing_source, revision), &java);
+
+    let candidates = candidates_from_exact_imports(
+        &identifier("Inner"),
+        &importing_source,
+        importing_file,
+        &query,
+    );
+
+    assert!(!candidates.has_valid());
+    assert!(candidates.has_invalidity(JavaTypeInvalidity::OutsideScope));
 }
 
 #[test]
@@ -170,6 +213,7 @@ fn an_exact_import_does_not_skip_an_intermediate_name_segment() {
     assert_eq!(
         resolve_type_from_exact_imports(
             &identifier("Inner"),
+            &importing_source,
             importing_file,
             &java_query(&java, &jvm, revision)
         ),
@@ -187,7 +231,7 @@ fn an_exact_import_uses_the_file_package_as_the_type_boundary() {
         &mut jvm,
         revision,
         "p/Outer/Inner.java",
-        "package p.Outer; class Inner {}",
+        "package p.Outer; public class Inner {}",
     );
     let importing_source = process(
         &mut java,
@@ -203,6 +247,7 @@ fn an_exact_import_uses_the_file_package_as_the_type_boundary() {
     assert_eq!(
         resolve_type_from_exact_imports(
             &identifier("Inner"),
+            &importing_source,
             importing_file,
             &java_query(&java, &jvm, revision)
         ),
@@ -243,6 +288,7 @@ fn an_exact_import_walks_nesting_below_the_boundary_to_the_end() {
     assert_eq!(
         resolve_type_from_exact_imports(
             &identifier("C"),
+            &importing_source,
             importing_file,
             &java_query(&java, &jvm, revision)
         ),
@@ -288,6 +334,7 @@ fn an_import_is_not_in_scope_in_a_later_import() {
     assert_eq!(
         resolve_type_from_exact_imports(
             &identifier("Mosquito"),
+            &importing_source,
             importing_file,
             &java_query(&java, &jvm, revision)
         ),
@@ -295,6 +342,103 @@ fn an_import_is_not_in_scope_in_a_later_import() {
             source: mosquito_source,
             declaration: mosquito,
         })
+    );
+}
+
+/// The host compilation in §7.3 cannot observe the class `p.Outer`, so it does
+/// not reclassify the semantic path as a type. Beans retains it as invalid
+/// evidence while the package path reaches the observable `p.Outer.Inner`.
+#[test]
+fn an_outside_scope_type_prefix_leaves_the_package_path_open() {
+    let revision = Revision::default();
+    let mut java = LanguageJava::new();
+    let mut jvm = PlatformJvm::new();
+    process(
+        &mut java,
+        &mut jvm,
+        revision,
+        "dependency/p/Outer.java",
+        "package p; public class Outer {}",
+    );
+    let inner_source = process(
+        &mut java,
+        &mut jvm,
+        revision,
+        "app/p/Outer/Inner.java",
+        "package p.Outer; public class Inner {}",
+    );
+    let importing_source = process(
+        &mut java,
+        &mut jvm,
+        revision,
+        "app/q/Test.java",
+        "package q; import p.Outer.Inner; class Test {}",
+    );
+    jvm.register_scopes(
+        revision,
+        importing_source.clone(),
+        vec![JvmScope::of(vec![JvmContainer::Source(PathBuf::from(
+            "app",
+        ))])],
+    );
+    let inner = file_model(&java, revision, &inner_source).top_level_declarations[0];
+    let importing_file = file_model(&java, revision, &importing_source);
+    let query = JavaQuery::new(jvm.query_from(&importing_source, revision), &java);
+
+    assert_eq!(
+        resolve_type_from_exact_imports(
+            &identifier("Inner"),
+            &importing_source,
+            importing_file,
+            &query,
+        ),
+        JavaTypeResolution::Resolved(JavaTypeTarget::Java {
+            source: inner_source,
+            declaration: inner,
+        })
+    );
+}
+
+/// §6.5.4.2 reclassifies `p.Outer` as a type because package `p` has that
+/// member; accessibility is checked only afterward by §6.5.5.2. The
+/// inaccessible type therefore commits the walk, and the spelling cannot fall
+/// back to the top-level type in package `p.Outer`.
+#[test]
+fn an_inaccessible_type_prefix_does_not_fall_back_to_a_package() {
+    let revision = Revision::default();
+    let mut java = LanguageJava::new();
+    let mut jvm = PlatformJvm::new();
+    process(
+        &mut java,
+        &mut jvm,
+        revision,
+        "p/Outer.java",
+        "package p; class Outer {}",
+    );
+    process(
+        &mut java,
+        &mut jvm,
+        revision,
+        "p/Outer/Inner.java",
+        "package p.Outer; public class Inner {}",
+    );
+    let importing_source = process(
+        &mut java,
+        &mut jvm,
+        revision,
+        "q/Test.java",
+        "package q; import p.Outer.Inner; class Test {}",
+    );
+    let importing_file = file_model(&java, revision, &importing_source);
+
+    assert_eq!(
+        resolve_type_from_exact_imports(
+            &identifier("Inner"),
+            &importing_source,
+            importing_file,
+            &java_query(&java, &jvm, revision)
+        ),
+        JavaTypeResolution::Unresolved
     );
 }
 
@@ -318,6 +462,7 @@ fn an_import_of_the_compilation_units_own_type_names_that_type() {
     assert_eq!(
         resolve_type_from_exact_imports(
             &identifier("X"),
+            &own_source,
             own_file,
             &java_query(&java, &jvm, revision)
         ),

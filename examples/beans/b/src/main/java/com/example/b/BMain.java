@@ -10,7 +10,7 @@ import com.example.a.ATest;
  * resolves and F12 lands in project a. Whether this place may touch what it
  * found is a different question, and the package boundary answers most of it.
  */
-class BMain {
+public class BMain {
     public int open;
     int shared;
     private int hidden;

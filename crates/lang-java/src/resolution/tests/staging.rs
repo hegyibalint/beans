@@ -115,6 +115,33 @@ fn a_single_type_import_shadows_a_sibling_of_the_same_package() {
     assert_eq!(resolve(&java, &jvm, &asker, "X").as_deref(), Some("p.X"));
 }
 
+/// §7.5.1 makes the inaccessible import a compile-time error. The JLS need not
+/// recover meaning for the broken compilation unit; javac retains that error
+/// while resolving the later simple name from the same package, and Beans does
+/// the same.
+#[test]
+fn an_inaccessible_import_does_not_hide_an_accessible_same_package_type() {
+    let (java, jvm, asker) = asking(&[
+        ("q/X.java", "package q; class X {}"),
+        ("p/X.java", "package p; class X {}"),
+        ("p/Test.java", "package p; import q.X; class Test {}"),
+    ]);
+
+    assert_eq!(resolve(&java, &jvm, &asker, "X").as_deref(), Some("p.X"));
+
+    let file = file_model(&java, Revision::default(), &asker);
+    let body = type_declaration(file, file.top_level_declarations[0]).body_scope;
+    let candidates = resolve_type_candidates(
+        &JavaName::Simple(identifier("X")),
+        &asker,
+        file,
+        body,
+        &java_query(&java, &jvm, Revision::default()),
+    );
+    assert_eq!(candidates.valid.len(), 1);
+    assert!(candidates.has_invalidity(JavaTypeInvalidity::Inaccessible));
+}
+
 #[test]
 fn an_outside_scope_import_does_not_hide_an_in_scope_package_type() {
     let revision = Revision::default();
@@ -154,19 +181,21 @@ fn an_outside_scope_import_does_not_hide_an_in_scope_package_type() {
         file_model(&java, revision, &package_source).top_level_declarations[0];
     let query = JavaQuery::new(jvm.query_from(&asker, revision), &java);
 
+    let candidates = resolve_type_candidates(
+        &JavaName::Simple(identifier("X")),
+        &asker,
+        file,
+        body,
+        &query,
+    );
     assert_eq!(
-        resolve_type_name(
-            &JavaName::Simple(identifier("X")),
-            &asker,
-            file,
-            body,
-            &query
-        ),
+        candidates.clone().into_valid_resolution(),
         JavaTypeResolution::Resolved(JavaTypeTarget::Java {
             source: package_source,
             declaration: package_declaration,
         })
     );
+    assert!(candidates.has_invalidity(JavaTypeInvalidity::OutsideScope));
 }
 
 #[test]
@@ -213,16 +242,18 @@ fn a_name_known_only_outside_scope_is_unresolved() {
         query.scope_membership(&candidates[0]),
         JvmScopeMembership::OutsideScope
     );
+    let candidates = resolve_type_candidates(
+        &JavaName::Simple(identifier("X")),
+        &asker,
+        file,
+        body,
+        &query,
+    );
     assert_eq!(
-        resolve_type_name(
-            &JavaName::Simple(identifier("X")),
-            &asker,
-            file,
-            body,
-            &query
-        ),
+        candidates.clone().into_valid_resolution(),
         JavaTypeResolution::Unresolved
     );
+    assert!(candidates.has_invalidity(JavaTypeInvalidity::OutsideScope));
 }
 
 /// Nothing in scope at all. The stages run out rather than guessing, which is

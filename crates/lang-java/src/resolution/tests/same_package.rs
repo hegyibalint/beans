@@ -26,6 +26,7 @@ fn resolves_a_top_level_type_by_its_package_spelling() {
     assert_eq!(
         resolve_from_same_package(
             &identifier("X"),
+            &current_source,
             current_file,
             &java_query(&java, &jvm, revision)
         ),
@@ -37,7 +38,7 @@ fn resolves_a_top_level_type_by_its_package_spelling() {
 }
 
 #[test]
-fn a_same_package_type_outside_the_scope_is_not_a_resolution_candidate() {
+fn a_same_package_type_outside_scope_is_retained_as_invalid() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
     let mut jvm = PlatformJvm::new();
@@ -79,10 +80,13 @@ fn a_same_package_type_outside_the_scope_is_not_a_resolution_candidate() {
         query.scope_membership(&candidates[0]),
         JvmScopeMembership::OutsideScope
     );
-    assert_eq!(
-        resolve_from_same_package(&identifier("X"), current_file, &query),
-        JavaTypeResolution::Unresolved
+    let resolved = candidates_from_same_package(
+        &identifier("X"),
+        &compilation_unit_site(&current_source, current_file),
+        &query,
     );
+    assert!(!resolved.has_valid());
+    assert!(resolved.has_invalidity(JavaTypeInvalidity::OutsideScope));
 }
 
 #[test]
@@ -109,6 +113,7 @@ fn ignores_a_type_from_another_package() {
     assert_eq!(
         resolve_from_same_package(
             &identifier("X"),
+            &current_source,
             current_file,
             &java_query(&java, &jvm, revision)
         ),
@@ -130,6 +135,7 @@ fn resolves_a_type_from_the_unnamed_package() {
     assert_eq!(
         resolve_from_same_package(
             &identifier("X"),
+            &current_source,
             current_file,
             &java_query(&java, &jvm, revision)
         ),

@@ -6,6 +6,7 @@ use beans_platform_jvm::{
 };
 
 use crate::{
+    accessibility::{JavaSite, is_accessible},
     model::{
         JavaBodyId, JavaBodyNodeId, JavaBodyNodeKind, JavaDeclaration, JavaDeclarationId,
         JavaEntityId, JavaExpression, JavaFile, JavaIdentifier, JavaImport, JavaImportKind,
@@ -14,12 +15,33 @@ use crate::{
     query::JavaQuery,
 };
 
+/// The main result of resolving a type name.
+///
+/// Resolution in Java is not straightforward, and it can yield:
+///  - No candidate (Unresolved)
+///  - One candidate (Resolved)
+///  - Multiple candidates (Ambiguous);
+///
+/// The important thing is that we separate and supply candidates where we can.
+/// This allows us to make better decisions and actions when we have multiple candidates.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JavaTypeResolution {
+    Unresolved,
+    Resolved(JavaTypeTarget),
+    Ambiguous(Vec<JavaTypeTarget>),
+}
+
+/// Resolution needs to point out what type we resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JavaTypeTarget {
+    /// The resolution target is coming from the `lang-java` land.
+    /// We store the raw declaration ID, as we have access to the model and its declarations.
     Java {
         source: JvmSource,
         declaration: JavaDeclarationId,
     },
+    /// The resulution target is coming from the `platform-jvm` land (i.e. anything but a Java source file).
+    /// We store the "coordinate" pointing at the resource (e.g., a `.class`, a `.jar`, etc) and the FQN in there what we resolved to.
     Jvm {
         source: JvmSource,
         fqn: JvmQualifiedName,
@@ -34,11 +56,155 @@ impl JavaTypeTarget {
     }
 }
 
+/// Resolution might find candidates, however, that doesn't mean that those candidates are valid.
+/// We might have a situation where the only
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum JavaTypeInvalidity {
+    OutsideScope,
+    Inaccessible,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum JavaTypeResolution {
-    Resolved(JavaTypeTarget),
-    Ambiguous(Vec<JavaTypeTarget>),
-    Unresolved,
+pub(crate) struct InvalidJavaTypeCandidate {
+    target: JavaTypeTarget,
+    reasons: Vec<JavaTypeInvalidity>,
+}
+
+impl InvalidJavaTypeCandidate {
+    fn has(&self, reason: JavaTypeInvalidity) -> bool {
+        self.reasons.contains(&reason)
+    }
+
+    fn add_reason(&mut self, reason: JavaTypeInvalidity) {
+        if !self.has(reason) {
+            self.reasons.push(reason);
+            self.reasons.sort_unstable();
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ClassifiedJavaTypeCandidate {
+    Valid(JavaTypeTarget),
+    Invalid(InvalidJavaTypeCandidate),
+}
+
+impl ClassifiedJavaTypeCandidate {
+    fn target(&self) -> &JavaTypeTarget {
+        match self {
+            Self::Valid(target) => target,
+            Self::Invalid(candidate) => &candidate.target,
+        }
+    }
+
+    fn propagate(self, child: ClassifiedJavaTypeCandidate) -> ClassifiedJavaTypeCandidate {
+        let Self::Invalid(parent) = self else {
+            return child;
+        };
+
+        let mut child = match child {
+            Self::Valid(target) => InvalidJavaTypeCandidate {
+                target,
+                reasons: Vec::new(),
+            },
+            Self::Invalid(candidate) => candidate,
+        };
+        for reason in parent.reasons {
+            child.add_reason(reason);
+        }
+        Self::Invalid(child)
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ResolutionCandidates {
+    valid: Vec<JavaTypeTarget>,
+    invalid: Vec<InvalidJavaTypeCandidate>,
+}
+
+impl ResolutionCandidates {
+    fn from_valid(candidates: impl IntoIterator<Item = JavaTypeTarget>) -> Self {
+        candidates
+            .into_iter()
+            .map(ClassifiedJavaTypeCandidate::Valid)
+            .collect()
+    }
+
+    fn push(&mut self, candidate: ClassifiedJavaTypeCandidate) {
+        match candidate {
+            ClassifiedJavaTypeCandidate::Valid(target) => {
+                if !self.valid.contains(&target) {
+                    self.valid.push(target);
+                }
+            }
+            ClassifiedJavaTypeCandidate::Invalid(candidate) => {
+                if !self.invalid.contains(&candidate) {
+                    self.invalid.push(candidate);
+                }
+            }
+        }
+    }
+
+    fn or_stage(mut self, next: impl FnOnce() -> Self) -> Self {
+        if !self.valid.is_empty() {
+            return self;
+        }
+
+        let next = next();
+        self.valid = next.valid;
+        for candidate in next.invalid {
+            self.push(ClassifiedJavaTypeCandidate::Invalid(candidate));
+        }
+        self
+    }
+
+    fn into_valid_resolution(self) -> JavaTypeResolution {
+        classify_candidates(self.valid)
+    }
+
+    fn commits_type_path(&self) -> bool {
+        self.has_valid()
+            || self
+                .invalid
+                .iter()
+                .any(|candidate| candidate.has(JavaTypeInvalidity::Inaccessible))
+    }
+
+    pub(crate) fn has_valid(&self) -> bool {
+        !self.valid.is_empty()
+    }
+
+    pub(crate) fn has_invalidity(&self, reason: JavaTypeInvalidity) -> bool {
+        self.invalid.iter().any(|candidate| candidate.has(reason))
+    }
+}
+
+impl FromIterator<ClassifiedJavaTypeCandidate> for ResolutionCandidates {
+    fn from_iter<T: IntoIterator<Item = ClassifiedJavaTypeCandidate>>(iter: T) -> Self {
+        let mut candidates = Self::default();
+        for candidate in iter {
+            candidates.push(candidate);
+        }
+        candidates
+    }
+}
+
+impl IntoIterator for ResolutionCandidates {
+    type Item = ClassifiedJavaTypeCandidate;
+    type IntoIter = std::vec::IntoIter<ClassifiedJavaTypeCandidate>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.valid
+            .into_iter()
+            .map(ClassifiedJavaTypeCandidate::Valid)
+            .chain(
+                self.invalid
+                    .into_iter()
+                    .map(ClassifiedJavaTypeCandidate::Invalid),
+            )
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
 }
 
 /// JLS 26 §6.5.5.1 does not stage this. It asks only that a simple type name
@@ -55,59 +221,50 @@ pub fn resolve_type_name(
     current_lexical_scope_id: JavaLexicalScopeId,
     query: &JavaQuery,
 ) -> JavaTypeResolution {
+    resolve_type_candidates(name, source, file, current_lexical_scope_id, query)
+        .into_valid_resolution()
+}
+
+pub(crate) fn resolve_type_candidates(
+    name: &JavaName,
+    source: &JvmSource,
+    file: &JavaFile,
+    current_lexical_scope_id: JavaLexicalScopeId,
+    query: &JavaQuery,
+) -> ResolutionCandidates {
     // §6.5.5.2. A qualified name classifies its prefix as a package or a type
     // first; `resolve_canonical_name` walks that, but only for import names so
     // far.
     let JavaName::Simple(name) = name else {
-        return JavaTypeResolution::Unresolved;
+        return ResolutionCandidates::default();
+    };
+
+    let from = JavaSite {
+        source,
+        file,
+        scope: current_lexical_scope_id,
     };
 
     // Stage 1. Type parameters, member types and local types, nearest scope
     // first. §6.4.1: a type declaration shadows every other type of that name
     // in scope where it occurs, which is what makes nearest-first right.
-    let lexical = resolve_type_from_lexical_scopes(name, source, file, current_lexical_scope_id);
-    if !matches!(lexical, JavaTypeResolution::Unresolved) {
-        return lexical;
-    }
-
-    // Stage 2. Single-type (§7.5.1) and single-static (§7.5.3) imports. §6.4.1
-    // has a single-type import shadow a top-level type of that name in
-    // *another* compilation unit of this package, so it outranks stage 3 while
-    // stage 1 keeps whatever this file declares.
-    let exact_import = resolve_type_from_exact_imports(name, file, query);
-    if !matches!(exact_import, JavaTypeResolution::Unresolved) {
-        return exact_import;
-    }
-
-    // Stage 3. Top-level types of the current package, in scope by §6.3: "all
-    // the class and interface declarations in the package in which the top
-    // level class or interface is declared".
-    let same_package = resolve_from_same_package(name, file, query);
-    if !matches!(same_package, JavaTypeResolution::Unresolved) {
-        return same_package;
-    }
-
-    // Stage 4. Type-import-on-demand (§7.5.2), static-import-on-demand
-    // (§7.5.4), and the implicit `import java.lang.*` (§7.3). Below stage 3 on
-    // §7.5.2's own reading, where an on-demand import is shadowed "by a class
-    // or interface [...] declared in the package to which the compilation unit
-    // belongs". That sentence is example prose, not a rule in §6.4.1, which
-    // says nothing about this pair.
-    // Stage 5. Single-module imports (§7.5.5). Last because §6.4.1 has both
-    // on-demand forms shadow them and has them shadow nothing at all.
-    // Stage 6. Import suggestions. No JLS rule: the spec ends a failed lookup
-    // in a compile-time error, and offering to fix it is ours.
-    // Not implemented yet: absence of the later stages means unresolved,
-    // never a guess.
-    JavaTypeResolution::Unresolved
+    candidates_from_lexical_scopes(name, source, file, current_lexical_scope_id)
+        // Stage 2. §7.5.1 rejects an inaccessible import. For useful recovery,
+        // follow javac: retain that failure without letting it hide an
+        // accessible answer from a lower stage.
+        .or_stage(|| candidates_from_exact_imports(name, source, file, query))
+        // Stage 3. Top-level types of the current package, in scope by §6.3.
+        .or_stage(|| candidates_from_same_package(name, &from, query))
+    // Stages 4–6 (on-demand, module, suggestions) are not implemented. Their
+    // absence means no valid candidate, never a guess.
 }
 
-fn resolve_type_from_lexical_scopes(
+fn candidates_from_lexical_scopes(
     name: &JavaIdentifier,
     source: &JvmSource,
     file: &JavaFile,
     current_lexical_scope_id: JavaLexicalScopeId,
-) -> JavaTypeResolution {
+) -> ResolutionCandidates {
     for (_, scope) in file.iter_scope_chain(current_lexical_scope_id) {
         let candidates = scope
             .declarations
@@ -126,38 +283,69 @@ fn resolve_type_from_lexical_scopes(
                     declaration: declaration_id,
                 })
             });
-        let resolution = classify_candidates(candidates);
-        if !matches!(resolution, JavaTypeResolution::Unresolved) {
-            return resolution;
+        let candidates = ResolutionCandidates::from_valid(candidates);
+        if candidates.has_valid() {
+            return candidates;
         }
     }
 
-    JavaTypeResolution::Unresolved
+    ResolutionCandidates::default()
 }
 
-fn resolve_type_from_exact_imports(
+#[cfg(test)]
+fn resolve_type_from_lexical_scopes(
     name: &JavaIdentifier,
+    source: &JvmSource,
+    file: &JavaFile,
+    current_lexical_scope_id: JavaLexicalScopeId,
+) -> JavaTypeResolution {
+    candidates_from_lexical_scopes(name, source, file, current_lexical_scope_id)
+        .into_valid_resolution()
+}
+
+fn candidates_from_exact_imports(
+    name: &JavaIdentifier,
+    source: &JvmSource,
     file: &JavaFile,
     query: &JavaQuery,
-) -> JavaTypeResolution {
-    let candidates = file
-        .imports
+) -> ResolutionCandidates {
+    let from = JavaSite {
+        source,
+        file,
+        scope: JavaLexicalScopeId(0),
+    };
+
+    file.imports
         .iter()
         .filter(|import| import.kind == JavaImportKind::Type)
         .filter(|import| exact_import_introduces_name(import, name))
-        .flat_map(|import| resolve_canonical_name(&import.name, query));
+        .flat_map(|import| resolve_canonical_name(&import.name, &from, query))
+        .collect()
+}
 
-    classify_candidates(candidates)
+#[cfg(test)]
+fn resolve_type_from_exact_imports(
+    name: &JavaIdentifier,
+    source: &JvmSource,
+    file: &JavaFile,
+    query: &JavaQuery,
+) -> JavaTypeResolution {
+    candidates_from_exact_imports(name, source, file, query).into_valid_resolution()
 }
 
 /// A dotted name hides where the package stops and the type begins. JLS 26
 /// §6.5.4.2 answers it with one question asked left to right: does whatever `Q`
-/// denotes so far have a member class or interface named `Id`? A package and a
-/// type are the same question there, so the walk below only has to remember
-/// which of the two it is holding. It starts on the unnamed package (§6.5.4.1)
-/// and switches to type mode the first time the answer is yes. Segments join
-/// with `.` before the switch and with `$` after it (§13.1). Nothing is guessed
-/// and no prefix is tried twice.
+/// denotes so far have a member class or interface named `Id`? It starts on
+/// the unnamed package (§6.5.4.1) and switches to a type path the first time an
+/// observable declaration answers. Segments join with `.` before the switch
+/// and with `$` after it (§13.1).
+///
+/// Accessibility is checked later by §6.5.5.2, so an observable but
+/// inaccessible declaration still commits the type path and then becomes
+/// invalid. A declaration outside the host compilation described by §7.3 does
+/// not alter the semantic package path, but Beans carries it on a parallel
+/// invalid path as recovery evidence. Nothing is guessed and no prefix is tried
+/// twice on the same path.
 ///
 /// Package existence is never probed. §6.5.2 defers it ("A later step
 /// determines whether or not a package of that name actually exists"), and
@@ -259,48 +447,58 @@ fn resolve_type_from_exact_imports(
 /// p  probe p    miss    -> package p
 /// B  probe p.B  2 hits  -> type {app, lib}  -> ambiguous
 /// ```
-fn resolve_canonical_name(name: &JavaName, query: &JavaQuery) -> Vec<JavaTypeTarget> {
-    let mut mode = Mode::Package(String::new());
+fn resolve_canonical_name(
+    name: &JavaName,
+    from: &JavaSite,
+    query: &JavaQuery,
+) -> ResolutionCandidates {
+    let mut paths = vec![CanonicalPath::Package(String::new())];
 
     for segment in name.segments() {
-        mode = match mode {
-            Mode::Package(prefix) => {
-                let candidate = JvmQualifiedName::in_package(&prefix, &segment.text);
-                let targets = types_named_in_scope(query, &candidate);
-                if targets.is_empty() {
-                    Mode::Package(candidate.as_str().to_owned())
-                } else {
-                    Mode::Type(targets)
+        let mut next = Vec::new();
+        for path in paths {
+            match path {
+                CanonicalPath::Package(prefix) => {
+                    let name = JvmQualifiedName::in_package(&prefix, &segment.text);
+                    let candidates = classify_types_named(query, &name, from);
+                    if !candidates.commits_type_path() {
+                        next.push(CanonicalPath::Package(name.as_str().to_owned()));
+                    }
+                    next.extend(candidates.into_iter().map(CanonicalPath::Type));
+                }
+                CanonicalPath::Type(parent) => {
+                    for child in member_types(parent.target(), segment, query) {
+                        let child = classify_type_target(child, query, from);
+                        next.push(CanonicalPath::Type(parent.clone().propagate(child)));
+                    }
                 }
             }
-            Mode::Type(targets) => Mode::Type(
-                targets
-                    .into_iter()
-                    .flat_map(|target| member_types(target, segment, query))
-                    .collect(),
-            ),
-        };
+        }
+        paths = next;
     }
 
-    match mode {
-        Mode::Type(targets) => targets,
-        Mode::Package(_) => Vec::new(),
-    }
+    paths
+        .into_iter()
+        .filter_map(|path| match path {
+            CanonicalPath::Package(_) => None,
+            CanonicalPath::Type(candidate) => Some(candidate),
+        })
+        .collect()
 }
 
-enum Mode {
+#[derive(Clone)]
+enum CanonicalPath {
     /// The dotted package name walked so far; empty is the unnamed package.
     Package(String),
-    /// What the switch to type mode produced. There is no way back, so an
-    /// empty set here means the rest of the name has nothing to attach to.
-    Type(Vec<JavaTypeTarget>),
+    /// One classified path through a type and any subsequent member types.
+    Type(ClassifiedJavaTypeCandidate),
 }
 
-/// §6.5.4.2's TypeName branch: a member type, or nothing. A file this vertical
-/// parsed holds its members in the model; anything else holds them in the lake
-/// under a nested binary name.
+/// §6.5.4.2's TypeName branch: member types before scope and access are
+/// composed. A file this vertical parsed holds its members in the model;
+/// anything else holds them in the lake under a nested binary name.
 fn member_types(
-    target: JavaTypeTarget,
+    target: &JavaTypeTarget,
     name: &JavaIdentifier,
     query: &JavaQuery,
 ) -> Vec<JavaTypeTarget> {
@@ -309,10 +507,10 @@ fn member_types(
             source,
             declaration,
         } => {
-            let Some(file) = query.model_of(&source) else {
+            let Some(file) = query.model_of(source) else {
                 return Vec::new();
             };
-            find_member(file, declaration, name, JavaNamespace::Type)
+            find_member(file, *declaration, name, JavaNamespace::Type)
                 .into_iter()
                 .map(|declaration| JavaTypeTarget::Java {
                     source: source.clone(),
@@ -320,7 +518,7 @@ fn member_types(
                 })
                 .collect()
         }
-        JavaTypeTarget::Jvm { fqn, .. } => types_named_in_scope(query, &fqn.nested(&name.text)),
+        JavaTypeTarget::Jvm { fqn, .. } => query.types_named(&fqn.nested(&name.text)),
     }
 }
 
@@ -335,29 +533,99 @@ fn exact_import_introduces_name(import: &JavaImport, name: &JavaIdentifier) -> b
 /// The current package plus the simple name is the binary name the lake was
 /// told about at projection time, so this is one lookup rather than a walk
 /// over every file comparing package declarations.
-fn resolve_from_same_package(
+fn candidates_from_same_package(
     name: &JavaIdentifier,
-    file: &JavaFile,
+    from: &JavaSite,
     query: &JavaQuery,
-) -> JavaTypeResolution {
-    let package = file
+) -> ResolutionCandidates {
+    let package = from
+        .file
         .package
         .as_ref()
         .map(JavaName::dotted)
         .unwrap_or_default();
 
-    classify_candidates(types_named_in_scope(
+    classify_types_named(
         query,
         &JvmQualifiedName::in_package(&package, &name.text),
-    ))
+        from,
+    )
 }
 
-fn types_named_in_scope(query: &JavaQuery, fqn: &JvmQualifiedName) -> Vec<JavaTypeTarget> {
+#[cfg(test)]
+fn resolve_from_same_package(
+    name: &JavaIdentifier,
+    source: &JvmSource,
+    file: &JavaFile,
+    query: &JavaQuery,
+) -> JavaTypeResolution {
+    candidates_from_same_package(
+        name,
+        &JavaSite {
+            source,
+            file,
+            scope: JavaLexicalScopeId(0),
+        },
+        query,
+    )
+    .into_valid_resolution()
+}
+
+fn classify_types_named(
+    query: &JavaQuery,
+    fqn: &JvmQualifiedName,
+    from: &JavaSite,
+) -> ResolutionCandidates {
     query
         .types_named(fqn)
         .into_iter()
-        .filter(|target| query.scope_membership(target) == JvmScopeMembership::InScope)
+        .map(|target| classify_type_target(target, query, from))
         .collect()
+}
+
+fn classify_type_target(
+    target: JavaTypeTarget,
+    query: &JavaQuery,
+    from: &JavaSite,
+) -> ClassifiedJavaTypeCandidate {
+    if query.scope_membership(&target) == JvmScopeMembership::OutsideScope {
+        return ClassifiedJavaTypeCandidate::Invalid(InvalidJavaTypeCandidate {
+            target,
+            reasons: vec![JavaTypeInvalidity::OutsideScope],
+        });
+    }
+
+    if type_target_is_accessible(&target, query, from) {
+        ClassifiedJavaTypeCandidate::Valid(target)
+    } else {
+        ClassifiedJavaTypeCandidate::Invalid(InvalidJavaTypeCandidate {
+            target,
+            reasons: vec![JavaTypeInvalidity::Inaccessible],
+        })
+    }
+}
+
+fn type_target_is_accessible(target: &JavaTypeTarget, query: &JavaQuery, from: &JavaSite) -> bool {
+    let JavaTypeTarget::Java {
+        source,
+        declaration,
+    } = target
+    else {
+        return true;
+    };
+    let Some(file) = query.model_of(source) else {
+        return true;
+    };
+    let JavaDeclaration::Type(declaration) = &file.declarations[declaration.0] else {
+        return true;
+    };
+    let declared = JavaSite {
+        source,
+        file,
+        scope: declaration.declaring_scope,
+    };
+
+    is_accessible(declaration.access, &declared, from)
 }
 
 fn classify_candidates(candidates: impl IntoIterator<Item = JavaTypeTarget>) -> JavaTypeResolution {

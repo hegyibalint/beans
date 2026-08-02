@@ -9,7 +9,47 @@ use crate::model::{
     JavaFile, JavaImportKind,
 };
 use crate::query::JavaQuery;
-use crate::resolution::{resolve_expression, resolve_variable_name};
+use crate::resolution::{
+    JavaTypeInvalidity, resolve_expression, resolve_type_candidates, resolve_variable_name,
+};
+
+/// JLS 26 §6.5.5.1 makes a simple type name a compile-time error unless one
+/// declaration is in scope. Report the narrower case where Beans discovered a
+/// matching declaration but the host compilation described by §7.3 cannot
+/// observe its source.
+pub fn type_scope_diagnostics(
+    source: &JvmSource,
+    file: &JavaFile,
+    query: &JavaQuery,
+) -> Vec<Diagnostics> {
+    file.declarations
+        .iter()
+        .filter_map(|declaration| {
+            let type_ref = declaration.type_ref()?;
+            if type_ref.primitive {
+                return None;
+            }
+
+            let candidates = resolve_type_candidates(
+                &type_ref.name,
+                source,
+                file,
+                declaration.declaring_scope(),
+                query,
+            );
+            (!candidates.has_valid() && candidates.has_invalidity(JavaTypeInvalidity::OutsideScope))
+                .then(|| Diagnostics {
+                    span: type_ref.name.span(),
+                    severity: DiagnosticSeverity::Error,
+                    code: "type-outside-scope",
+                    message: format!(
+                        "type {} is outside the current compilation scope",
+                        type_ref.name.dotted()
+                    ),
+                })
+        })
+        .collect()
+}
 
 /// Flags member accesses that resolve to a declaration JLS 26 §6.6.1 does not
 /// let this site reach. Resolution stays permissive on purpose: navigating to
@@ -181,11 +221,117 @@ pub fn unresolved_name_diagnostics(model: &JavaFile) -> Vec<Diagnostics> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use beans_core::{language::LanguageProcessing, storage::Revision};
+    use beans_platform_jvm::{
+        PlatformJvm,
+        query::{JvmContainer, JvmScope},
+    };
+
     use super::*;
-    use crate::parser::JavaParser;
+    use crate::{LanguageJava, parser::JavaParser};
 
     fn parse(contents: &str) -> JavaFile {
         JavaParser::new().parse(contents)
+    }
+
+    fn source(path: &str) -> JvmSource {
+        JvmSource::SourceFile {
+            path: PathBuf::from(path),
+        }
+    }
+
+    fn process(
+        java: &mut LanguageJava,
+        jvm: &mut PlatformJvm,
+        revision: Revision,
+        path: &str,
+        contents: &str,
+    ) -> JvmSource {
+        let source = source(path);
+        java.process(source.clone(), revision, jvm, contents);
+        source
+    }
+
+    #[test]
+    fn flags_a_known_type_outside_the_compilation_scope() {
+        let revision = Revision::default();
+        let mut java = LanguageJava::new();
+        let mut jvm = PlatformJvm::new();
+        process(
+            &mut java,
+            &mut jvm,
+            revision,
+            "test/p/X.java",
+            "package p; public class X {}",
+        );
+        let contents = "package p; class Test { void use(X target) {} }";
+        let current = process(&mut java, &mut jvm, revision, "main/p/Test.java", contents);
+        jvm.register_scopes(
+            revision,
+            current.clone(),
+            vec![JvmScope::of(vec![JvmContainer::Source(PathBuf::from(
+                "main",
+            ))])],
+        );
+        let file = java.model_at(&current, revision).unwrap();
+        let query = JavaQuery::new(jvm.query_from(&current, revision), &java);
+
+        let diagnostics = type_scope_diagnostics(&current, file, &query);
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, "type-outside-scope");
+        assert_eq!(
+            diagnostics[0].message,
+            "type X is outside the current compilation scope"
+        );
+        let start = contents.find("X target").unwrap();
+        assert_eq!(diagnostics[0].span.start.0, start);
+        assert_eq!(diagnostics[0].span.end.0, start + 1);
+    }
+
+    #[test]
+    fn an_inaccessible_type_has_no_scope_diagnostic() {
+        let revision = Revision::default();
+        let mut java = LanguageJava::new();
+        let mut jvm = PlatformJvm::new();
+        process(
+            &mut java,
+            &mut jvm,
+            revision,
+            "q/X.java",
+            "package q; class X {}",
+        );
+        let current = process(
+            &mut java,
+            &mut jvm,
+            revision,
+            "p/Test.java",
+            "package p; import q.X; class Test { X field; }",
+        );
+        let file = java.model_at(&current, revision).unwrap();
+        let query = JavaQuery::new(jvm.query_from(&current, revision), &java);
+
+        assert!(type_scope_diagnostics(&current, file, &query).is_empty());
+    }
+
+    #[test]
+    fn a_type_absent_from_the_lake_has_no_scope_diagnostic() {
+        let revision = Revision::default();
+        let mut java = LanguageJava::new();
+        let mut jvm = PlatformJvm::new();
+        let current = process(
+            &mut java,
+            &mut jvm,
+            revision,
+            "p/Test.java",
+            "package p; class Test { Missing field; }",
+        );
+        let file = java.model_at(&current, revision).unwrap();
+        let query = JavaQuery::new(jvm.query_from(&current, revision), &java);
+
+        assert!(type_scope_diagnostics(&current, file, &query).is_empty());
     }
 
     #[test]

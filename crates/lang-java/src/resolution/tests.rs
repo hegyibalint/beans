@@ -94,6 +94,14 @@ fn file_model<'java>(
     java.model_at(source, revision).unwrap()
 }
 
+fn compilation_unit_site<'a>(source: &'a JvmSource, file: &'a JavaFile) -> JavaSite<'a> {
+    JavaSite {
+        source,
+        file,
+        scope: JavaLexicalScopeId(0),
+    }
+}
+
 fn process(
     java: &mut LanguageJava,
     jvm: &mut PlatformJvm,

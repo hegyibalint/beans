@@ -49,12 +49,12 @@ Not built yet. Nothing is wrong; there is just no code.
   `Unresolved` for anything that is not a simple name; the
   `resolve_canonical_name` walks a dotted name already, but only for imports.
 
-- **A diagnostic model.** We emit two codes today, `inaccessible-member` and
-  `cannot-find-symbol`. Import errors, access errors, unresolvable types and
-  type parameter misuse have no code and no design. The pending tests we deleted
-  had invented seven names for these; do not take them as a starting point,
-  because nobody decided whether an import problem is four codes or one code
-  with a reason.
+- **A diagnostic model.** We emit `type-outside-scope`,
+  `inaccessible-member`, and `cannot-find-symbol`. Import errors, genuinely
+  unknown types, ambiguous types, inaccessible types, and type parameter misuse
+  still have no complete design. The pending tests we deleted had invented
+  seven names for these; do not take them as a starting point, because nobody
+  decided whether an import problem is four codes or one code with a reason.
 
 - **JPMS.** A JDK goes into the lake as one image, so the whole runtime is
   visible to everything. See the `crates/engine/src/workspace.rs`; splitting it
@@ -88,9 +88,9 @@ Cannot be built until we choose.
   `JvmQualifiedName::nested` cannot spell that. The `enclosing: None` is also
   how a top-level type reads, so the model cannot say "this one is local".
 
-- **Two containers claiming one name.** The `crates/platform-jvm/src/query.rs`
-  filters and takes what comes; the order is a `HashMap`'s. This is shadowing
-  and not ambiguity, so it wants ranking.
+- **Two containers claiming one name.** JVM discovery preserves both, and Java
+  currently treats two in-scope declarations as ambiguity. A class path would
+  rank containers instead; its current order is a `HashMap`'s.
 
 - **How are specification editions configured?** We read JLS 26 and hardcode it.
   A project on an older language level is a real case and we have no place to
@@ -118,13 +118,6 @@ these become possible, which is why they are written down.
   file of the same binary name. Unblocked by a fixture verb that registers a
   `JvmClass` without parsing; the `crates/platform-jvm/tests/class_lookup.rs`
   does this against the platform already.
-
-- **An unresolvable type reference we can observe.** The fixture can ask what a
-  name resolved to and can ask for a diagnostic; it cannot say "this name
-  reaches nothing and that is correct". So every §6.5.4 case about where a
-  package stops being a package is out of reach here, and lives in the
-  `resolution/tests/imports.rs` instead. Unblocked by an `unresolvable-type`
-  diagnostic, or more cheaply by a negative expectation on the fixture.
 
 - **Telling two equally named declarations apart.** The `declaration_label`
   renders both halves of an ambiguity as `p.B`, so

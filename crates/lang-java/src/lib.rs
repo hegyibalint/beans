@@ -15,7 +15,7 @@ use beans_platform_jvm::PlatformJvm;
 
 use beans_platform_jvm::model::JvmSource;
 
-use crate::diagnostics::{access_diagnostics, unresolved_name_diagnostics};
+use crate::diagnostics::{access_diagnostics, type_scope_diagnostics, unresolved_name_diagnostics};
 use crate::model::{JavaDeclarationId, JavaFile};
 use crate::parser::JavaParser;
 use crate::projection::project_to_jvm;
@@ -72,10 +72,17 @@ impl LanguageProcessing<JvmSource, PlatformJvm> for LanguageJava {
         platform_jvm: &mut PlatformJvm,
         contents: &str,
     ) {
-        let java_model =
-            self.file_models
-                .put(revision, java_source.clone(), self.parser.parse(contents));
-        platform_jvm.register(revision, java_source, project_to_jvm(java_model));
+        // Parse the source file
+        let java_model = self.parser.parse(contents);
+
+        // Store it and get the reference to the stored model back
+        let java_model = self
+            .file_models
+            .put(revision, java_source.clone(), java_model);
+
+        // Project the Java model into the interoperable JVM model and register it with the platform
+        let jvm_model = project_to_jvm(java_model);
+        platform_jvm.register(revision, java_source, jvm_model);
     }
 }
 
@@ -90,6 +97,7 @@ impl Language<JvmSource, PlatformJvm> for LanguageJava {
         let query = JavaQuery::new(platform_jvm.query_from(java_source, revision), self);
 
         let mut diagnostics = unresolved_name_diagnostics(java_model);
+        diagnostics.extend(type_scope_diagnostics(java_source, java_model, &query));
         diagnostics.extend(access_diagnostics(java_source, java_model, &query));
 
         Some(FileAnalysis {

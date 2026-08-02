@@ -9,7 +9,7 @@ import com.example.a.ATest;
  * The widest scope in the example, and it still cannot see a single test class
  * other than its own.
  */
-class BTest {
+public class BTest {
     public int open;
     int shared;
     private int hidden;

@@ -8,9 +8,9 @@ import com.example.b.BTest;
  *
  * This file shows the second axis. Scoping decides whether a name resolves at
  * all; JLS 26 6.6.1 then decides whether this place may touch it. The two
- * answers are independent, and only the second one produces a squiggle.
+ * answers are independent and produce different diagnostics.
  */
-class ATest {
+public class ATest {
     public int open;
     int shared;
     private int hidden;

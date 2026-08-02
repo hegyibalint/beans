@@ -10,7 +10,7 @@ fn duplicate_exact_imports_name_one_target() {
         &mut jvm,
         revision,
         "p/X.java",
-        "package p; class X {}",
+        "package p; public class X {}",
     );
     let importing_source = process(
         &mut java,
@@ -26,6 +26,7 @@ fn duplicate_exact_imports_name_one_target() {
     assert_eq!(
         resolve_type_from_exact_imports(
             &identifier("X"),
+            &importing_source,
             importing_file,
             &java_query(&java, &jvm, revision)
         ),
@@ -46,14 +47,14 @@ fn distinct_exact_imports_leave_the_name_contested() {
         &mut jvm,
         revision,
         "p/X.java",
-        "package p; class X {}",
+        "package p; public class X {}",
     );
     let r_source = process(
         &mut java,
         &mut jvm,
         revision,
         "r/X.java",
-        "package r; class X {}",
+        "package r; public class X {}",
     );
     let importing_source = process(
         &mut java,
@@ -68,6 +69,7 @@ fn distinct_exact_imports_leave_the_name_contested() {
 
     let JavaTypeResolution::Ambiguous(candidates) = resolve_type_from_exact_imports(
         &identifier("X"),
+        &importing_source,
         importing_file,
         &java_query(&java, &jvm, revision),
     ) else {
@@ -117,6 +119,7 @@ fn a_package_declaring_a_name_twice_offers_both_files() {
 
     let JavaTypeResolution::Ambiguous(candidates) = resolve_from_same_package(
         &identifier("X"),
+        &current_source,
         current_file,
         &java_query(&java, &jvm, revision),
     ) else {

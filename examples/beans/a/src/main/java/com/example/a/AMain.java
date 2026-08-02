@@ -9,11 +9,10 @@ import com.example.b.BTest;
  * GOOD lines resolve. Put the cursor on a name, press F12, and you land on the
  * declaration, even in a file you never opened.
  *
- * BAD lines resolve to nothing. F12 does nothing at all. Scoping failures are
- * silent today: there is no squiggle for a name that reaches nothing. The
- * README says why.
+ * BAD targets resolve to nothing, so F12 does nothing. Their type names carry
+ * the scope diagnostic; member accesses through those parameters stay quiet.
  */
-class AMain {
+public class AMain {
     public int open;
     int shared;
     private int hidden;

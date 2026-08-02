@@ -77,11 +77,12 @@ So the two kinds of BAD look different in the editor:
 
 | kind | what you see |
 | --- | --- |
-| out of scope | nothing. No squiggle, and F12 does nothing. |
-| in scope, not accessible | a red squiggle, and F12 still jumps to the declaration. |
+| out of scope | `type-outside-scope` on the parameter type; F12 does nothing. |
+| in scope, not accessible | `inaccessible-member` on the member; F12 still jumps to the declaration. |
 
-Six squiggles in total, all `inaccessible-member`. Every other BAD line in the
-example is silent, which is a gap and not a design: see below.
+The eight unavailable parameter types and six inaccessible member accesses make
+fourteen squiggles in total. Member accesses such as `target.open` stay quiet
+when `target` already has an out-of-scope type, avoiding a cascade.
 
 ## Edit beans.toml and watch it move
 
@@ -98,18 +99,18 @@ on.
 - Go to Definition and Go to Declaration for simple type names, fields and
   methods, across files and across units.
 - Hover, but only for a declaration in the file you are hovering in.
-- Two diagnostics: `inaccessible-member` (§6.6.1) and `cannot-find-symbol` for
-  a bare name that resolves to nothing.
+- Three diagnostics: `type-outside-scope` (§6.5.5.1 and §7.3),
+  `inaccessible-member` (§6.6.1), and `cannot-find-symbol` for a bare name that
+  resolves to nothing.
 
 ## What does not work yet
 
 Worth reading before the example confuses you.
 
-- **No diagnostic for a type that resolves to nothing.** Every BAD scoping line
-  here is invisible. This is the big one, and it is why the example needs
-  `// BAD` comments to be readable at all. We cannot add the diagnostic before
-  `java.lang` is modeled, or correct code would light up everywhere. Tracked in
-  `TODO.md`.
+- **No diagnostic for a genuinely unknown type.** `type-outside-scope` is
+  deliberately narrower: it fires only when Beans has indexed a matching
+  declaration and the current compilation cannot observe its source. Imports
+  themselves are not diagnosed yet.
 - **`java.lang` and the JDK are not there.** Which is also why this example uses
   `int` and nothing else.
 - **Qualified type names.** `java.util.List` written inline is unresolved.
