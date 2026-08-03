@@ -117,7 +117,9 @@ fn ignores_a_type_from_another_package() {
             current_file,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Unresolved
+        JavaTypeResolution::Unresolved {
+            invalid_candidates: Vec::new(),
+        }
     );
 }
 

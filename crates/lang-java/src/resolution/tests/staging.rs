@@ -115,6 +115,29 @@ fn a_single_type_import_shadows_a_sibling_of_the_same_package() {
     assert_eq!(resolve(&java, &jvm, &asker, "X").as_deref(), Some("p.X"));
 }
 
+#[test]
+fn an_inaccessible_type_is_returned_with_an_unresolved_name() {
+    let (java, jvm, asker) = asking(&[
+        ("q/X.java", "package q; class X {}"),
+        ("p/Test.java", "package p; import q.X; class Test {}"),
+    ]);
+    let file = file_model(&java, Revision::default(), &asker);
+    let body = type_declaration(file, file.top_level_declarations[0]).body_scope;
+
+    let JavaTypeResolution::Unresolved { invalid_candidates } = resolve_type_name(
+        &JavaName::Simple(identifier("X")),
+        &asker,
+        file,
+        body,
+        &java_query(&java, &jvm, Revision::default()),
+    ) else {
+        panic!("an inaccessible type must not resolve");
+    };
+
+    assert_eq!(invalid_candidates.len(), 1);
+    assert!(invalid_candidates[0].has_invalidity(JavaTypeInvalidity::Inaccessible));
+}
+
 /// §7.5.1 makes the inaccessible import a compile-time error. The JLS need not
 /// recover meaning for the broken compilation unit; javac retains that error
 /// while resolving the later simple name from the same package, and Beans does
@@ -189,7 +212,7 @@ fn an_outside_scope_import_does_not_hide_an_in_scope_package_type() {
         &query,
     );
     assert_eq!(
-        candidates.clone().into_valid_resolution(),
+        candidates.clone().into_resolution(),
         JavaTypeResolution::Resolved(JavaTypeTarget::Java {
             source: package_source,
             declaration: package_declaration,
@@ -249,11 +272,11 @@ fn a_name_known_only_outside_scope_is_unresolved() {
         body,
         &query,
     );
-    assert_eq!(
-        candidates.clone().into_valid_resolution(),
-        JavaTypeResolution::Unresolved
-    );
-    assert!(candidates.has_invalidity(JavaTypeInvalidity::OutsideScope));
+    let JavaTypeResolution::Unresolved { invalid_candidates } = candidates.into_resolution() else {
+        panic!("an outside-scope candidate must not resolve");
+    };
+    assert_eq!(invalid_candidates.len(), 1);
+    assert!(invalid_candidates[0].has_invalidity(JavaTypeInvalidity::OutsideScope));
 }
 
 /// Nothing in scope at all. The stages run out rather than guessing, which is
@@ -309,6 +332,8 @@ fn a_qualified_name_does_not_fall_through_to_the_stages() {
             body,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Unresolved
+        JavaTypeResolution::Unresolved {
+            invalid_candidates: Vec::new(),
+        }
     );
 }

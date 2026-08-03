@@ -116,6 +116,8 @@ fn a_local_type_is_not_in_scope_after_its_block() {
             "after",
             "Local"
         ),
-        JavaTypeResolution::Unresolved
+        JavaTypeResolution::Unresolved {
+            invalid_candidates: Vec::new(),
+        }
     );
 }

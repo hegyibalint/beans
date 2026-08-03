@@ -21,7 +21,9 @@ fn a_static_import_does_not_introduce_a_type_name_yet() {
             current_file,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Unresolved
+        JavaTypeResolution::Unresolved {
+            invalid_candidates: Vec::new(),
+        }
     );
 }
 
@@ -105,10 +107,16 @@ fn an_exact_import_outside_scope_is_retained_as_invalid() {
         query.scope_membership(&candidates[0]),
         JvmScopeMembership::OutsideScope
     );
-    let resolved =
-        candidates_from_exact_imports(&identifier("X"), &importing_source, importing_file, &query);
-    assert!(!resolved.has_valid());
-    assert!(resolved.has_invalidity(JavaTypeInvalidity::OutsideScope));
+    let JavaTypeResolution::Unresolved { invalid_candidates } = resolve_type_from_exact_imports(
+        &identifier("X"),
+        &importing_source,
+        importing_file,
+        &query,
+    ) else {
+        panic!("an outside-scope import must not resolve");
+    };
+    assert_eq!(invalid_candidates.len(), 1);
+    assert!(invalid_candidates[0].has_invalidity(JavaTypeInvalidity::OutsideScope));
 }
 
 #[test]
@@ -217,7 +225,9 @@ fn an_exact_import_does_not_skip_an_intermediate_name_segment() {
             importing_file,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Unresolved
+        JavaTypeResolution::Unresolved {
+            invalid_candidates: Vec::new(),
+        }
     );
 }
 
@@ -438,7 +448,9 @@ fn an_inaccessible_type_prefix_does_not_fall_back_to_a_package() {
             importing_file,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Unresolved
+        JavaTypeResolution::Unresolved {
+            invalid_candidates: Vec::new(),
+        }
     );
 }
 

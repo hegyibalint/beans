@@ -10,7 +10,7 @@ use crate::model::{
 };
 use crate::query::JavaQuery;
 use crate::resolution::{
-    JavaTypeInvalidity, resolve_expression, resolve_type_candidates, resolve_variable_name,
+    JavaTypeInvalidity, resolve_expression, resolve_type_name, resolve_variable_name,
 };
 
 /// JLS 26 §6.5.5.1 makes a simple type name a compile-time error unless one
@@ -30,14 +30,15 @@ pub fn type_scope_diagnostics(
                 return None;
             }
 
-            let candidates = resolve_type_candidates(
+            let resolution = resolve_type_name(
                 &type_ref.name,
                 source,
                 file,
                 declaration.declaring_scope(),
                 query,
             );
-            (!candidates.has_valid() && candidates.has_invalidity(JavaTypeInvalidity::OutsideScope))
+            resolution
+                .has_invalidity(JavaTypeInvalidity::OutsideScope)
                 .then(|| Diagnostics {
                     span: type_ref.name.span(),
                     severity: DiagnosticSeverity::Error,

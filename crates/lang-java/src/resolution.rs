@@ -17,18 +17,33 @@ use crate::{
 
 /// The main result of resolving a type name.
 ///
-/// Resolution in Java is not straightforward, and it can yield:
-///  - No candidate (Unresolved)
-///  - One candidate (Resolved)
-///  - Multiple candidates (Ambiguous);
-///
 /// The important thing is that we separate and supply candidates where we can.
 /// This allows us to make better decisions and actions when we have multiple candidates.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JavaTypeResolution {
-    Unresolved,
+    /// We couldn't find anything that resembles the type in need.
+    /// As a consequence, we cannot supply any supplimental information
+    Unresolved {
+        invalid_candidates: Vec<InvalidJavaTypeCandidate>,
+    },
+    /// We had a successful resolution, with a single candidate.
+    /// Our happy path.
     Resolved(JavaTypeTarget),
+    /// We had a _too_ successful resolution, and we found more than one candidate.
+    /// We store all candidates, so we can use this information further down the line.
     Ambiguous(Vec<JavaTypeTarget>),
+}
+
+impl JavaTypeResolution {
+    pub(crate) fn has_invalidity(&self, reason: JavaTypeInvalidity) -> bool {
+        let Self::Unresolved { invalid_candidates } = self else {
+            return false;
+        };
+
+        invalid_candidates
+            .iter()
+            .any(|candidate| candidate.has_invalidity(reason))
+    }
 }
 
 /// Resolution needs to point out what type we resolved.
@@ -57,13 +72,17 @@ impl JavaTypeTarget {
 }
 
 /// Resolution might find candidates, however, that doesn't mean that those candidates are valid.
-/// We might have a situation where the only
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum JavaTypeInvalidity {
+    /// The candidate we found is not in the scope of this module.
+    /// Think of this as a `main` module using a class from `test`; normally this direction is set up to be impossible.
     OutsideScope,
+    /// The candidate we found is in scope, but its access modifiers prohibit us from using it.
+    /// Think of using a private class from another package; resolution sees the class, but it understands that
     Inaccessible,
 }
 
+/// Represents a resolution candidate that was rejected for some reason
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct InvalidJavaTypeCandidate {
     target: JavaTypeTarget,
@@ -71,12 +90,20 @@ pub(crate) struct InvalidJavaTypeCandidate {
 }
 
 impl InvalidJavaTypeCandidate {
-    fn has(&self, reason: JavaTypeInvalidity) -> bool {
-        self.reasons.contains(&reason)
+    pub(crate) fn target(&self) -> &JavaTypeTarget {
+        &self.target
+    }
+
+    pub(crate) fn invalidities(&self) -> &[JavaTypeInvalidity] {
+        &self.reasons
+    }
+
+    pub(crate) fn has_invalidity(&self, reason: JavaTypeInvalidity) -> bool {
+        self.invalidities().contains(&reason)
     }
 
     fn add_reason(&mut self, reason: JavaTypeInvalidity) {
-        if !self.has(reason) {
+        if !self.has_invalidity(reason) {
             self.reasons.push(reason);
             self.reasons.sort_unstable();
         }
@@ -93,7 +120,7 @@ impl ClassifiedJavaTypeCandidate {
     fn target(&self) -> &JavaTypeTarget {
         match self {
             Self::Valid(target) => target,
-            Self::Invalid(candidate) => &candidate.target,
+            Self::Invalid(candidate) => candidate.target(),
         }
     }
 
@@ -158,8 +185,8 @@ impl ResolutionCandidates {
         self
     }
 
-    fn into_valid_resolution(self) -> JavaTypeResolution {
-        classify_candidates(self.valid)
+    fn into_resolution(self) -> JavaTypeResolution {
+        classify_candidates(self.valid, self.invalid)
     }
 
     fn commits_type_path(&self) -> bool {
@@ -167,15 +194,18 @@ impl ResolutionCandidates {
             || self
                 .invalid
                 .iter()
-                .any(|candidate| candidate.has(JavaTypeInvalidity::Inaccessible))
+                .any(|candidate| candidate.has_invalidity(JavaTypeInvalidity::Inaccessible))
     }
 
     pub(crate) fn has_valid(&self) -> bool {
         !self.valid.is_empty()
     }
 
-    pub(crate) fn has_invalidity(&self, reason: JavaTypeInvalidity) -> bool {
-        self.invalid.iter().any(|candidate| candidate.has(reason))
+    #[cfg(test)]
+    fn has_invalidity(&self, reason: JavaTypeInvalidity) -> bool {
+        self.invalid
+            .iter()
+            .any(|candidate| candidate.has_invalidity(reason))
     }
 }
 
@@ -221,8 +251,7 @@ pub fn resolve_type_name(
     current_lexical_scope_id: JavaLexicalScopeId,
     query: &JavaQuery,
 ) -> JavaTypeResolution {
-    resolve_type_candidates(name, source, file, current_lexical_scope_id, query)
-        .into_valid_resolution()
+    resolve_type_candidates(name, source, file, current_lexical_scope_id, query).into_resolution()
 }
 
 pub(crate) fn resolve_type_candidates(
@@ -299,8 +328,7 @@ fn resolve_type_from_lexical_scopes(
     file: &JavaFile,
     current_lexical_scope_id: JavaLexicalScopeId,
 ) -> JavaTypeResolution {
-    candidates_from_lexical_scopes(name, source, file, current_lexical_scope_id)
-        .into_valid_resolution()
+    candidates_from_lexical_scopes(name, source, file, current_lexical_scope_id).into_resolution()
 }
 
 fn candidates_from_exact_imports(
@@ -330,7 +358,7 @@ fn resolve_type_from_exact_imports(
     file: &JavaFile,
     query: &JavaQuery,
 ) -> JavaTypeResolution {
-    candidates_from_exact_imports(name, source, file, query).into_valid_resolution()
+    candidates_from_exact_imports(name, source, file, query).into_resolution()
 }
 
 /// A dotted name hides where the package stops and the type begins. JLS 26
@@ -568,7 +596,7 @@ fn resolve_from_same_package(
         },
         query,
     )
-    .into_valid_resolution()
+    .into_resolution()
 }
 
 fn classify_types_named(
@@ -628,7 +656,10 @@ fn type_target_is_accessible(target: &JavaTypeTarget, query: &JavaQuery, from: &
     is_accessible(declaration.access, &declared, from)
 }
 
-fn classify_candidates(candidates: impl IntoIterator<Item = JavaTypeTarget>) -> JavaTypeResolution {
+fn classify_candidates(
+    candidates: impl IntoIterator<Item = JavaTypeTarget>,
+    invalid_candidates: Vec<InvalidJavaTypeCandidate>,
+) -> JavaTypeResolution {
     let mut distinct = Vec::new();
     for candidate in candidates {
         if !distinct.contains(&candidate) {
@@ -637,7 +668,7 @@ fn classify_candidates(candidates: impl IntoIterator<Item = JavaTypeTarget>) -> 
     }
 
     match distinct.len() {
-        0 => JavaTypeResolution::Unresolved,
+        0 => JavaTypeResolution::Unresolved { invalid_candidates },
         1 => JavaTypeResolution::Resolved(distinct.pop().unwrap()),
         _ => JavaTypeResolution::Ambiguous(distinct),
     }
