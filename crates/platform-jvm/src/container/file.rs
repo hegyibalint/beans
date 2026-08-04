@@ -24,7 +24,6 @@ impl Frame {
         self.taken = true;
 
         let at = at(&self.path);
-        buffer.clear();
         if let Err(error) = super::read_into(&self.path, buffer) {
             return Step::Emit(Err(Error::read(at, error)));
         }

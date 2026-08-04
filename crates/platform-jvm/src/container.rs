@@ -1,4 +1,5 @@
 use std::fmt;
+use std::io::Read;
 use std::path::Path;
 
 use crate::class_file::ParseError;
@@ -120,9 +121,13 @@ fn at_entry(container: &Path, entry_path: &str) -> String {
     format!("{}!/{entry_path}", container.display())
 }
 
+/// Replaces `buffer` with the contents of `path`.
+///
+/// One buffer is reused for every entry, so `read_to_end` would otherwise
+/// append this file to the last one and hand the parser two class files glued
+/// together.
 fn read_into(path: &Path, buffer: &mut Vec<u8>) -> std::io::Result<()> {
-    use std::io::Read;
-
+    buffer.clear();
     std::fs::File::open(path)?.read_to_end(buffer)?;
     Ok(())
 }

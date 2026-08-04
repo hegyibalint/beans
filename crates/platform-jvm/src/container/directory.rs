@@ -37,7 +37,6 @@ impl Frame {
         }
 
         let at = at(&path);
-        buffer.clear();
         if let Err(error) = super::read_into(&path, buffer) {
             return Step::Emit(Err(Error::read(at, error)));
         }
