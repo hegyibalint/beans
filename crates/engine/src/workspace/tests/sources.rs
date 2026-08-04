@@ -46,11 +46,53 @@ fn classpath_elements_keep_their_unit_order() {
     ]);
 
     assert_eq!(
-        classpath(&workspace),
+        compiled_inputs(&workspace),
         [
             PathBuf::from("a.jar"),
             PathBuf::from("b.jar"),
             PathBuf::from("c.jar"),
+        ]
+    );
+}
+
+/// A `jdk_home` is its own setting rather than a classpath entry, but from
+/// here on it is one more file to read.
+#[test]
+fn a_jdk_contributes_its_runtime_image_to_what_is_read() {
+    let workspace = workspace(vec![Unit {
+        jdk_home: Some(PathBuf::from("/opt/jdk-26")),
+        ..unit("app", Vec::new())
+    }]);
+
+    assert_eq!(
+        compiled_inputs(&workspace),
+        [PathBuf::from("/opt/jdk-26/lib/modules")]
+    );
+}
+
+/// Four units sharing one runtime is the normal case, and reading it once per
+/// unit is 27,000 classes three times over.
+#[test]
+fn an_input_two_units_share_is_read_once() {
+    let jdk = PathBuf::from("/opt/jdk-26");
+    let workspace = workspace(vec![
+        Unit {
+            classpath: vec![PathBuf::from("shared.jar")],
+            jdk_home: Some(jdk.clone()),
+            ..unit("a", Vec::new())
+        },
+        Unit {
+            classpath: vec![PathBuf::from("shared.jar")],
+            jdk_home: Some(jdk),
+            ..unit("b", Vec::new())
+        },
+    ]);
+
+    assert_eq!(
+        compiled_inputs(&workspace),
+        [
+            PathBuf::from("shared.jar"),
+            PathBuf::from("/opt/jdk-26/lib/modules"),
         ]
     );
 }

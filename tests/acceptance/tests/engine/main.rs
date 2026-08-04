@@ -3,4 +3,5 @@
 //! language server needs and that no spec describes.
 
 mod classpath;
+mod jdk;
 mod scoping;

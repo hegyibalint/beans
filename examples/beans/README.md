@@ -91,6 +91,43 @@ dark, all three lines, while `BMain.toOtherMain` keeps working. `depends_on`
 does not chain, so an edge to `b-main` does not hand over what b-main depends
 on.
 
+## Turn the JDK on
+
+`beans.toml` carries a commented-out `jdk_home`. Point it at a real JDK and
+restart:
+
+```sh
+mise where java   # the JDK this repository pins
+```
+
+Beans then reads `<jdk_home>/lib/modules`, the runtime image holding every
+system module, and puts all ~27,000 classes in that unit's scope. Add an import
+to any file in the example and the type resolves:
+
+```java
+import java.util.List;
+
+class AMain {
+    void m(List target) {}   // GOOD once jdk_home is set, BAD without it
+}
+```
+
+Two things to expect. The first load takes a few seconds in a debug build,
+because the whole runtime is parsed up front. And F12 on `List` does nothing:
+navigation lands on a declaration in a source file, and a class file has no
+source to land in. What the JDK buys today is that the name resolves and stops
+being squiggled.
+
+`jdk_home` also works per unit, which is how a project whose units target
+different releases would say so:
+
+```toml
+jdk_home = "/path/to/jdk-26"    # what every unit gets
+
+[unit.legacy]
+jdk_home = "/path/to/jdk-17"    # unless it says otherwise
+```
+
 ## What works today
 
 - `beans.toml` is read at startup, and every declared source is loaded before
@@ -111,8 +148,10 @@ Worth reading before the example confuses you.
   deliberately narrower: it fires only when Beans has indexed a matching
   declaration and the current compilation cannot observe its source. Imports
   themselves are not diagnosed yet.
-- **`java.lang` and the JDK are not there.** Which is also why this example uses
-  `int` and nothing else.
+- **`java.lang` is not implicit.** A JDK can be read now, but reaching a type
+  without naming it is stage 4 of `resolve_type_name` and unbuilt, so bare
+  `String` resolves to nothing whether or not a JDK is loaded. Only a
+  single-type import reaches one. See "Turn the JDK on" above.
 - **Qualified type names.** `java.util.List` written inline is unresolved.
   Imports are walked, inline dotted names are not.
 - **No inheritance.** `extends` is parsed and then not followed.

@@ -1,38 +1,19 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::OnceLock;
 
 use crate::container::jimage::is_image;
 use crate::container::{Error, ErrorKind};
 use crate::model::{JvmClass, JvmSource};
 
-/// The runtime image these cases read.
+/// The image these cases read.
 ///
 /// One cannot be committed — the smallest `jlink` will build is 17 MB — so the
-/// only honest fixture is a real one, and every claim here is written to hold
-/// of any release rather than of a particular one.
-///
-/// Which JDK that is comes from `mise.toml`, so a clone reads the same one a
-/// clone was given. `MISE_JAVA_VERSION` names another for one run, and
-/// `mise.ci.toml` lists the sweep.
+/// only honest fixture is a real JDK, and every claim here is written to hold
+/// of any release rather than of a particular one. Which JDK that is comes
+/// from `mise.toml`; see `beans_test_support::jdk`.
 fn runtime_image() -> &'static Path {
     static IMAGE: OnceLock<PathBuf> = OnceLock::new();
-    IMAGE.get_or_init(|| {
-        let output = Command::new("mise")
-            .args(["where", "java"])
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .output()
-            .expect("`mise` should be on PATH; it is what provisions the JDKs");
-        assert!(
-            output.status.success(),
-            "no JDK to read: run `mise install`\n{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-
-        Path::new(String::from_utf8_lossy(&output.stdout).trim())
-            .join("lib")
-            .join("modules")
-    })
+    IMAGE.get_or_init(beans_test_support::jdk::runtime_image)
 }
 
 struct Walk {

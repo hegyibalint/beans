@@ -11,7 +11,7 @@ use beans_workspace::model::Workspace;
 use std::fs;
 use std::path::Path;
 
-use crate::workspace::{Scopes, classpath, java_sources};
+use crate::workspace::{Scopes, compiled_inputs, java_sources};
 
 mod workspace;
 
@@ -96,11 +96,11 @@ impl Beans {
         // Listed before the workspace is handed over, so the borrow ends and
         // nothing has to be cloned.
         let paths = java_sources(&workspace);
-        let classpath = classpath(&workspace);
+        let inputs = compiled_inputs(&workspace);
         self.set_workspace(workspace);
 
         let revision = self.revision.bump();
-        self.platform_jvm.process_classpath(&classpath, revision);
+        self.platform_jvm.process_classpath(&inputs, revision);
 
         let mut loaded = 0;
         for path in paths {

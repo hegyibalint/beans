@@ -82,9 +82,7 @@ fn visible_containers(unit: &Unit, workspace: &Workspace) -> Vec<JvmContainer> {
 
     // A JDK is one image, so this says "the whole runtime is visible", which
     // JPMS says is not true. Splitting it needs the lake to hold modules.
-    if let Some(jdk_home) = &unit.jdk_home {
-        containers.push(JvmContainer::Artifact(jdk_home.join("lib").join("modules")));
-    }
+    containers.extend(runtime_image(unit).map(JvmContainer::Artifact));
 
     for dependency in &unit.depends_on {
         let Some(dependency) = workspace.units.iter().find(|u| u.id == *dependency) else {
@@ -102,13 +100,33 @@ fn visible_containers(unit: &Unit, workspace: &Workspace) -> Vec<JvmContainer> {
     containers
 }
 
-/// Every classpath element a workspace declares, in unit and classpath order.
-pub(crate) fn classpath(workspace: &Workspace) -> Vec<PathBuf> {
-    workspace
-        .units
-        .iter()
-        .flat_map(|unit| unit.classpath.iter().cloned())
-        .collect()
+/// The one file a JDK contributes. A `jdk_home` is a setting of its own rather
+/// than a classpath element because a runtime is not a dependency: a project
+/// has exactly one, it is what every other name is resolved against, and
+/// `javac` takes it as `--release` or `--system` rather than as `-cp`.
+fn runtime_image(unit: &Unit) -> Option<PathBuf> {
+    unit.jdk_home
+        .as_ref()
+        .map(|home| home.join("lib").join("modules"))
+}
+
+/// Every compiled input a workspace declares, in unit and classpath order,
+/// each named once.
+///
+/// A JDK is separate at the descriptor and one file here, because from this
+/// point on it is read exactly like a jar. Deduplicated because four units
+/// sharing one runtime is the normal case, and reading it four times is 27,000
+/// classes three times over.
+pub(crate) fn compiled_inputs(workspace: &Workspace) -> Vec<PathBuf> {
+    let mut inputs: Vec<PathBuf> = Vec::new();
+    for unit in &workspace.units {
+        for path in unit.classpath.iter().cloned().chain(runtime_image(unit)) {
+            if !inputs.contains(&path) {
+                inputs.push(path);
+            }
+        }
+    }
+    inputs
 }
 
 /// Every Java source a workspace declares, in the order its units and

@@ -91,6 +91,13 @@ Cannot be built until we choose.
   `workspace/tests/scopes.rs::a_dependency_of_a_dependency_is_out_of_reach`, so
   a change gets noticed.
 
+- **A pushed workspace reads nothing.** The `set_workspace` records the
+  structure without touching disk, so its scopes name jars and runtime images
+  nothing ever opened; only `open_workspace` reads them. Fine while a
+  descriptor on disk is the only real caller, and wrong the moment an editor or
+  a build-tool import hands a workspace over instead. Either it reads, or the
+  caller needs a second call, and neither has been chosen.
+
 - **Nothing validates `depends_on` ids.** An id naming no unit is dropped
   silently, and there is no cycle check. Dropping beats failing the whole
   import, but a typo should probably be visible somewhere.

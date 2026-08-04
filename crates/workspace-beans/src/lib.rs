@@ -34,14 +34,13 @@ pub fn load(root: &Path) -> Result<Option<Workspace>, LoadError> {
 /// writes and commits cannot hold absolute ones. Resolving them here is what
 /// lets `Workspace` promise its consumers that every path is absolute.
 fn parse(contents: &str, root: &Path) -> Result<Workspace, toml::de::Error> {
-    let descriptor: Descriptor = toml::from_str(contents)?;
+    let Descriptor { jdk_home, unit } = toml::from_str(contents)?;
 
     Ok(Workspace {
         tool: TOOL.to_string(),
-        units: descriptor
-            .unit
+        units: unit
             .into_iter()
-            .map(|(id, unit)| unit.resolve(id, root))
+            .map(|(id, unit)| unit.resolve(id, root, jdk_home.as_deref()))
             .collect(),
     })
 }
@@ -135,6 +134,49 @@ mod tests {
                 PathBuf::from("/project/lib/dependency.jar"),
             ]
         );
+    }
+
+    #[test]
+    fn every_unit_compiles_against_the_jdk_the_descriptor_names() {
+        let workspace = workspace("jdk_home = \"/opt/jdk-26\"\n\n[unit.app]\n[unit.lib]\n");
+
+        for unit in &workspace.units {
+            assert_eq!(unit.jdk_home, Some(PathBuf::from("/opt/jdk-26")));
+        }
+    }
+
+    #[test]
+    fn a_unit_may_name_a_jdk_of_its_own() {
+        let workspace = workspace(
+            "jdk_home = \"/opt/jdk-26\"\n\n[unit.app]\n[unit.legacy]\njdk_home = \"/opt/jdk-17\"\n",
+        );
+
+        assert_eq!(
+            workspace.units[0].jdk_home,
+            Some(PathBuf::from("/opt/jdk-26"))
+        );
+        assert_eq!(
+            workspace.units[1].jdk_home,
+            Some(PathBuf::from("/opt/jdk-17"))
+        );
+    }
+
+    // A JDK sits outside the project, so its path is normally absolute
+    // already; `join` leaves one alone, which is what makes both spellings
+    // work without a rule of their own.
+    #[test]
+    fn a_jdk_below_the_root_is_resolved_from_it() {
+        let workspace = workspace("[unit.app]\njdk_home = \"vendor/jdk\"\n");
+
+        assert_eq!(
+            workspace.units[0].jdk_home,
+            Some(PathBuf::from("/project/vendor/jdk"))
+        );
+    }
+
+    #[test]
+    fn a_descriptor_naming_no_jdk_leaves_a_unit_without_one() {
+        assert_eq!(workspace("[unit.app]\n").units[0].jdk_home, None);
     }
 
     #[test]
