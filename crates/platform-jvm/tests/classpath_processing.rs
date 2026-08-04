@@ -6,12 +6,12 @@ use beans_platform_jvm::model::JvmSource;
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/container/class_file/tests/fixtures/classes/beans/fixture")
+        .join("src/class_file/tests/fixtures/classes/beans/fixture")
         .join(name)
 }
 
 fn jar_fixture() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("src/container/jar/tests/fixtures/classes.jar")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("src/container/archive/tests/fixtures/classes.jar")
 }
 
 #[test]

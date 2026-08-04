@@ -1,60 +1,20 @@
 use std::fmt;
-use std::path::{Path, PathBuf};
 
 use cafebabe::attributes::{AttributeData, AttributeInfo};
 use cafebabe::descriptors::{ClassName, FieldDescriptor, FieldType, ReturnDescriptor};
 use cafebabe::{ClassAccessFlags, ParseOptions};
 
 use crate::model::{
-    JvmClass, JvmField, JvmKind, JvmMethod, JvmPrimitive, JvmQualifiedName, JvmReturnType,
-    JvmSource, JvmType,
+    JvmClass, JvmField, JvmKind, JvmMethod, JvmPrimitive, JvmQualifiedName, JvmReturnType, JvmType,
 };
 
 #[derive(Debug)]
-pub(crate) struct Error {
-    path: PathBuf,
-    kind: ErrorKind,
-}
+pub(crate) struct ParseError(cafebabe::ParseError);
 
 #[derive(Debug)]
-enum ErrorKind {
-    Read(std::io::Error),
-    Parse(ParseError),
-}
-
-#[derive(Debug)]
-pub(super) struct ParseError(cafebabe::ParseError);
-
-#[derive(Debug)]
-pub(super) enum ParseOutcome {
+pub(crate) enum ParseOutcome {
     Class(JvmClass),
     ModuleDescriptor,
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.kind {
-            ErrorKind::Read(error) => write!(
-                formatter,
-                "could not read class file {}: {error}",
-                self.path.display()
-            ),
-            ErrorKind::Parse(error) => write!(
-                formatter,
-                "could not parse class file {}: {error}",
-                self.path.display()
-            ),
-        }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match &self.kind {
-            ErrorKind::Read(error) => Some(error),
-            ErrorKind::Parse(error) => Some(error),
-        }
-    }
 }
 
 impl fmt::Display for ParseError {
@@ -69,28 +29,7 @@ impl std::error::Error for ParseError {
     }
 }
 
-pub(super) fn process(path: &Path) -> std::option::IntoIter<Result<(JvmSource, JvmClass), Error>> {
-    let path = path.to_path_buf();
-    let processed = match read(&path) {
-        Ok(ParseOutcome::Class(class)) => Some(Ok((JvmSource::ClassFile { path }, class))),
-        Ok(ParseOutcome::ModuleDescriptor) => None,
-        Err(error) => Some(Err(error)),
-    };
-    processed.into_iter()
-}
-
-fn read(path: &Path) -> Result<ParseOutcome, Error> {
-    let bytes = std::fs::read(path).map_err(|error| Error {
-        path: path.to_path_buf(),
-        kind: ErrorKind::Read(error),
-    })?;
-    parse(&bytes).map_err(|error| Error {
-        path: path.to_path_buf(),
-        kind: ErrorKind::Parse(error),
-    })
-}
-
-pub(super) fn parse(bytes: &[u8]) -> Result<ParseOutcome, ParseError> {
+pub(crate) fn parse(bytes: &[u8]) -> Result<ParseOutcome, ParseError> {
     let mut options = ParseOptions::default();
     options.parse_bytecode(false);
     let class = cafebabe::parse_class_with_options(bytes, &options).map_err(ParseError)?;

@@ -5,6 +5,7 @@ use beans_core::storage::{Revision, RevisionedStorage};
 use crate::model::{JvmClass, JvmSource};
 use crate::query::{JvmQuery, JvmScope, JvmScopeQuery};
 
+mod class_file;
 mod container;
 pub mod model;
 pub mod query;

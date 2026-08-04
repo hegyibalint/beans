@@ -14,7 +14,8 @@ pub enum JvmContainer {
     /// reading of a build tool's tree selector: its include and exclude
     /// patterns are dropped.
     Source(PathBuf),
-    /// Where compiled code lives: a class file, jar, jmod, or runtime image.
+    /// Where compiled code lives: a class file, a directory of them, a jar,
+    /// jmod, or runtime image.
     Artifact(PathBuf),
 }
 
@@ -22,7 +23,11 @@ impl JvmContainer {
     fn holds(&self, source: &JvmSource) -> bool {
         match (self, source) {
             (JvmContainer::Source(base), JvmSource::SourceFile { path }) => path.starts_with(base),
-            (JvmContainer::Artifact(artifact), JvmSource::ClassFile { path }) => path == artifact,
+            // A class file names itself, so an artifact that is a directory has
+            // to hold every class under it rather than only one equal to it.
+            (JvmContainer::Artifact(artifact), JvmSource::ClassFile { path }) => {
+                path.starts_with(artifact)
+            }
             (JvmContainer::Artifact(artifact), JvmSource::JarEntry { jar_path, .. }) => {
                 jar_path == artifact
             }

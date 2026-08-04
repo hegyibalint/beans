@@ -3,13 +3,13 @@ use std::path::{Path, PathBuf};
 use crate::model::JvmSource;
 
 fn fixture() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("src/container/jar/tests/fixtures/classes.jar")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("src/container/archive/tests/fixtures/classes.jar")
 }
 
 #[test]
 fn streams_root_class_entries_and_continues_after_a_bad_one() {
     let path = fixture();
-    let mut classes = super::process(&path).expect("fixture should open");
+    let mut classes = crate::container::process(&path);
 
     let (feature_source, feature) = classes
         .next()
