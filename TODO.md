@@ -110,15 +110,6 @@ Cannot be built until we choose.
 The claim is clear and the observable does not exist. Nothing will tell us when
 these become possible, which is why they are written down.
 
-- **A compiled artifact in the lake.** The `Fixture::file` runs everything
-  through the Java parser, so every source is a `JvmSource::SourceFile`. Nothing
-  can put a class file, a jar entry or a runtime image in, so no acceptance test
-  reaches the projection side of resolution: the `$` join in the `member_types`
-  `Jvm` arm has no test at all, and neither does a source file beating a class
-  file of the same binary name. Unblocked by a fixture verb that registers a
-  `JvmClass` without parsing; the `crates/platform-jvm/tests/class_lookup.rs`
-  does this against the platform already.
-
 - **Telling two equally named declarations apart.** The `declaration_label`
   renders both halves of an ambiguity as `p.B`, so
   `one_name_declared_in_two_trees_is_ambiguous` would still pass if both came
@@ -142,6 +133,11 @@ these become possible, which is why they are written down.
   and for nothing else.
 
 ## Chores
+
+- **Compiled resolution coverage stops at top-level scope.** The workspace JAR
+  acceptance test proves a compiled class is indexed and scoped, but the `$`
+  join in the `member_types` `Jvm` arm has no test at all, and neither does a
+  source file beating a class file of the same binary name.
 
 - **The `parser.rs` and the `model.rs` still keep their tests inline.** 14 tests
   in 1399 lines and 4 in 737. Both will grow.

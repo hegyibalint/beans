@@ -1,0 +1,1 @@
+module beans.fixture.module {}

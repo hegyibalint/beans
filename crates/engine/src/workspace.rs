@@ -41,8 +41,8 @@ impl Scopes {
     /// unregistered so it stays unscoped.
     pub(crate) fn of_source(&self, source: &JvmSource) -> Vec<JvmScope> {
         let JvmSource::SourceFile { path } = source else {
-            // Only hand written sources are placed by a workspace. A jar entry
-            // is reached through a unit's classpath, never owned by one.
+            // Only hand written sources are placed by a workspace. Compiled
+            // inputs are reached through a unit's classpath, never owned by one.
             return Vec::new();
         };
 
@@ -100,6 +100,15 @@ fn visible_containers(unit: &Unit, workspace: &Workspace) -> Vec<JvmContainer> {
     }
 
     containers
+}
+
+/// Every classpath element a workspace declares, in unit and classpath order.
+pub(crate) fn classpath(workspace: &Workspace) -> Vec<PathBuf> {
+    workspace
+        .units
+        .iter()
+        .flat_map(|unit| unit.classpath.iter().cloned())
+        .collect()
 }
 
 /// Every Java source a workspace declares, in the order its units and

@@ -159,6 +159,18 @@ fn a_unit_sees_what_it_links_against() {
     assert!(reaches(&workspace, "app/src/p/A.java", &entry));
 }
 
+#[test]
+fn a_unit_sees_a_standalone_class_file_it_links_against() {
+    let class_file = PathBuf::from("p/A.class");
+    let workspace = workspace(vec![Unit {
+        classpath: vec![class_file.clone()],
+        ..unit("app", vec![tree("app/src")])
+    }]);
+    let source = JvmSource::ClassFile { path: class_file };
+
+    assert!(reaches(&workspace, "app/src/p/A.java", &source));
+}
+
 /// One image for the whole runtime, which JPMS says is too much; splitting it
 /// needs the lake to hold modules first.
 #[test]

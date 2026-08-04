@@ -6,6 +6,10 @@ pub enum JvmSource {
         /// The filesystem path to the source file, e.g. `src/main/java/org/beans/app/Foo.java`.
         path: PathBuf,
     },
+    ClassFile {
+        /// The filesystem path to a standalone class file, e.g. `build/classes/org/beans/app/Foo.class`.
+        path: PathBuf,
+    },
     JarEntry {
         /// The filesystem path to the jar file, e.g. `.m2/repository/org/beans/app/1.0.0/app-1.0.0.jar`.
         jar_path: PathBuf,

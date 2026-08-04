@@ -27,6 +27,8 @@ pub(crate) struct DescriptorUnit {
     sources: Vec<PathBuf>,
     #[serde(default)]
     depends_on: Vec<String>,
+    #[serde(default)]
+    classpath: Vec<PathBuf>,
 }
 
 impl DescriptorUnit {
@@ -44,7 +46,11 @@ impl DescriptorUnit {
                 })
                 .collect(),
             depends_on: self.depends_on,
-            classpath: Vec::new(),
+            classpath: self
+                .classpath
+                .into_iter()
+                .map(|path| root.join(path))
+                .collect(),
             jdk_home: None,
         }
     }

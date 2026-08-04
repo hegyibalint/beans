@@ -124,6 +124,20 @@ mod tests {
     }
 
     #[test]
+    fn classpath_elements_are_resolved_from_the_workspace_root() {
+        let workspace =
+            workspace("[unit.app]\nclasspath = [\"lib/Feature.class\", \"lib/dependency.jar\"]\n");
+
+        assert_eq!(
+            workspace.units[0].classpath,
+            [
+                PathBuf::from("/project/lib/Feature.class"),
+                PathBuf::from("/project/lib/dependency.jar"),
+            ]
+        );
+    }
+
+    #[test]
     fn a_descriptor_declaring_nothing_is_an_empty_workspace() {
         assert!(workspace("").units.is_empty());
     }

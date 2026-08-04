@@ -9,4 +9,6 @@ license.workspace = true
 name = "beans_platform_jvm"
 
 [dependencies]
+cafebabe = { version = "0.9.0", default-features = false }
 core = { path = "../core" }
+zip = { version = "8.1.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }

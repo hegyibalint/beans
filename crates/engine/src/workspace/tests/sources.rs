@@ -33,6 +33,29 @@ fn a_tree_contributes_only_java_files() {
 }
 
 #[test]
+fn classpath_elements_keep_their_unit_order() {
+    let workspace = workspace(vec![
+        Unit {
+            classpath: vec![PathBuf::from("a.jar"), PathBuf::from("b.jar")],
+            ..unit("a", Vec::new())
+        },
+        Unit {
+            classpath: vec![PathBuf::from("c.jar")],
+            ..unit("b", Vec::new())
+        },
+    ]);
+
+    assert_eq!(
+        classpath(&workspace),
+        [
+            PathBuf::from("a.jar"),
+            PathBuf::from("b.jar"),
+            PathBuf::from("c.jar"),
+        ]
+    );
+}
+
+#[test]
 fn listed_files_are_filtered_by_extension() {
     let workspace = workspace(vec![unit(
         "unit",

@@ -1,15 +1,18 @@
+use std::path::PathBuf;
+
 use beans_core::storage::{Revision, RevisionedStorage};
 
 use crate::model::{JvmClass, JvmSource};
 use crate::query::{JvmQuery, JvmScope, JvmScopeQuery};
 
+mod container;
 pub mod model;
 pub mod query;
 
 pub struct PlatformJvm {
     /// A source's value is its whole contribution, so re-registering a
     /// source replaces everything it previously declared.
-    class_lake: RevisionedStorage<JvmSource, Vec<JvmClass>>,
+    classes: RevisionedStorage<JvmSource, Vec<JvmClass>>,
     /// Keyed by the source doing the asking, because visibility runs one way:
     /// an app sees its library and the library does not see back.
     scopes: RevisionedStorage<JvmSource, Vec<JvmScope>>,
@@ -18,7 +21,7 @@ pub struct PlatformJvm {
 impl PlatformJvm {
     pub fn new() -> PlatformJvm {
         PlatformJvm {
-            class_lake: RevisionedStorage::new(),
+            classes: RevisionedStorage::new(),
             scopes: RevisionedStorage::new(),
         }
     }
@@ -29,7 +32,7 @@ impl PlatformJvm {
         jvm_source: JvmSource,
         jvm_classes: Vec<JvmClass>,
     ) -> &[JvmClass] {
-        self.class_lake.put(revision, jvm_source, jvm_classes)
+        self.classes.put(revision, jvm_source, jvm_classes)
     }
 
     /// Declare what `jvm_source` may see. Whoever flattened the project builds
@@ -61,6 +64,17 @@ impl PlatformJvm {
         match self.scopes.get(jvm_source, revision) {
             Some(scopes) => JvmScopeQuery::of(scopes.clone()),
             None => JvmScopeQuery::unscoped(),
+        }
+    }
+
+    pub fn process_classpath(&mut self, classpath: &[PathBuf], revision: Revision) {
+        for element in classpath {
+            for processed in container::process(element) {
+                let Ok((source, class)) = processed else {
+                    continue;
+                };
+                self.register(revision, source, vec![class]);
+            }
         }
     }
 }

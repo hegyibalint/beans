@@ -2,4 +2,5 @@
 //! asked for. Nothing here is a fact about Java; it is all bookkeeping that a
 //! language server needs and that no spec describes.
 
+mod classpath;
 mod scoping;
