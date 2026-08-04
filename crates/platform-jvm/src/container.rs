@@ -14,29 +14,6 @@ pub(crate) fn process(path: &Path) -> ProcessedClasses {
     Box::new(Classes::open(path))
 }
 
-/// A container that is open and part-way through its entries.
-///
-/// Walking containers is naturally recursive, but an iterator has to be
-/// resumable and Rust cannot hand back a function paused mid-loop. So the call
-/// stack a recursive walk would have used is written down instead: one frame
-/// per open container, each holding the position that function would have kept.
-enum Frame {
-    File(file::Frame),
-    Directory(directory::Frame),
-    Archive(archive::Frame),
-}
-
-/// What one look at the top frame produced.
-enum Step {
-    /// Nothing to hand back; ask the same frame again.
-    Skip,
-    /// No entries left.
-    Done,
-    Emit(Result<(JvmSource, JvmClass), Error>),
-    /// A container found inside this one.
-    Nested(Frame),
-}
-
 struct Classes {
     stack: Vec<Frame>,
     /// Reused by every frame that has to hold an entry in memory to parse it.
@@ -80,6 +57,18 @@ impl Iterator for Classes {
     }
 }
 
+/// A container that is open and part-way through its entries.
+///
+/// Walking containers is naturally recursive, but an iterator has to be
+/// resumable and Rust cannot hand back a function paused mid-loop. So the call
+/// stack a recursive walk would have used is written down instead: one frame
+/// per open container, each holding the position that function would have kept.
+enum Frame {
+    File(file::Frame),
+    Directory(directory::Frame),
+    Archive(archive::Frame),
+}
+
 impl Frame {
     fn open(path: &Path) -> Result<Frame, Error> {
         match path.extension().and_then(|extension| extension.to_str()) {
@@ -99,6 +88,17 @@ impl Frame {
     }
 }
 
+/// What one look at the top frame produced.
+enum Step {
+    /// Nothing to hand back; ask the same frame again.
+    Skip,
+    /// No entries left.
+    Done,
+    Emit(Result<(JvmSource, JvmClass), Error>),
+    /// A container found inside this one.
+    Nested(Frame),
+}
+
 /// Whether an entry is a type declaration we want, judged by its path within
 /// its container.
 ///
@@ -108,6 +108,23 @@ impl Frame {
 /// Choosing between the two is container policy we have not written.
 fn is_class(entry_path: &str) -> bool {
     entry_path.ends_with(".class") && !entry_path.starts_with("META-INF/")
+}
+
+/// How a container element is named in a diagnostic.
+fn at(path: &Path) -> String {
+    path.display().to_string()
+}
+
+/// How an entry inside a container is named in a diagnostic.
+fn at_entry(container: &Path, entry_path: &str) -> String {
+    format!("{}!/{entry_path}", container.display())
+}
+
+fn read_into(path: &Path, buffer: &mut Vec<u8>) -> std::io::Result<()> {
+    use std::io::Read;
+
+    std::fs::File::open(path)?.read_to_end(buffer)?;
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -162,23 +179,6 @@ impl Error {
             kind: ErrorKind::Parse(error),
         }
     }
-}
-
-/// How a container element is named in a diagnostic.
-fn at(path: &Path) -> String {
-    path.display().to_string()
-}
-
-fn read_into(path: &Path, buffer: &mut Vec<u8>) -> std::io::Result<()> {
-    use std::io::Read;
-
-    std::fs::File::open(path)?.read_to_end(buffer)?;
-    Ok(())
-}
-
-/// How an entry inside a container is named in a diagnostic.
-fn at_entry(container: &Path, entry_path: &str) -> String {
-    format!("{}!/{entry_path}", container.display())
 }
 
 impl fmt::Display for Error {

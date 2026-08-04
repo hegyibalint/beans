@@ -4,30 +4,16 @@ use super::{Error, Step, at, is_class};
 use crate::class_file::{self, ParseOutcome};
 use crate::model::JvmSource;
 
+pub(super) fn open(path: &Path) -> Result<Frame, Error> {
+    read(path, String::new())
+}
+
 pub(super) struct Frame {
     /// Where this directory sits inside the classpath element, so `is_class`
     /// is asked the same shape of path an archive entry gives it.
     prefix: String,
     /// Sorted, so the same tree always loads the same way.
     entries: std::vec::IntoIter<PathBuf>,
-}
-
-pub(super) fn open(path: &Path) -> Result<Frame, Error> {
-    read(path, String::new())
-}
-
-fn read(path: &Path, prefix: String) -> Result<Frame, Error> {
-    let mut entries: Vec<PathBuf> = std::fs::read_dir(path)
-        .map_err(|error| Error::open(at(path), error))?
-        .flatten()
-        .map(|entry| entry.path())
-        .collect();
-    entries.sort();
-
-    Ok(Frame {
-        prefix,
-        entries: entries.into_iter(),
-    })
 }
 
 impl Frame {
@@ -64,6 +50,20 @@ impl Frame {
             Err(error) => Step::Emit(Err(Error::parse(at, error))),
         }
     }
+}
+
+fn read(path: &Path, prefix: String) -> Result<Frame, Error> {
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(path)
+        .map_err(|error| Error::open(at(path), error))?
+        .flatten()
+        .map(|entry| entry.path())
+        .collect();
+    entries.sort();
+
+    Ok(Frame {
+        prefix,
+        entries: entries.into_iter(),
+    })
 }
 
 #[cfg(test)]

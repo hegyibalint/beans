@@ -8,12 +8,6 @@ use super::{Error, Step, at, at_entry, is_class};
 use crate::class_file::{self, ParseOutcome};
 use crate::model::JvmSource;
 
-pub(super) struct Frame {
-    path: PathBuf,
-    archive: ZipArchive<File>,
-    index: usize,
-}
-
 pub(super) fn open(path: &Path) -> Result<Frame, Error> {
     let file = File::open(path).map_err(|error| Error::open(at(path), error))?;
     let archive = ZipArchive::new(file).map_err(|error| Error::archive(at(path), error))?;
@@ -23,6 +17,12 @@ pub(super) fn open(path: &Path) -> Result<Frame, Error> {
         archive,
         index: 0,
     })
+}
+
+pub(super) struct Frame {
+    path: PathBuf,
+    archive: ZipArchive<File>,
+    index: usize,
 }
 
 impl Frame {

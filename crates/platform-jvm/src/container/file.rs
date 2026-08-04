@@ -4,16 +4,16 @@ use super::{Error, Step, at};
 use crate::class_file::{self, ParseOutcome};
 use crate::model::JvmSource;
 
-pub(super) struct Frame {
-    path: PathBuf,
-    taken: bool,
-}
-
 pub(super) fn open(path: &Path) -> Frame {
     Frame {
         path: path.to_path_buf(),
         taken: false,
     }
+}
+
+pub(super) struct Frame {
+    path: PathBuf,
+    taken: bool,
 }
 
 impl Frame {
