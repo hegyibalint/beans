@@ -11,4 +11,7 @@ name = "beans_platform_jvm"
 [dependencies]
 cafebabe = { version = "0.9.0", default-features = false }
 core = { path = "../core" }
+# Expands the entries of a runtime image built with `jlink --compress`. The
+# backend is the one `zip` already selects, so this adds no crate to the tree.
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 zip = { version = "8.1.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }

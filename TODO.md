@@ -25,6 +25,12 @@ Behavior that contradicts a specification we have read.
   unconditionally and says so in a comment; a wrong `false` would squiggle
   correct code, so the choice is deliberate, but nothing tests either half.
 
+- **A dynamic constant as a bootstrap argument loses the class.** JVMS 26 §§4.4
+  and 4.7.23 permit one; `cafebabe` 0.9 refuses the class outright, which
+  `class_file/tests/compatibility.rs` pins. Reading a whole runtime image put a
+  number on it: one class of JDK 26's 27,923, `jdk.jpackage`'s
+  `PackageBuilder`. Ours to fix only by patching or replacing `cafebabe`.
+
 ## Missing
 
 Not built yet. Nothing is wrong; there is just no code.
@@ -58,7 +64,22 @@ Not built yet. Nothing is wrong; there is just no code.
 
 - **JPMS.** A JDK goes into the lake as one image, so the whole runtime is
   visible to everything. See the `crates/engine/src/workspace.rs`; splitting it
-  needs the lake to hold modules.
+  needs the lake to hold modules. The module name is no longer the obstacle:
+  `container/jimage.rs` reads it off every entry and glues it onto the front of
+  the `JvmSource::JimageEntry` path, so it is already there to be lifted into a
+  field of its own once something can hold it.
+
+- **A `jmod` is not a container.** `JvmSource::JmodEntry` exists and nothing
+  builds one; `container.rs` dispatches `.jar` and nothing else through
+  `archive.rs`. JDK 25 and 26 ship no `jmods/` at all (JEP 493), so this only
+  matters for an older JDK or a module path that names one directly.
+
+- **`compact-cp` entries are named rather than read.** `jlink --compress=1`
+  strips a class file's UTF-8 constant pool into the image string table and
+  rewrites its descriptors, so undoing it means writing a constant pool back —
+  before a class-file parser ever sees the bytes. `container/jimage.rs` reports
+  the decompressor by name instead. `zip` is implemented; shipped JDKs use
+  neither.
 
 ## Undecided
 
@@ -95,6 +116,13 @@ Cannot be built until we choose.
 - **How are specification editions configured?** We read JLS 26 and hardcode it.
   A project on an older language level is a real case and we have no place to
   put the setting.
+
+- **Is a runtime image read eagerly?** It is today: 27,000 classes and 116 MiB
+  parsed and projected before a line of user code is, which takes about four
+  seconds of the debug suite. The index is 1% of the file and already knows
+  every name, and the perfect hash `container/jimage/index.rs` reads past
+  exists to answer one of them at a time. What blocks the change is storage:
+  nothing says what `PlatformJvm` holds for a name it has not projected yet.
 
 - **Which architectural properties deserve their own tests?** Revision
   snapshots, replacement, deletion and batching are exercised only through

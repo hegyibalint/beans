@@ -8,6 +8,7 @@ use crate::model::{JvmClass, JvmSource};
 mod archive;
 mod directory;
 mod file;
+mod jimage;
 
 pub(crate) type ProcessedClasses = Box<dyn Iterator<Item = Result<(JvmSource, JvmClass), Error>>>;
 
@@ -17,7 +18,8 @@ pub(crate) fn process(path: &Path) -> ProcessedClasses {
 
 struct Classes {
     stack: Vec<Frame>,
-    /// Reused by every frame that has to hold an entry in memory to parse it.
+    /// Reused buffer to read entries.
+    /// Instead of allocating tens of thousand times, this buffer will be reused contiously
     buffer: Vec<u8>,
     /// A classpath element we could not open at all, reported once.
     failure: Option<Error>,
@@ -68,6 +70,7 @@ enum Frame {
     File(file::Frame),
     Directory(directory::Frame),
     Archive(archive::Frame),
+    Jimage(jimage::Frame),
 }
 
 impl Frame {
@@ -76,6 +79,11 @@ impl Frame {
             Some("class") => Ok(Frame::File(file::open(path))),
             Some("jar") => archive::open(path).map(Frame::Archive),
             _ if path.is_dir() => directory::open(path).map(Frame::Directory),
+            // A runtime image is `<jdk>/lib/modules`, so it is the one
+            // container an extension cannot reach and the only one that has to
+            // be opened to be recognised. Asked last, so nothing else pays for
+            // it.
+            _ if jimage::is_image(path) => jimage::open(path).map(Frame::Jimage),
             _ => Err(Error::unsupported(path)),
         }
     }
@@ -85,6 +93,7 @@ impl Frame {
             Frame::File(frame) => frame.step(buffer),
             Frame::Directory(frame) => frame.step(buffer),
             Frame::Archive(frame) => frame.step(buffer),
+            Frame::Jimage(frame) => frame.step(buffer),
         }
     }
 }
@@ -146,6 +155,7 @@ enum ErrorKind {
     Open(std::io::Error),
     Read(std::io::Error),
     Archive(zip::result::ZipError),
+    Jimage(jimage::FormatError),
     Parse(ParseError),
 }
 
@@ -178,6 +188,13 @@ impl Error {
         }
     }
 
+    fn jimage(at: impl Into<String>, error: jimage::FormatError) -> Error {
+        Error {
+            at: at.into(),
+            kind: ErrorKind::Jimage(error),
+        }
+    }
+
     fn parse(at: impl Into<String>, error: ParseError) -> Error {
         Error {
             at: at.into(),
@@ -194,6 +211,7 @@ impl fmt::Display for Error {
             ErrorKind::Open(error) => write!(formatter, "could not open {at}: {error}"),
             ErrorKind::Read(error) => write!(formatter, "could not read {at}: {error}"),
             ErrorKind::Archive(error) => write!(formatter, "could not read {at}: {error}"),
+            ErrorKind::Jimage(error) => write!(formatter, "could not read {at}: {error}"),
             ErrorKind::Parse(error) => write!(formatter, "could not parse {at}: {error}"),
         }
     }
@@ -205,6 +223,7 @@ impl std::error::Error for Error {
             ErrorKind::Unsupported => None,
             ErrorKind::Open(error) | ErrorKind::Read(error) => Some(error),
             ErrorKind::Archive(error) => Some(error),
+            ErrorKind::Jimage(error) => Some(error),
             ErrorKind::Parse(error) => Some(error),
         }
     }
