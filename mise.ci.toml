@@ -1,0 +1,14 @@
+# The full writer sweep: the latest release and every supported LTS, so an
+# image written by any jlink a project might be using stays readable.
+#
+#   MISE_ENV=ci mise install
+#
+# `[tools]` replaces rather than merges, so this repeats what `mise.toml` pins.
+[tools]
+java = [
+    "temurin-26.0.2",
+    "temurin-25.0.4",
+    "temurin-21.0.12",
+    "temurin-17.0.20",
+    "temurin-11.0.32",
+]

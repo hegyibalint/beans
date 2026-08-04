@@ -1,0 +1,12 @@
+# JDKs the test suite reads.
+#
+# Beans reads runtime images (`<jdk>/lib/modules`) rather than running Java, so
+# these are test inputs, not a toolchain. The first entry is the one on PATH.
+#
+# Enough to write every kind of fixture: 26 is the current writer and supplies
+# both compression modes, 21 writes big-endian, which `jlink` refuses from 24
+# on. The full writer sweep is in `mise.ci.toml`.
+#
+# Pinned to the patch version and bumped deliberately.
+[tools]
+java = ["temurin-26.0.2", "temurin-21.0.12"]
