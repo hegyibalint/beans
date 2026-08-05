@@ -1,6 +1,7 @@
 mod ambiguity;
 mod imports;
 mod lexical;
+mod on_demand;
 mod same_package;
 mod staging;
 

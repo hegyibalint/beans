@@ -27,13 +27,15 @@ fn project() -> PathBuf {
             beans_test_support::jdk::home()
         ),
     );
-    // `java.util.List` and not `String`, because reaching a type without
-    // naming it needs the implicit `java.lang` import, which is stage 4 of
-    // `resolve_type_name` and unbuilt; see the `TODO.md`.
+    // `String` names nothing but itself, so the only thing that can reach it is
+    // §7.3's implicit `java.lang` import against the image the descriptor named.
+    // That makes this the one place where a real runtime image and stage 4 of
+    // `resolve_type_name` meet; the rule itself is settled in the
+    // `resolution/tests/on_demand.rs`.
     for unit in ["with-jdk", "without-jdk"] {
         write(
             &root.join(unit).join("p").join("Uses.java"),
-            "package p;\nimport java.util.List;\nclass Uses { List field; }\n",
+            "package p;\nclass Uses { String field; }\n",
         );
     }
 
@@ -46,7 +48,7 @@ fn write(path: &Path, contents: &str) {
     std::fs::write(path, contents).expect("the temporary project should be writable");
 }
 
-fn list_is_outside_scope(beans: &Beans, root: &Path, unit: &str) -> bool {
+fn string_is_outside_scope(beans: &Beans, root: &Path, unit: &str) -> bool {
     let source = JvmSource::SourceFile {
         path: root.join(unit).join("p").join("Uses.java"),
     };
@@ -57,7 +59,7 @@ fn list_is_outside_scope(beans: &Beans, root: &Path, unit: &str) -> bool {
         .iter()
         .any(|diagnostic| {
             diagnostic.code == "type-outside-scope"
-                && diagnostic.message == "type List is outside the current compilation scope"
+                && diagnostic.message == "type String is outside the current compilation scope"
         })
 }
 
@@ -71,11 +73,11 @@ fn only_the_unit_that_names_a_jdk_can_see_the_runtime() {
         2
     );
 
-    assert!(!list_is_outside_scope(&beans, &root, "with-jdk"));
+    assert!(!string_is_outside_scope(&beans, &root, "with-jdk"));
     // The other unit proves the runtime was read rather than assumed: this
     // diagnostic only fires for a type Beans has indexed, so it says
-    // `java.util.List` is in the lake and out of this unit's reach.
-    assert!(list_is_outside_scope(&beans, &root, "without-jdk"));
+    // `java.lang.String` is in the lake and out of this unit's reach.
+    assert!(string_is_outside_scope(&beans, &root, "without-jdk"));
 
     let _ = std::fs::remove_dir_all(&root);
 }

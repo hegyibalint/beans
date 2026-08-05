@@ -115,6 +115,50 @@ fn a_single_type_import_shadows_a_sibling_of_the_same_package() {
     assert_eq!(resolve(&java, &jvm, &asker, "X").as_deref(), Some("p.X"));
 }
 
+/// Stage 2 over stage 4. §6.4.1: a single-type import shadows "any type named n
+/// imported by a type-import-on-demand declaration in c", and §7.3 makes the
+/// implicit `java.lang` one of those.
+#[test]
+fn a_single_type_import_shadows_the_implicit_java_lang_import() {
+    let (java, jvm, asker) = asking(&[
+        ("java/lang/X.java", "package java.lang; public class X {}"),
+        ("q/X.java", "package q; public class X {}"),
+        ("p/Test.java", "package p; import q.X; class Test {}"),
+    ]);
+    assert_eq!(resolve(&java, &jvm, &asker, "X").as_deref(), Some("q.X"));
+
+    let (java, jvm, asker) = asking(&[
+        ("java/lang/X.java", "package java.lang; public class X {}"),
+        ("p/Test.java", "package p; class Test {}"),
+    ]);
+    assert_eq!(
+        resolve(&java, &jvm, &asker, "X").as_deref(),
+        Some("java.lang.X")
+    );
+}
+
+/// Stage 3 over stage 4. §7.5.2's Example 7.5.2-1 says an on-demand import
+/// "might be shadowed [...] by a class or interface named `Vector` and declared
+/// in the package to which the compilation unit belongs".
+#[test]
+fn a_type_of_the_same_package_shadows_the_implicit_java_lang_import() {
+    let (java, jvm, asker) = asking(&[
+        ("java/lang/X.java", "package java.lang; public class X {}"),
+        ("p/X.java", "package p; class X {}"),
+        ("p/Test.java", "package p; class Test {}"),
+    ]);
+    assert_eq!(resolve(&java, &jvm, &asker, "X").as_deref(), Some("p.X"));
+
+    let (java, jvm, asker) = asking(&[
+        ("java/lang/X.java", "package java.lang; public class X {}"),
+        ("p/Test.java", "package p; class Test {}"),
+    ]);
+    assert_eq!(
+        resolve(&java, &jvm, &asker, "X").as_deref(),
+        Some("java.lang.X")
+    );
+}
+
 #[test]
 fn an_inaccessible_type_is_returned_with_an_unresolved_name() {
     let (java, jvm, asker) = asking(&[

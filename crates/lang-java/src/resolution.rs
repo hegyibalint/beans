@@ -284,7 +284,10 @@ pub(crate) fn resolve_type_candidates(
         .or_stage(|| candidates_from_exact_imports(name, source, file, query))
         // Stage 3. Top-level types of the current package, in scope by §6.3.
         .or_stage(|| candidates_from_same_package(name, &from, query))
-    // Stages 4–6 (on-demand, module, suggestions) are not implemented. Their
+        // Stage 4. On-demand imports, of which §7.3's implicit `java.lang` one
+        // is the only one we read; §7.5.2's written-out ones join it here.
+        .or_stage(|| candidates_from_java_lang(name, &from, query))
+    // Stages 5–6 (module imports, suggestions) are not implemented. Their
     // absence means no valid candidate, never a guess.
 }
 
@@ -597,6 +600,29 @@ fn resolve_from_same_package(
         query,
     )
     .into_resolution()
+}
+
+/// §7.3: every compilation unit is treated as if `import java.lang.*;` stood
+/// after its package declaration, so the package is fixed and the lookup is
+/// stage 3's with another prefix glued on. Nothing answers until a JDK is in the
+/// lake, and a runtime image out of this unit's scope answers as evidence only,
+/// which is what a project naming no JDK is told about `String`.
+///
+/// §7.3 imports the `public` types of `java.lang`, and only a Java source can
+/// say whether it is one: a `JvmClass` carries no access flags, so
+/// `java.lang.Shutdown` reads here exactly as `java.lang.String` does. The same
+/// hole lets a single-type import name a package-private class of a jar, so this
+/// stage inherits it rather than digging it; the `TODO.md` carries it.
+fn candidates_from_java_lang(
+    name: &JavaIdentifier,
+    from: &JavaSite,
+    query: &JavaQuery,
+) -> ResolutionCandidates {
+    classify_types_named(
+        query,
+        &JvmQualifiedName::in_package("java.lang", &name.text),
+        from,
+    )
 }
 
 fn classify_types_named(

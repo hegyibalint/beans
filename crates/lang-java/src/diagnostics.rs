@@ -149,7 +149,8 @@ fn owner_name(file: &JavaFile, scope: crate::model::JavaLexicalScopeId) -> Strin
 
 /// Flags bare name references that resolve to nothing. Deliberately shallow:
 /// member lookups on a receiver and type names are never flagged — inheritance
-/// and `java.lang` are not modeled yet, so those checks would guess.
+/// is not modeled, and a type name reaches `java.lang` only once a project has
+/// named a JDK, so those checks would guess.
 pub fn unresolved_name_diagnostics(model: &JavaFile) -> Vec<Diagnostics> {
     // Static imports bring names we cannot model yet; rather than flagging
     // them, stay silent for the whole file.
@@ -179,7 +180,8 @@ pub fn unresolved_name_diagnostics(model: &JavaFile) -> Vec<Diagnostics> {
         }
 
         // Receivers of field accesses and calls may be type names
-        // (`Bar.asd`); `java.lang` is not modeled, so never flag them.
+        // (`System.out`), which reach `java.lang` only once a project has named
+        // a JDK, so never flag them.
         let mut receivers = HashSet::new();
         for node in &body.nodes {
             let JavaBodyNodeKind::Expression(expression) = &node.kind else {

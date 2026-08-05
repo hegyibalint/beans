@@ -25,6 +25,16 @@ Behavior that contradicts a specification we have read.
   unconditionally and says so in a comment; a wrong `false` would squiggle
   correct code, so the choice is deliberate, but nothing tests either half.
 
+- **A compiled class has no access flags.** JLS §6.6.1 gates every type by its
+  access modifier, and §7.3 imports only the `public` types of `java.lang`, but a
+  `JvmClass` carries nothing to check: `class_file.rs` reads `access_flags` for
+  the kind and drops the rest. So `type_target_is_accessible` in
+  `crates/lang-java/src/resolution.rs` answers `true` for everything that is not
+  a Java source, and `java.lang.Shutdown` resolves by simple name exactly as
+  `java.lang.String` does. Stage 4 made it reachable without an import; a
+  single-type import of a package-private class in a jar has always resolved.
+  Nothing tests either half.
+
 - **A dynamic constant as a bootstrap argument loses the class.** JVMS 26 §§4.4
   and 4.7.23 permit one; `cafebabe` 0.9 refuses the class outright, which
   `class_file/tests/compatibility.rs` pins. Reading a whole runtime image put a
@@ -35,10 +45,13 @@ Behavior that contradicts a specification we have read.
 
 Not built yet. Nothing is wrong; there is just no code.
 
-- **On-demand imports**, stage 4 of `resolve_type_name`. Type-import-on-demand
-  (§7.5.2), static-import-on-demand (§7.5.4), and the implicit `java.lang.*`
-  (§7.3). The stage is written out in the `resolution.rs` as a comment and
-  returns nothing.
+- **The on-demand imports a user writes**, the rest of stage 4 of
+  `resolve_type_name`. The implicit `java.lang.*` (§7.3) is built and is the
+  whole of the stage; type-import-on-demand (§7.5.2) and static-import-on-demand
+  (§7.5.4) reach the model as a `JavaImportKind` and are read by nobody. Both
+  name a package *or* a type (§6.5.4), so both need the `resolve_canonical_name`
+  walk to report which of the two its name ended in, and it discards the package
+  half today.
 
 - **Static imports** (§§7.5.3 and 7.5.4), single and on-demand alike. The
   `resolve_exact_imports` handles the single-type case only.
@@ -178,6 +191,6 @@ these become possible, which is why they are written down.
   in 1399 lines and 4 in 737. Both will grow.
 
 - **Acceptance is thin on purpose now, and we should watch it.** The Java type
-  resolution capability is four tests, one per rule that reaches a user. If a
-  bug ever gets out that all four missed, that is the signal one of them was not
-  enough, and the answer is a fifth test rather than a return to the old tree.
+  resolution capability is six tests, one per rule that reaches a user. If a bug
+  ever gets out that all six missed, that is the signal one of them was not
+  enough, and the answer is one more test rather than a return to the old tree.

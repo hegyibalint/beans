@@ -35,6 +35,25 @@ fn same_package_top_level_type_is_in_scope() {
         .run();
 }
 
+/// Stage 4, §7.3. A JDK is where `java.lang` comes from, and a class file has no
+/// declaration to navigate to, so the package is declared here instead; the
+/// runtime image reaching a user is the `engine/jdk.rs`.
+#[test]
+fn java_lang_is_in_scope_without_being_imported() {
+    fixture()
+        .file(
+            "java/lang/Legend.java",
+            "package java.lang; public class Legend {}",
+        )
+        .file(
+            "p/Test.java",
+            "package p; class Test { <cur:target>Legend f; }",
+        )
+        .analyze("p/Test.java")
+        .resolves_to("target", "java.lang.Legend")
+        .run();
+}
+
 /// Stage 1 over stage 2, §6.4.1. The order itself is settled in the
 /// `resolution/tests/staging.rs`, where each case also removes the winner.
 #[test]
