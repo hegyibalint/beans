@@ -1,6 +1,6 @@
-use beans_platform_jvm::model::{JvmClass, JvmKind, JvmQualifiedName};
+use beans_platform_jvm::model::{JvmAccessLevel, JvmClass, JvmKind, JvmQualifiedName};
 
-use crate::model::{JavaDeclaration, JavaFile, JavaTypeKind};
+use crate::model::{JavaAccessLevel, JavaDeclaration, JavaFile, JavaTypeKind};
 
 /// Declarations only for now: the class identities fall out of the file
 /// alone, while members and supertypes need resolution against the lake.
@@ -28,6 +28,12 @@ pub fn project_to_jvm(file: &JavaFile) -> Vec<JvmClass> {
             Some(JvmClass {
                 fqn: JvmQualifiedName::new(binary_name),
                 kind,
+                access: declaration.access.map(|access| match access.level {
+                    JavaAccessLevel::Public => JvmAccessLevel::Public,
+                    JavaAccessLevel::Protected => JvmAccessLevel::Protected,
+                    JavaAccessLevel::Package => JvmAccessLevel::Package,
+                    JavaAccessLevel::Private => JvmAccessLevel::Private,
+                }),
                 enclosing: None,
                 superclass: None,
                 interfaces: Vec::new(),
@@ -51,6 +57,32 @@ mod tests {
         let classes = project_to_jvm(&model);
         let fqns: Vec<&str> = classes.iter().map(|c| c.fqn.as_str()).collect();
         assert_eq!(fqns, ["org.beans.app.Foo", "org.beans.app.Helper"]);
+    }
+
+    /// What the lake is told about access when the declaration is one we parsed,
+    /// which is the other half of what `class_file.rs` decodes for a compiled
+    /// one. §7.6 gives a top level type `public` or package access and nothing
+    /// else, and projection walks top level declarations only, so those are the
+    /// two a legal program can reach here; the other arms wait for nested types
+    /// to be projected at all.
+    #[test]
+    fn a_top_level_type_projects_the_access_level_it_was_declared_with() {
+        let mut parser = JavaParser::new();
+        let model = parser.parse("package p;\n\npublic class Open {}\nclass Closed {}\n");
+
+        let classes = project_to_jvm(&model);
+        let projected: Vec<(&str, Option<JvmAccessLevel>)> = classes
+            .iter()
+            .map(|class| (class.fqn.as_str(), class.access))
+            .collect();
+
+        assert_eq!(
+            projected,
+            [
+                ("p.Open", Some(JvmAccessLevel::Public)),
+                ("p.Closed", Some(JvmAccessLevel::Package)),
+            ]
+        );
     }
 
     #[test]

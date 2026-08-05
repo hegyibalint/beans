@@ -1,9 +1,14 @@
-use crate::model::{JvmKind, JvmPrimitive, JvmQualifiedName, JvmReturnType, JvmType};
+use crate::model::{
+    JvmAccessLevel, JvmKind, JvmPrimitive, JvmQualifiedName, JvmReturnType, JvmType,
+};
 
 use super::parse_type;
 
 const FEATURE: &[u8] = include_bytes!("fixtures/classes/beans/fixture/Feature.class");
 const MEMBER: &[u8] = include_bytes!("fixtures/classes/beans/fixture/Feature$Member.class");
+const GUARDED: &[u8] = include_bytes!("fixtures/classes/beans/fixture/Feature$Guarded.class");
+const SHARED: &[u8] = include_bytes!("fixtures/classes/beans/fixture/Feature$Shared.class");
+const HIDDEN: &[u8] = include_bytes!("fixtures/classes/beans/fixture/Feature$Hidden.class");
 const LOCAL: &[u8] = include_bytes!("fixtures/classes/beans/fixture/Feature$1Local.class");
 const POINT: &[u8] = include_bytes!("fixtures/classes/beans/fixture/Point.class");
 const MARKER: &[u8] = include_bytes!("fixtures/classes/beans/fixture/Marker.class");
@@ -59,6 +64,52 @@ fn class_flags_and_the_record_attribute_determine_type_kind() {
     ] {
         assert_eq!(parse_type(bytes).kind, expected);
     }
+}
+
+/// A nested class is the case the header cannot answer: JVMS Table 4.1-B has no
+/// `ACC_PRIVATE` and no `ACC_PROTECTED`, so javac widens `protected` to
+/// `ACC_PUBLIC` and writes nothing at all for `private`. Reading §4.7.6's entry
+/// instead is what keeps `Guarded` and `Hidden` apart from `Member` and
+/// `Shared`, and this test is the only thing that says so.
+#[test]
+fn a_nested_class_keeps_the_access_level_of_its_source() {
+    for (bytes, expected) in [
+        (FEATURE, Some(JvmAccessLevel::Public)),
+        (CONTRACT, Some(JvmAccessLevel::Package)),
+        (MEMBER, Some(JvmAccessLevel::Public)),
+        (GUARDED, Some(JvmAccessLevel::Protected)),
+        (SHARED, Some(JvmAccessLevel::Package)),
+        (HIDDEN, Some(JvmAccessLevel::Private)),
+        // JLS §8.1.1: access control does not reach a local class.
+        (LOCAL, None),
+    ] {
+        assert_eq!(parse_type(bytes).access, expected);
+    }
+}
+
+/// JVMS §4.5 and §4.6 spell all three bits, so a member needs none of the
+/// recovery above; none of them set is package access.
+#[test]
+fn fields_and_methods_carry_their_own_access_level() {
+    let class = parse_type(FEATURE);
+    let field = |name: &str| {
+        let field = class.fields.iter().find(|field| field.name == name);
+        field.expect("the fixture declares it").access
+    };
+    let method = |name: &str| {
+        let method = class.methods.iter().find(|method| method.name == name);
+        method.expect("the fixture declares it").access
+    };
+
+    assert_eq!(field("values"), JvmAccessLevel::Public);
+    assert_eq!(field("guarded"), JvmAccessLevel::Protected);
+    assert_eq!(field("shared"), JvmAccessLevel::Package);
+    assert_eq!(field("hidden"), JvmAccessLevel::Private);
+
+    assert_eq!(method("combine"), JvmAccessLevel::Public);
+    assert_eq!(method("guard"), JvmAccessLevel::Protected);
+    assert_eq!(method("share"), JvmAccessLevel::Package);
+    assert_eq!(method("hide"), JvmAccessLevel::Private);
 }
 
 #[test]

@@ -48,5 +48,7 @@ fn a_module_descriptor_contributes_nothing() {
         source,
         JvmSource::ClassFile { path } if path.ends_with("module-info.class")
     )));
-    assert_eq!(sources.len(), 7);
+    // Every other class file under the fixture, so that dropping the descriptor
+    // cannot be confused with dropping more than it.
+    assert_eq!(sources.len(), 10);
 }

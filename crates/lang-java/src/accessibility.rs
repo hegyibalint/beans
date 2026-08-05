@@ -1,4 +1,4 @@
-use beans_platform_jvm::model::JvmSource;
+use beans_platform_jvm::model::{JvmAccessLevel, JvmSource};
 
 use crate::model::{
     JavaAccess, JavaAccessLevel, JavaDeclaration, JavaDeclarationId, JavaFile, JavaLexicalScopeId,
@@ -29,6 +29,28 @@ pub fn is_accessible(access: Option<JavaAccess>, declared: &JavaSite, from: &Jav
         JavaAccessLevel::Public | JavaAccessLevel::Protected => true,
         JavaAccessLevel::Package => package_of(declared.file) == package_of(from.file),
         JavaAccessLevel::Private => reaches_the_same_top_level_type(declared, from),
+    }
+}
+
+/// §6.6.1 asked of a declaration we hold only a class file of. One end of the
+/// relation is unchanged; the other has no `JavaSite` to stand on, so the level
+/// and the package that declared it are everything we know about it.
+///
+/// `None` is every case with no answer rather than a permissive one: a local or
+/// anonymous class (§8.1.1), and a class the lake no longer holds. `Protected`
+/// answers `true` for the reason above.
+pub fn is_compiled_type_accessible(
+    access: Option<JvmAccessLevel>,
+    declared_package: &str,
+    from: &JavaSite,
+) -> bool {
+    match access {
+        None | Some(JvmAccessLevel::Public) | Some(JvmAccessLevel::Protected) => true,
+        Some(JvmAccessLevel::Package) => declared_package == package_of(from.file),
+        // §6.6.1 permits private access only from within the body of the top
+        // level class enclosing the declaration, and no Java source is ever
+        // inside a class file.
+        Some(JvmAccessLevel::Private) => false,
     }
 }
 

@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use beans_core::storage::Revision;
 use beans_platform_jvm::PlatformJvm;
-use beans_platform_jvm::model::{JvmClass, JvmKind, JvmQualifiedName, JvmSource};
+use beans_platform_jvm::model::{JvmAccessLevel, JvmClass, JvmKind, JvmQualifiedName, JvmSource};
 use beans_platform_jvm::query::{JvmContainer, JvmScope, JvmScopeMembership};
 
 const APP: &str = "app/src";
@@ -27,6 +27,7 @@ fn class(fqn: &str) -> JvmClass {
     JvmClass {
         fqn: JvmQualifiedName::new(fqn),
         kind: JvmKind::Class,
+        access: Some(JvmAccessLevel::Public),
         enclosing: None,
         superclass: None,
         interfaces: Vec::new(),

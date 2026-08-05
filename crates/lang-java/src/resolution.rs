@@ -6,7 +6,7 @@ use beans_platform_jvm::{
 };
 
 use crate::{
-    accessibility::{JavaSite, is_accessible},
+    accessibility::{JavaSite, is_accessible, is_compiled_type_accessible},
     model::{
         JavaBodyId, JavaBodyNodeId, JavaBodyNodeKind, JavaDeclaration, JavaDeclarationId,
         JavaEntityId, JavaExpression, JavaFile, JavaIdentifier, JavaImport, JavaImportKind,
@@ -608,11 +608,11 @@ fn resolve_from_same_package(
 /// lake, and a runtime image out of this unit's scope answers as evidence only,
 /// which is what a project naming no JDK is told about `String`.
 ///
-/// §7.3 imports the `public` types of `java.lang`, and only a Java source can
-/// say whether it is one: a `JvmClass` carries no access flags, so
-/// `java.lang.Shutdown` reads here exactly as `java.lang.String` does. The same
-/// hole lets a single-type import name a package-private class of a jar, so this
-/// stage inherits it rather than digging it; the `TODO.md` carries it.
+/// §7.3 imports the `public` types of `java.lang` and a runtime image is full of
+/// the others, so the accessibility check inside `classify_types_named` is what
+/// keeps `java.lang.Shutdown` off the path `java.lang.String` takes. The two
+/// disagree on why: §7.3 never imports the name, while we find the class and
+/// refuse it under §6.6.1, which leaves it behind as evidence.
 fn candidates_from_java_lang(
     name: &JavaIdentifier,
     from: &JavaSite,
@@ -660,26 +660,31 @@ fn classify_type_target(
 }
 
 fn type_target_is_accessible(target: &JavaTypeTarget, query: &JavaQuery, from: &JavaSite) -> bool {
-    let JavaTypeTarget::Java {
-        source,
-        declaration,
-    } = target
-    else {
-        return true;
-    };
-    let Some(file) = query.model_of(source) else {
-        return true;
-    };
-    let JavaDeclaration::Type(declaration) = &file.declarations[declaration.0] else {
-        return true;
-    };
-    let declared = JavaSite {
-        source,
-        file,
-        scope: declaration.declaring_scope,
-    };
+    match target {
+        JavaTypeTarget::Java {
+            source,
+            declaration,
+        } => {
+            let Some(file) = query.model_of(source) else {
+                return true;
+            };
+            let JavaDeclaration::Type(declaration) = &file.declarations[declaration.0] else {
+                return true;
+            };
+            let declared = JavaSite {
+                source,
+                file,
+                scope: declaration.declaring_scope,
+            };
 
-    is_accessible(declaration.access, &declared, from)
+            is_accessible(declaration.access, &declared, from)
+        }
+        // A binary name carries its own package (§13.1), so the declaring end of
+        // §6.6.1 needs nothing the target does not already say but the level.
+        JavaTypeTarget::Jvm { source, fqn } => {
+            is_compiled_type_accessible(query.class_access(source, fqn), fqn.package(), from)
+        }
+    }
 }
 
 fn classify_candidates(

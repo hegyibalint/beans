@@ -1,4 +1,5 @@
 mod ambiguity;
+mod compiled;
 mod imports;
 mod lexical;
 mod on_demand;
@@ -14,6 +15,7 @@ use beans_core::{
 };
 use beans_platform_jvm::{
     PlatformJvm,
+    model::{JvmAccessLevel, JvmClass, JvmKind},
     query::{JvmContainer, JvmQuery, JvmScope, JvmScopeQuery},
 };
 
@@ -112,5 +114,33 @@ fn process(
 ) -> JvmSource {
     let source = source(path);
     java.process(source.clone(), revision, jvm, contents);
+    source
+}
+
+/// A class the lake holds with no Java model behind it, which is what every
+/// container but a source file contributes. Resolution can only ever answer with
+/// a `JavaTypeTarget::Jvm` for one, so what it knows about the declaration is
+/// the binary name and the access level.
+fn compiled_class(
+    jvm: &mut PlatformJvm,
+    revision: Revision,
+    source: JvmSource,
+    fqn: &str,
+    access: JvmAccessLevel,
+) -> JvmSource {
+    jvm.register(
+        revision,
+        source.clone(),
+        vec![JvmClass {
+            fqn: JvmQualifiedName::new(fqn),
+            kind: JvmKind::Class,
+            access: Some(access),
+            enclosing: None,
+            superclass: None,
+            interfaces: Vec::new(),
+            fields: Vec::new(),
+            methods: Vec::new(),
+        }],
+    );
     source
 }

@@ -36,11 +36,27 @@ pub enum JvmSource {
 pub struct JvmClass {
     pub fqn: JvmQualifiedName,
     pub kind: JvmKind,
+    /// `None` where JLS §8.1.1 says access control does not apply: a local or
+    /// anonymous class.
+    pub access: Option<JvmAccessLevel>,
     pub enclosing: Option<JvmQualifiedName>,
     pub superclass: Option<JvmQualifiedName>,
     pub interfaces: Vec<JvmQualifiedName>,
     pub fields: Vec<JvmField>,
     pub methods: Vec<JvmMethod>,
+}
+
+/// The one thing JLS §6.6.1 asks of a declaration, decoded from wherever the
+/// class file happens to keep it: JVMS §4.1 for a top-level class, §4.7.6 for a
+/// nested one, §4.5 and §4.6 for a field and a method. None of the three bits
+/// set means package access, which is why this is four values and not three
+/// booleans a caller has to combine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum JvmAccessLevel {
+    Public,
+    Protected,
+    Package,
+    Private,
 }
 
 /// Projection fills this from a source declaration, so a record costs nothing
@@ -58,12 +74,14 @@ pub enum JvmKind {
 #[derive(Debug, Clone)]
 pub struct JvmField {
     pub name: String,
+    pub access: JvmAccessLevel,
     pub jvm_type: JvmType,
 }
 
 #[derive(Debug, Clone)]
 pub struct JvmMethod {
     pub name: String,
+    pub access: JvmAccessLevel,
     pub params: Vec<JvmType>,
     pub return_type: JvmReturnType,
 }

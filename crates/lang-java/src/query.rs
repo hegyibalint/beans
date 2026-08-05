@@ -1,4 +1,4 @@
-use beans_platform_jvm::model::{JvmClass, JvmQualifiedName, JvmSource};
+use beans_platform_jvm::model::{JvmAccessLevel, JvmClass, JvmQualifiedName, JvmSource};
 use beans_platform_jvm::query::{JvmQuery, JvmScopeMembership};
 
 use crate::LanguageJava;
@@ -34,6 +34,26 @@ impl<'a> JavaQuery<'a> {
 
     pub fn scope_membership(&self, target: &JavaTypeTarget) -> JvmScopeMembership {
         self.jvm.scope_membership(target.source())
+    }
+
+    /// What a compiled type's declaration said about access. A
+    /// `JavaTypeTarget::Jvm` names a binary name and where it came from, never
+    /// the class itself, so §6.6.1 has to come back here for the level.
+    ///
+    /// `None` is every answer we cannot give: a local or anonymous class, which
+    /// §8.1.1 leaves outside access control, and a name this source no longer
+    /// declares. Both make accessibility a question with no evidence, which
+    /// resolution reads as permission.
+    pub fn class_access(
+        &self,
+        source: &JvmSource,
+        fqn: &JvmQualifiedName,
+    ) -> Option<JvmAccessLevel> {
+        self.jvm
+            .classes_named(fqn)
+            .into_iter()
+            .find(|(class_source, _)| *class_source == source)
+            .and_then(|(_, class)| class.access)
     }
 
     /// A file this vertical parsed gives a declaration to navigate to.
@@ -72,7 +92,7 @@ mod tests {
     use beans_core::storage::Revision;
     use beans_platform_jvm::{
         PlatformJvm,
-        model::{JvmKind, JvmSource},
+        model::{JvmAccessLevel, JvmKind, JvmSource},
         query::{JvmContainer, JvmScope},
     };
 
@@ -88,6 +108,7 @@ mod tests {
         let class = JvmClass {
             fqn: JvmQualifiedName::new("p.X"),
             kind: JvmKind::Class,
+            access: Some(JvmAccessLevel::Public),
             enclosing: None,
             superclass: None,
             interfaces: Vec::new(),

@@ -1,11 +1,12 @@
 use std::fmt;
 
-use cafebabe::attributes::{AttributeData, AttributeInfo};
+use cafebabe::attributes::{AttributeData, AttributeInfo, InnerClassEntry};
 use cafebabe::descriptors::{ClassName, FieldDescriptor, FieldType, ReturnDescriptor};
-use cafebabe::{ClassAccessFlags, ParseOptions};
+use cafebabe::{AccessFlags, ClassAccessFlags, ParseOptions};
 
 use crate::model::{
-    JvmClass, JvmField, JvmKind, JvmMethod, JvmPrimitive, JvmQualifiedName, JvmReturnType, JvmType,
+    JvmAccessLevel, JvmClass, JvmField, JvmKind, JvmMethod, JvmPrimitive, JvmQualifiedName,
+    JvmReturnType, JvmType,
 };
 
 #[derive(Debug)]
@@ -40,6 +41,7 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<ParseOutcome, ParseError> {
 
     let fqn = qualified_name(&class.this_class);
     let enclosing = enclosing_class(&class.this_class, &class.attributes);
+    let access = class_access(&class.this_class, class.access_flags, &class.attributes);
     let kind = class_kind(class.access_flags, &class.attributes);
     let superclass = class.super_class.as_ref().map(|name| qualified_name(name));
     let interfaces = class
@@ -52,6 +54,7 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<ParseOutcome, ParseError> {
         .iter()
         .map(|field| JvmField {
             name: field.name.to_string(),
+            access: access_level(field.access_flags.bits()),
             jvm_type: jvm_type(&field.descriptor),
         })
         .collect();
@@ -60,6 +63,7 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<ParseOutcome, ParseError> {
         .iter()
         .map(|method| JvmMethod {
             name: method.name.to_string(),
+            access: access_level(method.access_flags.bits()),
             params: method.descriptor.parameters.iter().map(jvm_type).collect(),
             return_type: match &method.descriptor.return_type {
                 ReturnDescriptor::Return(descriptor) => JvmReturnType::Value(jvm_type(descriptor)),
@@ -71,6 +75,7 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<ParseOutcome, ParseError> {
     Ok(ParseOutcome::Class(JvmClass {
         fqn,
         kind,
+        access,
         enclosing,
         superclass,
         interfaces,
@@ -108,17 +113,66 @@ fn enclosing_class(
         });
 
     lexical_enclosing.or_else(|| {
-        attributes.iter().find_map(|attribute| {
-            let AttributeData::InnerClasses(classes) = &attribute.data else {
-                return None;
-            };
-            classes
-                .iter()
-                .find(|entry| entry.inner_class_info.as_ref() == &**this_class)
-                .and_then(|entry| entry.outer_class_info.as_deref())
-                .map(qualified_name)
-        })
+        inner_class_entry(this_class, attributes)
+            .and_then(|entry| entry.outer_class_info.as_deref())
+            .map(qualified_name)
     })
+}
+
+/// JVMS §4.1's Table 4.1-B has neither `ACC_PRIVATE` nor `ACC_PROTECTED`, so a
+/// nested class's own header cannot spell what its source said: javac widens
+/// `protected` to `ACC_PUBLIC` and drops `private` for nothing at all. §4.7.6
+/// keeps the original for precisely this reason — its flags are "used by a
+/// compiler to recover the original information when source code is not
+/// available" — so the entry naming this class wins wherever there is one. A
+/// top-level class is a package member and §4.7.6 gives it none, which is also
+/// the only case where the header is complete.
+fn class_access(
+    this_class: &ClassName<'_>,
+    flags: ClassAccessFlags,
+    attributes: &[AttributeInfo<'_>],
+) -> Option<JvmAccessLevel> {
+    let Some(entry) = inner_class_entry(this_class, attributes) else {
+        return Some(access_level(flags.bits()));
+    };
+
+    // §4.7.6 zeroes `outer_class_info_index` for a local or anonymous class,
+    // which JLS §8.1.1 leaves outside access control altogether.
+    entry
+        .outer_class_info
+        .is_some()
+        .then(|| access_level(entry.access_flags.bits()))
+}
+
+fn inner_class_entry<'a, 'class>(
+    this_class: &ClassName<'_>,
+    attributes: &'a [AttributeInfo<'class>],
+) -> Option<&'a InnerClassEntry<'class>> {
+    attributes.iter().find_map(|attribute| {
+        let AttributeData::InnerClasses(classes) = &attribute.data else {
+            return None;
+        };
+        classes
+            .iter()
+            .find(|entry| entry.inner_class_info.as_ref() == &**this_class)
+    })
+}
+
+/// The three access bits, which JVMS gives one meaning and one value in every
+/// table that carries them (§4.1, §4.5, §4.6, §4.7.6). None of them set is
+/// package access, so the answer is total and a caller never combines bits.
+fn access_level(flags: u16) -> JvmAccessLevel {
+    let is_set = |flag: AccessFlags| flags & flag.bits() != 0;
+
+    if is_set(AccessFlags::PUBLIC) {
+        JvmAccessLevel::Public
+    } else if is_set(AccessFlags::PROTECTED) {
+        JvmAccessLevel::Protected
+    } else if is_set(AccessFlags::PRIVATE) {
+        JvmAccessLevel::Private
+    } else {
+        JvmAccessLevel::Package
+    }
 }
 
 fn qualified_name(internal_name: &str) -> JvmQualifiedName {

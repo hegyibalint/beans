@@ -21,19 +21,12 @@ Behavior that contradicts a specification we have read.
 
 - **`Protected` grants access to everybody.** JLS §6.6.2 grants it to a subclass
   responsible for the implementation of the object, which needs a type hierarchy
-  we do not have. The `crates/lang-java/src/accessibility.rs` answers `true`
-  unconditionally and says so in a comment; a wrong `false` would squiggle
-  correct code, so the choice is deliberate, but nothing tests either half.
-
-- **A compiled class has no access flags.** JLS §6.6.1 gates every type by its
-  access modifier, and §7.3 imports only the `public` types of `java.lang`, but a
-  `JvmClass` carries nothing to check: `class_file.rs` reads `access_flags` for
-  the kind and drops the rest. So `type_target_is_accessible` in
-  `crates/lang-java/src/resolution.rs` answers `true` for everything that is not
-  a Java source, and `java.lang.Shutdown` resolves by simple name exactly as
-  `java.lang.String` does. Stage 4 made it reachable without an import; a
-  single-type import of a package-private class in a jar has always resolved.
-  Nothing tests either half.
+  we do not have. Two functions in `crates/lang-java/src/accessibility.rs` answer
+  `true` unconditionally and say so in a comment: `is_accessible` for a
+  declaration we parsed, and `is_compiled_type_accessible` for one we hold only a
+  class file of, which puts every `protected` nested type of every jar and
+  runtime image under the same choice. A wrong `false` would squiggle correct
+  code, so it stays deliberate, and nothing tests it either way.
 
 - **A dynamic constant as a bootstrap argument loses the class.** JVMS 26 §§4.4
   and 4.7.23 permit one; `cafebabe` 0.9 refuses the class outright, which
@@ -59,6 +52,14 @@ Not built yet. Nothing is wrong; there is just no code.
 - **Module imports**, stage 5 (§7.5.5). Needs the lake to hold modules first.
 
 - **Import suggestions**, stage 6. No JLS section; this is ours.
+
+- **The members of a compiled type.** The `find_member` in the `resolution.rs`
+  walks a `JavaFile`'s scopes, so a field or a method of a class file reaches
+  nothing: `Instant.now()` has no answer even with the JDK in scope. Its type
+  member sibling, the `member_types` `Jvm` arm, does the same job over binary
+  names and shows the shape the rest would take. Until then `JvmField::access`
+  and `JvmMethod::access` are decoded, pinned by
+  `class_file/tests/declarations.rs`, and read by nobody.
 
 - **Inherited member types** (§§8.2 and 9.2). A member type of a superclass or a
   superinterface is in scope in the subclass, and we do not walk the hierarchy.
@@ -182,10 +183,11 @@ these become possible, which is why they are written down.
 
 ## Chores
 
-- **Compiled resolution coverage stops at top-level scope.** The workspace JAR
-  acceptance test proves a compiled class is indexed and scoped, but the `$`
-  join in the `member_types` `Jvm` arm has no test at all, and neither does a
-  source file beating a class file of the same binary name.
+- **A source file beating a class file of the same binary name is untested.**
+  The workspace JAR acceptance test proves a compiled class is indexed and
+  scoped, and `resolution/tests/compiled.rs` now walks the `$` join in the
+  `member_types` `Jvm` arm, but nothing says which of the two wins when a
+  project holds both.
 
 - **The `parser.rs` and the `model.rs` still keep their tests inline.** 14 tests
   in 1399 lines and 4 in 737. Both will grow.
