@@ -25,16 +25,16 @@ fn runtime_class(
 
 /// The name as a reference in the asking file's class body reaches it.
 fn resolve(
-    java: &LanguageJava,
-    query: &JavaQuery,
+    java: &Language,
+    query: &Query,
     asker: &jvm::model::Source,
     name: &str,
-) -> JavaTypeResolution {
+) -> TypeResolution {
     let file = file_model(java, Revision::default(), asker);
     let body = type_declaration(file, file.top_level_declarations[0]).body_scope;
 
     resolve_type_name(
-        &JavaName::Simple(identifier(name)),
+        &model::Name::Simple(identifier(name)),
         asker,
         file,
         body,
@@ -45,7 +45,7 @@ fn resolve(
 #[test]
 fn a_simple_name_reaches_java_lang_without_an_import() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     let runtime = runtime_class(
         &mut jvm,
@@ -63,7 +63,7 @@ fn a_simple_name_reaches_java_lang_without_an_import() {
 
     assert_eq!(
         resolve(&java, &java_query(&java, &jvm, revision), &asker, "String"),
-        JavaTypeResolution::Resolved(JavaTypeTarget::Jvm {
+        TypeResolution::Resolved(TypeTarget::Compiled {
             source: runtime,
             fqn: jvm::model::BinaryName::new("java.lang.String"),
         })
@@ -75,7 +75,7 @@ fn a_simple_name_reaches_java_lang_without_an_import() {
 #[test]
 fn no_other_package_of_the_runtime_is_implicitly_imported() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     runtime_class(
         &mut jvm,
@@ -93,7 +93,7 @@ fn no_other_package_of_the_runtime_is_implicitly_imported() {
 
     assert_eq!(
         resolve(&java, &java_query(&java, &jvm, revision), &asker, "List"),
-        JavaTypeResolution::Unresolved {
+        TypeResolution::Unresolved {
             invalid_candidates: Vec::new(),
         }
     );
@@ -110,7 +110,7 @@ fn no_other_package_of_the_runtime_is_implicitly_imported() {
 #[test]
 fn a_package_private_class_of_java_lang_is_not_imported() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     runtime_class(
         &mut jvm,
@@ -126,7 +126,7 @@ fn a_package_private_class_of_java_lang_is_not_imported() {
         "package p; class Test {}",
     );
 
-    let JavaTypeResolution::Unresolved { invalid_candidates } = resolve(
+    let TypeResolution::Unresolved { invalid_candidates } = resolve(
         &java,
         &java_query(&java, &jvm, revision),
         &asker,
@@ -135,7 +135,7 @@ fn a_package_private_class_of_java_lang_is_not_imported() {
         panic!("a package-private class of java.lang must not resolve");
     };
     assert_eq!(invalid_candidates.len(), 1);
-    assert!(invalid_candidates[0].has_invalidity(JavaTypeInvalidity::Inaccessible));
+    assert!(invalid_candidates[0].has_invalidity(TypeInvalidity::Inaccessible));
 }
 
 /// The implicit import is not a promise that `java.lang` is there. A unit naming
@@ -144,7 +144,7 @@ fn a_package_private_class_of_java_lang_is_not_imported() {
 #[test]
 fn a_runtime_outside_the_scope_answers_as_evidence_only() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     runtime_class(
         &mut jvm,
@@ -166,13 +166,13 @@ fn a_runtime_outside_the_scope_answers_as_evidence_only() {
             PathBuf::from("app"),
         )])],
     );
-    let query = JavaQuery::new(jvm.query_from(&asker, revision), &java);
+    let query = Query::new(jvm.query_from(&asker, revision), &java);
 
-    let JavaTypeResolution::Unresolved { invalid_candidates } =
+    let TypeResolution::Unresolved { invalid_candidates } =
         resolve(&java, &query, &asker, "String")
     else {
         panic!("a runtime image outside the scope must not resolve");
     };
     assert_eq!(invalid_candidates.len(), 1);
-    assert!(invalid_candidates[0].has_invalidity(JavaTypeInvalidity::OutsideScope));
+    assert!(invalid_candidates[0].has_invalidity(TypeInvalidity::OutsideScope));
 }

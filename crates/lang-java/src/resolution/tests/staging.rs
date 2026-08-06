@@ -12,7 +12,7 @@ use super::*;
 /// `resolve_type_name` as a reference in a class body reaches it, answered with
 /// the label a user would be shown.
 fn resolve(
-    java: &LanguageJava,
+    java: &Language,
     jvm: &jvm::Platform,
     source: &jvm::model::Source,
     name: &str,
@@ -22,14 +22,14 @@ fn resolve(
     let body = type_declaration(file, file.top_level_declarations[0]).body_scope;
 
     let resolution = resolve_type_name(
-        &JavaName::Simple(identifier(name)),
+        &model::Name::Simple(identifier(name)),
         source,
         file,
         body,
         &java_query(java, jvm, revision),
     );
 
-    let JavaTypeResolution::Resolved(JavaTypeTarget::Java {
+    let TypeResolution::Resolved(TypeTarget::Parsed {
         source,
         declaration,
     }) = resolution
@@ -40,9 +40,9 @@ fn resolve(
 }
 
 /// A world holding `files`, with the last one as the file doing the asking.
-fn asking(files: &[(&str, &str)]) -> (LanguageJava, jvm::Platform, jvm::model::Source) {
+fn asking(files: &[(&str, &str)]) -> (Language, jvm::Platform, jvm::model::Source) {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     let mut asker = None;
     for (path, contents) in files {
@@ -168,8 +168,8 @@ fn an_inaccessible_type_is_returned_with_an_unresolved_name() {
     let file = file_model(&java, Revision::default(), &asker);
     let body = type_declaration(file, file.top_level_declarations[0]).body_scope;
 
-    let JavaTypeResolution::Unresolved { invalid_candidates } = resolve_type_name(
-        &JavaName::Simple(identifier("X")),
+    let TypeResolution::Unresolved { invalid_candidates } = resolve_type_name(
+        &model::Name::Simple(identifier("X")),
         &asker,
         file,
         body,
@@ -179,7 +179,7 @@ fn an_inaccessible_type_is_returned_with_an_unresolved_name() {
     };
 
     assert_eq!(invalid_candidates.len(), 1);
-    assert!(invalid_candidates[0].has_invalidity(JavaTypeInvalidity::Inaccessible));
+    assert!(invalid_candidates[0].has_invalidity(TypeInvalidity::Inaccessible));
 }
 
 /// §7.5.1 makes the inaccessible import a compile-time error. The JLS need not
@@ -199,20 +199,20 @@ fn an_inaccessible_import_does_not_hide_an_accessible_same_package_type() {
     let file = file_model(&java, Revision::default(), &asker);
     let body = type_declaration(file, file.top_level_declarations[0]).body_scope;
     let candidates = resolve_type_candidates(
-        &JavaName::Simple(identifier("X")),
+        &model::Name::Simple(identifier("X")),
         &asker,
         file,
         body,
         &java_query(&java, &jvm, Revision::default()),
     );
     assert_eq!(candidates.valid.len(), 1);
-    assert!(candidates.has_invalidity(JavaTypeInvalidity::Inaccessible));
+    assert!(candidates.has_invalidity(TypeInvalidity::Inaccessible));
 }
 
 #[test]
 fn an_outside_scope_import_does_not_hide_an_in_scope_package_type() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     process(
         &mut java,
@@ -246,10 +246,10 @@ fn an_outside_scope_import_does_not_hide_an_in_scope_package_type() {
     let body = type_declaration(file, file.top_level_declarations[0]).body_scope;
     let package_declaration =
         file_model(&java, revision, &package_source).top_level_declarations[0];
-    let query = JavaQuery::new(jvm.query_from(&asker, revision), &java);
+    let query = Query::new(jvm.query_from(&asker, revision), &java);
 
     let candidates = resolve_type_candidates(
-        &JavaName::Simple(identifier("X")),
+        &model::Name::Simple(identifier("X")),
         &asker,
         file,
         body,
@@ -257,18 +257,18 @@ fn an_outside_scope_import_does_not_hide_an_in_scope_package_type() {
     );
     assert_eq!(
         candidates.clone().into_resolution(),
-        JavaTypeResolution::Resolved(JavaTypeTarget::Java {
+        TypeResolution::Resolved(TypeTarget::Parsed {
             source: package_source,
             declaration: package_declaration,
         })
     );
-    assert!(candidates.has_invalidity(JavaTypeInvalidity::OutsideScope));
+    assert!(candidates.has_invalidity(TypeInvalidity::OutsideScope));
 }
 
 #[test]
 fn a_name_known_only_outside_scope_is_unresolved() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     let outside_source = process(
         &mut java,
@@ -295,12 +295,12 @@ fn a_name_known_only_outside_scope_is_unresolved() {
     let body = type_declaration(file, file.top_level_declarations[0]).body_scope;
     let outside_declaration =
         file_model(&java, revision, &outside_source).top_level_declarations[0];
-    let query = JavaQuery::new(jvm.query_from(&asker, revision), &java);
+    let query = Query::new(jvm.query_from(&asker, revision), &java);
 
     let candidates = query.types_named(&jvm::model::BinaryName::new("p.X"));
     assert_eq!(
         candidates,
-        vec![JavaTypeTarget::Java {
+        vec![TypeTarget::Parsed {
             source: outside_source,
             declaration: outside_declaration,
         }]
@@ -310,17 +310,17 @@ fn a_name_known_only_outside_scope_is_unresolved() {
         jvm::query::ScopeMembership::OutsideScope
     );
     let candidates = resolve_type_candidates(
-        &JavaName::Simple(identifier("X")),
+        &model::Name::Simple(identifier("X")),
         &asker,
         file,
         body,
         &query,
     );
-    let JavaTypeResolution::Unresolved { invalid_candidates } = candidates.into_resolution() else {
+    let TypeResolution::Unresolved { invalid_candidates } = candidates.into_resolution() else {
         panic!("an outside-scope candidate must not resolve");
     };
     assert_eq!(invalid_candidates.len(), 1);
-    assert!(invalid_candidates[0].has_invalidity(JavaTypeInvalidity::OutsideScope));
+    assert!(invalid_candidates[0].has_invalidity(TypeInvalidity::OutsideScope));
 }
 
 /// Nothing in scope at all. The stages run out rather than guessing, which is
@@ -341,7 +341,7 @@ fn a_name_no_stage_answers_is_unresolved() {
 #[test]
 fn a_qualified_name_does_not_fall_through_to_the_stages() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     process(
         &mut java,
@@ -360,7 +360,7 @@ fn a_qualified_name_does_not_fall_through_to_the_stages() {
 
     let file = file_model(&java, revision, &asker);
     let body = type_declaration(file, file.top_level_declarations[0]).body_scope;
-    let qualified = JavaName::Qualified(JavaQualifiedName::new(
+    let qualified = model::Name::Qualified(model::QualifiedName::new(
         vec![identifier("q"), identifier("X")],
         OffsetSpan {
             start: Offset(0),
@@ -376,7 +376,7 @@ fn a_qualified_name_does_not_fall_through_to_the_stages() {
             body,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Unresolved {
+        TypeResolution::Unresolved {
             invalid_candidates: Vec::new(),
         }
     );

@@ -5,8 +5,8 @@ use std::{
     path::PathBuf,
 };
 
-use model::JavaFile;
-use parser::JavaParser;
+use model::File;
+use parser::Parser;
 use tree_sitter::{Node, Parser as TreeSitterParser};
 
 // TODO: depend on `lang-java` instead of recompiling its source.
@@ -46,17 +46,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n== tree-sitter: {} ==", path.display());
     print!("{}", pretty_sexp(tree.root_node()));
 
-    let mut java_parser = JavaParser::new();
+    let mut java_parser = Parser::new();
     let java_file = java_parser.parse(&source);
 
-    println!("\n== JavaFile: {} ==", path.display());
+    println!("\n== File: {} ==", path.display());
     print_java_file(&java_file);
 
     Ok(())
 }
 
-fn print_java_file(file: &JavaFile) {
-    println!("JavaFile {{");
+fn print_java_file(file: &File) {
+    println!("File {{");
     print_debug_field("package", &file.package);
     print_debug_field("imports", &file.imports);
     println!(

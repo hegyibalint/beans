@@ -1,10 +1,10 @@
-use crate::parser::JavaParser;
+use crate::parser::Parser;
 
 use super::*;
 
 /// Resolve `name` where the declaration of `at` looks a type up.
-fn lexical(contents: &str, at: &str, name: &str) -> JavaTypeResolution {
-    let mut parser = JavaParser::new();
+fn lexical(contents: &str, at: &str, name: &str) -> TypeResolution {
+    let mut parser = Parser::new();
     let file = parser.parse(contents);
     let scope = declaring_scope_of(&file, at);
 
@@ -12,15 +12,12 @@ fn lexical(contents: &str, at: &str, name: &str) -> JavaTypeResolution {
 }
 
 fn resolves_to(contents: &str, at: &str, name: &str) -> bool {
-    matches!(
-        lexical(contents, at, name),
-        JavaTypeResolution::Resolved(..)
-    )
+    matches!(lexical(contents, at, name), TypeResolution::Resolved(..))
 }
 
 #[test]
 fn prefers_the_innermost_scope() {
-    let mut parser = JavaParser::new();
+    let mut parser = Parser::new();
     let file = parser.parse("class Outer { class X {} class Inner { class X {} } }");
     let outer = file.top_level_declarations[0];
     let outer_scope = type_declaration(&file, outer).body_scope;
@@ -31,7 +28,7 @@ fn prefers_the_innermost_scope() {
 
     assert_eq!(
         resolve_type_from_lexical_scopes(&identifier("X"), &source, &file, inner_scope),
-        JavaTypeResolution::Resolved(JavaTypeTarget::Java {
+        TypeResolution::Resolved(TypeTarget::Parsed {
             source,
             declaration: inner_x,
         })
@@ -40,7 +37,7 @@ fn prefers_the_innermost_scope() {
 
 #[test]
 fn continues_to_the_parent_scope() {
-    let mut parser = JavaParser::new();
+    let mut parser = Parser::new();
     let file = parser.parse("class Outer { class X {} class Inner {} }");
     let outer = file.top_level_declarations[0];
     let outer_scope = type_declaration(&file, outer).body_scope;
@@ -51,7 +48,7 @@ fn continues_to_the_parent_scope() {
 
     assert_eq!(
         resolve_type_from_lexical_scopes(&identifier("X"), &source, &file, inner_scope),
-        JavaTypeResolution::Resolved(JavaTypeTarget::Java {
+        TypeResolution::Resolved(TypeTarget::Parsed {
             source,
             declaration: outer_x,
         })
@@ -104,7 +101,7 @@ fn a_local_type_is_wrongly_in_scope_before_it_is_declared() {
             "before",
             "Local"
         ),
-        JavaTypeResolution::Resolved(..)
+        TypeResolution::Resolved(..)
     ));
 }
 
@@ -116,7 +113,7 @@ fn a_local_type_is_not_in_scope_after_its_block() {
             "after",
             "Local"
         ),
-        JavaTypeResolution::Unresolved {
+        TypeResolution::Unresolved {
             invalid_candidates: Vec::new(),
         }
     );

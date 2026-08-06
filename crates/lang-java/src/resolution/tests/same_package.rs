@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn resolves_a_top_level_type_by_its_package_spelling() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     let resolved_source = process(
         &mut java,
@@ -30,7 +30,7 @@ fn resolves_a_top_level_type_by_its_package_spelling() {
             current_file,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Resolved(JavaTypeTarget::Java {
+        TypeResolution::Resolved(TypeTarget::Parsed {
             source: resolved_source,
             declaration: resolved_declaration,
         })
@@ -40,7 +40,7 @@ fn resolves_a_top_level_type_by_its_package_spelling() {
 #[test]
 fn a_same_package_type_outside_scope_is_retained_as_invalid() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     let resolved_source = process(
         &mut java,
@@ -66,12 +66,12 @@ fn a_same_package_type_outside_scope_is_retained_as_invalid() {
     let resolved_declaration =
         file_model(&java, revision, &resolved_source).top_level_declarations[0];
     let current_file = file_model(&java, revision, &current_source);
-    let query = JavaQuery::new(jvm.query_from(&current_source, revision), &java);
+    let query = Query::new(jvm.query_from(&current_source, revision), &java);
 
     let candidates = query.types_named(&jvm::model::BinaryName::new("p.X"));
     assert_eq!(
         candidates,
-        vec![JavaTypeTarget::Java {
+        vec![TypeTarget::Parsed {
             source: resolved_source,
             declaration: resolved_declaration,
         }]
@@ -86,13 +86,13 @@ fn a_same_package_type_outside_scope_is_retained_as_invalid() {
         &query,
     );
     assert!(!resolved.has_valid());
-    assert!(resolved.has_invalidity(JavaTypeInvalidity::OutsideScope));
+    assert!(resolved.has_invalidity(TypeInvalidity::OutsideScope));
 }
 
 #[test]
 fn ignores_a_type_from_another_package() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     process(
         &mut java,
@@ -117,7 +117,7 @@ fn ignores_a_type_from_another_package() {
             current_file,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Unresolved {
+        TypeResolution::Unresolved {
             invalid_candidates: Vec::new(),
         }
     );
@@ -126,7 +126,7 @@ fn ignores_a_type_from_another_package() {
 #[test]
 fn resolves_a_type_from_the_unnamed_package() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     let resolved_source = process(&mut java, &mut jvm, revision, "X.java", "class X {}");
     let current_source = process(&mut java, &mut jvm, revision, "Test.java", "class Test {}");
@@ -141,7 +141,7 @@ fn resolves_a_type_from_the_unnamed_package() {
             current_file,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Resolved(JavaTypeTarget::Java {
+        TypeResolution::Resolved(TypeTarget::Parsed {
             source: resolved_source,
             declaration: resolved_declaration,
         })

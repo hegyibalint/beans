@@ -1,16 +1,16 @@
 use beans_platform_jvm as jvm;
 
-use crate::model::{JavaAccessLevel, JavaDeclaration, JavaFile, JavaTypeKind};
+use crate::model;
 
 /// Declarations only for now: the class identities fall out of the file
 /// alone, while members and supertypes need resolution against the lake.
-pub fn project_to_jvm(file: &JavaFile) -> Vec<jvm::model::Class> {
+pub fn project_to_jvm(file: &model::File) -> Vec<jvm::model::Class> {
     let package = file.package.as_ref().map(|name| name.dotted());
 
     file.top_level_declarations
         .iter()
         .filter_map(|id| {
-            let JavaDeclaration::Type(declaration) = file.declarations.get(id.0)? else {
+            let model::Declaration::Type(declaration) = file.declarations.get(id.0)? else {
                 return None;
             };
             let name = declaration.name.as_ref()?.text.clone();
@@ -19,20 +19,20 @@ pub fn project_to_jvm(file: &JavaFile) -> Vec<jvm::model::Class> {
                 None => name,
             };
             let kind = match declaration.kind {
-                JavaTypeKind::Class => jvm::model::TypeKind::Class,
-                JavaTypeKind::Interface => jvm::model::TypeKind::Interface,
-                JavaTypeKind::Enum => jvm::model::TypeKind::Enum,
-                JavaTypeKind::Record => jvm::model::TypeKind::Record,
-                JavaTypeKind::AnnotationInterface => jvm::model::TypeKind::AnnotationInterface,
+                model::TypeKind::Class => jvm::model::TypeKind::Class,
+                model::TypeKind::Interface => jvm::model::TypeKind::Interface,
+                model::TypeKind::Enum => jvm::model::TypeKind::Enum,
+                model::TypeKind::Record => jvm::model::TypeKind::Record,
+                model::TypeKind::AnnotationInterface => jvm::model::TypeKind::AnnotationInterface,
             };
             Some(jvm::model::Class {
                 fqn: jvm::model::BinaryName::new(binary_name),
                 kind,
                 access: declaration.access.map(|access| match access.level {
-                    JavaAccessLevel::Public => jvm::model::AccessLevel::Public,
-                    JavaAccessLevel::Protected => jvm::model::AccessLevel::Protected,
-                    JavaAccessLevel::Package => jvm::model::AccessLevel::Package,
-                    JavaAccessLevel::Private => jvm::model::AccessLevel::Private,
+                    model::AccessLevel::Public => jvm::model::AccessLevel::Public,
+                    model::AccessLevel::Protected => jvm::model::AccessLevel::Protected,
+                    model::AccessLevel::Package => jvm::model::AccessLevel::Package,
+                    model::AccessLevel::Private => jvm::model::AccessLevel::Private,
                 }),
                 enclosing: None,
                 superclass: None,
@@ -47,11 +47,11 @@ pub fn project_to_jvm(file: &JavaFile) -> Vec<jvm::model::Class> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::JavaParser;
+    use crate::parser::Parser;
 
     #[test]
     fn classes_project_to_package_qualified_fqns() {
-        let mut parser = JavaParser::new();
+        let mut parser = Parser::new();
         let model = parser.parse("package org.beans.app;\n\nclass Foo {}\nclass Helper {}\n");
 
         let classes = project_to_jvm(&model);
@@ -67,7 +67,7 @@ mod tests {
     /// to be projected at all.
     #[test]
     fn a_top_level_type_projects_the_access_level_it_was_declared_with() {
-        let mut parser = JavaParser::new();
+        let mut parser = Parser::new();
         let model = parser.parse("package p;\n\npublic class Open {}\nclass Closed {}\n");
 
         let classes = project_to_jvm(&model);
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn default_package_projects_bare_names() {
-        let mut parser = JavaParser::new();
+        let mut parser = Parser::new();
         let model = parser.parse("class Foo {}\n");
 
         let classes = project_to_jvm(&model);

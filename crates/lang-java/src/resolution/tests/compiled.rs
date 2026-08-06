@@ -22,17 +22,17 @@ fn jar_class(
 }
 
 fn resolve(
-    java: &LanguageJava,
+    java: &Language,
     jvm: &jvm::Platform,
     asker: &jvm::model::Source,
     name: &str,
-) -> JavaTypeResolution {
+) -> TypeResolution {
     let revision = Revision::default();
     let file = file_model(java, revision, asker);
     let body = type_declaration(file, file.top_level_declarations[0]).body_scope;
 
     resolve_type_name(
-        &JavaName::Simple(identifier(name)),
+        &model::Name::Simple(identifier(name)),
         asker,
         file,
         body,
@@ -43,7 +43,7 @@ fn resolve(
 #[test]
 fn a_package_private_compiled_type_is_reached_only_from_its_own_package() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     let jar = jar_class(&mut jvm, revision, "p.X", jvm::model::AccessLevel::Package);
     let neighbour = process(
@@ -63,19 +63,18 @@ fn a_package_private_compiled_type_is_reached_only_from_its_own_package() {
 
     assert_eq!(
         resolve(&java, &jvm, &neighbour, "X"),
-        JavaTypeResolution::Resolved(JavaTypeTarget::Jvm {
+        TypeResolution::Resolved(TypeTarget::Compiled {
             source: jar,
             fqn: jvm::model::BinaryName::new("p.X"),
         })
     );
 
-    let JavaTypeResolution::Unresolved { invalid_candidates } =
-        resolve(&java, &jvm, &stranger, "X")
+    let TypeResolution::Unresolved { invalid_candidates } = resolve(&java, &jvm, &stranger, "X")
     else {
         panic!("another package must not reach a package-private class");
     };
     assert_eq!(invalid_candidates.len(), 1);
-    assert!(invalid_candidates[0].has_invalidity(JavaTypeInvalidity::Inaccessible));
+    assert!(invalid_candidates[0].has_invalidity(TypeInvalidity::Inaccessible));
 }
 
 /// A member of a compiled type, which is where the binary name stops being the
@@ -85,7 +84,7 @@ fn a_package_private_compiled_type_is_reached_only_from_its_own_package() {
 #[test]
 fn a_private_member_of_a_compiled_type_is_reached_by_nobody() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     jar_class(
         &mut jvm,
@@ -107,13 +106,12 @@ fn a_private_member_of_a_compiled_type_is_reached_by_nobody() {
         "package p; import p.Outer.Inner; class Test {}",
     );
 
-    let JavaTypeResolution::Unresolved { invalid_candidates } =
-        resolve(&java, &jvm, &asker, "Inner")
+    let TypeResolution::Unresolved { invalid_candidates } = resolve(&java, &jvm, &asker, "Inner")
     else {
         panic!("a private member of a class file must not resolve");
     };
     assert_eq!(invalid_candidates.len(), 1);
-    assert!(invalid_candidates[0].has_invalidity(JavaTypeInvalidity::Inaccessible));
+    assert!(invalid_candidates[0].has_invalidity(TypeInvalidity::Inaccessible));
 }
 
 /// The other half of the walk above: the same spelling, the same `$` join, and a
@@ -121,7 +119,7 @@ fn a_private_member_of_a_compiled_type_is_reached_by_nobody() {
 #[test]
 fn a_public_member_of_a_compiled_type_is_reached_through_its_dollar_name() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     jar_class(
         &mut jvm,
@@ -145,7 +143,7 @@ fn a_public_member_of_a_compiled_type_is_reached_through_its_dollar_name() {
 
     assert_eq!(
         resolve(&java, &jvm, &asker, "Inner"),
-        JavaTypeResolution::Resolved(JavaTypeTarget::Jvm {
+        TypeResolution::Resolved(TypeTarget::Compiled {
             source: inner,
             fqn: jvm::model::BinaryName::new("p.Outer$Inner"),
         })

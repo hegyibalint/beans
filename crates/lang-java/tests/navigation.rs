@@ -1,4 +1,4 @@
-//! Integration tests for go-to-declaration: drive `LanguageJava` through its
+//! Integration tests for go-to-declaration: drive `Language` through its
 //! public API and assert where a reference lands. Markers place both the caret
 //! and the declaration we expect it to reach, so the test never counts bytes,
 //! and the parser and position-index internals stay private — as they should.
@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use beans_core::language::{Language, LanguageProcessing, NavigationTarget};
 use beans_core::model::Offset;
 use beans_core::storage::Revision;
-use beans_lang_java::LanguageJava;
+use beans_lang_java as java;
 use beans_platform_jvm as jvm;
 use beans_test_support::markers::{Cursor, strip_markers};
 
@@ -16,7 +16,7 @@ use beans_test_support::markers::{Cursor, strip_markers};
 /// the latest, which is what `Beans` does. Markers are stripped on the way in,
 /// so every position a test names is a cursor rather than an offset.
 struct Workspace {
-    language: LanguageJava,
+    language: java::Language,
     platform: jvm::Platform,
     revision: Revision,
     cursors: Vec<Cursor>,
@@ -24,7 +24,7 @@ struct Workspace {
 
 impl Workspace {
     fn load(files: &[(&str, &str)]) -> Workspace {
-        let mut language = LanguageJava::new();
+        let mut language = java::Language::new();
         let mut platform = jvm::Platform::new();
         let mut revision = Revision::default();
         let mut cursors = Vec::new();

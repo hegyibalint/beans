@@ -3,13 +3,9 @@ use beans_core::model::Offset;
 use beans_platform_jvm as jvm;
 
 use crate::{
-    accessibility::{JavaSite, is_accessible, is_compiled_type_accessible},
-    model::{
-        JavaBodyId, JavaBodyNodeId, JavaBodyNodeKind, JavaDeclaration, JavaDeclarationId,
-        JavaEntityId, JavaExpression, JavaFile, JavaIdentifier, JavaImport, JavaImportKind,
-        JavaLexicalScopeId, JavaName, JavaNamespace, JavaTypeRef,
-    },
-    query::JavaQuery,
+    accessibility::{Site, is_accessible, is_compiled_type_accessible},
+    model,
+    query::Query,
 };
 
 /// The main result of resolving a type name.
@@ -17,22 +13,22 @@ use crate::{
 /// The important thing is that we separate and supply candidates where we can.
 /// This allows us to make better decisions and actions when we have multiple candidates.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum JavaTypeResolution {
+pub enum TypeResolution {
     /// We couldn't find anything that resembles the type in need.
     /// As a consequence, we cannot supply any supplimental information
     Unresolved {
-        invalid_candidates: Vec<InvalidJavaTypeCandidate>,
+        invalid_candidates: Vec<InvalidTypeCandidate>,
     },
     /// We had a successful resolution, with a single candidate.
     /// Our happy path.
-    Resolved(JavaTypeTarget),
+    Resolved(TypeTarget),
     /// We had a _too_ successful resolution, and we found more than one candidate.
     /// We store all candidates, so we can use this information further down the line.
-    Ambiguous(Vec<JavaTypeTarget>),
+    Ambiguous(Vec<TypeTarget>),
 }
 
-impl JavaTypeResolution {
-    pub(crate) fn has_invalidity(&self, reason: JavaTypeInvalidity) -> bool {
+impl TypeResolution {
+    pub(crate) fn has_invalidity(&self, reason: TypeInvalidity) -> bool {
         let Self::Unresolved { invalid_candidates } = self else {
             return false;
         };
@@ -45,32 +41,32 @@ impl JavaTypeResolution {
 
 /// Resolution needs to point out what type we resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum JavaTypeTarget {
-    /// The resolution target is coming from the `lang-java` land.
-    /// We store the raw declaration ID, as we have access to the model and its declarations.
-    Java {
+pub enum TypeTarget {
+    /// A file this vertical parsed, so the whole model is in hand and the
+    /// declaration is an index into it.
+    Parsed {
         source: jvm::model::Source,
-        declaration: JavaDeclarationId,
+        declaration: model::DeclarationId,
     },
-    /// The resulution target is coming from the `platform-jvm` land (i.e. anything but a Java source file).
-    /// We store the "coordinate" pointing at the resource (e.g., a `.class`, a `.jar`, etc) and the FQN in there what we resolved to.
-    Jvm {
+    /// Anything but a Java source file, where the lake holds a binary name and
+    /// nothing a declaration id could point at.
+    Compiled {
         source: jvm::model::Source,
         fqn: jvm::model::BinaryName,
     },
 }
 
-impl JavaTypeTarget {
+impl TypeTarget {
     pub(crate) fn source(&self) -> &jvm::model::Source {
         match self {
-            Self::Java { source, .. } | Self::Jvm { source, .. } => source,
+            Self::Parsed { source, .. } | Self::Compiled { source, .. } => source,
         }
     }
 }
 
 /// Resolution might find candidates, however, that doesn't mean that those candidates are valid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum JavaTypeInvalidity {
+pub(crate) enum TypeInvalidity {
     /// The candidate we found is not in the scope of this module.
     /// Think of this as a `main` module using a class from `test`; normally this direction is set up to be impossible.
     OutsideScope,
@@ -81,25 +77,25 @@ pub(crate) enum JavaTypeInvalidity {
 
 /// Represents a resolution candidate that was rejected for some reason
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct InvalidJavaTypeCandidate {
-    target: JavaTypeTarget,
-    reasons: Vec<JavaTypeInvalidity>,
+pub(crate) struct InvalidTypeCandidate {
+    target: TypeTarget,
+    reasons: Vec<TypeInvalidity>,
 }
 
-impl InvalidJavaTypeCandidate {
-    pub(crate) fn target(&self) -> &JavaTypeTarget {
+impl InvalidTypeCandidate {
+    pub(crate) fn target(&self) -> &TypeTarget {
         &self.target
     }
 
-    pub(crate) fn invalidities(&self) -> &[JavaTypeInvalidity] {
+    pub(crate) fn invalidities(&self) -> &[TypeInvalidity] {
         &self.reasons
     }
 
-    pub(crate) fn has_invalidity(&self, reason: JavaTypeInvalidity) -> bool {
+    pub(crate) fn has_invalidity(&self, reason: TypeInvalidity) -> bool {
         self.invalidities().contains(&reason)
     }
 
-    fn add_reason(&mut self, reason: JavaTypeInvalidity) {
+    fn add_reason(&mut self, reason: TypeInvalidity) {
         if !self.has_invalidity(reason) {
             self.reasons.push(reason);
             self.reasons.sort_unstable();
@@ -108,26 +104,26 @@ impl InvalidJavaTypeCandidate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ClassifiedJavaTypeCandidate {
-    Valid(JavaTypeTarget),
-    Invalid(InvalidJavaTypeCandidate),
+pub(crate) enum ClassifiedTypeCandidate {
+    Valid(TypeTarget),
+    Invalid(InvalidTypeCandidate),
 }
 
-impl ClassifiedJavaTypeCandidate {
-    fn target(&self) -> &JavaTypeTarget {
+impl ClassifiedTypeCandidate {
+    fn target(&self) -> &TypeTarget {
         match self {
             Self::Valid(target) => target,
             Self::Invalid(candidate) => candidate.target(),
         }
     }
 
-    fn propagate(self, child: ClassifiedJavaTypeCandidate) -> ClassifiedJavaTypeCandidate {
+    fn propagate(self, child: ClassifiedTypeCandidate) -> ClassifiedTypeCandidate {
         let Self::Invalid(parent) = self else {
             return child;
         };
 
         let mut child = match child {
-            Self::Valid(target) => InvalidJavaTypeCandidate {
+            Self::Valid(target) => InvalidTypeCandidate {
                 target,
                 reasons: Vec::new(),
             },
@@ -142,26 +138,26 @@ impl ClassifiedJavaTypeCandidate {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct ResolutionCandidates {
-    valid: Vec<JavaTypeTarget>,
-    invalid: Vec<InvalidJavaTypeCandidate>,
+    valid: Vec<TypeTarget>,
+    invalid: Vec<InvalidTypeCandidate>,
 }
 
 impl ResolutionCandidates {
-    fn from_valid(candidates: impl IntoIterator<Item = JavaTypeTarget>) -> Self {
+    fn from_valid(candidates: impl IntoIterator<Item = TypeTarget>) -> Self {
         candidates
             .into_iter()
-            .map(ClassifiedJavaTypeCandidate::Valid)
+            .map(ClassifiedTypeCandidate::Valid)
             .collect()
     }
 
-    fn push(&mut self, candidate: ClassifiedJavaTypeCandidate) {
+    fn push(&mut self, candidate: ClassifiedTypeCandidate) {
         match candidate {
-            ClassifiedJavaTypeCandidate::Valid(target) => {
+            ClassifiedTypeCandidate::Valid(target) => {
                 if !self.valid.contains(&target) {
                     self.valid.push(target);
                 }
             }
-            ClassifiedJavaTypeCandidate::Invalid(candidate) => {
+            ClassifiedTypeCandidate::Invalid(candidate) => {
                 if !self.invalid.contains(&candidate) {
                     self.invalid.push(candidate);
                 }
@@ -177,12 +173,12 @@ impl ResolutionCandidates {
         let next = next();
         self.valid = next.valid;
         for candidate in next.invalid {
-            self.push(ClassifiedJavaTypeCandidate::Invalid(candidate));
+            self.push(ClassifiedTypeCandidate::Invalid(candidate));
         }
         self
     }
 
-    fn into_resolution(self) -> JavaTypeResolution {
+    fn into_resolution(self) -> TypeResolution {
         classify_candidates(self.valid, self.invalid)
     }
 
@@ -191,7 +187,7 @@ impl ResolutionCandidates {
             || self
                 .invalid
                 .iter()
-                .any(|candidate| candidate.has_invalidity(JavaTypeInvalidity::Inaccessible))
+                .any(|candidate| candidate.has_invalidity(TypeInvalidity::Inaccessible))
     }
 
     pub(crate) fn has_valid(&self) -> bool {
@@ -199,15 +195,15 @@ impl ResolutionCandidates {
     }
 
     #[cfg(test)]
-    fn has_invalidity(&self, reason: JavaTypeInvalidity) -> bool {
+    fn has_invalidity(&self, reason: TypeInvalidity) -> bool {
         self.invalid
             .iter()
             .any(|candidate| candidate.has_invalidity(reason))
     }
 }
 
-impl FromIterator<ClassifiedJavaTypeCandidate> for ResolutionCandidates {
-    fn from_iter<T: IntoIterator<Item = ClassifiedJavaTypeCandidate>>(iter: T) -> Self {
+impl FromIterator<ClassifiedTypeCandidate> for ResolutionCandidates {
+    fn from_iter<T: IntoIterator<Item = ClassifiedTypeCandidate>>(iter: T) -> Self {
         let mut candidates = Self::default();
         for candidate in iter {
             candidates.push(candidate);
@@ -217,17 +213,17 @@ impl FromIterator<ClassifiedJavaTypeCandidate> for ResolutionCandidates {
 }
 
 impl IntoIterator for ResolutionCandidates {
-    type Item = ClassifiedJavaTypeCandidate;
-    type IntoIter = std::vec::IntoIter<ClassifiedJavaTypeCandidate>;
+    type Item = ClassifiedTypeCandidate;
+    type IntoIter = std::vec::IntoIter<ClassifiedTypeCandidate>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.valid
             .into_iter()
-            .map(ClassifiedJavaTypeCandidate::Valid)
+            .map(ClassifiedTypeCandidate::Valid)
             .chain(
                 self.invalid
                     .into_iter()
-                    .map(ClassifiedJavaTypeCandidate::Invalid),
+                    .map(ClassifiedTypeCandidate::Invalid),
             )
             .collect::<Vec<_>>()
             .into_iter()
@@ -242,30 +238,30 @@ impl IntoIterator for ResolutionCandidates {
 /// and the order is a reading of §6.4.1 rather than a procedure the spec spells
 /// out.
 pub fn resolve_type_name(
-    name: &JavaName,
+    name: &model::Name,
     source: &jvm::model::Source,
-    file: &JavaFile,
-    current_lexical_scope_id: JavaLexicalScopeId,
-    query: &JavaQuery,
-) -> JavaTypeResolution {
+    file: &model::File,
+    current_lexical_scope_id: model::LexicalScopeId,
+    query: &Query,
+) -> TypeResolution {
     resolve_type_candidates(name, source, file, current_lexical_scope_id, query).into_resolution()
 }
 
 pub(crate) fn resolve_type_candidates(
-    name: &JavaName,
+    name: &model::Name,
     source: &jvm::model::Source,
-    file: &JavaFile,
-    current_lexical_scope_id: JavaLexicalScopeId,
-    query: &JavaQuery,
+    file: &model::File,
+    current_lexical_scope_id: model::LexicalScopeId,
+    query: &Query,
 ) -> ResolutionCandidates {
     // §6.5.5.2. A qualified name classifies its prefix as a package or a type
     // first; `resolve_canonical_name` walks that, but only for import names so
     // far.
-    let JavaName::Simple(name) = name else {
+    let model::Name::Simple(name) = name else {
         return ResolutionCandidates::default();
     };
 
-    let from = JavaSite {
+    let from = Site {
         source,
         file,
         scope: current_lexical_scope_id,
@@ -289,10 +285,10 @@ pub(crate) fn resolve_type_candidates(
 }
 
 fn candidates_from_lexical_scopes(
-    name: &JavaIdentifier,
+    name: &model::Identifier,
     source: &jvm::model::Source,
-    file: &JavaFile,
-    current_lexical_scope_id: JavaLexicalScopeId,
+    file: &model::File,
+    current_lexical_scope_id: model::LexicalScopeId,
 ) -> ResolutionCandidates {
     for (_, scope) in file.iter_scope_chain(current_lexical_scope_id) {
         let candidates = scope
@@ -302,12 +298,12 @@ fn candidates_from_lexical_scopes(
             .filter_map(|declaration_id| {
                 let declaration = file.declarations.get(declaration_id.0)?;
                 let declaration_name = match declaration {
-                    JavaDeclaration::Type(declaration) => declaration.name.as_ref(),
-                    JavaDeclaration::TypeParameter(declaration) => Some(&declaration.name),
+                    model::Declaration::Type(declaration) => declaration.name.as_ref(),
+                    model::Declaration::TypeParameter(declaration) => Some(&declaration.name),
                     _ => None,
                 }?;
 
-                (declaration_name.text == name.text).then(|| JavaTypeTarget::Java {
+                (declaration_name.text == name.text).then(|| TypeTarget::Parsed {
                     source: source.clone(),
                     declaration: declaration_id,
                 })
@@ -323,29 +319,29 @@ fn candidates_from_lexical_scopes(
 
 #[cfg(test)]
 fn resolve_type_from_lexical_scopes(
-    name: &JavaIdentifier,
+    name: &model::Identifier,
     source: &jvm::model::Source,
-    file: &JavaFile,
-    current_lexical_scope_id: JavaLexicalScopeId,
-) -> JavaTypeResolution {
+    file: &model::File,
+    current_lexical_scope_id: model::LexicalScopeId,
+) -> TypeResolution {
     candidates_from_lexical_scopes(name, source, file, current_lexical_scope_id).into_resolution()
 }
 
 fn candidates_from_exact_imports(
-    name: &JavaIdentifier,
+    name: &model::Identifier,
     source: &jvm::model::Source,
-    file: &JavaFile,
-    query: &JavaQuery,
+    file: &model::File,
+    query: &Query,
 ) -> ResolutionCandidates {
-    let from = JavaSite {
+    let from = Site {
         source,
         file,
-        scope: JavaLexicalScopeId(0),
+        scope: model::LexicalScopeId(0),
     };
 
     file.imports
         .iter()
-        .filter(|import| import.kind == JavaImportKind::Type)
+        .filter(|import| import.kind == model::ImportKind::Type)
         .filter(|import| exact_import_introduces_name(import, name))
         .flat_map(|import| resolve_canonical_name(&import.name, &from, query))
         .collect()
@@ -353,11 +349,11 @@ fn candidates_from_exact_imports(
 
 #[cfg(test)]
 fn resolve_type_from_exact_imports(
-    name: &JavaIdentifier,
+    name: &model::Identifier,
     source: &jvm::model::Source,
-    file: &JavaFile,
-    query: &JavaQuery,
-) -> JavaTypeResolution {
+    file: &model::File,
+    query: &Query,
+) -> TypeResolution {
     candidates_from_exact_imports(name, source, file, query).into_resolution()
 }
 
@@ -402,8 +398,8 @@ fn resolve_type_from_exact_imports(
 /// lake: p.Outer            (Outer.java declares Inner inside it)
 ///
 /// p      probe p             miss  -> package p
-/// Outer  probe p.Outer       hit   -> type, Java arm
-/// Inner  find_member(Inner)  hit   -> type, Java arm
+/// Outer  probe p.Outer       hit   -> type, Parsed arm
+/// Inner  find_member(Inner)  hit   -> type, Parsed arm
 /// ```
 ///
 /// 3. The same spelling against a class file. Nesting is flat in the lake, and
@@ -414,8 +410,8 @@ fn resolve_type_from_exact_imports(
 ///
 /// java   probe java                 miss  -> package java
 /// util   probe java.util            miss  -> package java.util
-/// Map    probe java.util.Map        hit   -> type, Jvm arm
-/// Entry  probe java.util.Map$Entry  hit   -> type, Jvm arm
+/// Map    probe java.util.Map        hit   -> type, Compiled arm
+/// Entry  probe java.util.Map$Entry  hit   -> type, Compiled arm
 /// ```
 ///
 /// 4. Deeper nesting is the same step repeated.
@@ -475,11 +471,7 @@ fn resolve_type_from_exact_imports(
 /// p  probe p    miss    -> package p
 /// B  probe p.B  2 hits  -> type {app, lib}  -> ambiguous
 /// ```
-fn resolve_canonical_name(
-    name: &JavaName,
-    from: &JavaSite,
-    query: &JavaQuery,
-) -> ResolutionCandidates {
+fn resolve_canonical_name(name: &model::Name, from: &Site, query: &Query) -> ResolutionCandidates {
     let mut paths = vec![CanonicalPath::Package(String::new())];
 
     for segment in name.segments() {
@@ -519,38 +511,34 @@ enum CanonicalPath {
     /// The dotted package name walked so far; empty is the unnamed package.
     Package(String),
     /// One classified path through a type and any subsequent member types.
-    Type(ClassifiedJavaTypeCandidate),
+    Type(ClassifiedTypeCandidate),
 }
 
 /// §6.5.4.2's TypeName branch: member types before scope and access are
 /// composed. A file this vertical parsed holds its members in the model;
 /// anything else holds them in the lake under a nested binary name.
-fn member_types(
-    target: &JavaTypeTarget,
-    name: &JavaIdentifier,
-    query: &JavaQuery,
-) -> Vec<JavaTypeTarget> {
+fn member_types(target: &TypeTarget, name: &model::Identifier, query: &Query) -> Vec<TypeTarget> {
     match target {
-        JavaTypeTarget::Java {
+        TypeTarget::Parsed {
             source,
             declaration,
         } => {
             let Some(file) = query.model_of(source) else {
                 return Vec::new();
             };
-            find_member(file, *declaration, name, JavaNamespace::Type)
+            find_member(file, *declaration, name, model::Namespace::Type)
                 .into_iter()
-                .map(|declaration| JavaTypeTarget::Java {
+                .map(|declaration| TypeTarget::Parsed {
                     source: source.clone(),
                     declaration,
                 })
                 .collect()
         }
-        JavaTypeTarget::Jvm { fqn, .. } => query.types_named(&fqn.nested(&name.text)),
+        TypeTarget::Compiled { fqn, .. } => query.types_named(&fqn.nested(&name.text)),
     }
 }
 
-fn exact_import_introduces_name(import: &JavaImport, name: &JavaIdentifier) -> bool {
+fn exact_import_introduces_name(import: &model::Import, name: &model::Identifier) -> bool {
     import
         .name
         .segments()
@@ -562,15 +550,15 @@ fn exact_import_introduces_name(import: &JavaImport, name: &JavaIdentifier) -> b
 /// told about at projection time, so this is one lookup rather than a walk
 /// over every file comparing package declarations.
 fn candidates_from_same_package(
-    name: &JavaIdentifier,
-    from: &JavaSite,
-    query: &JavaQuery,
+    name: &model::Identifier,
+    from: &Site,
+    query: &Query,
 ) -> ResolutionCandidates {
     let package = from
         .file
         .package
         .as_ref()
-        .map(JavaName::dotted)
+        .map(model::Name::dotted)
         .unwrap_or_default();
 
     classify_types_named(
@@ -582,17 +570,17 @@ fn candidates_from_same_package(
 
 #[cfg(test)]
 fn resolve_from_same_package(
-    name: &JavaIdentifier,
+    name: &model::Identifier,
     source: &jvm::model::Source,
-    file: &JavaFile,
-    query: &JavaQuery,
-) -> JavaTypeResolution {
+    file: &model::File,
+    query: &Query,
+) -> TypeResolution {
     candidates_from_same_package(
         name,
-        &JavaSite {
+        &Site {
             source,
             file,
-            scope: JavaLexicalScopeId(0),
+            scope: model::LexicalScopeId(0),
         },
         query,
     )
@@ -611,9 +599,9 @@ fn resolve_from_same_package(
 /// disagree on why: §7.3 never imports the name, while we find the class and
 /// refuse it under §6.6.1, which leaves it behind as evidence.
 fn candidates_from_java_lang(
-    name: &JavaIdentifier,
-    from: &JavaSite,
-    query: &JavaQuery,
+    name: &model::Identifier,
+    from: &Site,
+    query: &Query,
 ) -> ResolutionCandidates {
     classify_types_named(
         query,
@@ -623,9 +611,9 @@ fn candidates_from_java_lang(
 }
 
 fn classify_types_named(
-    query: &JavaQuery,
+    query: &Query,
     fqn: &jvm::model::BinaryName,
-    from: &JavaSite,
+    from: &Site,
 ) -> ResolutionCandidates {
     query
         .types_named(fqn)
@@ -634,41 +622,37 @@ fn classify_types_named(
         .collect()
 }
 
-fn classify_type_target(
-    target: JavaTypeTarget,
-    query: &JavaQuery,
-    from: &JavaSite,
-) -> ClassifiedJavaTypeCandidate {
+fn classify_type_target(target: TypeTarget, query: &Query, from: &Site) -> ClassifiedTypeCandidate {
     if query.scope_membership(&target) == jvm::query::ScopeMembership::OutsideScope {
-        return ClassifiedJavaTypeCandidate::Invalid(InvalidJavaTypeCandidate {
+        return ClassifiedTypeCandidate::Invalid(InvalidTypeCandidate {
             target,
-            reasons: vec![JavaTypeInvalidity::OutsideScope],
+            reasons: vec![TypeInvalidity::OutsideScope],
         });
     }
 
     if type_target_is_accessible(&target, query, from) {
-        ClassifiedJavaTypeCandidate::Valid(target)
+        ClassifiedTypeCandidate::Valid(target)
     } else {
-        ClassifiedJavaTypeCandidate::Invalid(InvalidJavaTypeCandidate {
+        ClassifiedTypeCandidate::Invalid(InvalidTypeCandidate {
             target,
-            reasons: vec![JavaTypeInvalidity::Inaccessible],
+            reasons: vec![TypeInvalidity::Inaccessible],
         })
     }
 }
 
-fn type_target_is_accessible(target: &JavaTypeTarget, query: &JavaQuery, from: &JavaSite) -> bool {
+fn type_target_is_accessible(target: &TypeTarget, query: &Query, from: &Site) -> bool {
     match target {
-        JavaTypeTarget::Java {
+        TypeTarget::Parsed {
             source,
             declaration,
         } => {
             let Some(file) = query.model_of(source) else {
                 return true;
             };
-            let JavaDeclaration::Type(declaration) = &file.declarations[declaration.0] else {
+            let model::Declaration::Type(declaration) = &file.declarations[declaration.0] else {
                 return true;
             };
-            let declared = JavaSite {
+            let declared = Site {
                 source,
                 file,
                 scope: declaration.declaring_scope,
@@ -678,16 +662,16 @@ fn type_target_is_accessible(target: &JavaTypeTarget, query: &JavaQuery, from: &
         }
         // A binary name carries its own package (§13.1), so the declaring end of
         // §6.6.1 needs nothing the target does not already say but the level.
-        JavaTypeTarget::Jvm { source, fqn } => {
+        TypeTarget::Compiled { source, fqn } => {
             is_compiled_type_accessible(query.class_access(source, fqn), fqn.package(), from)
         }
     }
 }
 
 fn classify_candidates(
-    candidates: impl IntoIterator<Item = JavaTypeTarget>,
-    invalid_candidates: Vec<InvalidJavaTypeCandidate>,
-) -> JavaTypeResolution {
+    candidates: impl IntoIterator<Item = TypeTarget>,
+    invalid_candidates: Vec<InvalidTypeCandidate>,
+) -> TypeResolution {
     let mut distinct = Vec::new();
     for candidate in candidates {
         if !distinct.contains(&candidate) {
@@ -696,21 +680,21 @@ fn classify_candidates(
     }
 
     match distinct.len() {
-        0 => JavaTypeResolution::Unresolved { invalid_candidates },
-        1 => JavaTypeResolution::Resolved(distinct.pop().unwrap()),
-        _ => JavaTypeResolution::Ambiguous(distinct),
+        0 => TypeResolution::Unresolved { invalid_candidates },
+        1 => TypeResolution::Resolved(distinct.pop().unwrap()),
+        _ => TypeResolution::Ambiguous(distinct),
     }
 }
 
 /// The members of a type with a matching name in the given namespace.
 /// No inheritance yet: only the type's own body scope is searched.
 fn find_member(
-    file: &JavaFile,
-    type_declaration: JavaDeclarationId,
-    name: &JavaIdentifier,
-    namespace: JavaNamespace,
-) -> Vec<JavaDeclarationId> {
-    let JavaDeclaration::Type(declaration) = &file.declarations[type_declaration.0] else {
+    file: &model::File,
+    type_declaration: model::DeclarationId,
+    name: &model::Identifier,
+    namespace: model::Namespace,
+) -> Vec<model::DeclarationId> {
+    let model::Declaration::Type(declaration) = &file.declarations[type_declaration.0] else {
         return Vec::new();
     };
 
@@ -729,30 +713,30 @@ fn find_member(
 /// This is the go-to-declaration entry point.
 pub fn resolve_occurrence_at(
     source: &jvm::model::Source,
-    file: &JavaFile,
+    file: &model::File,
     offset: Offset,
-    query: &JavaQuery,
+    query: &Query,
 ) -> Vec<NavigationTarget<jvm::model::Source>> {
     let Some((_, entity)) = file.position_index.tightest_containing(offset) else {
         return Vec::new();
     };
 
     let targets = match entity {
-        JavaEntityId::Declaration(declaration) => vec![(source.clone(), declaration)],
-        JavaEntityId::TypeRef(owner) => {
+        model::EntityId::Declaration(declaration) => vec![(source.clone(), declaration)],
+        model::EntityId::TypeRef(owner) => {
             let declaration = &file.declarations[owner.0];
             let Some(type_ref) = declaration.type_ref() else {
                 return Vec::new();
             };
             resolve_type_reference(source, file, type_ref, declaration.declaring_scope(), query)
         }
-        JavaEntityId::BodyNode(body, node) => {
-            let JavaBodyNodeKind::Expression(_) = &file.bodies[body.0].node(node).kind else {
+        model::EntityId::BodyNode(body, node) => {
+            let model::BodyNodeKind::Expression(_) = &file.bodies[body.0].node(node).kind else {
                 return Vec::new();
             };
             resolve_expression(source, file, body, node, query)
         }
-        JavaEntityId::Scope(..) | JavaEntityId::Import(..) => Vec::new(),
+        model::EntityId::Scope(..) | model::EntityId::Import(..) => Vec::new(),
     };
 
     targets
@@ -770,26 +754,26 @@ pub fn resolve_occurrence_at(
 
 pub(crate) fn resolve_expression(
     source: &jvm::model::Source,
-    file: &JavaFile,
-    body_id: JavaBodyId,
-    expression_id: JavaBodyNodeId,
-    query: &JavaQuery,
-) -> Vec<(jvm::model::Source, JavaDeclarationId)> {
+    file: &model::File,
+    body_id: model::BodyId,
+    expression_id: model::BodyNodeId,
+    query: &Query,
+) -> Vec<(jvm::model::Source, model::DeclarationId)> {
     let body = &file.bodies[body_id.0];
     let scope = body.node(expression_id).scope;
     let Some(expression) = body.expression(expression_id) else {
         return Vec::new();
     };
     match expression {
-        JavaExpression::NameRef { name } => resolve_variable_name(file, name, scope)
+        model::Expression::NameRef { name } => resolve_variable_name(file, name, scope)
             .into_iter()
             .map(|declaration| (source.clone(), declaration))
             .collect(),
-        JavaExpression::This => file
+        model::Expression::This => file
             .enclosing_type_declaration(scope)
             .map(|declaration| vec![(source.clone(), declaration)])
             .unwrap_or_default(),
-        JavaExpression::FieldAccess { receiver, name } => {
+        model::Expression::FieldAccess { receiver, name } => {
             let Some((class_source, class)) =
                 resolve_receiver_class(source, file, body_id, *receiver, query)
             else {
@@ -798,12 +782,12 @@ pub(crate) fn resolve_expression(
             let Some(class_file) = query.model_of(&class_source) else {
                 return Vec::new();
             };
-            find_member(class_file, class, name, JavaNamespace::Variable)
+            find_member(class_file, class, name, model::Namespace::Variable)
                 .into_iter()
                 .map(|member| (class_source.clone(), member))
                 .collect()
         }
-        JavaExpression::MethodCall { receiver, name, .. } => {
+        model::Expression::MethodCall { receiver, name, .. } => {
             let receiver_class = match receiver {
                 Some(receiver) => resolve_receiver_class(source, file, body_id, *receiver, query),
                 None => file
@@ -816,15 +800,15 @@ pub(crate) fn resolve_expression(
             let Some(class_file) = query.model_of(&class_source) else {
                 return Vec::new();
             };
-            find_member(class_file, class, name, JavaNamespace::Method)
+            find_member(class_file, class, name, model::Namespace::Method)
                 .into_iter()
                 .map(|member| (class_source.clone(), member))
                 .collect()
         }
-        JavaExpression::ObjectCreation { ty, .. } => {
+        model::Expression::ObjectCreation { ty, .. } => {
             resolve_type_reference(source, file, ty, scope, query)
         }
-        JavaExpression::Assign { .. } | JavaExpression::Literal => Vec::new(),
+        model::Expression::Assign { .. } | model::Expression::Literal => Vec::new(),
     }
 }
 
@@ -832,22 +816,22 @@ pub(crate) fn resolve_expression(
 /// type of the expression, or the type itself for static access (`Bar.asd`).
 fn resolve_receiver_class(
     source: &jvm::model::Source,
-    file: &JavaFile,
-    body_id: JavaBodyId,
-    expression_id: JavaBodyNodeId,
-    query: &JavaQuery,
-) -> Option<(jvm::model::Source, JavaDeclarationId)> {
+    file: &model::File,
+    body_id: model::BodyId,
+    expression_id: model::BodyNodeId,
+    query: &Query,
+) -> Option<(jvm::model::Source, model::DeclarationId)> {
     let body = &file.bodies[body_id.0];
     let scope = body.node(expression_id).scope;
     let Some(expression) = body.expression(expression_id) else {
         return None;
     };
     match expression {
-        JavaExpression::This => {
+        model::Expression::This => {
             let declaration = file.enclosing_type_declaration(scope)?;
             Some((source.clone(), declaration))
         }
-        JavaExpression::NameRef { name } => {
+        model::Expression::NameRef { name } => {
             if let Some(variable) = resolve_variable_name(file, name, scope).into_iter().next() {
                 let declaration = &file.declarations[variable.0];
                 let type_ref = declaration.type_ref()?;
@@ -863,19 +847,25 @@ fn resolve_receiver_class(
             }
 
             // Not a variable: try a type name for static access (`Bar.asd`).
-            match resolve_type_name(&JavaName::Simple(name.clone()), source, file, scope, query) {
-                JavaTypeResolution::Resolved(JavaTypeTarget::Java {
+            match resolve_type_name(
+                &model::Name::Simple(name.clone()),
+                source,
+                file,
+                scope,
+                query,
+            ) {
+                TypeResolution::Resolved(TypeTarget::Parsed {
                     source,
                     declaration,
                 }) => Some((source, declaration)),
                 _ => None,
             }
         }
-        JavaExpression::FieldAccess { receiver, name } => {
+        model::Expression::FieldAccess { receiver, name } => {
             let (class_source, class) =
                 resolve_receiver_class(source, file, body_id, *receiver, query)?;
             let class_file = query.model_of(&class_source)?;
-            let member = find_member(class_file, class, name, JavaNamespace::Variable)
+            let member = find_member(class_file, class, name, model::Namespace::Variable)
                 .into_iter()
                 .next()?;
             let declaration = &class_file.declarations[member.0];
@@ -889,7 +879,7 @@ fn resolve_receiver_class(
             .into_iter()
             .next()
         }
-        JavaExpression::MethodCall { receiver, name, .. } => {
+        model::Expression::MethodCall { receiver, name, .. } => {
             let receiver_class = match receiver {
                 Some(receiver) => resolve_receiver_class(source, file, body_id, *receiver, query),
                 None => file
@@ -898,7 +888,7 @@ fn resolve_receiver_class(
             }?;
             let (class_source, class) = receiver_class;
             let class_file = query.model_of(&class_source)?;
-            let member = find_member(class_file, class, name, JavaNamespace::Method)
+            let member = find_member(class_file, class, name, model::Namespace::Method)
                 .into_iter()
                 .next()?;
             let declaration = &class_file.declarations[member.0];
@@ -912,40 +902,40 @@ fn resolve_receiver_class(
             .into_iter()
             .next()
         }
-        JavaExpression::ObjectCreation { ty, .. } => {
+        model::Expression::ObjectCreation { ty, .. } => {
             resolve_type_reference(source, file, ty, scope, query)
                 .into_iter()
                 .next()
         }
-        JavaExpression::Assign { .. } | JavaExpression::Literal => None,
+        model::Expression::Assign { .. } | model::Expression::Literal => None,
     }
 }
 
 /// A syntactic type annotation resolved to its declaring class.
 fn resolve_type_reference(
     source: &jvm::model::Source,
-    file: &JavaFile,
-    type_ref: &JavaTypeRef,
-    scope: JavaLexicalScopeId,
-    query: &JavaQuery,
-) -> Vec<(jvm::model::Source, JavaDeclarationId)> {
+    file: &model::File,
+    type_ref: &model::TypeRef,
+    scope: model::LexicalScopeId,
+    query: &Query,
+) -> Vec<(jvm::model::Source, model::DeclarationId)> {
     if type_ref.primitive {
         return Vec::new();
     }
 
     match resolve_type_name(&type_ref.name, source, file, scope, query) {
-        JavaTypeResolution::Resolved(JavaTypeTarget::Java {
+        TypeResolution::Resolved(TypeTarget::Parsed {
             source,
             declaration,
         }) => vec![(source, declaration)],
-        JavaTypeResolution::Ambiguous(targets) => targets
+        TypeResolution::Ambiguous(targets) => targets
             .into_iter()
             .filter_map(|target| match target {
-                JavaTypeTarget::Java {
+                TypeTarget::Parsed {
                     source,
                     declaration,
                 } => Some((source, declaration)),
-                JavaTypeTarget::Jvm { .. } => None,
+                TypeTarget::Compiled { .. } => None,
             })
             .collect(),
         _ => Vec::new(),
@@ -955,25 +945,25 @@ fn resolve_type_reference(
 /// A bare name in expression position: locals, parameters, then fields,
 /// nearest scope first. Always in-file.
 pub(crate) fn resolve_variable_name(
-    file: &JavaFile,
-    name: &JavaIdentifier,
-    scope: JavaLexicalScopeId,
-) -> Vec<JavaDeclarationId> {
+    file: &model::File,
+    name: &model::Identifier,
+    scope: model::LexicalScopeId,
+) -> Vec<model::DeclarationId> {
     for (_, scope) in file.iter_scope_chain(scope) {
-        let hits: Vec<JavaDeclarationId> = scope
+        let hits: Vec<model::DeclarationId> = scope
             .declarations
             .iter()
             .copied()
             .filter(|declaration_id| {
                 match &file.declarations[declaration_id.0] {
                     // JLS 6.3: a local's scope starts at its declarator.
-                    JavaDeclaration::Local(declaration) => {
+                    model::Declaration::Local(declaration) => {
                         declaration.name.as_ref().is_some_and(|local| {
                             local.text == name.text && local.span.start <= name.span.start
                         })
                     }
-                    JavaDeclaration::Parameter(_) | JavaDeclaration::Field(_) => file.declarations
-                        [declaration_id.0]
+                    model::Declaration::Parameter(_) | model::Declaration::Field(_) => file
+                        .declarations[declaration_id.0]
                         .name()
                         .is_some_and(|candidate| candidate.text == name.text),
                     _ => false,

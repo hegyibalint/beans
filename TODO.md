@@ -41,7 +41,7 @@ Not built yet. Nothing is wrong; there is just no code.
 - **The on-demand imports a user writes**, the rest of stage 4 of
   `resolve_type_name`. The implicit `java.lang.*` (§7.3) is built and is the
   whole of the stage; type-import-on-demand (§7.5.2) and static-import-on-demand
-  (§7.5.4) reach the model as a `JavaImportKind` and are read by nobody. Both
+  (§7.5.4) reach the model as a `model::ImportKind` and are read by nobody. Both
   name a package *or* a type (§6.5.4), so both need the `resolve_canonical_name`
   walk to report which of the two its name ended in, and it discards the package
   half today.
@@ -54,11 +54,11 @@ Not built yet. Nothing is wrong; there is just no code.
 - **Import suggestions**, stage 6. No JLS section; this is ours.
 
 - **The members of a compiled type.** The `find_member` in the `resolution.rs`
-  walks a `JavaFile`'s scopes, so a field or a method of a class file reaches
+  walks a `model::File`'s scopes, so a field or a method of a class file reaches
   nothing: `Instant.now()` has no answer even with the JDK in scope. Its type
-  member sibling, the `member_types` `Jvm` arm, does the same job over binary
-  names and shows the shape the rest would take. Until then `JvmField::access`
-  and `JvmMethod::access` are decoded, pinned by
+  member sibling, the `member_types` `Compiled` arm, does the same job over binary
+  names and shows the shape the rest would take. Until then `jvm::model::Field::access`
+  and `jvm::model::Method::access` are decoded, pinned by
   `class_file/tests/declarations.rs`, and read by nobody.
 
 - **Inherited member types** (§§8.2 and 9.2). A member type of a superclass or a
@@ -100,9 +100,9 @@ Not built yet. Nothing is wrong; there is just no code.
   `class A { void m() { int x = 1; y` parses to a bare `ERROR` root with no
   `program` above it, which the `debug_assert_eq!(root.kind(), "program")` in
   `crates/lang-java/src/parser.rs` currently treats as impossible. Nothing in a
-  `JavaFile` can say a parse recovered nothing, and `has_error` lives only on the
-  tree, so the judgement is the parser's to make and to hand back. `parse`
-  returning `Option<JavaFile>` is the small answer; a status the model carries is
+  `model::File` can say a parse recovered nothing, and `has_error` lives only on
+  the tree, so the judgement is the parser's to make and to hand back. `parse`
+  returning `Option<model::File>` is the small answer; a status the model carries is
   the larger one, and it is what a consumer would need to know it is being served
   something stale.
 
@@ -128,10 +128,10 @@ Not built yet. Nothing is wrong; there is just no code.
   visible to everything. See the `crates/engine/src/workspace.rs`; splitting it
   needs the lake to hold modules. The module name is no longer the obstacle:
   `container/jimage.rs` reads it off every entry and glues it onto the front of
-  the `JvmSource::JimageEntry` path, so it is already there to be lifted into a
+  the `jvm::model::Source::JimageEntry` path, so it is already there to be lifted into a
   field of its own once something can hold it.
 
-- **A `jmod` is not a container.** `JvmSource::JmodEntry` exists and nothing
+- **A `jmod` is not a container.** `jvm::model::Source::JmodEntry` exists and nothing
   builds one; `container.rs` dispatches `.jar` and nothing else through
   `archive.rs`. JDK 25 and 26 ship no `jmods/` at all (JEP 493), so this only
   matters for an older JDK or a module path that names one directly.
@@ -164,7 +164,7 @@ Cannot be built until we choose.
   silently, and there is no cycle check. Dropping beats failing the whole
   import, but a typo should probably be visible somewhere.
 
-- **Is a `JvmQualifiedName` dotted or internal?** It holds the JLS binary name
+- **Is a `jvm::model::BinaryName` dotted or internal?** It holds the JLS binary name
   with dots (`p.Outer$Inner`), while the JVMS spells it `p/Outer$Inner`. A
   reader of real class files will meet the other form, and one of the two has to
   convert.
@@ -175,7 +175,7 @@ Cannot be built until we choose.
 
 - **Local and anonymous classes have no name we can build.** Their binary names
   take a digit sequence after the `$` (`Outer$1`), and the
-  `JvmQualifiedName::nested` cannot spell that. The `enclosing: None` is also
+  `jvm::model::BinaryName::nested` cannot spell that. The `enclosing: None` is also
   how a top-level type reads, so the model cannot say "this one is local".
 
 - **Two containers claiming one name.** JVM discovery preserves both, and Java
@@ -223,7 +223,7 @@ these become possible, which is why they are written down.
   as each one lands; until then §6.4.1 is written down here and nowhere else.
 
 - **What kind of type a declaration is.** The `projection.rs` maps each
-  `JavaTypeKind` onto a `JvmKind` and nothing reads the result, so the mapping
+  `model::TypeKind` onto a `jvm::model::TypeKind` and nothing reads the result, so the mapping
   is write-only. The fixture cannot ask what a declaration *is*, only what a
   name reaches. Unblocked by the first real consumer of `kind`, and only then;
   an expectation added earlier would be an observable that exists for the test
@@ -234,7 +234,7 @@ these become possible, which is why they are written down.
 - **A source file beating a class file of the same binary name is untested.**
   The workspace JAR acceptance test proves a compiled class is indexed and
   scoped, and `resolution/tests/compiled.rs` now walks the `$` join in the
-  `member_types` `Jvm` arm, but nothing says which of the two wins when a
+  `member_types` `Compiled` arm, but nothing says which of the two wins when a
   project holds both.
 
 - **The `parser.rs` and the `model.rs` still keep their tests inline.** 14 tests

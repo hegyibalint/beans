@@ -7,28 +7,27 @@ mod query;
 mod resolution;
 
 use beans_core::analysis::FileAnalysis;
-use beans_core::language::{Language, LanguageProcessing, NavigationTarget};
+use beans_core::language::{LanguageProcessing, NavigationTarget};
 use beans_core::model::{Offset, OffsetSpan};
 use beans_core::storage::Revision;
 use beans_core::storage::RevisionedStorage;
 use beans_platform_jvm as jvm;
 
 use crate::diagnostics::{access_diagnostics, type_scope_diagnostics, unresolved_name_diagnostics};
-use crate::model::{JavaDeclarationId, JavaFile};
-use crate::parser::JavaParser;
+use crate::parser::Parser;
 use crate::projection::project_to_jvm;
-use crate::query::JavaQuery;
+use crate::query::Query;
 use crate::resolution::resolve_occurrence_at;
 
-pub struct LanguageJava {
-    parser: JavaParser,
-    file_models: RevisionedStorage<jvm::model::Source, JavaFile>,
+pub struct Language {
+    parser: Parser,
+    file_models: RevisionedStorage<jvm::model::Source, model::File>,
 }
 
-impl LanguageJava {
-    pub fn new() -> LanguageJava {
-        LanguageJava {
-            parser: JavaParser::new(),
+impl Language {
+    pub fn new() -> Language {
+        Language {
+            parser: Parser::new(),
             file_models: RevisionedStorage::new(),
         }
     }
@@ -47,19 +46,19 @@ impl LanguageJava {
             .iter()
             .enumerate()
             .find(|(_, declaration)| declaration.name_span() == Some(span))?;
-        model.declaration_label(JavaDeclarationId(index))
+        model.declaration_label(model::DeclarationId(index))
     }
 
     pub(crate) fn model_at(
         &self,
         source: &jvm::model::Source,
         revision: Revision,
-    ) -> Option<&JavaFile> {
+    ) -> Option<&model::File> {
         self.file_models.get(source, revision)
     }
 }
 
-impl LanguageProcessing<jvm::model::Source, jvm::Platform> for LanguageJava {
+impl LanguageProcessing<jvm::model::Source, jvm::Platform> for Language {
     fn accepts(&self, source: &jvm::model::Source) -> bool {
         match source {
             jvm::model::Source::SourceFile { path } => {
@@ -90,7 +89,7 @@ impl LanguageProcessing<jvm::model::Source, jvm::Platform> for LanguageJava {
     }
 }
 
-impl Language<jvm::model::Source, jvm::Platform> for LanguageJava {
+impl beans_core::language::Language<jvm::model::Source, jvm::Platform> for Language {
     fn analyze(
         &self,
         java_source: &jvm::model::Source,
@@ -98,7 +97,7 @@ impl Language<jvm::model::Source, jvm::Platform> for LanguageJava {
         platform_jvm: &jvm::Platform,
     ) -> Option<FileAnalysis> {
         let java_model = self.file_models.get(java_source, revision)?;
-        let query = JavaQuery::new(platform_jvm.query_from(java_source, revision), self);
+        let query = Query::new(platform_jvm.query_from(java_source, revision), self);
 
         let mut diagnostics = unresolved_name_diagnostics(java_model);
         diagnostics.extend(type_scope_diagnostics(java_source, java_model, &query));
@@ -118,12 +117,12 @@ impl Language<jvm::model::Source, jvm::Platform> for LanguageJava {
         platform_jvm: &jvm::Platform,
     ) -> Option<Vec<NavigationTarget<jvm::model::Source>>> {
         let java_model = self.file_models.get(source, revision)?;
-        let query = JavaQuery::new(platform_jvm.query_from(source, revision), self);
+        let query = Query::new(platform_jvm.query_from(source, revision), self);
         Some(resolve_occurrence_at(source, java_model, offset, &query))
     }
 }
 
-impl Default for LanguageJava {
+impl Default for Language {
     fn default() -> Self {
         Self::new()
     }

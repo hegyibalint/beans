@@ -5,7 +5,7 @@ use beans_core::{
     model::{LineColumnPosition, LineColumnSpan, Offset, OffsetSpan},
     storage::{Revision, RevisionedStorage},
 };
-use beans_lang_java::LanguageJava;
+use beans_lang_java as java;
 use beans_platform_jvm as jvm;
 use beans_workspace::model::Workspace;
 use std::fs;
@@ -27,7 +27,7 @@ pub struct Beans {
     /// no file, so every source stays unscoped.
     scopes: Scopes,
     platform_jvm: jvm::Platform,
-    lang_java: LanguageJava,
+    lang_java: java::Language,
     /// Text of record for every processed source, independent of any parse.
     /// The sole substrate for byte-offset ↔ line/column translation.
     text_files: RevisionedStorage<jvm::model::Source, TextFile>,
@@ -40,7 +40,7 @@ impl Beans {
             workspace: None,
             scopes: Scopes::default(),
             platform_jvm: jvm::Platform::new(),
-            lang_java: LanguageJava::new(),
+            lang_java: java::Language::new(),
             text_files: RevisionedStorage::new(),
         }
     }

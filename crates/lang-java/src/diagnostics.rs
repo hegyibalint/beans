@@ -3,14 +3,11 @@ use std::collections::HashSet;
 use beans_core::analysis::diagnostic::{DiagnosticSeverity, Diagnostics};
 use beans_platform_jvm as jvm;
 
-use crate::accessibility::{JavaSite, is_accessible};
-use crate::model::{
-    JavaAccessLevel, JavaBodyId, JavaBodyNodeId, JavaBodyNodeKind, JavaDeclaration, JavaExpression,
-    JavaFile, JavaImportKind,
-};
-use crate::query::JavaQuery;
+use crate::accessibility::{Site, is_accessible};
+use crate::model;
+use crate::query::Query;
 use crate::resolution::{
-    JavaTypeInvalidity, resolve_expression, resolve_type_name, resolve_variable_name,
+    TypeInvalidity, resolve_expression, resolve_type_name, resolve_variable_name,
 };
 
 /// JLS 26 §6.5.5.1 makes a simple type name a compile-time error unless one
@@ -19,8 +16,8 @@ use crate::resolution::{
 /// observe its source.
 pub fn type_scope_diagnostics(
     source: &jvm::model::Source,
-    file: &JavaFile,
-    query: &JavaQuery,
+    file: &model::File,
+    query: &Query,
 ) -> Vec<Diagnostics> {
     file.declarations
         .iter()
@@ -38,7 +35,7 @@ pub fn type_scope_diagnostics(
                 query,
             );
             resolution
-                .has_invalidity(JavaTypeInvalidity::OutsideScope)
+                .has_invalidity(TypeInvalidity::OutsideScope)
                 .then(|| Diagnostics {
                     span: type_ref.name.span(),
                     severity: DiagnosticSeverity::Error,
@@ -58,19 +55,20 @@ pub fn type_scope_diagnostics(
 /// so the check runs here rather than inside `resolve_expression`.
 pub fn access_diagnostics(
     source: &jvm::model::Source,
-    file: &JavaFile,
-    query: &JavaQuery,
+    file: &model::File,
+    query: &Query,
 ) -> Vec<Diagnostics> {
     let mut diagnostics = Vec::new();
 
     for (body_index, body) in file.bodies.iter().enumerate() {
         for (node_index, node) in body.nodes.iter().enumerate() {
-            let JavaBodyNodeKind::Expression(JavaExpression::FieldAccess { name, .. }) = &node.kind
+            let model::BodyNodeKind::Expression(model::Expression::FieldAccess { name, .. }) =
+                &node.kind
             else {
                 continue;
             };
 
-            let from = JavaSite {
+            let from = Site {
                 source,
                 file,
                 scope: node.scope,
@@ -78,8 +76,8 @@ pub fn access_diagnostics(
             let targets = resolve_expression(
                 source,
                 file,
-                JavaBodyId(body_index),
-                JavaBodyNodeId(node_index),
+                model::BodyId(body_index),
+                model::BodyNodeId(node_index),
                 query,
             );
 
@@ -92,11 +90,11 @@ pub fn access_diagnostics(
                 .iter()
                 .filter_map(|(target_source, declaration)| {
                     let target_file = query.model_of(target_source)?;
-                    let JavaDeclaration::Field(field) = &target_file.declarations[declaration.0]
+                    let model::Declaration::Field(field) = &target_file.declarations[declaration.0]
                     else {
                         return None;
                     };
-                    let declared = JavaSite {
+                    let declared = Site {
                         source: target_source,
                         file: target_file,
                         scope: field.declaring_scope,
@@ -131,16 +129,16 @@ pub fn access_diagnostics(
     diagnostics
 }
 
-fn level_word(level: JavaAccessLevel) -> &'static str {
+fn level_word(level: model::AccessLevel) -> &'static str {
     match level {
-        JavaAccessLevel::Public => "public",
-        JavaAccessLevel::Protected => "protected",
-        JavaAccessLevel::Package => "package-private",
-        JavaAccessLevel::Private => "private",
+        model::AccessLevel::Public => "public",
+        model::AccessLevel::Protected => "protected",
+        model::AccessLevel::Package => "package-private",
+        model::AccessLevel::Private => "private",
     }
 }
 
-fn owner_name(file: &JavaFile, scope: crate::model::JavaLexicalScopeId) -> String {
+fn owner_name(file: &model::File, scope: crate::model::LexicalScopeId) -> String {
     file.enclosing_type_declaration(scope)
         .and_then(|declaration| file.declarations[declaration.0].name())
         .map(|name| name.text.clone())
@@ -151,13 +149,13 @@ fn owner_name(file: &JavaFile, scope: crate::model::JavaLexicalScopeId) -> Strin
 /// member lookups on a receiver and type names are never flagged — inheritance
 /// is not modeled, and a type name reaches `java.lang` only once a project has
 /// named a JDK, so those checks would guess.
-pub fn unresolved_name_diagnostics(model: &JavaFile) -> Vec<Diagnostics> {
+pub fn unresolved_name_diagnostics(model: &model::File) -> Vec<Diagnostics> {
     // Static imports bring names we cannot model yet; rather than flagging
     // them, stay silent for the whole file.
     if model.imports.iter().any(|import| {
         matches!(
             import.kind,
-            JavaImportKind::Static | JavaImportKind::StaticOnDemand
+            model::ImportKind::Static | model::ImportKind::StaticOnDemand
         )
     }) {
         return Vec::new();
@@ -171,7 +169,7 @@ pub fn unresolved_name_diagnostics(model: &JavaFile) -> Vec<Diagnostics> {
             scope
                 .owner
                 .is_some_and(|owner| match &model.declarations[owner.0] {
-                    JavaDeclaration::Type(declaration) => declaration.superclass.is_some(),
+                    model::Declaration::Type(declaration) => declaration.superclass.is_some(),
                     _ => false,
                 })
         });
@@ -184,14 +182,14 @@ pub fn unresolved_name_diagnostics(model: &JavaFile) -> Vec<Diagnostics> {
         // a JDK, so never flag them.
         let mut receivers = HashSet::new();
         for node in &body.nodes {
-            let JavaBodyNodeKind::Expression(expression) = &node.kind else {
+            let model::BodyNodeKind::Expression(expression) = &node.kind else {
                 continue;
             };
             match expression {
-                JavaExpression::FieldAccess { receiver, .. } => {
+                model::Expression::FieldAccess { receiver, .. } => {
                     receivers.insert(receiver.0);
                 }
-                JavaExpression::MethodCall {
+                model::Expression::MethodCall {
                     receiver: Some(receiver),
                     ..
                 } => {
@@ -202,7 +200,8 @@ pub fn unresolved_name_diagnostics(model: &JavaFile) -> Vec<Diagnostics> {
         }
 
         for (index, node) in body.nodes.iter().enumerate() {
-            let JavaBodyNodeKind::Expression(JavaExpression::NameRef { name }) = &node.kind else {
+            let model::BodyNodeKind::Expression(model::Expression::NameRef { name }) = &node.kind
+            else {
                 continue;
             };
             if receivers.contains(&index) {
@@ -230,10 +229,10 @@ mod tests {
     use beans_platform_jvm as jvm;
 
     use super::*;
-    use crate::{LanguageJava, parser::JavaParser};
+    use crate::{Language, parser::Parser};
 
-    fn parse(contents: &str) -> JavaFile {
-        JavaParser::new().parse(contents)
+    fn parse(contents: &str) -> model::File {
+        Parser::new().parse(contents)
     }
 
     fn source(path: &str) -> jvm::model::Source {
@@ -243,7 +242,7 @@ mod tests {
     }
 
     fn process(
-        java: &mut LanguageJava,
+        java: &mut Language,
         jvm: &mut jvm::Platform,
         revision: Revision,
         path: &str,
@@ -257,7 +256,7 @@ mod tests {
     #[test]
     fn flags_a_known_type_outside_the_compilation_scope() {
         let revision = Revision::default();
-        let mut java = LanguageJava::new();
+        let mut java = Language::new();
         let mut jvm = jvm::Platform::new();
         process(
             &mut java,
@@ -276,7 +275,7 @@ mod tests {
             )])],
         );
         let file = java.model_at(&current, revision).unwrap();
-        let query = JavaQuery::new(jvm.query_from(&current, revision), &java);
+        let query = Query::new(jvm.query_from(&current, revision), &java);
 
         let diagnostics = type_scope_diagnostics(&current, file, &query);
 
@@ -294,7 +293,7 @@ mod tests {
     #[test]
     fn an_inaccessible_type_has_no_scope_diagnostic() {
         let revision = Revision::default();
-        let mut java = LanguageJava::new();
+        let mut java = Language::new();
         let mut jvm = jvm::Platform::new();
         process(
             &mut java,
@@ -311,7 +310,7 @@ mod tests {
             "package p; import q.X; class Test { X field; }",
         );
         let file = java.model_at(&current, revision).unwrap();
-        let query = JavaQuery::new(jvm.query_from(&current, revision), &java);
+        let query = Query::new(jvm.query_from(&current, revision), &java);
 
         assert!(type_scope_diagnostics(&current, file, &query).is_empty());
     }
@@ -319,7 +318,7 @@ mod tests {
     #[test]
     fn a_type_absent_from_the_lake_has_no_scope_diagnostic() {
         let revision = Revision::default();
-        let mut java = LanguageJava::new();
+        let mut java = Language::new();
         let mut jvm = jvm::Platform::new();
         let current = process(
             &mut java,
@@ -329,7 +328,7 @@ mod tests {
             "package p; class Test { Missing field; }",
         );
         let file = java.model_at(&current, revision).unwrap();
-        let query = JavaQuery::new(jvm.query_from(&current, revision), &java);
+        let query = Query::new(jvm.query_from(&current, revision), &java);
 
         assert!(type_scope_diagnostics(&current, file, &query).is_empty());
     }

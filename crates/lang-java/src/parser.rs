@@ -1,29 +1,22 @@
 use beans_core::model::{Offset, OffsetSpan};
-use tree_sitter::{Node, Parser};
+use tree_sitter::{Node, Parser as TreeSitterParser};
 
-use crate::model::{
-    JavaAccess, JavaAccessLevel, JavaBody, JavaBodyNode, JavaBodyNodeId, JavaBodyNodeKind,
-    JavaConstructorDeclaration, JavaDeclaration, JavaDeclarationId, JavaExpression,
-    JavaFieldDeclaration, JavaFile, JavaIdentifier, JavaImport, JavaImportKind, JavaLexicalScope,
-    JavaLexicalScopeId, JavaLocalDeclaration, JavaMethodDeclaration, JavaName,
-    JavaParameterDeclaration, JavaPositionIndex, JavaQualifiedName, JavaStatement,
-    JavaTypeDeclaration, JavaTypeKind, JavaTypeRef,
-};
+use crate::model;
 
-pub struct JavaParser {
-    parser: Parser,
+pub struct Parser {
+    parser: TreeSitterParser,
 }
 
-impl JavaParser {
-    pub fn new() -> JavaParser {
-        let mut parser = Parser::new();
+impl Parser {
+    pub fn new() -> Parser {
+        let mut parser = TreeSitterParser::new();
         parser
             .set_language(&tree_sitter_java::LANGUAGE.into())
             .expect("java grammar is compatible with the linked tree-sitter");
-        JavaParser { parser }
+        Parser { parser }
     }
 
-    pub fn parse(&mut self, contents: &str) -> JavaFile {
+    pub fn parse(&mut self, contents: &str) -> model::File {
         let tree = self
             .parser
             .parse(contents, None)
@@ -32,10 +25,10 @@ impl JavaParser {
     }
 }
 
-fn parse_program(root: Node, src: &str) -> JavaFile {
+fn parse_program(root: Node, src: &str) -> model::File {
     debug_assert_eq!(root.kind(), "program");
 
-    let mut file = JavaFile::new();
+    let mut file = model::File::new();
     let compilation_unit_scope = file.compilation_unit_scope;
 
     let mut cursor = root.walk();
@@ -93,11 +86,11 @@ fn parse_program(root: Node, src: &str) -> JavaFile {
         start: Offset(0),
         end: Offset(src.len()),
     };
-    file.position_index = JavaPositionIndex::build(&file);
+    file.position_index = model::PositionIndex::build(&file);
     file
 }
 
-fn parse_package_declaration(node: Node, src: &str) -> Option<JavaName> {
+fn parse_package_declaration(node: Node, src: &str) -> Option<model::Name> {
     let mut cursor = node.walk();
     node.named_children(&mut cursor)
         .find_map(|child| match child.kind() {
@@ -106,7 +99,7 @@ fn parse_package_declaration(node: Node, src: &str) -> Option<JavaName> {
         })
 }
 
-fn parse_import_declaration(node: Node, src: &str) -> Option<JavaImport> {
+fn parse_import_declaration(node: Node, src: &str) -> Option<model::Import> {
     let mut name = None;
     let mut is_static = false;
     let mut on_demand = false;
@@ -124,23 +117,23 @@ fn parse_import_declaration(node: Node, src: &str) -> Option<JavaImport> {
     }
 
     let kind = match (is_static, on_demand) {
-        (false, false) => JavaImportKind::Type,
-        (false, true) => JavaImportKind::TypeOnDemand,
-        (true, false) => JavaImportKind::Static,
-        (true, true) => JavaImportKind::StaticOnDemand,
+        (false, false) => model::ImportKind::Type,
+        (false, true) => model::ImportKind::TypeOnDemand,
+        (true, false) => model::ImportKind::Static,
+        (true, true) => model::ImportKind::StaticOnDemand,
     };
 
-    Some(JavaImport { name: name?, kind })
+    Some(model::Import { name: name?, kind })
 }
 
 fn new_scope(
-    file: &mut JavaFile,
-    parent: JavaLexicalScopeId,
-    owner: Option<JavaDeclarationId>,
+    file: &mut model::File,
+    parent: model::LexicalScopeId,
+    owner: Option<model::DeclarationId>,
     span: OffsetSpan,
-) -> JavaLexicalScopeId {
-    let scope_id = JavaLexicalScopeId(file.lexical_scopes.len());
-    file.lexical_scopes.push(JavaLexicalScope {
+) -> model::LexicalScopeId {
+    let scope_id = model::LexicalScopeId(file.lexical_scopes.len());
+    file.lexical_scopes.push(model::LexicalScope {
         parent: Some(parent),
         owner,
         declarations: Vec::new(),
@@ -150,11 +143,11 @@ fn new_scope(
 }
 
 fn add_declaration(
-    file: &mut JavaFile,
-    declaring_scope: JavaLexicalScopeId,
-    declaration: JavaDeclaration,
-) -> JavaDeclarationId {
-    let declaration_id = JavaDeclarationId(file.declarations.len());
+    file: &mut model::File,
+    declaring_scope: model::LexicalScopeId,
+    declaration: model::Declaration,
+) -> model::DeclarationId {
+    let declaration_id = model::DeclarationId(file.declarations.len());
     file.declarations.push(declaration);
     file.lexical_scopes[declaring_scope.0]
         .declarations
@@ -164,80 +157,80 @@ fn add_declaration(
 
 fn parse_class_declaration(
     node: Node,
-    declaring_scope: JavaLexicalScopeId,
+    declaring_scope: model::LexicalScopeId,
     src: &str,
-    file: &mut JavaFile,
-) -> Option<JavaDeclarationId> {
-    add_type_declaration(node, JavaTypeKind::Class, declaring_scope, src, file)
+    file: &mut model::File,
+) -> Option<model::DeclarationId> {
+    add_type_declaration(node, model::TypeKind::Class, declaring_scope, src, file)
 }
 
 fn parse_interface_declaration(
     node: Node,
-    declaring_scope: JavaLexicalScopeId,
+    declaring_scope: model::LexicalScopeId,
     src: &str,
-    file: &mut JavaFile,
-) -> Option<JavaDeclarationId> {
-    add_type_declaration(node, JavaTypeKind::Interface, declaring_scope, src, file)
+    file: &mut model::File,
+) -> Option<model::DeclarationId> {
+    add_type_declaration(node, model::TypeKind::Interface, declaring_scope, src, file)
 }
 
 fn parse_enum_declaration(
     node: Node,
-    declaring_scope: JavaLexicalScopeId,
+    declaring_scope: model::LexicalScopeId,
     src: &str,
-    file: &mut JavaFile,
-) -> Option<JavaDeclarationId> {
-    add_type_declaration(node, JavaTypeKind::Enum, declaring_scope, src, file)
+    file: &mut model::File,
+) -> Option<model::DeclarationId> {
+    add_type_declaration(node, model::TypeKind::Enum, declaring_scope, src, file)
 }
 
 fn parse_record_declaration(
     node: Node,
-    declaring_scope: JavaLexicalScopeId,
+    declaring_scope: model::LexicalScopeId,
     src: &str,
-    file: &mut JavaFile,
-) -> Option<JavaDeclarationId> {
-    add_type_declaration(node, JavaTypeKind::Record, declaring_scope, src, file)
+    file: &mut model::File,
+) -> Option<model::DeclarationId> {
+    add_type_declaration(node, model::TypeKind::Record, declaring_scope, src, file)
 }
 
 fn parse_annotation_type_declaration(
     node: Node,
-    declaring_scope: JavaLexicalScopeId,
+    declaring_scope: model::LexicalScopeId,
     src: &str,
-    file: &mut JavaFile,
-) -> Option<JavaDeclarationId> {
+    file: &mut model::File,
+) -> Option<model::DeclarationId> {
     add_type_declaration(
         node,
-        JavaTypeKind::AnnotationInterface,
+        model::TypeKind::AnnotationInterface,
         declaring_scope,
         src,
         file,
     )
 }
 
-fn parse_access(node: Node) -> Option<JavaAccess> {
+fn parse_access(node: Node) -> Option<model::Access> {
     let implicit = implicit_access_level(node)?;
     let declared = declared_access_level(node);
 
-    Some(JavaAccess {
+    Some(model::Access {
         level: declared.map_or(implicit, |(level, _)| level),
         declared_at: declared.map(|(_, span)| span),
     })
 }
 
 /// What the position means when nothing is written.
-fn implicit_access_level(node: Node) -> Option<JavaAccessLevel> {
+fn implicit_access_level(node: Node) -> Option<model::AccessLevel> {
     match node.parent()?.kind() {
         // §6.6.1. A record body and an anonymous class body are both
         // `class_body`; an enum's members sit after its constants.
-        "program" | "class_body" | "enum_body_declarations" => Some(JavaAccessLevel::Package),
+        "program" | "class_body" | "enum_body_declarations" => Some(model::AccessLevel::Package),
         // §9.5, which §9.6 extends to annotation interfaces.
-        "interface_body" | "annotation_type_body" => Some(JavaAccessLevel::Public),
+        "interface_body" | "annotation_type_body" => Some(model::AccessLevel::Public),
         // §8.1.1: no access level here at all. A local or anonymous class is
         // reached through its scope (§6.3), never through access control.
         _ => None,
     }
 }
 
-fn declared_access_level(node: Node) -> Option<(JavaAccessLevel, OffsetSpan)> {
+fn declared_access_level(node: Node) -> Option<(model::AccessLevel, OffsetSpan)> {
     let mut cursor = node.walk();
     let modifiers = node
         .children(&mut cursor)
@@ -246,9 +239,9 @@ fn declared_access_level(node: Node) -> Option<(JavaAccessLevel, OffsetSpan)> {
     let mut cursor = modifiers.walk();
     modifiers.children(&mut cursor).find_map(|child| {
         let level = match child.kind() {
-            "public" => JavaAccessLevel::Public,
-            "protected" => JavaAccessLevel::Protected,
-            "private" => JavaAccessLevel::Private,
+            "public" => model::AccessLevel::Public,
+            "protected" => model::AccessLevel::Protected,
+            "private" => model::AccessLevel::Private,
             _ => return None,
         };
         Some((level, child.byte_range().into()))
@@ -257,11 +250,11 @@ fn declared_access_level(node: Node) -> Option<(JavaAccessLevel, OffsetSpan)> {
 
 fn add_type_declaration(
     node: Node,
-    kind: JavaTypeKind,
-    declaring_scope: JavaLexicalScopeId,
+    kind: model::TypeKind,
+    declaring_scope: model::LexicalScopeId,
     src: &str,
-    file: &mut JavaFile,
-) -> Option<JavaDeclarationId> {
+    file: &mut model::File,
+) -> Option<model::DeclarationId> {
     let name = parse_identifier(node.child_by_field_name("name")?, src)?;
     let body = node.child_by_field_name("body")?;
     let superclass = node
@@ -273,7 +266,7 @@ fn add_type_declaration(
     let declaration = add_declaration(
         file,
         declaring_scope,
-        JavaDeclaration::Type(JavaTypeDeclaration {
+        model::Declaration::Type(model::TypeDeclaration {
             span: node.byte_range().into(),
             name: Some(name),
             kind,
@@ -290,7 +283,7 @@ fn add_type_declaration(
     Some(declaration)
 }
 
-fn walk_type_body(node: Node, scope: JavaLexicalScopeId, src: &str, file: &mut JavaFile) {
+fn walk_type_body(node: Node, scope: model::LexicalScopeId, src: &str, file: &mut model::File) {
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         match child.kind() {
@@ -322,7 +315,12 @@ fn walk_type_body(node: Node, scope: JavaLexicalScopeId, src: &str, file: &mut J
     }
 }
 
-fn parse_field_declaration(node: Node, scope: JavaLexicalScopeId, src: &str, file: &mut JavaFile) {
+fn parse_field_declaration(
+    node: Node,
+    scope: model::LexicalScopeId,
+    src: &str,
+    file: &mut model::File,
+) {
     let ty = node
         .child_by_field_name("type")
         .and_then(|ty| parse_type_ref(ty, src));
@@ -339,7 +337,7 @@ fn parse_field_declaration(node: Node, scope: JavaLexicalScopeId, src: &str, fil
         add_declaration(
             file,
             scope,
-            JavaDeclaration::Field(JavaFieldDeclaration {
+            model::Declaration::Field(model::FieldDeclaration {
                 span: declarator.byte_range().into(),
                 name,
                 access,
@@ -352,10 +350,10 @@ fn parse_field_declaration(node: Node, scope: JavaLexicalScopeId, src: &str, fil
 
 fn parse_method_declaration(
     node: Node,
-    declaring_scope: JavaLexicalScopeId,
+    declaring_scope: model::LexicalScopeId,
     src: &str,
-    file: &mut JavaFile,
-) -> Option<JavaDeclarationId> {
+    file: &mut model::File,
+) -> Option<model::DeclarationId> {
     let name = parse_identifier(node.child_by_field_name("name")?, src)?;
     let return_type = node
         .child_by_field_name("type")
@@ -366,7 +364,7 @@ fn parse_method_declaration(
     let declaration = add_declaration(
         file,
         declaring_scope,
-        JavaDeclaration::Method(JavaMethodDeclaration {
+        model::Declaration::Method(model::MethodDeclaration {
             span: node.byte_range().into(),
             name: Some(name),
             return_type,
@@ -380,7 +378,7 @@ fn parse_method_declaration(
 
     let parameters = parse_formal_parameters(node, method_scope, src, file);
     let body = parse_body(node, method_scope, src, file);
-    let JavaDeclaration::Method(method) = &mut file.declarations[declaration.0] else {
+    let model::Declaration::Method(method) = &mut file.declarations[declaration.0] else {
         unreachable!();
     };
     method.parameters = parameters;
@@ -390,16 +388,16 @@ fn parse_method_declaration(
 
 fn parse_constructor_declaration(
     node: Node,
-    declaring_scope: JavaLexicalScopeId,
+    declaring_scope: model::LexicalScopeId,
     src: &str,
-    file: &mut JavaFile,
-) -> Option<JavaDeclarationId> {
+    file: &mut model::File,
+) -> Option<model::DeclarationId> {
     let constructor_scope = new_scope(file, declaring_scope, None, node.byte_range().into());
 
     let declaration = add_declaration(
         file,
         declaring_scope,
-        JavaDeclaration::Constructor(JavaConstructorDeclaration {
+        model::Declaration::Constructor(model::ConstructorDeclaration {
             span: node.byte_range().into(),
             parameters: Vec::new(),
             declaring_scope,
@@ -411,7 +409,7 @@ fn parse_constructor_declaration(
 
     let parameters = parse_formal_parameters(node, constructor_scope, src, file);
     let body = parse_body(node, constructor_scope, src, file);
-    let JavaDeclaration::Constructor(constructor) = &mut file.declarations[declaration.0] else {
+    let model::Declaration::Constructor(constructor) = &mut file.declarations[declaration.0] else {
         unreachable!();
     };
     constructor.parameters = parameters;
@@ -421,10 +419,10 @@ fn parse_constructor_declaration(
 
 fn parse_formal_parameters(
     node: Node,
-    scope: JavaLexicalScopeId,
+    scope: model::LexicalScopeId,
     src: &str,
-    file: &mut JavaFile,
-) -> Vec<JavaDeclarationId> {
+    file: &mut model::File,
+) -> Vec<model::DeclarationId> {
     let Some(parameters) = node.child_by_field_name("parameters") else {
         return Vec::new();
     };
@@ -444,7 +442,7 @@ fn parse_formal_parameters(
         let declaration = add_declaration(
             file,
             scope,
-            JavaDeclaration::Parameter(JavaParameterDeclaration {
+            model::Declaration::Parameter(model::ParameterDeclaration {
                 span: parameter.byte_range().into(),
                 name,
                 ty,
@@ -458,16 +456,16 @@ fn parse_formal_parameters(
 
 fn parse_body(
     node: Node,
-    scope: JavaLexicalScopeId,
+    scope: model::LexicalScopeId,
     src: &str,
-    file: &mut JavaFile,
-) -> Option<crate::model::JavaBodyId> {
+    file: &mut model::File,
+) -> Option<crate::model::BodyId> {
     let block = node.child_by_field_name("body")?;
     let mut builder = BodyBuilder::default();
     let (root, block_scope) = parse_block(block, scope, src, file, &mut builder);
 
-    let body_id = crate::model::JavaBodyId(file.bodies.len());
-    file.bodies.push(JavaBody {
+    let body_id = crate::model::BodyId(file.bodies.len());
+    file.bodies.push(model::Body {
         scope: block_scope,
         root,
         nodes: builder.nodes,
@@ -477,47 +475,47 @@ fn parse_body(
 
 #[derive(Default)]
 struct BodyBuilder {
-    nodes: Vec<JavaBodyNode>,
+    nodes: Vec<model::BodyNode>,
 }
 
 impl BodyBuilder {
     fn add_statement(
         &mut self,
-        statement: JavaStatement,
+        statement: model::Statement,
         span: OffsetSpan,
-        scope: JavaLexicalScopeId,
-    ) -> JavaBodyNodeId {
-        self.add(JavaBodyNodeKind::Statement(statement), span, scope)
+        scope: model::LexicalScopeId,
+    ) -> model::BodyNodeId {
+        self.add(model::BodyNodeKind::Statement(statement), span, scope)
     }
 
     fn add_expression(
         &mut self,
-        expression: JavaExpression,
+        expression: model::Expression,
         span: OffsetSpan,
-        scope: JavaLexicalScopeId,
-    ) -> JavaBodyNodeId {
-        self.add(JavaBodyNodeKind::Expression(expression), span, scope)
+        scope: model::LexicalScopeId,
+    ) -> model::BodyNodeId {
+        self.add(model::BodyNodeKind::Expression(expression), span, scope)
     }
 
     fn add(
         &mut self,
-        kind: JavaBodyNodeKind,
+        kind: model::BodyNodeKind,
         span: OffsetSpan,
-        scope: JavaLexicalScopeId,
-    ) -> JavaBodyNodeId {
-        let id = JavaBodyNodeId(self.nodes.len());
-        self.nodes.push(JavaBodyNode { span, scope, kind });
+        scope: model::LexicalScopeId,
+    ) -> model::BodyNodeId {
+        let id = model::BodyNodeId(self.nodes.len());
+        self.nodes.push(model::BodyNode { span, scope, kind });
         id
     }
 }
 
 fn parse_block(
     node: Node,
-    parent_scope: JavaLexicalScopeId,
+    parent_scope: model::LexicalScopeId,
     src: &str,
-    file: &mut JavaFile,
+    file: &mut model::File,
     builder: &mut BodyBuilder,
-) -> (JavaBodyNodeId, JavaLexicalScopeId) {
+) -> (model::BodyNodeId, model::LexicalScopeId) {
     debug_assert!(
         matches!(node.kind(), "block" | "constructor_body"),
         "expected block or constructor_body, got {}",
@@ -539,7 +537,7 @@ fn parse_block(
                     parse_local_type_declaration(child, block_scope, src, file)
                 {
                     statements.push(builder.add_statement(
-                        JavaStatement::TypeDeclaration(declaration),
+                        model::Statement::TypeDeclaration(declaration),
                         child.byte_range().into(),
                         block_scope,
                     ));
@@ -560,7 +558,7 @@ fn parse_block(
                     parse_expression(expression, block_scope, src, file, builder)
                 }) {
                     statements.push(builder.add_statement(
-                        JavaStatement::Expression(expression),
+                        model::Statement::Expression(expression),
                         child.byte_range().into(),
                         block_scope,
                     ));
@@ -575,7 +573,7 @@ fn parse_block(
                     parse_expression(expression, block_scope, src, file, builder)
                 });
                 statements.push(builder.add_statement(
-                    JavaStatement::Return(value),
+                    model::Statement::Return(value),
                     child.byte_range().into(),
                     block_scope,
                 ));
@@ -585,7 +583,7 @@ fn parse_block(
     }
 
     let block = builder.add_statement(
-        JavaStatement::Block {
+        model::Statement::Block {
             scope: block_scope,
             statements,
         },
@@ -597,10 +595,10 @@ fn parse_block(
 
 fn parse_local_type_declaration(
     node: Node,
-    scope: JavaLexicalScopeId,
+    scope: model::LexicalScopeId,
     src: &str,
-    file: &mut JavaFile,
-) -> Option<JavaDeclarationId> {
+    file: &mut model::File,
+) -> Option<model::DeclarationId> {
     match node.kind() {
         "class_declaration" => parse_class_declaration(node, scope, src, file),
         "interface_declaration" => parse_interface_declaration(node, scope, src, file),
@@ -613,11 +611,11 @@ fn parse_local_type_declaration(
 
 fn parse_local_variable_declaration(
     node: Node,
-    scope: JavaLexicalScopeId,
+    scope: model::LexicalScopeId,
     src: &str,
-    file: &mut JavaFile,
+    file: &mut model::File,
     builder: &mut BodyBuilder,
-    statements: &mut Vec<JavaBodyNodeId>,
+    statements: &mut Vec<model::BodyNodeId>,
 ) {
     let ty = node
         .child_by_field_name("type")
@@ -631,7 +629,7 @@ fn parse_local_variable_declaration(
         let declaration = add_declaration(
             file,
             scope,
-            JavaDeclaration::Local(JavaLocalDeclaration {
+            model::Declaration::Local(model::LocalDeclaration {
                 span: declarator.byte_range().into(),
                 name,
                 ty: ty.clone(),
@@ -642,7 +640,7 @@ fn parse_local_variable_declaration(
             .child_by_field_name("value")
             .and_then(|value| parse_expression(value, scope, src, file, builder));
         statements.push(builder.add_statement(
-            JavaStatement::LocalDeclaration {
+            model::Statement::LocalDeclaration {
                 declaration,
                 initializer,
             },
@@ -654,17 +652,17 @@ fn parse_local_variable_declaration(
 
 fn parse_expression(
     node: Node,
-    scope: JavaLexicalScopeId,
+    scope: model::LexicalScopeId,
     src: &str,
-    file: &mut JavaFile,
+    file: &mut model::File,
     builder: &mut BodyBuilder,
-) -> Option<JavaBodyNodeId> {
+) -> Option<model::BodyNodeId> {
     let span = node.byte_range().into();
     let expression = match node.kind() {
-        "identifier" => JavaExpression::NameRef {
+        "identifier" => model::Expression::NameRef {
             name: parse_identifier(node, src)?,
         },
-        "this" => JavaExpression::This,
+        "this" => model::Expression::This,
         "field_access" => {
             let receiver = parse_expression(
                 node.child_by_field_name("object")?,
@@ -674,7 +672,7 @@ fn parse_expression(
                 builder,
             )?;
             let name = parse_identifier(node.child_by_field_name("field")?, src)?;
-            JavaExpression::FieldAccess { receiver, name }
+            model::Expression::FieldAccess { receiver, name }
         }
         "method_invocation" => {
             let receiver = node
@@ -685,7 +683,7 @@ fn parse_expression(
                 .child_by_field_name("arguments")
                 .map(|arguments| parse_argument_list(arguments, scope, src, file, builder))
                 .unwrap_or_default();
-            JavaExpression::MethodCall {
+            model::Expression::MethodCall {
                 receiver,
                 name,
                 arguments,
@@ -697,7 +695,7 @@ fn parse_expression(
                 .child_by_field_name("arguments")
                 .map(|arguments| parse_argument_list(arguments, scope, src, file, builder))
                 .unwrap_or_default();
-            JavaExpression::ObjectCreation { ty, arguments }
+            model::Expression::ObjectCreation { ty, arguments }
         }
         "assignment_expression" => {
             let target =
@@ -709,7 +707,7 @@ fn parse_expression(
                 file,
                 builder,
             )?;
-            JavaExpression::Assign { target, value }
+            model::Expression::Assign { target, value }
         }
         "parenthesized_expression" => {
             return parse_expression(node.named_child(0)?, scope, src, file, builder);
@@ -724,7 +722,7 @@ fn parse_expression(
         | "character_literal"
         | "true"
         | "false"
-        | "null_literal" => JavaExpression::Literal,
+        | "null_literal" => model::Expression::Literal,
         _ => return None,
     };
     Some(builder.add_expression(expression, span, scope))
@@ -732,29 +730,29 @@ fn parse_expression(
 
 fn parse_argument_list(
     node: Node,
-    scope: JavaLexicalScopeId,
+    scope: model::LexicalScopeId,
     src: &str,
-    file: &mut JavaFile,
+    file: &mut model::File,
     builder: &mut BodyBuilder,
-) -> Vec<JavaBodyNodeId> {
+) -> Vec<model::BodyNodeId> {
     let mut cursor = node.walk();
     node.named_children(&mut cursor)
         .filter_map(|argument| parse_expression(argument, scope, src, file, builder))
         .collect()
 }
 
-fn parse_type_ref(node: Node, src: &str) -> Option<JavaTypeRef> {
+fn parse_type_ref(node: Node, src: &str) -> Option<model::TypeRef> {
     let span = node.byte_range().into();
     match node.kind() {
-        "type_identifier" => Some(JavaTypeRef {
+        "type_identifier" => Some(model::TypeRef {
             span,
-            name: JavaName::Simple(parse_identifier(node, src)?),
+            name: model::Name::Simple(parse_identifier(node, src)?),
             primitive: false,
         }),
         "integral_type" | "floating_point_type" | "boolean_type" | "void_type" => {
-            Some(JavaTypeRef {
+            Some(model::TypeRef {
                 span,
-                name: JavaName::Simple(JavaIdentifier {
+                name: model::Name::Simple(model::Identifier {
                     text: util_copy_source(node, src),
                     span,
                 }),
@@ -766,10 +764,10 @@ fn parse_type_ref(node: Node, src: &str) -> Option<JavaTypeRef> {
             collect_type_segments(node, src, &mut segments);
             let name = match segments.len() {
                 0 => return None,
-                1 => JavaName::Simple(segments.pop().unwrap()),
-                _ => JavaName::Qualified(JavaQualifiedName::new(segments, span)),
+                1 => model::Name::Simple(segments.pop().unwrap()),
+                _ => model::Name::Qualified(model::QualifiedName::new(segments, span)),
             };
-            Some(JavaTypeRef {
+            Some(model::TypeRef {
                 span,
                 name,
                 primitive: false,
@@ -784,7 +782,7 @@ fn parse_type_ref(node: Node, src: &str) -> Option<JavaTypeRef> {
 
 /// Segments of a possibly qualified type name, skipping type arguments:
 /// `java.util.List<String>` contributes `java.util.List`.
-fn collect_type_segments(node: Node, src: &str, segments: &mut Vec<JavaIdentifier>) {
+fn collect_type_segments(node: Node, src: &str, segments: &mut Vec<model::Identifier>) {
     if node.kind() == "type_arguments" {
         return;
     }
@@ -800,18 +798,18 @@ fn collect_type_segments(node: Node, src: &str, segments: &mut Vec<JavaIdentifie
     }
 }
 
-fn parse_name(node: Node, src: &str) -> Option<JavaName> {
+fn parse_name(node: Node, src: &str) -> Option<model::Name> {
     match node.kind() {
-        "identifier" => Some(JavaName::Simple(parse_identifier(node, src)?)),
-        "scoped_identifier" => Some(JavaName::Qualified(parse_scoped_identifier(node, src)?)),
+        "identifier" => Some(model::Name::Simple(parse_identifier(node, src)?)),
+        "scoped_identifier" => Some(model::Name::Qualified(parse_scoped_identifier(node, src)?)),
         kind => panic!("uncovered name node kind: {kind}"),
     }
 }
 
-fn parse_scoped_identifier(node: Node, src: &str) -> Option<JavaQualifiedName> {
+fn parse_scoped_identifier(node: Node, src: &str) -> Option<model::QualifiedName> {
     let mut identifiers = Vec::new();
     collect_scoped_identifier(node, src, &mut identifiers)?;
-    Some(JavaQualifiedName::new(
+    Some(model::QualifiedName::new(
         identifiers,
         node.byte_range().into(),
     ))
@@ -820,7 +818,7 @@ fn parse_scoped_identifier(node: Node, src: &str) -> Option<JavaQualifiedName> {
 fn collect_scoped_identifier(
     node: Node,
     src: &str,
-    identifiers: &mut Vec<JavaIdentifier>,
+    identifiers: &mut Vec<model::Identifier>,
 ) -> Option<()> {
     let scope = node.child_by_field_name("scope")?;
     match scope.kind() {
@@ -832,9 +830,9 @@ fn collect_scoped_identifier(
     Some(())
 }
 
-fn parse_identifier(node: Node, src: &str) -> Option<JavaIdentifier> {
+fn parse_identifier(node: Node, src: &str) -> Option<model::Identifier> {
     match node.kind() {
-        "identifier" | "type_identifier" => Some(JavaIdentifier {
+        "identifier" | "type_identifier" => Some(model::Identifier {
             text: util_copy_source(node, src),
             span: node.byte_range().into(),
         }),
@@ -850,8 +848,8 @@ fn util_copy_source(node: Node, src: &str) -> String {
 mod tests {
     use super::*;
 
-    fn type_declaration(file: &JavaFile, id: JavaDeclarationId) -> &JavaTypeDeclaration {
-        let JavaDeclaration::Type(declaration) = &file.declarations[id.0] else {
+    fn type_declaration(file: &model::File, id: model::DeclarationId) -> &model::TypeDeclaration {
+        let model::Declaration::Type(declaration) = &file.declarations[id.0] else {
             panic!("expected a type declaration");
         };
         declaration
@@ -860,31 +858,31 @@ mod tests {
     #[test]
     fn parses_compilation_unit_declarations() {
         let content = "package org.beans.test;\nimport java.util.List;\nclass Foo {}\n";
-        let mut parser = JavaParser::new();
+        let mut parser = Parser::new();
         let file = parser.parse(content);
 
         assert_eq!(
-            file.package.as_ref().map(JavaName::dotted),
+            file.package.as_ref().map(model::Name::dotted),
             Some("org.beans.test".to_string())
         );
-        assert!(matches!(&file.package, Some(JavaName::Qualified(_))));
+        assert!(matches!(&file.package, Some(model::Name::Qualified(_))));
         assert_eq!(file.imports.len(), 1);
         assert_eq!(file.imports[0].name.dotted(), "java.util.List");
-        assert!(matches!(&file.imports[0].name, JavaName::Qualified(_)));
-        assert_eq!(file.imports[0].kind, JavaImportKind::Type);
+        assert!(matches!(&file.imports[0].name, model::Name::Qualified(_)));
+        assert_eq!(file.imports[0].kind, model::ImportKind::Type);
 
-        assert_eq!(file.top_level_declarations, [JavaDeclarationId(0)]);
+        assert_eq!(file.top_level_declarations, [model::DeclarationId(0)]);
         assert_eq!(
             file.lexical_scopes[file.compilation_unit_scope.0].declarations,
-            [JavaDeclarationId(0)]
+            [model::DeclarationId(0)]
         );
 
-        let declaration = type_declaration(&file, JavaDeclarationId(0));
+        let declaration = type_declaration(&file, model::DeclarationId(0));
         assert_eq!(
             declaration.name.as_ref().map(|name| name.text.as_str()),
             Some("Foo")
         );
-        assert_eq!(declaration.kind, JavaTypeKind::Class);
+        assert_eq!(declaration.kind, model::TypeKind::Class);
         assert_eq!(declaration.declaring_scope, file.compilation_unit_scope);
         assert_eq!(
             file.lexical_scopes[declaration.body_scope.0].parent,
@@ -894,10 +892,10 @@ mod tests {
 
     #[test]
     fn parses_a_single_identifier_as_a_simple_name() {
-        let mut parser = JavaParser::new();
+        let mut parser = Parser::new();
         let file = parser.parse("package example; class Example {}");
 
-        let Some(JavaName::Simple(identifier)) = file.package else {
+        let Some(model::Name::Simple(identifier)) = file.package else {
             panic!("expected a simple package name");
         };
         assert_eq!(identifier.text, "example");
@@ -906,7 +904,7 @@ mod tests {
     #[test]
     fn parses_each_named_type_kind() {
         let content = "class C {} interface I {} enum E {} record R() {} @interface A {}";
-        let mut parser = JavaParser::new();
+        let mut parser = Parser::new();
         let file = parser.parse(content);
 
         let kinds: Vec<_> = file
@@ -917,11 +915,11 @@ mod tests {
         assert_eq!(
             kinds,
             [
-                JavaTypeKind::Class,
-                JavaTypeKind::Interface,
-                JavaTypeKind::Enum,
-                JavaTypeKind::Record,
-                JavaTypeKind::AnnotationInterface,
+                model::TypeKind::Class,
+                model::TypeKind::Interface,
+                model::TypeKind::Enum,
+                model::TypeKind::Record,
+                model::TypeKind::AnnotationInterface,
             ]
         );
     }
@@ -932,11 +930,11 @@ mod tests {
     mod access {
         use super::*;
 
-        fn access_of(file: &JavaFile, name: &str) -> Option<JavaAccess> {
+        fn access_of(file: &model::File, name: &str) -> Option<model::Access> {
             file.declarations
                 .iter()
                 .find_map(|declaration| match declaration {
-                    JavaDeclaration::Type(ty)
+                    model::Declaration::Type(ty)
                         if ty.name.as_ref().is_some_and(|it| it.text == name) =>
                     {
                         Some(ty.access)
@@ -946,21 +944,21 @@ mod tests {
                 .expect("the fixture declares this type")
         }
 
-        fn package_private(file: &JavaFile, name: &str) {
+        fn package_private(file: &model::File, name: &str) {
             assert_eq!(
                 access_of(file, name),
-                Some(JavaAccess {
-                    level: JavaAccessLevel::Package,
+                Some(model::Access {
+                    level: model::AccessLevel::Package,
                     declared_at: None,
                 })
             );
         }
 
-        fn implicitly_public(file: &JavaFile, name: &str) {
+        fn implicitly_public(file: &model::File, name: &str) {
             assert_eq!(
                 access_of(file, name),
-                Some(JavaAccess {
-                    level: JavaAccessLevel::Public,
+                Some(model::Access {
+                    level: model::AccessLevel::Public,
                     declared_at: None,
                 })
             );
@@ -968,7 +966,7 @@ mod tests {
 
         #[test]
         fn a_top_level_type_without_a_modifier_is_package_private() {
-            let mut parser = JavaParser::new();
+            let mut parser = Parser::new();
             let file = parser.parse("class C {}");
 
             package_private(&file, "C");
@@ -979,7 +977,7 @@ mod tests {
         // so each container is its own case even though all four are classes.
         #[test]
         fn a_member_of_any_class_without_a_modifier_is_package_private() {
-            let mut parser = JavaParser::new();
+            let mut parser = Parser::new();
             let file = parser.parse(
                 "class C { class InClass {} }\
                  record R() { class InRecord {} }\
@@ -997,7 +995,7 @@ mod tests {
         // which is why the position has to be part of the answer.
         #[test]
         fn a_member_of_any_interface_without_a_modifier_is_public() {
-            let mut parser = JavaParser::new();
+            let mut parser = Parser::new();
             let file = parser.parse(
                 "interface I { class InInterface {} }\
                  @interface A { class InAnnotation {} }",
@@ -1012,7 +1010,7 @@ mod tests {
         // level to carry; it is reached through its scope or not at all.
         #[test]
         fn a_local_class_has_no_access_level() {
-            let mut parser = JavaParser::new();
+            let mut parser = Parser::new();
             let file = parser.parse("class C { void m() { class L {} } }");
 
             assert_eq!(access_of(&file, "L"), None);
@@ -1020,7 +1018,7 @@ mod tests {
 
         #[test]
         fn every_level_is_recognised_where_it_is_legal() {
-            let mut parser = JavaParser::new();
+            let mut parser = Parser::new();
             let file = parser.parse(
                 "class C { public class Pub {} protected class Prot {} private class Priv {} }",
             );
@@ -1030,22 +1028,22 @@ mod tests {
             assert_eq!(
                 levels,
                 [
-                    Some(JavaAccessLevel::Public),
-                    Some(JavaAccessLevel::Protected),
-                    Some(JavaAccessLevel::Private),
+                    Some(model::AccessLevel::Public),
+                    Some(model::AccessLevel::Protected),
+                    Some(model::AccessLevel::Private),
                 ]
             );
         }
 
         #[test]
         fn an_explicit_modifier_records_where_it_was_written() {
-            let mut parser = JavaParser::new();
+            let mut parser = Parser::new();
             let file = parser.parse("public class C {}");
 
             assert_eq!(
                 access_of(&file, "C"),
-                Some(JavaAccess {
-                    level: JavaAccessLevel::Public,
+                Some(model::Access {
+                    level: model::AccessLevel::Public,
                     declared_at: Some(OffsetSpan {
                         start: Offset(0),
                         end: Offset(6),
@@ -1058,13 +1056,13 @@ mod tests {
         // so the level is unchanged and only the provenance differs.
         #[test]
         fn a_redundant_modifier_is_still_recorded_as_written() {
-            let mut parser = JavaParser::new();
+            let mut parser = Parser::new();
             let file = parser.parse("interface I { public class Inner {} }");
 
             assert_eq!(
                 access_of(&file, "Inner"),
-                Some(JavaAccess {
-                    level: JavaAccessLevel::Public,
+                Some(model::Access {
+                    level: model::AccessLevel::Public,
                     declared_at: Some(OffsetSpan {
                         start: Offset(14),
                         end: Offset(20),
@@ -1077,24 +1075,24 @@ mod tests {
     #[test]
     fn recursively_parses_member_types() {
         let content = "class Outer { class Member { interface Deep {} } }";
-        let mut parser = JavaParser::new();
+        let mut parser = Parser::new();
         let file = parser.parse(content);
 
-        assert_eq!(file.top_level_declarations, [JavaDeclarationId(0)]);
+        assert_eq!(file.top_level_declarations, [model::DeclarationId(0)]);
         assert_eq!(file.declarations.len(), 3);
 
-        let outer = type_declaration(&file, JavaDeclarationId(0));
-        let member = type_declaration(&file, JavaDeclarationId(1));
-        let deep = type_declaration(&file, JavaDeclarationId(2));
+        let outer = type_declaration(&file, model::DeclarationId(0));
+        let member = type_declaration(&file, model::DeclarationId(1));
+        let deep = type_declaration(&file, model::DeclarationId(2));
 
         assert_eq!(
             file.lexical_scopes[outer.body_scope.0].declarations,
-            [JavaDeclarationId(1)]
+            [model::DeclarationId(1)]
         );
         assert_eq!(member.declaring_scope, outer.body_scope);
         assert_eq!(
             file.lexical_scopes[member.body_scope.0].declarations,
-            [JavaDeclarationId(2)]
+            [model::DeclarationId(2)]
         );
         assert_eq!(deep.declaring_scope, member.body_scope);
     }
@@ -1104,12 +1102,12 @@ mod tests {
 
     #[test]
     fn parses_the_worked_example_model() {
-        let mut parser = JavaParser::new();
+        let mut parser = Parser::new();
         let file = parser.parse(WORKED);
 
         // D0 class A, D1 field a, D2 method b, D3 param c, D4 local d
         assert_eq!(file.declarations.len(), 5);
-        let JavaDeclaration::Type(class) = &file.declarations[0] else {
+        let model::Declaration::Type(class) = &file.declarations[0] else {
             panic!("D0 is the class");
         };
         assert_eq!(
@@ -1127,7 +1125,7 @@ mod tests {
             }
         );
 
-        let JavaDeclaration::Field(field) = &file.declarations[1] else {
+        let model::Declaration::Field(field) = &file.declarations[1] else {
             panic!("D1 is the field");
         };
         assert_eq!(
@@ -1146,7 +1144,7 @@ mod tests {
         );
         assert!(field.referenced_type.as_ref().unwrap().primitive);
 
-        let JavaDeclaration::Method(method) = &file.declarations[2] else {
+        let model::Declaration::Method(method) = &file.declarations[2] else {
             panic!("D2 is the method");
         };
         assert_eq!(
@@ -1156,10 +1154,10 @@ mod tests {
                 end: Offset(32)
             }
         );
-        assert_eq!(method.parameters, [JavaDeclarationId(3)]);
+        assert_eq!(method.parameters, [model::DeclarationId(3)]);
         assert!(method.body.is_some());
 
-        let JavaDeclaration::Parameter(parameter) = &file.declarations[3] else {
+        let model::Declaration::Parameter(parameter) = &file.declarations[3] else {
             panic!("D3 is the parameter");
         };
         assert_eq!(
@@ -1179,7 +1177,7 @@ mod tests {
             }
         );
 
-        let JavaDeclaration::Local(local) = &file.declarations[4] else {
+        let model::Declaration::Local(local) = &file.declarations[4] else {
             panic!("D4 is the local");
         };
         assert_eq!(
@@ -1192,8 +1190,8 @@ mod tests {
 
         // Scopes: S0 compilation unit, S1 type body, S2 method, S3 block.
         assert_eq!(file.lexical_scopes.len(), 4);
-        assert_eq!(file.lexical_scopes[1].owner, Some(JavaDeclarationId(0)));
-        assert_eq!(file.lexical_scopes[2].owner, Some(JavaDeclarationId(2)));
+        assert_eq!(file.lexical_scopes[1].owner, Some(model::DeclarationId(0)));
+        assert_eq!(file.lexical_scopes[2].owner, Some(model::DeclarationId(2)));
         assert_eq!(
             file.lexical_scopes[3].span,
             OffsetSpan {
@@ -1201,38 +1199,42 @@ mod tests {
                 end: Offset(100),
             }
         );
-        assert_eq!(file.lexical_scopes[3].parent, Some(JavaLexicalScopeId(2)));
+        assert_eq!(
+            file.lexical_scopes[3].parent,
+            Some(model::LexicalScopeId(2))
+        );
 
-        // Body: 12 nodes — expressions and statements share one arena.
+        // model::Body: 12 nodes — expressions and statements share one arena.
         let body = &file.bodies[0];
         assert_eq!(body.nodes.len(), 12);
 
-        let JavaBodyNodeKind::Statement(JavaStatement::Block { statements, scope }) =
+        let model::BodyNodeKind::Statement(model::Statement::Block { statements, scope }) =
             &body.node(body.root).kind
         else {
             panic!("root is a block");
         };
-        assert_eq!(*scope, JavaLexicalScopeId(3));
+        assert_eq!(*scope, model::LexicalScopeId(3));
         assert_eq!(statements.len(), 3);
 
         // Every node is stamped with the scope it lives in.
         assert!(
             body.nodes
                 .iter()
-                .all(|node| node.scope == JavaLexicalScopeId(3)
-                    || node.scope == JavaLexicalScopeId(2))
+                .all(|node| node.scope == model::LexicalScopeId(3)
+                    || node.scope == model::LexicalScopeId(2))
         );
 
         // N2: int d = c.a;
-        let JavaBodyNodeKind::Statement(JavaStatement::LocalDeclaration {
+        let model::BodyNodeKind::Statement(model::Statement::LocalDeclaration {
             declaration,
             initializer: Some(initializer),
         }) = &body.nodes[2].kind
         else {
             panic!("N2 declares d with an initializer");
         };
-        assert_eq!(*declaration, JavaDeclarationId(4));
-        let JavaExpression::FieldAccess { receiver, name } = body.expression(*initializer).unwrap()
+        assert_eq!(*declaration, model::DeclarationId(4));
+        let model::Expression::FieldAccess { receiver, name } =
+            body.expression(*initializer).unwrap()
         else {
             panic!("initializer is c.a");
         };
@@ -1243,7 +1245,7 @@ mod tests {
                 end: Offset(59)
             }
         );
-        let JavaExpression::NameRef { name } = body.expression(*receiver).unwrap() else {
+        let model::Expression::NameRef { name } = body.expression(*receiver).unwrap() else {
             panic!("receiver is c");
         };
         assert_eq!(
@@ -1255,20 +1257,21 @@ mod tests {
         );
 
         // N7: this.a = d;
-        let JavaBodyNodeKind::Statement(JavaStatement::Expression(assign)) = &body.nodes[7].kind
+        let model::BodyNodeKind::Statement(model::Statement::Expression(assign)) =
+            &body.nodes[7].kind
         else {
             panic!("N7 is an expression statement");
         };
-        let JavaExpression::Assign { target, value } = body.expression(*assign).unwrap() else {
+        let model::Expression::Assign { target, value } = body.expression(*assign).unwrap() else {
             panic!("N7 is an assignment");
         };
-        let JavaExpression::FieldAccess { receiver, name } = body.expression(*target).unwrap()
+        let model::Expression::FieldAccess { receiver, name } = body.expression(*target).unwrap()
         else {
             panic!("target is this.a");
         };
         assert!(matches!(
             body.expression(*receiver),
-            Some(JavaExpression::This)
+            Some(model::Expression::This)
         ));
         assert_eq!(
             name.span,
@@ -1277,7 +1280,7 @@ mod tests {
                 end: Offset(75)
             }
         );
-        let JavaExpression::NameRef { name } = body.expression(*value).unwrap() else {
+        let model::Expression::NameRef { name } = body.expression(*value).unwrap() else {
             panic!("value is d");
         };
         assert_eq!(
@@ -1289,11 +1292,12 @@ mod tests {
         );
 
         // N10: b(c);
-        let JavaBodyNodeKind::Statement(JavaStatement::Expression(call)) = &body.nodes[10].kind
+        let model::BodyNodeKind::Statement(model::Statement::Expression(call)) =
+            &body.nodes[10].kind
         else {
             panic!("N10 is an expression statement");
         };
-        let JavaExpression::MethodCall {
+        let model::Expression::MethodCall {
             receiver,
             name,
             arguments,
@@ -1314,39 +1318,46 @@ mod tests {
 
     #[test]
     fn worked_example_position_index_resolves_offsets() {
-        let mut parser = JavaParser::new();
+        let mut parser = Parser::new();
         let file = parser.parse(WORKED);
         let index = &file.position_index;
 
-        use crate::model::JavaEntityId;
-
         // (6) the `c` in `c.a`
         let (_, entity) = index.tightest_containing(Offset(56)).unwrap();
-        assert!(matches!(entity, JavaEntityId::BodyNode(_, id) if id == JavaBodyNodeId(0)));
+        assert!(matches!(entity, model::EntityId::BodyNode(_, id) if id == model::BodyNodeId(0)));
         // (7) the `a` in `c.a`
         let (_, entity) = index.tightest_containing(Offset(58)).unwrap();
-        assert!(matches!(entity, JavaEntityId::BodyNode(_, id) if id == JavaBodyNodeId(1)));
+        assert!(matches!(entity, model::EntityId::BodyNode(_, id) if id == model::BodyNodeId(1)));
         // (8) this
         let (_, entity) = index.tightest_containing(Offset(70)).unwrap();
-        assert!(matches!(entity, JavaEntityId::BodyNode(_, id) if id == JavaBodyNodeId(3)));
+        assert!(matches!(entity, model::EntityId::BodyNode(_, id) if id == model::BodyNodeId(3)));
         // (10) the `d` value
         let (_, entity) = index.tightest_containing(Offset(78)).unwrap();
-        assert!(matches!(entity, JavaEntityId::BodyNode(_, id) if id == JavaBodyNodeId(5)));
+        assert!(matches!(entity, model::EntityId::BodyNode(_, id) if id == model::BodyNodeId(5)));
         // (11) the `b` call name
         let (_, entity) = index.tightest_containing(Offset(89)).unwrap();
-        assert!(matches!(entity, JavaEntityId::BodyNode(_, id) if id == JavaBodyNodeId(9)));
+        assert!(matches!(entity, model::EntityId::BodyNode(_, id) if id == model::BodyNodeId(9)));
         // (3) the parameter type `B`
         let (_, entity) = index.tightest_containing(Offset(33)).unwrap();
-        assert_eq!(entity, JavaEntityId::TypeRef(JavaDeclarationId(3)));
+        assert_eq!(entity, model::EntityId::TypeRef(model::DeclarationId(3)));
         // (4) the parameter name `c`
         let (_, entity) = index.tightest_containing(Offset(35)).unwrap();
-        assert_eq!(entity, JavaEntityId::Declaration(JavaDeclarationId(3)));
+        assert_eq!(
+            entity,
+            model::EntityId::Declaration(model::DeclarationId(3))
+        );
         // (5) the local name `d`
         let (_, entity) = index.tightest_containing(Offset(52)).unwrap();
-        assert_eq!(entity, JavaEntityId::Declaration(JavaDeclarationId(4)));
+        assert_eq!(
+            entity,
+            model::EntityId::Declaration(model::DeclarationId(4))
+        );
         // (1) the field name `a`
         let (_, entity) = index.tightest_containing(Offset(18)).unwrap();
-        assert_eq!(entity, JavaEntityId::Declaration(JavaDeclarationId(1)));
+        assert_eq!(
+            entity,
+            model::EntityId::Declaration(model::DeclarationId(1))
+        );
     }
 
     #[test]
@@ -1354,19 +1365,19 @@ mod tests {
         // tree-sitter-java models a constructor's body as `constructor_body`,
         // not `block`. The parser must still walk its statements so references
         // inside a constructor resolve.
-        let mut parser = JavaParser::new();
+        let mut parser = Parser::new();
         let file =
             parser.parse("class A {\n    int a;\n    A(int c) {\n        this.a = c;\n    }\n}\n");
 
         // D0 class A, D1 field a, D2 constructor A, D3 param c.
-        let JavaDeclaration::Constructor(constructor) = &file.declarations[2] else {
+        let model::Declaration::Constructor(constructor) = &file.declarations[2] else {
             panic!("D2 is the constructor");
         };
-        assert_eq!(constructor.parameters, [JavaDeclarationId(3)]);
+        assert_eq!(constructor.parameters, [model::DeclarationId(3)]);
         let body_id = constructor.body.expect("the constructor has a body");
 
         let body = &file.bodies[body_id.0];
-        let JavaBodyNodeKind::Statement(JavaStatement::Block { statements, .. }) =
+        let model::BodyNodeKind::Statement(model::Statement::Block { statements, .. }) =
             &body.node(body.root).kind
         else {
             panic!("root is a block");
@@ -1374,24 +1385,24 @@ mod tests {
         assert_eq!(statements.len(), 1);
 
         // `this.a = c;` inside the constructor body parses into an assignment.
-        let JavaBodyNodeKind::Statement(JavaStatement::Expression(assign)) =
+        let model::BodyNodeKind::Statement(model::Statement::Expression(assign)) =
             &body.node(statements[0]).kind
         else {
             panic!("the sole statement is an expression statement");
         };
-        let JavaExpression::Assign { target, value } = body.expression(*assign).unwrap() else {
+        let model::Expression::Assign { target, value } = body.expression(*assign).unwrap() else {
             panic!("the expression is an assignment");
         };
-        let JavaExpression::FieldAccess { receiver, name } = body.expression(*target).unwrap()
+        let model::Expression::FieldAccess { receiver, name } = body.expression(*target).unwrap()
         else {
             panic!("the target is this.a");
         };
         assert!(matches!(
             body.expression(*receiver),
-            Some(JavaExpression::This)
+            Some(model::Expression::This)
         ));
         assert_eq!(name.text, "a");
-        let JavaExpression::NameRef { name } = body.expression(*value).unwrap() else {
+        let model::Expression::NameRef { name } = body.expression(*value).unwrap() else {
             panic!("the value is the parameter c");
         };
         assert_eq!(name.text, "c");

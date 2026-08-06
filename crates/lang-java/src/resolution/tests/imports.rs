@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn a_static_import_does_not_introduce_a_type_name_yet() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     let current_source = process(
         &mut java,
@@ -21,7 +21,7 @@ fn a_static_import_does_not_introduce_a_type_name_yet() {
             current_file,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Unresolved {
+        TypeResolution::Unresolved {
             invalid_candidates: Vec::new(),
         }
     );
@@ -30,7 +30,7 @@ fn a_static_import_does_not_introduce_a_type_name_yet() {
 #[test]
 fn an_exact_import_resolves_a_top_level_type() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     let imported_source = process(
         &mut java,
@@ -57,7 +57,7 @@ fn an_exact_import_resolves_a_top_level_type() {
             importing_file,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Resolved(JavaTypeTarget::Java {
+        TypeResolution::Resolved(TypeTarget::Parsed {
             source: imported_source,
             declaration: imported_declaration,
         })
@@ -67,7 +67,7 @@ fn an_exact_import_resolves_a_top_level_type() {
 #[test]
 fn an_exact_import_outside_scope_is_retained_as_invalid() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     let imported_source = process(
         &mut java,
@@ -93,12 +93,12 @@ fn an_exact_import_outside_scope_is_retained_as_invalid() {
     let imported_declaration =
         file_model(&java, revision, &imported_source).top_level_declarations[0];
     let importing_file = file_model(&java, revision, &importing_source);
-    let query = JavaQuery::new(jvm.query_from(&importing_source, revision), &java);
+    let query = Query::new(jvm.query_from(&importing_source, revision), &java);
 
     let candidates = query.types_named(&jvm::model::BinaryName::new("p.X"));
     assert_eq!(
         candidates,
-        vec![JavaTypeTarget::Java {
+        vec![TypeTarget::Parsed {
             source: imported_source,
             declaration: imported_declaration,
         }]
@@ -107,7 +107,7 @@ fn an_exact_import_outside_scope_is_retained_as_invalid() {
         query.scope_membership(&candidates[0]),
         jvm::query::ScopeMembership::OutsideScope
     );
-    let JavaTypeResolution::Unresolved { invalid_candidates } = resolve_type_from_exact_imports(
+    let TypeResolution::Unresolved { invalid_candidates } = resolve_type_from_exact_imports(
         &identifier("X"),
         &importing_source,
         importing_file,
@@ -116,13 +116,13 @@ fn an_exact_import_outside_scope_is_retained_as_invalid() {
         panic!("an outside-scope import must not resolve");
     };
     assert_eq!(invalid_candidates.len(), 1);
-    assert!(invalid_candidates[0].has_invalidity(JavaTypeInvalidity::OutsideScope));
+    assert!(invalid_candidates[0].has_invalidity(TypeInvalidity::OutsideScope));
 }
 
 #[test]
 fn an_exact_import_resolves_a_member_type() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     let outer_source = process(
         &mut java,
@@ -150,7 +150,7 @@ fn an_exact_import_resolves_a_member_type() {
             importing_file,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Resolved(JavaTypeTarget::Java {
+        TypeResolution::Resolved(TypeTarget::Parsed {
             source: outer_source,
             declaration: inner,
         })
@@ -160,7 +160,7 @@ fn an_exact_import_resolves_a_member_type() {
 #[test]
 fn an_outside_scope_type_path_reaches_its_member_as_invalid_evidence() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     process(
         &mut java,
@@ -184,7 +184,7 @@ fn an_outside_scope_type_path_reaches_its_member_as_invalid_evidence() {
         )])],
     );
     let importing_file = file_model(&java, revision, &importing_source);
-    let query = JavaQuery::new(jvm.query_from(&importing_source, revision), &java);
+    let query = Query::new(jvm.query_from(&importing_source, revision), &java);
 
     let candidates = candidates_from_exact_imports(
         &identifier("Inner"),
@@ -194,13 +194,13 @@ fn an_outside_scope_type_path_reaches_its_member_as_invalid_evidence() {
     );
 
     assert!(!candidates.has_valid());
-    assert!(candidates.has_invalidity(JavaTypeInvalidity::OutsideScope));
+    assert!(candidates.has_invalidity(TypeInvalidity::OutsideScope));
 }
 
 #[test]
 fn an_exact_import_does_not_skip_an_intermediate_name_segment() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     process(
         &mut java,
@@ -225,7 +225,7 @@ fn an_exact_import_does_not_skip_an_intermediate_name_segment() {
             importing_file,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Unresolved {
+        TypeResolution::Unresolved {
             invalid_candidates: Vec::new(),
         }
     );
@@ -234,7 +234,7 @@ fn an_exact_import_does_not_skip_an_intermediate_name_segment() {
 #[test]
 fn an_exact_import_uses_the_file_package_as_the_type_boundary() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     let imported_source = process(
         &mut java,
@@ -261,7 +261,7 @@ fn an_exact_import_uses_the_file_package_as_the_type_boundary() {
             importing_file,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Resolved(JavaTypeTarget::Java {
+        TypeResolution::Resolved(TypeTarget::Parsed {
             source: imported_source,
             declaration: imported_declaration,
         })
@@ -273,7 +273,7 @@ fn an_exact_import_uses_the_file_package_as_the_type_boundary() {
 #[test]
 fn an_exact_import_walks_nesting_below_the_boundary_to_the_end() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     let outer_source = process(
         &mut java,
@@ -302,7 +302,7 @@ fn an_exact_import_walks_nesting_below_the_boundary_to_the_end() {
             importing_file,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Resolved(JavaTypeTarget::Java {
+        TypeResolution::Resolved(TypeTarget::Parsed {
             source: outer_source,
             declaration: c,
         })
@@ -315,7 +315,7 @@ fn an_exact_import_walks_nesting_below_the_boundary_to_the_end() {
 #[test]
 fn an_import_is_not_in_scope_in_a_later_import() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     process(
         &mut java,
@@ -348,7 +348,7 @@ fn an_import_is_not_in_scope_in_a_later_import() {
             importing_file,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Resolved(JavaTypeTarget::Java {
+        TypeResolution::Resolved(TypeTarget::Parsed {
             source: mosquito_source,
             declaration: mosquito,
         })
@@ -361,7 +361,7 @@ fn an_import_is_not_in_scope_in_a_later_import() {
 #[test]
 fn an_outside_scope_type_prefix_leaves_the_package_path_open() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     process(
         &mut java,
@@ -393,7 +393,7 @@ fn an_outside_scope_type_prefix_leaves_the_package_path_open() {
     );
     let inner = file_model(&java, revision, &inner_source).top_level_declarations[0];
     let importing_file = file_model(&java, revision, &importing_source);
-    let query = JavaQuery::new(jvm.query_from(&importing_source, revision), &java);
+    let query = Query::new(jvm.query_from(&importing_source, revision), &java);
 
     assert_eq!(
         resolve_type_from_exact_imports(
@@ -402,7 +402,7 @@ fn an_outside_scope_type_prefix_leaves_the_package_path_open() {
             importing_file,
             &query,
         ),
-        JavaTypeResolution::Resolved(JavaTypeTarget::Java {
+        TypeResolution::Resolved(TypeTarget::Parsed {
             source: inner_source,
             declaration: inner,
         })
@@ -416,7 +416,7 @@ fn an_outside_scope_type_prefix_leaves_the_package_path_open() {
 #[test]
 fn an_inaccessible_type_prefix_does_not_fall_back_to_a_package() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     process(
         &mut java,
@@ -448,7 +448,7 @@ fn an_inaccessible_type_prefix_does_not_fall_back_to_a_package() {
             importing_file,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Unresolved {
+        TypeResolution::Unresolved {
             invalid_candidates: Vec::new(),
         }
     );
@@ -459,7 +459,7 @@ fn an_inaccessible_type_prefix_does_not_fall_back_to_a_package() {
 #[test]
 fn an_import_of_the_compilation_units_own_type_names_that_type() {
     let revision = Revision::default();
-    let mut java = LanguageJava::new();
+    let mut java = Language::new();
     let mut jvm = jvm::Platform::new();
     let own_source = process(
         &mut java,
@@ -478,7 +478,7 @@ fn an_import_of_the_compilation_units_own_type_names_that_type() {
             own_file,
             &java_query(&java, &jvm, revision)
         ),
-        JavaTypeResolution::Resolved(JavaTypeTarget::Java {
+        TypeResolution::Resolved(TypeTarget::Parsed {
             source: own_source,
             declaration: own_declaration,
         })

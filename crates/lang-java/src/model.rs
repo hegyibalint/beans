@@ -1,28 +1,28 @@
 use beans_core::model::{Offset, OffsetSpan};
 
 #[derive(Debug, Clone)]
-pub struct JavaFile {
-    pub package: Option<JavaName>,
-    pub imports: Vec<JavaImport>,
+pub struct File {
+    pub package: Option<Name>,
+    pub imports: Vec<Import>,
 
-    pub declarations: Vec<JavaDeclaration>,
-    pub lexical_scopes: Vec<JavaLexicalScope>,
-    pub bodies: Vec<JavaBody>,
+    pub declarations: Vec<Declaration>,
+    pub lexical_scopes: Vec<LexicalScope>,
+    pub bodies: Vec<Body>,
 
-    pub compilation_unit_scope: JavaLexicalScopeId,
-    pub top_level_declarations: Vec<JavaDeclarationId>,
+    pub compilation_unit_scope: LexicalScopeId,
+    pub top_level_declarations: Vec<DeclarationId>,
 
     /// Derived from the rest of the model; rebuilt after parsing.
-    pub position_index: JavaPositionIndex,
+    pub position_index: PositionIndex,
 }
 
-impl JavaFile {
+impl File {
     pub fn new() -> Self {
         Self {
             package: None,
             imports: Vec::new(),
             declarations: Vec::new(),
-            lexical_scopes: vec![JavaLexicalScope {
+            lexical_scopes: vec![LexicalScope {
                 parent: None,
                 owner: None,
                 declarations: Vec::new(),
@@ -32,16 +32,16 @@ impl JavaFile {
                 },
             }],
             bodies: Vec::new(),
-            compilation_unit_scope: JavaLexicalScopeId(0),
+            compilation_unit_scope: LexicalScopeId(0),
             top_level_declarations: Vec::new(),
-            position_index: JavaPositionIndex::default(),
+            position_index: PositionIndex::default(),
         }
     }
 
     pub fn iter_scope_chain<'file>(
         &'file self,
-        start: JavaLexicalScopeId,
-    ) -> impl Iterator<Item = (JavaLexicalScopeId, &'file JavaLexicalScope)> + 'file {
+        start: LexicalScopeId,
+    ) -> impl Iterator<Item = (LexicalScopeId, &'file LexicalScope)> + 'file {
         std::iter::successors(Some(start), move |scope_id| {
             self.lexical_scopes.get(scope_id.0).unwrap().parent
         })
@@ -49,30 +49,27 @@ impl JavaFile {
     }
 
     /// The nearest type whose body encloses `scope`: what `this` refers to.
-    pub fn enclosing_type_declaration(
-        &self,
-        scope: JavaLexicalScopeId,
-    ) -> Option<JavaDeclarationId> {
+    pub fn enclosing_type_declaration(&self, scope: LexicalScopeId) -> Option<DeclarationId> {
         self.iter_scope_chain(scope)
             .filter_map(|(_, scope)| scope.owner)
-            .find(|owner| matches!(self.declarations[owner.0], JavaDeclaration::Type(_)))
+            .find(|owner| matches!(self.declarations[owner.0], Declaration::Type(_)))
     }
 
     /// A display name for a declaration: dotted for types (`p.Outer.Inner`),
     /// the bare name for everything else.
-    pub fn declaration_label(&self, declaration: JavaDeclarationId) -> Option<String> {
+    pub fn declaration_label(&self, declaration: DeclarationId) -> Option<String> {
         let name = self.declarations[declaration.0].name()?;
-        let JavaDeclaration::Type(_) = self.declarations[declaration.0] else {
+        let Declaration::Type(_) = self.declarations[declaration.0] else {
             return Some(name.text.clone());
         };
 
         let mut segments = vec![name.text.clone()];
         let mut declaring = match &self.declarations[declaration.0] {
-            JavaDeclaration::Type(declaration) => declaration.declaring_scope,
+            Declaration::Type(declaration) => declaration.declaring_scope,
             _ => unreachable!(),
         };
         while let Some(owner) = self.lexical_scopes[declaring.0].owner {
-            let JavaDeclaration::Type(owner_type) = &self.declarations[owner.0] else {
+            let Declaration::Type(owner_type) = &self.declarations[owner.0] else {
                 break;
             };
             segments.push(owner_type.name.as_ref()?.text.clone());
@@ -87,46 +84,46 @@ impl JavaFile {
     }
 }
 
-impl Default for JavaFile {
+impl Default for File {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct JavaDeclarationId(pub usize);
+pub struct DeclarationId(pub usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct JavaLexicalScopeId(pub usize);
+pub struct LexicalScopeId(pub usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct JavaBodyId(pub usize);
+pub struct BodyId(pub usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct JavaBodyNodeId(pub usize);
+pub struct BodyNodeId(pub usize);
 
 /// JLS 6.1: different entities can share a spelling; resolution filters by this axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JavaNamespace {
+pub enum Namespace {
     Type,
     Variable,
     Method,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct JavaIdentifier {
+pub struct Identifier {
     pub text: String,
     pub span: OffsetSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum JavaName {
-    Simple(JavaIdentifier),
-    Qualified(JavaQualifiedName),
+pub enum Name {
+    Simple(Identifier),
+    Qualified(QualifiedName),
 }
 
-impl JavaName {
-    pub fn segments(&self) -> &[JavaIdentifier] {
+impl Name {
+    pub fn segments(&self) -> &[Identifier] {
         match self {
             Self::Simple(identifier) => std::slice::from_ref(identifier),
             Self::Qualified(name) => name.segments(),
@@ -146,13 +143,13 @@ impl JavaName {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct JavaQualifiedName {
-    segments: Vec<JavaIdentifier>,
+pub struct QualifiedName {
+    segments: Vec<Identifier>,
     pub span: OffsetSpan,
 }
 
-impl JavaQualifiedName {
-    pub(crate) fn new(segments: Vec<JavaIdentifier>, span: OffsetSpan) -> Self {
+impl QualifiedName {
+    pub(crate) fn new(segments: Vec<Identifier>, span: OffsetSpan) -> Self {
         assert!(
             segments.len() >= 2,
             "a qualified Java name has at least two identifiers"
@@ -160,12 +157,12 @@ impl JavaQualifiedName {
         Self { segments, span }
     }
 
-    pub fn segments(&self) -> &[JavaIdentifier] {
+    pub fn segments(&self) -> &[Identifier] {
         &self.segments
     }
 }
 
-pub(crate) fn dotted(segments: &[JavaIdentifier]) -> String {
+pub(crate) fn dotted(segments: &[Identifier]) -> String {
     segments
         .iter()
         .map(|segment| segment.text.as_str())
@@ -174,13 +171,13 @@ pub(crate) fn dotted(segments: &[JavaIdentifier]) -> String {
 }
 
 #[derive(Debug, Clone)]
-pub struct JavaImport {
-    pub name: JavaName,
-    pub kind: JavaImportKind,
+pub struct Import {
+    pub name: Name,
+    pub kind: ImportKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JavaImportKind {
+pub enum ImportKind {
     Type,           // import a.b.C;
     TypeOnDemand,   // import a.b.*;
     Static,         // import static a.b.C.member;
@@ -189,18 +186,18 @@ pub enum JavaImportKind {
 }
 
 #[derive(Debug, Clone)]
-pub enum JavaDeclaration {
-    Type(JavaTypeDeclaration),
-    TypeParameter(JavaTypeParameterDeclaration),
-    Field(JavaFieldDeclaration),
-    Constructor(JavaConstructorDeclaration),
-    Method(JavaMethodDeclaration),
-    Parameter(JavaParameterDeclaration),
-    Local(JavaLocalDeclaration),
+pub enum Declaration {
+    Type(TypeDeclaration),
+    TypeParameter(TypeParameterDeclaration),
+    Field(FieldDeclaration),
+    Constructor(ConstructorDeclaration),
+    Method(MethodDeclaration),
+    Parameter(ParameterDeclaration),
+    Local(LocalDeclaration),
 }
 
-impl JavaDeclaration {
-    pub fn name(&self) -> Option<&JavaIdentifier> {
+impl Declaration {
+    pub fn name(&self) -> Option<&Identifier> {
         match self {
             Self::Type(declaration) => declaration.name.as_ref(),
             Self::TypeParameter(declaration) => Some(&declaration.name),
@@ -229,20 +226,20 @@ impl JavaDeclaration {
         }
     }
 
-    pub fn namespace(&self) -> JavaNamespace {
+    pub fn namespace(&self) -> Namespace {
         match self {
-            Self::Type(_) | Self::TypeParameter(_) => JavaNamespace::Type,
-            Self::Field(_) | Self::Parameter(_) | Self::Local(_) => JavaNamespace::Variable,
-            Self::Constructor(_) | Self::Method(_) => JavaNamespace::Method,
+            Self::Type(_) | Self::TypeParameter(_) => Namespace::Type,
+            Self::Field(_) | Self::Parameter(_) | Self::Local(_) => Namespace::Variable,
+            Self::Constructor(_) | Self::Method(_) => Namespace::Method,
         }
     }
 
-    pub fn declaring_scope(&self) -> JavaLexicalScopeId {
+    pub fn declaring_scope(&self) -> LexicalScopeId {
         match self {
             Self::Type(declaration) => declaration.declaring_scope,
             // Type parameters are not parsed yet; when they are, they must
             // carry the scope of their generic declaration.
-            Self::TypeParameter(_) => JavaLexicalScopeId(0),
+            Self::TypeParameter(_) => LexicalScopeId(0),
             Self::Field(declaration) => declaration.declaring_scope,
             Self::Constructor(declaration) => declaration.declaring_scope,
             Self::Method(declaration) => declaration.declaring_scope,
@@ -252,7 +249,7 @@ impl JavaDeclaration {
     }
 
     /// The type annotation owned by this declaration, if any.
-    pub fn type_ref(&self) -> Option<&JavaTypeRef> {
+    pub fn type_ref(&self) -> Option<&TypeRef> {
         match self {
             Self::Field(declaration) => declaration.referenced_type.as_ref(),
             Self::Method(declaration) => declaration.return_type.as_ref(),
@@ -266,29 +263,29 @@ impl JavaDeclaration {
 
 /// A type as written in source. Resolution against the model happens later.
 #[derive(Debug, Clone)]
-pub struct JavaTypeRef {
+pub struct TypeRef {
     pub span: OffsetSpan,
     /// The erased head of the type: `List` for `List<String>`, `String` for `String[]`.
-    pub name: JavaName,
+    pub name: Name,
     /// Primitives and `void` never resolve to declarations.
     pub primitive: bool,
 }
 
 #[derive(Debug, Clone)]
-pub struct JavaTypeDeclaration {
+pub struct TypeDeclaration {
     pub span: OffsetSpan,
-    pub name: Option<JavaIdentifier>,
-    pub kind: JavaTypeKind,
+    pub name: Option<Identifier>,
+    pub kind: TypeKind,
     /// `None` where §8.1.1 says access control does not apply: local and
     /// anonymous classes.
-    pub access: Option<JavaAccess>,
-    pub superclass: Option<JavaTypeRef>,
-    pub declaring_scope: JavaLexicalScopeId,
-    pub body_scope: JavaLexicalScopeId,
+    pub access: Option<Access>,
+    pub superclass: Option<TypeRef>,
+    pub declaring_scope: LexicalScopeId,
+    pub body_scope: LexicalScopeId,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JavaTypeKind {
+pub enum TypeKind {
     Class,
     Interface,
     Enum,
@@ -299,7 +296,7 @@ pub enum JavaTypeKind {
 /// JLS 26 §6.6.1's four levels. Exactly one applies: §8.1.1 makes more than one
 /// access modifier a compile-time error, so this is an enum and not a flag set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JavaAccessLevel {
+pub enum AccessLevel {
     Public,
     Protected,
     Package,
@@ -308,8 +305,8 @@ pub enum JavaAccessLevel {
 
 /// The level that applies, and where it came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct JavaAccess {
-    pub level: JavaAccessLevel,
+pub struct Access {
+    pub level: AccessLevel,
     /// Where the modifier was written. `None` means the position supplied it:
     ///
     /// - top-level type, or class member: package (§6.6.1)
@@ -320,62 +317,62 @@ pub struct JavaAccess {
 }
 
 #[derive(Debug, Clone)]
-pub struct JavaTypeParameterDeclaration {
+pub struct TypeParameterDeclaration {
     /// Total: the name is the entire payload of a type parameter today.
-    pub name: JavaIdentifier,
+    pub name: Identifier,
 }
 
 #[derive(Debug, Clone)]
-pub struct JavaFieldDeclaration {
+pub struct FieldDeclaration {
     pub span: OffsetSpan,
-    pub name: Option<JavaIdentifier>,
-    pub access: Option<JavaAccess>,
-    pub referenced_type: Option<JavaTypeRef>,
-    pub declaring_scope: JavaLexicalScopeId,
+    pub name: Option<Identifier>,
+    pub access: Option<Access>,
+    pub referenced_type: Option<TypeRef>,
+    pub declaring_scope: LexicalScopeId,
 }
 
 #[derive(Debug, Clone)]
-pub struct JavaConstructorDeclaration {
+pub struct ConstructorDeclaration {
     pub span: OffsetSpan,
-    pub parameters: Vec<JavaDeclarationId>,
-    pub declaring_scope: JavaLexicalScopeId,
-    pub body_scope: JavaLexicalScopeId,
-    pub body: Option<JavaBodyId>,
+    pub parameters: Vec<DeclarationId>,
+    pub declaring_scope: LexicalScopeId,
+    pub body_scope: LexicalScopeId,
+    pub body: Option<BodyId>,
 }
 
 #[derive(Debug, Clone)]
-pub struct JavaMethodDeclaration {
+pub struct MethodDeclaration {
     pub span: OffsetSpan,
-    pub name: Option<JavaIdentifier>,
-    pub return_type: Option<JavaTypeRef>,
-    pub parameters: Vec<JavaDeclarationId>,
-    pub declaring_scope: JavaLexicalScopeId,
-    pub body_scope: JavaLexicalScopeId,
-    pub body: Option<JavaBodyId>,
+    pub name: Option<Identifier>,
+    pub return_type: Option<TypeRef>,
+    pub parameters: Vec<DeclarationId>,
+    pub declaring_scope: LexicalScopeId,
+    pub body_scope: LexicalScopeId,
+    pub body: Option<BodyId>,
 }
 
 #[derive(Debug, Clone)]
-pub struct JavaParameterDeclaration {
+pub struct ParameterDeclaration {
     pub span: OffsetSpan,
-    pub name: Option<JavaIdentifier>,
-    pub ty: Option<JavaTypeRef>,
-    pub declaring_scope: JavaLexicalScopeId,
+    pub name: Option<Identifier>,
+    pub ty: Option<TypeRef>,
+    pub declaring_scope: LexicalScopeId,
 }
 
 #[derive(Debug, Clone)]
-pub struct JavaLocalDeclaration {
+pub struct LocalDeclaration {
     pub span: OffsetSpan,
-    pub name: Option<JavaIdentifier>,
-    pub ty: Option<JavaTypeRef>,
-    pub declaring_scope: JavaLexicalScopeId,
+    pub name: Option<Identifier>,
+    pub ty: Option<TypeRef>,
+    pub declaring_scope: LexicalScopeId,
 }
 
 #[derive(Debug, Clone)]
-pub struct JavaLexicalScope {
-    pub parent: Option<JavaLexicalScopeId>,
+pub struct LexicalScope {
+    pub parent: Option<LexicalScopeId>,
     /// The declaration that introduced this scope (type bodies, methods), if any.
-    pub owner: Option<JavaDeclarationId>,
-    pub declarations: Vec<JavaDeclarationId>,
+    pub owner: Option<DeclarationId>,
+    pub declarations: Vec<DeclarationId>,
     pub span: OffsetSpan,
 }
 
@@ -383,21 +380,21 @@ pub struct JavaLexicalScope {
 /// Statements and expressions share one arena; span and enclosing scope
 /// are inline on every node.
 #[derive(Debug, Clone)]
-pub struct JavaBody {
+pub struct Body {
     /// The scope of the root block.
-    pub scope: JavaLexicalScopeId,
-    pub root: JavaBodyNodeId,
-    pub nodes: Vec<JavaBodyNode>,
+    pub scope: LexicalScopeId,
+    pub root: BodyNodeId,
+    pub nodes: Vec<BodyNode>,
 }
 
-impl JavaBody {
-    pub fn node(&self, id: JavaBodyNodeId) -> &JavaBodyNode {
+impl Body {
+    pub fn node(&self, id: BodyNodeId) -> &BodyNode {
         &self.nodes[id.0]
     }
 
-    pub fn expression(&self, id: JavaBodyNodeId) -> Option<&JavaExpression> {
+    pub fn expression(&self, id: BodyNodeId) -> Option<&Expression> {
         match &self.node(id).kind {
-            JavaBodyNodeKind::Expression(expression) => Some(expression),
+            BodyNodeKind::Expression(expression) => Some(expression),
             _ => None,
         }
     }
@@ -406,123 +403,123 @@ impl JavaBody {
 /// OffsetSpan and scope are stamped at extraction: the parser knows both, and
 /// later queries should never re-derive what was free at parse time.
 #[derive(Debug, Clone)]
-pub struct JavaBodyNode {
+pub struct BodyNode {
     pub span: OffsetSpan,
     /// The scope this node lives in. Note a `Block` *introduces* a deeper
     /// scope (its payload), but is stamped with the scope it lives in.
-    pub scope: JavaLexicalScopeId,
-    pub kind: JavaBodyNodeKind,
+    pub scope: LexicalScopeId,
+    pub kind: BodyNodeKind,
 }
 
 #[derive(Debug, Clone)]
-pub enum JavaBodyNodeKind {
-    Statement(JavaStatement),
-    Expression(JavaExpression),
+pub enum BodyNodeKind {
+    Statement(Statement),
+    Expression(Expression),
 }
 
 #[derive(Debug, Clone)]
-pub enum JavaStatement {
+pub enum Statement {
     Block {
-        scope: JavaLexicalScopeId,
-        statements: Vec<JavaBodyNodeId>,
+        scope: LexicalScopeId,
+        statements: Vec<BodyNodeId>,
     },
-    TypeDeclaration(JavaDeclarationId),
+    TypeDeclaration(DeclarationId),
     LocalDeclaration {
-        declaration: JavaDeclarationId,
-        initializer: Option<JavaBodyNodeId>,
+        declaration: DeclarationId,
+        initializer: Option<BodyNodeId>,
     },
-    Expression(JavaBodyNodeId),
-    Return(Option<JavaBodyNodeId>),
+    Expression(BodyNodeId),
+    Return(Option<BodyNodeId>),
 }
 
 #[derive(Debug, Clone)]
-pub enum JavaExpression {
+pub enum Expression {
     NameRef {
-        name: JavaIdentifier,
+        name: Identifier,
     },
     FieldAccess {
-        receiver: JavaBodyNodeId,
-        name: JavaIdentifier,
+        receiver: BodyNodeId,
+        name: Identifier,
     },
     MethodCall {
         /// `None` is the implicit `this` receiver.
-        receiver: Option<JavaBodyNodeId>,
-        name: JavaIdentifier,
-        arguments: Vec<JavaBodyNodeId>,
+        receiver: Option<BodyNodeId>,
+        name: Identifier,
+        arguments: Vec<BodyNodeId>,
     },
     ObjectCreation {
-        ty: JavaTypeRef,
-        arguments: Vec<JavaBodyNodeId>,
+        ty: TypeRef,
+        arguments: Vec<BodyNodeId>,
     },
     This,
     Assign {
-        target: JavaBodyNodeId,
-        value: JavaBodyNodeId,
+        target: BodyNodeId,
+        value: BodyNodeId,
     },
     Literal,
 }
 
 /// Anything the position index can hand back for an offset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum JavaEntityId {
-    Declaration(JavaDeclarationId),
+pub enum EntityId {
+    Declaration(DeclarationId),
     /// The type annotation owned by a declaration (field/parameter/local type,
     /// method return type, superclass).
-    TypeRef(JavaDeclarationId),
-    BodyNode(JavaBodyId, JavaBodyNodeId),
-    Scope(JavaLexicalScopeId),
+    TypeRef(DeclarationId),
+    BodyNode(BodyId, BodyNodeId),
+    Scope(LexicalScopeId),
     Import(usize),
 }
 
 /// When the user clicks around, we need to answer one question fast: what is the tightest, most fitting _something_ at this offset?
 /// The position index is a fast answer to that question.
 #[derive(Debug, Clone, Default)]
-pub struct JavaPositionIndex {
+pub struct PositionIndex {
     /// Sorted by span start, then end. Spans from one parse are well-nested.
-    entries: Vec<(OffsetSpan, JavaEntityId)>,
+    entries: Vec<(OffsetSpan, EntityId)>,
 }
 
-impl JavaPositionIndex {
-    pub fn build(file: &JavaFile) -> Self {
+impl PositionIndex {
+    pub fn build(file: &File) -> Self {
         let mut entries = Vec::new();
 
         for (index, declaration) in file.declarations.iter().enumerate() {
-            let id = JavaDeclarationId(index);
-            entries.push((declaration.span(), JavaEntityId::Declaration(id)));
+            let id = DeclarationId(index);
+            entries.push((declaration.span(), EntityId::Declaration(id)));
             if let Some(name_span) = declaration.name_span() {
-                entries.push((name_span, JavaEntityId::Declaration(id)));
+                entries.push((name_span, EntityId::Declaration(id)));
             }
             if let Some(type_ref) = declaration.type_ref() {
-                entries.push((type_ref.span, JavaEntityId::TypeRef(id)));
+                entries.push((type_ref.span, EntityId::TypeRef(id)));
             }
         }
 
         for (index, scope) in file.lexical_scopes.iter().enumerate() {
-            entries.push((scope.span, JavaEntityId::Scope(JavaLexicalScopeId(index))));
+            entries.push((scope.span, EntityId::Scope(LexicalScopeId(index))));
         }
 
         for (index, import) in file.imports.iter().enumerate() {
-            entries.push((import.name.span(), JavaEntityId::Import(index)));
+            entries.push((import.name.span(), EntityId::Import(index)));
         }
 
         for (body_index, body) in file.bodies.iter().enumerate() {
-            let body_id = JavaBodyId(body_index);
+            let body_id = BodyId(body_index);
             for (index, node) in body.nodes.iter().enumerate() {
-                let id = JavaBodyNodeId(index);
-                entries.push((node.span, JavaEntityId::BodyNode(body_id, id)));
+                let id = BodyNodeId(index);
+                entries.push((node.span, EntityId::BodyNode(body_id, id)));
                 // Name segments are the F12 surface of chains: `c` and `a` in
                 // `c.a` are separate occurrences of one expression.
-                let JavaBodyNodeKind::Expression(expression) = &node.kind else {
+                let BodyNodeKind::Expression(expression) = &node.kind else {
                     continue;
                 };
                 let name_span = match expression {
-                    JavaExpression::FieldAccess { name, .. } => Some(name.span),
-                    JavaExpression::MethodCall { name, .. } => Some(name.span),
-                    JavaExpression::ObjectCreation { ty, .. } => Some(ty.span),
+                    Expression::FieldAccess { name, .. } => Some(name.span),
+                    Expression::MethodCall { name, .. } => Some(name.span),
+                    Expression::ObjectCreation { ty, .. } => Some(ty.span),
                     _ => None,
                 };
                 if let Some(span) = name_span {
-                    entries.push((span, JavaEntityId::BodyNode(body_id, id)));
+                    entries.push((span, EntityId::BodyNode(body_id, id)));
                 }
             }
         }
@@ -531,12 +528,12 @@ impl JavaPositionIndex {
         Self { entries }
     }
 
-    pub fn tightest_containing(&self, offset: Offset) -> Option<(OffsetSpan, JavaEntityId)> {
+    pub fn tightest_containing(&self, offset: Offset) -> Option<(OffsetSpan, EntityId)> {
         self.iter_containing(offset).into_iter().next()
     }
 
     /// Every entry containing `offset`, tightest first.
-    pub fn iter_containing(&self, offset: Offset) -> Vec<(OffsetSpan, JavaEntityId)> {
+    pub fn iter_containing(&self, offset: Offset) -> Vec<(OffsetSpan, EntityId)> {
         let mut containing: Vec<_> = self
             .entries
             .iter()
@@ -552,9 +549,9 @@ impl JavaPositionIndex {
 mod tests {
     use super::*;
 
-    fn add_lexical_scope(file: &mut JavaFile, parent: JavaLexicalScopeId) -> JavaLexicalScopeId {
-        let scope_id = JavaLexicalScopeId(file.lexical_scopes.len());
-        file.lexical_scopes.push(JavaLexicalScope {
+    fn add_lexical_scope(file: &mut File, parent: LexicalScopeId) -> LexicalScopeId {
+        let scope_id = LexicalScopeId(file.lexical_scopes.len());
+        file.lexical_scopes.push(LexicalScope {
             parent: Some(parent),
             owner: None,
             declarations: Vec::new(),
@@ -566,8 +563,8 @@ mod tests {
         scope_id
     }
 
-    fn identifier(text: &str, start: usize) -> JavaIdentifier {
-        JavaIdentifier {
+    fn identifier(text: &str, start: usize) -> Identifier {
+        Identifier {
             text: text.into(),
             span: OffsetSpan {
                 start: Offset(start),
@@ -581,17 +578,17 @@ mod tests {
         use super::*;
 
         fn type_declaration(
-            name: JavaIdentifier,
-            declaring: JavaLexicalScopeId,
-            body: JavaLexicalScopeId,
-        ) -> JavaDeclaration {
-            JavaDeclaration::Type(JavaTypeDeclaration {
+            name: Identifier,
+            declaring: LexicalScopeId,
+            body: LexicalScopeId,
+        ) -> Declaration {
+            Declaration::Type(TypeDeclaration {
                 span: OffsetSpan {
                     start: Offset(0),
                     end: Offset(20),
                 },
                 name: Some(name),
-                kind: JavaTypeKind::Class,
+                kind: TypeKind::Class,
                 access: None,
                 superclass: None,
                 declaring_scope: declaring,
@@ -603,9 +600,9 @@ mod tests {
         fn expose_their_names_and_name_spans() {
             let name = identifier("Named", 7);
             let declarations = [
-                type_declaration(name.clone(), JavaLexicalScopeId(0), JavaLexicalScopeId(1)),
-                JavaDeclaration::TypeParameter(JavaTypeParameterDeclaration { name: name.clone() }),
-                JavaDeclaration::Field(JavaFieldDeclaration {
+                type_declaration(name.clone(), LexicalScopeId(0), LexicalScopeId(1)),
+                Declaration::TypeParameter(TypeParameterDeclaration { name: name.clone() }),
+                Declaration::Field(FieldDeclaration {
                     span: OffsetSpan {
                         start: Offset(0),
                         end: Offset(10),
@@ -613,9 +610,9 @@ mod tests {
                     name: Some(name.clone()),
                     access: None,
                     referenced_type: None,
-                    declaring_scope: JavaLexicalScopeId(0),
+                    declaring_scope: LexicalScopeId(0),
                 }),
-                JavaDeclaration::Method(JavaMethodDeclaration {
+                Declaration::Method(MethodDeclaration {
                     span: OffsetSpan {
                         start: Offset(0),
                         end: Offset(10),
@@ -623,8 +620,8 @@ mod tests {
                     name: Some(name.clone()),
                     return_type: None,
                     parameters: Vec::new(),
-                    declaring_scope: JavaLexicalScopeId(0),
-                    body_scope: JavaLexicalScopeId(1),
+                    declaring_scope: LexicalScopeId(0),
+                    body_scope: LexicalScopeId(1),
                     body: None,
                 }),
             ];
@@ -634,14 +631,14 @@ mod tests {
                 assert_eq!(declaration.name_span(), Some(name.span));
             }
 
-            let constructor = JavaDeclaration::Constructor(JavaConstructorDeclaration {
+            let constructor = Declaration::Constructor(ConstructorDeclaration {
                 span: OffsetSpan {
                     start: Offset(0),
                     end: Offset(10),
                 },
                 parameters: Vec::new(),
-                declaring_scope: JavaLexicalScopeId(0),
-                body_scope: JavaLexicalScopeId(1),
+                declaring_scope: LexicalScopeId(0),
+                body_scope: LexicalScopeId(1),
                 body: None,
             });
             assert_eq!(constructor.name(), None);
@@ -655,7 +652,7 @@ mod tests {
 
         #[test]
         fn the_compilation_unit_contains_only_itself() {
-            let file = JavaFile::new();
+            let file = File::new();
             let entries: Vec<_> = file.iter_scope_chain(file.compilation_unit_scope).collect();
 
             assert_eq!(entries.len(), 1);
@@ -668,7 +665,7 @@ mod tests {
 
         #[test]
         fn walks_from_innermost_to_outermost() {
-            let mut file = JavaFile::new();
+            let mut file = File::new();
             let compilation_unit = file.compilation_unit_scope;
             let outer = add_lexical_scope(&mut file, compilation_unit);
             let sibling = add_lexical_scope(&mut file, compilation_unit);
@@ -694,7 +691,7 @@ mod tests {
 
         #[test]
         fn returns_tightest_first() {
-            let mut file = JavaFile::new();
+            let mut file = File::new();
             let compilation_unit = file.compilation_unit_scope;
             let outer = add_lexical_scope(&mut file, compilation_unit);
             file.lexical_scopes[outer.0].span = OffsetSpan {
@@ -705,17 +702,16 @@ mod tests {
                 start: Offset(0),
                 end: Offset(100),
             };
-            file.declarations
-                .push(JavaDeclaration::Local(JavaLocalDeclaration {
-                    span: OffsetSpan {
-                        start: Offset(10),
-                        end: Offset(15),
-                    },
-                    name: Some(identifier("x", 10)),
-                    ty: None,
-                    declaring_scope: outer,
-                }));
-            file.position_index = JavaPositionIndex::build(&file);
+            file.declarations.push(Declaration::Local(LocalDeclaration {
+                span: OffsetSpan {
+                    start: Offset(10),
+                    end: Offset(15),
+                },
+                name: Some(identifier("x", 10)),
+                ty: None,
+                declaring_scope: outer,
+            }));
+            file.position_index = PositionIndex::build(&file);
 
             let entries = file.position_index.iter_containing(Offset(10));
             assert_eq!(
@@ -725,12 +721,12 @@ mod tests {
                         start: Offset(10),
                         end: Offset(11),
                     },
-                    JavaEntityId::Declaration(JavaDeclarationId(0))
+                    EntityId::Declaration(DeclarationId(0))
                 )
             );
             assert!(entries.iter().any(|(_, entity)| matches!(
                 entity,
-                JavaEntityId::Scope(scope) if *scope == outer
+                EntityId::Scope(scope) if *scope == outer
             )));
         }
     }
