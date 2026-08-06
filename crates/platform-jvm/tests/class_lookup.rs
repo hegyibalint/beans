@@ -6,34 +6,30 @@
 use std::path::PathBuf;
 
 use beans_core::storage::Revision;
-use beans_platform_jvm::PlatformJvm;
-use beans_platform_jvm::model::{JvmAccessLevel, JvmClass, JvmKind, JvmQualifiedName, JvmSource};
-use beans_platform_jvm::query::{
-    JvmContainer, JvmQuery, JvmScope, JvmScopeMembership, JvmScopeQuery,
-};
+use beans_platform_jvm as jvm;
 
 const JAR_ONE: &str = "lib-one-1.0.jar";
 const JAR_TWO: &str = "lib-two-1.0.jar";
 const SOURCES: &str = "app/src/main/java";
 
-fn source_file(relative: &str) -> JvmSource {
-    JvmSource::SourceFile {
+fn source_file(relative: &str) -> jvm::model::Source {
+    jvm::model::Source::SourceFile {
         path: PathBuf::from(SOURCES).join(relative),
     }
 }
 
-fn jar_entry(jar: &str, entry: &str) -> JvmSource {
-    JvmSource::JarEntry {
+fn jar_entry(jar: &str, entry: &str) -> jvm::model::Source {
+    jvm::model::Source::JarEntry {
         jar_path: PathBuf::from(jar),
         entry_path: entry.to_string(),
     }
 }
 
-fn class(fqn: &str) -> JvmClass {
-    JvmClass {
-        fqn: JvmQualifiedName::new(fqn),
-        kind: JvmKind::Class,
-        access: Some(JvmAccessLevel::Public),
+fn class(fqn: &str) -> jvm::model::Class {
+    jvm::model::Class {
+        fqn: jvm::model::BinaryName::new(fqn),
+        kind: jvm::model::TypeKind::Class,
+        access: Some(jvm::model::AccessLevel::Public),
         enclosing: None,
         superclass: None,
         interfaces: Vec::new(),
@@ -43,8 +39,8 @@ fn class(fqn: &str) -> JvmClass {
 }
 
 /// `A` in the workspace, and `p.B` declared once in each jar.
-fn lake() -> (PlatformJvm, Revision) {
-    let mut jvm = PlatformJvm::new();
+fn lake() -> (jvm::Platform, Revision) {
+    let mut jvm = jvm::Platform::new();
     let mut revision = Revision::default();
 
     jvm.register(revision.bump(), source_file("p/A.java"), vec![class("p.A")]);
@@ -64,34 +60,40 @@ fn lake() -> (PlatformJvm, Revision) {
 
 /// No scope information at all: every lookup made here is asking about
 /// registration rather than about visibility.
-fn whole_lake(jvm: &PlatformJvm, revision: Revision) -> JvmQuery<'_> {
-    JvmQuery::new(jvm, JvmScopeQuery::unscoped(), revision)
+fn whole_lake(jvm: &jvm::Platform, revision: Revision) -> jvm::query::Query<'_> {
+    jvm::query::Query::new(jvm, jvm::query::ScopeQuery::unscoped(), revision)
 }
 
-fn holding(jvm: &PlatformJvm, revision: Revision, containers: Vec<JvmContainer>) -> JvmQuery<'_> {
-    JvmQuery::new(
+fn holding(
+    jvm: &jvm::Platform,
+    revision: Revision,
+    containers: Vec<jvm::query::Container>,
+) -> jvm::query::Query<'_> {
+    jvm::query::Query::new(
         jvm,
-        JvmScopeQuery::of(vec![JvmScope::of(containers)]),
+        jvm::query::ScopeQuery::of(vec![jvm::query::Scope::of(containers)]),
         revision,
     )
 }
 
-fn artifact(jar: &str) -> JvmContainer {
-    JvmContainer::Artifact(PathBuf::from(jar))
+fn artifact(jar: &str) -> jvm::query::Container {
+    jvm::query::Container::Artifact(PathBuf::from(jar))
 }
 
-fn sources(directory: &str) -> JvmContainer {
-    JvmContainer::Source(PathBuf::from(directory))
+fn sources(directory: &str) -> jvm::query::Container {
+    jvm::query::Container::Source(PathBuf::from(directory))
 }
 
 fn in_scope<'a>(
-    query: &JvmQuery<'a>,
-    fqn: &JvmQualifiedName,
-) -> Vec<(&'a JvmSource, &'a JvmClass)> {
+    query: &jvm::query::Query<'a>,
+    fqn: &jvm::model::BinaryName,
+) -> Vec<(&'a jvm::model::Source, &'a jvm::model::Class)> {
     query
         .classes_named(fqn)
         .into_iter()
-        .filter(|(source, _)| query.scope_membership(source) == JvmScopeMembership::InScope)
+        .filter(|(source, _)| {
+            query.scope_membership(source) == jvm::query::ScopeMembership::InScope
+        })
         .collect()
 }
 
@@ -99,7 +101,7 @@ fn in_scope<'a>(
 fn a_name_no_container_declares_resolves_to_nothing() {
     let (jvm, revision) = lake();
 
-    let found = whole_lake(&jvm, revision).classes_named(&JvmQualifiedName::new("p.Missing"));
+    let found = whole_lake(&jvm, revision).classes_named(&jvm::model::BinaryName::new("p.Missing"));
 
     assert!(found.is_empty());
 }
@@ -109,13 +111,14 @@ fn discovery_retains_candidates_outside_the_scope() {
     let (jvm, revision) = lake();
     let query = holding(&jvm, revision, vec![sources(SOURCES)]);
 
-    let found = query.classes_named(&JvmQualifiedName::new("p.B"));
+    let found = query.classes_named(&jvm::model::BinaryName::new("p.B"));
 
     assert_eq!(found.len(), 2);
     assert!(
         found
             .iter()
-            .all(|(source, _)| query.scope_membership(source) == JvmScopeMembership::OutsideScope)
+            .all(|(source, _)| query.scope_membership(source)
+                == jvm::query::ScopeMembership::OutsideScope)
     );
     assert!(
         found
@@ -141,7 +144,7 @@ fn a_container_that_no_longer_declares_a_name_drops_out() {
         vec![class("p.Renamed")],
     );
 
-    let found = whole_lake(&jvm, revision).classes_named(&JvmQualifiedName::new("p.B"));
+    let found = whole_lake(&jvm, revision).classes_named(&jvm::model::BinaryName::new("p.B"));
 
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].0, &jar_entry(JAR_TWO, "p/B.class"));
@@ -154,7 +157,7 @@ fn an_older_revision_sees_the_lake_before_the_second_jar_landed() {
 
     // A, then jar one, then jar two: two bumps in.
     let before_jar_two = Revision::default().bump().bump();
-    let found = whole_lake(&jvm, before_jar_two).classes_named(&JvmQualifiedName::new("p.B"));
+    let found = whole_lake(&jvm, before_jar_two).classes_named(&jvm::model::BinaryName::new("p.B"));
 
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].0, &jar_entry(JAR_ONE, "p/B.class"));
@@ -173,8 +176,8 @@ fn package_discovery_is_not_filtered_by_scope() {
     assert_eq!(
         found
             .iter()
-            .filter(|(source, _)|
-                query.scope_membership(source) == JvmScopeMembership::OutsideScope)
+            .filter(|(source, _)| query.scope_membership(source)
+                == jvm::query::ScopeMembership::OutsideScope)
             .count(),
         2
     );
@@ -185,7 +188,7 @@ fn package_discovery_is_not_filtered_by_scope() {
 #[test]
 fn each_scope_contains_only_the_declaration_its_own_container_holds() {
     let (jvm, revision) = lake();
-    let b = JvmQualifiedName::new("p.B");
+    let b = jvm::model::BinaryName::new("p.B");
     let query_from_one = holding(&jvm, revision, vec![artifact(JAR_ONE)]);
     let query_from_two = holding(&jvm, revision, vec![artifact(JAR_TWO)]);
 
@@ -209,7 +212,7 @@ fn a_scope_holding_both_containers_still_sees_the_name_twice() {
     let (jvm, revision) = lake();
 
     let query = holding(&jvm, revision, vec![artifact(JAR_ONE), artifact(JAR_TWO)]);
-    let b = JvmQualifiedName::new("p.B");
+    let b = jvm::model::BinaryName::new("p.B");
     let found = in_scope(&query, &b);
 
     assert_eq!(found.len(), 2, "found {found:?}");
@@ -220,14 +223,14 @@ fn a_scope_holding_both_containers_still_sees_the_name_twice() {
 #[test]
 fn a_source_tree_is_a_container_of_its_own() {
     let (jvm, revision) = lake();
-    let a = JvmQualifiedName::new("p.A");
+    let a = jvm::model::BinaryName::new("p.A");
 
     let jars_only = holding(&jvm, revision, vec![artifact(JAR_ONE), artifact(JAR_TWO)]);
     let found = jars_only.classes_named(&a);
     assert_eq!(found.len(), 1);
     assert_eq!(
         jars_only.scope_membership(found[0].0),
-        JvmScopeMembership::OutsideScope
+        jvm::query::ScopeMembership::OutsideScope
     );
 
     let with_sources = holding(&jvm, revision, vec![sources(SOURCES)]);
@@ -242,10 +245,10 @@ fn a_source_tree_does_not_reach_into_a_sibling_tree() {
 
     let elsewhere = holding(&jvm, revision, vec![sources("lib/src/main/java")]);
 
-    let found = elsewhere.classes_named(&JvmQualifiedName::new("p.A"));
+    let found = elsewhere.classes_named(&jvm::model::BinaryName::new("p.A"));
     assert_eq!(found.len(), 1);
     assert_eq!(
         elsewhere.scope_membership(found[0].0),
-        JvmScopeMembership::OutsideScope
+        jvm::query::ScopeMembership::OutsideScope
     );
 }

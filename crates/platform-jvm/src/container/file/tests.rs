@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::model::JvmSource;
+use crate::model;
 
 #[test]
 fn processing_a_standalone_class_attaches_its_path() {
@@ -13,7 +13,7 @@ fn processing_a_standalone_class_attaches_its_path() {
         .expect("a class file contributes one item")
         .expect("fixture should process");
 
-    assert_eq!(source, JvmSource::ClassFile { path });
+    assert_eq!(source, model::Source::ClassFile { path });
     assert_eq!(class.fqn.as_str(), "beans.fixture.Feature");
     assert!(processed.next().is_none());
 }

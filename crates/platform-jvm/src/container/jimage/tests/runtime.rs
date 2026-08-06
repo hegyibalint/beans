@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 
 use crate::container::jimage::is_image;
 use crate::container::{Error, ErrorKind};
-use crate::model::{JvmClass, JvmSource};
+use crate::model;
 
 /// The image these cases read.
 ///
@@ -17,7 +17,7 @@ fn runtime_image() -> &'static Path {
 }
 
 struct Walk {
-    classes: Vec<(JvmSource, JvmClass)>,
+    classes: Vec<(model::Source, model::Class)>,
     errors: Vec<Error>,
 }
 
@@ -40,9 +40,9 @@ fn walk() -> &'static Walk {
     })
 }
 
-fn entry_path(source: &JvmSource) -> &str {
+fn entry_path(source: &model::Source) -> &str {
     match source {
-        JvmSource::JimageEntry { entry_path, .. } => entry_path,
+        model::Source::JimageEntry { entry_path, .. } => entry_path,
         other => panic!("a runtime image should produce only image entries: {other:?}"),
     }
 }
@@ -89,7 +89,7 @@ fn a_class_is_sourced_at_its_module_and_its_path() {
 
     assert_eq!(
         *source,
-        JvmSource::JimageEntry {
+        model::Source::JimageEntry {
             jimage_path: runtime_image().to_path_buf(),
             entry_path: "java.base/java/lang/String.class".to_string(),
         }

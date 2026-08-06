@@ -1,19 +1,19 @@
 use std::path::{Path, PathBuf};
 
 use beans::Beans;
-use beans_platform_jvm::model::JvmSource;
+use beans_platform_jvm as jvm;
 
 fn fixture_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/engine/fixtures/classpath")
 }
 
-fn source(root: &Path, path: &str) -> JvmSource {
-    JvmSource::SourceFile {
+fn source(root: &Path, path: &str) -> jvm::model::Source {
+    jvm::model::Source::SourceFile {
         path: root.join(path),
     }
 }
 
-fn has_compiled_library_scope_error(beans: &Beans, source: &JvmSource) -> bool {
+fn has_compiled_library_scope_error(beans: &Beans, source: &jvm::model::Source) -> bool {
     beans
         .analyze(source)
         .expect("fixture source should be analyzed")

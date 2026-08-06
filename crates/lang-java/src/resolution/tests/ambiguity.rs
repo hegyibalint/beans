@@ -4,7 +4,7 @@ use super::*;
 fn duplicate_exact_imports_name_one_target() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     let imported_source = process(
         &mut java,
         &mut jvm,
@@ -41,7 +41,7 @@ fn duplicate_exact_imports_name_one_target() {
 fn distinct_exact_imports_leave_the_name_contested() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     let p_source = process(
         &mut java,
         &mut jvm,
@@ -91,7 +91,7 @@ fn distinct_exact_imports_leave_the_name_contested() {
 fn a_package_declaring_a_name_twice_offers_both_files() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     let first_source = process(
         &mut java,
         &mut jvm,

@@ -1,4 +1,4 @@
-use beans_platform_jvm::model::{JvmAccessLevel, JvmSource};
+use beans_platform_jvm as jvm;
 
 use crate::model::{
     JavaAccess, JavaAccessLevel, JavaDeclaration, JavaDeclarationId, JavaFile, JavaLexicalScopeId,
@@ -9,7 +9,7 @@ use crate::model::{
 /// declaration and the place reaching for it, so both ends are described the
 /// same way and neither is privileged.
 pub struct JavaSite<'a> {
-    pub source: &'a JvmSource,
+    pub source: &'a jvm::model::Source,
     pub file: &'a JavaFile,
     pub scope: JavaLexicalScopeId,
 }
@@ -40,17 +40,19 @@ pub fn is_accessible(access: Option<JavaAccess>, declared: &JavaSite, from: &Jav
 /// anonymous class (§8.1.1), and a class the lake no longer holds. `Protected`
 /// answers `true` for the reason above.
 pub fn is_compiled_type_accessible(
-    access: Option<JvmAccessLevel>,
+    access: Option<jvm::model::AccessLevel>,
     declared_package: &str,
     from: &JavaSite,
 ) -> bool {
     match access {
-        None | Some(JvmAccessLevel::Public) | Some(JvmAccessLevel::Protected) => true,
-        Some(JvmAccessLevel::Package) => declared_package == package_of(from.file),
+        None | Some(jvm::model::AccessLevel::Public) | Some(jvm::model::AccessLevel::Protected) => {
+            true
+        }
+        Some(jvm::model::AccessLevel::Package) => declared_package == package_of(from.file),
         // §6.6.1 permits private access only from within the body of the top
         // level class enclosing the declaration, and no Java source is ever
         // inside a class file.
-        Some(JvmAccessLevel::Private) => false,
+        Some(jvm::model::AccessLevel::Private) => false,
     }
 }
 

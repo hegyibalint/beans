@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use super::{Error, Step, at, is_class};
 use crate::class_file::{self, ParseOutcome};
-use crate::model::JvmSource;
+use crate::model;
 
 pub(super) fn open(path: &Path) -> Result<Frame, Error> {
     read(path, String::new())
@@ -43,7 +43,7 @@ impl Frame {
 
         match class_file::parse(buffer) {
             Ok(ParseOutcome::Class(class)) => {
-                Step::Emit(Ok((JvmSource::ClassFile { path }, class)))
+                Step::Emit(Ok((model::Source::ClassFile { path }, class)))
             }
             Ok(ParseOutcome::ModuleDescriptor) => Step::Skip,
             Err(error) => Step::Emit(Err(Error::parse(at, error))),

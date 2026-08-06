@@ -8,7 +8,7 @@ use flate2::read::ZlibDecoder;
 use self::index::{Index, Location, Order};
 use super::{Error, Step, at, at_entry, is_class};
 use crate::class_file::{self, ParseOutcome};
-use crate::model::JvmSource;
+use crate::model;
 
 mod index;
 
@@ -91,7 +91,7 @@ impl Frame {
 
         match class_file::parse(buffer) {
             Ok(ParseOutcome::Class(class)) => Step::Emit(Ok((
-                JvmSource::JimageEntry {
+                model::Source::JimageEntry {
                     jimage_path: self.path.clone(),
                     entry_path,
                 },

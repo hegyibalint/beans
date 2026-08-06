@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use beans::Beans;
 use beans_core::analysis::diagnostic::Diagnostics;
 use beans_core::model::Offset;
-use beans_platform_jvm::model::JvmSource;
+use beans_platform_jvm as jvm;
 use beans_workspace::model::{Selector, Unit, Workspace};
 
 use beans_test_support::markers::{Cursor, strip_markers};
@@ -245,8 +245,8 @@ fn root() -> &'static Path {
     Path::new("/beans-fixture")
 }
 
-fn jvm_source(path: &Path) -> JvmSource {
-    JvmSource::SourceFile {
+fn jvm_source(path: &Path) -> jvm::model::Source {
+    jvm::model::Source::SourceFile {
         path: root().join(path),
     }
 }

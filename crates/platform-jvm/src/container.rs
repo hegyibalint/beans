@@ -3,14 +3,15 @@ use std::io::Read;
 use std::path::Path;
 
 use crate::class_file::ParseError;
-use crate::model::{JvmClass, JvmSource};
+use crate::model;
 
 mod archive;
 mod directory;
 mod file;
 mod jimage;
 
-pub(crate) type ProcessedClasses = Box<dyn Iterator<Item = Result<(JvmSource, JvmClass), Error>>>;
+pub(crate) type ProcessedClasses =
+    Box<dyn Iterator<Item = Result<(model::Source, model::Class), Error>>>;
 
 pub(crate) fn process(path: &Path) -> ProcessedClasses {
     Box::new(Classes::open(path))
@@ -40,7 +41,7 @@ impl Classes {
 }
 
 impl Iterator for Classes {
-    type Item = Result<(JvmSource, JvmClass), Error>;
+    type Item = Result<(model::Source, model::Class), Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(error) = self.failure.take() {
@@ -104,7 +105,7 @@ enum Step {
     Skip,
     /// No entries left.
     Done,
-    Emit(Result<(JvmSource, JvmClass), Error>),
+    Emit(Result<(model::Source, model::Class), Error>),
     /// A container found inside this one.
     Nested(Frame),
 }

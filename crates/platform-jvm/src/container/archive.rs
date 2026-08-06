@@ -6,7 +6,7 @@ use zip::ZipArchive;
 
 use super::{Error, Step, at, at_entry, is_class};
 use crate::class_file::{self, ParseOutcome};
-use crate::model::JvmSource;
+use crate::model;
 
 pub(super) fn open(path: &Path) -> Result<Frame, Error> {
     let file = File::open(path).map_err(|error| Error::open(at(path), error))?;
@@ -57,7 +57,7 @@ impl Frame {
 
         match class_file::parse(buffer) {
             Ok(ParseOutcome::Class(class)) => Step::Emit(Ok((
-                JvmSource::JarEntry {
+                model::Source::JarEntry {
                     jar_path: self.path.clone(),
                     entry_path,
                 },

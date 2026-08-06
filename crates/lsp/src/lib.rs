@@ -6,7 +6,7 @@
 pub mod translation;
 
 use beans::Beans;
-use beans_platform_jvm::model::JvmSource;
+use beans_platform_jvm as jvm;
 use lsp_server::{
     Connection, Message, Notification as ServerNotification, Request as ServerRequest,
     Response as ServerResponse,
@@ -275,7 +275,7 @@ fn handle_notification_did_close(conn: &Connection, params: DidCloseTextDocument
 fn publish_diagnostics(
     conn: &Connection,
     beans: &Beans,
-    source: &JvmSource,
+    source: &jvm::model::Source,
     uri: Uri,
     version: i32,
 ) {

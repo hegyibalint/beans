@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use beans::Beans;
-use beans_platform_jvm::model::JvmSource;
+use beans_platform_jvm as jvm;
 
 /// Two units, the same Java in both, and only one of them naming a JDK.
 fn project() -> PathBuf {
@@ -49,7 +49,7 @@ fn write(path: &Path, contents: &str) {
 }
 
 fn string_is_outside_scope(beans: &Beans, root: &Path, unit: &str) -> bool {
-    let source = JvmSource::SourceFile {
+    let source = jvm::model::Source::SourceFile {
         path: root.join(unit).join("p").join("Uses.java"),
     };
     beans

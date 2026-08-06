@@ -2,14 +2,14 @@ use beans_core::storage::Revision;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::PlatformJvm;
-use crate::model::{JvmClass, JvmQualifiedName, JvmSource};
+use crate::Platform;
+use crate::model;
 
 /// One place classes come from. A source names its own container for every
 /// kind but a source file, which is why membership is a cheap check rather
 /// than a stored list of everything a scope can see.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum JvmContainer {
+pub enum Container {
     /// Where hand-written code lives. A directory for now, which is the widest
     /// reading of a build tool's tree selector: its include and exclude
     /// patterns are dropped.
@@ -19,22 +19,22 @@ pub enum JvmContainer {
     Artifact(PathBuf),
 }
 
-impl JvmContainer {
-    fn holds(&self, source: &JvmSource) -> bool {
+impl Container {
+    fn holds(&self, source: &model::Source) -> bool {
         match (self, source) {
-            (JvmContainer::Source(base), JvmSource::SourceFile { path }) => path.starts_with(base),
+            (Container::Source(base), model::Source::SourceFile { path }) => path.starts_with(base),
             // A class file names itself, so an artifact that is a directory has
             // to hold every class under it rather than only one equal to it.
-            (JvmContainer::Artifact(artifact), JvmSource::ClassFile { path }) => {
+            (Container::Artifact(artifact), model::Source::ClassFile { path }) => {
                 path.starts_with(artifact)
             }
-            (JvmContainer::Artifact(artifact), JvmSource::JarEntry { jar_path, .. }) => {
+            (Container::Artifact(artifact), model::Source::JarEntry { jar_path, .. }) => {
                 jar_path == artifact
             }
-            (JvmContainer::Artifact(artifact), JvmSource::JmodEntry { jmod_path, .. }) => {
+            (Container::Artifact(artifact), model::Source::JmodEntry { jmod_path, .. }) => {
                 jmod_path == artifact
             }
-            (JvmContainer::Artifact(artifact), JvmSource::JimageEntry { jimage_path, .. }) => {
+            (Container::Artifact(artifact), model::Source::JimageEntry { jimage_path, .. }) => {
                 jimage_path == artifact
             }
             _ => false,
@@ -49,14 +49,14 @@ impl JvmContainer {
 /// Shared rather than copied, because every file in a source set sees exactly
 /// the same thing: a unit builds one of these and all of its files point at it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct JvmScope(Arc<Vec<JvmContainer>>);
+pub struct Scope(Arc<Vec<Container>>);
 
-impl JvmScope {
-    pub fn of(containers: Vec<JvmContainer>) -> JvmScope {
-        JvmScope(Arc::new(containers))
+impl Scope {
+    pub fn of(containers: Vec<Container>) -> Scope {
+        Scope(Arc::new(containers))
     }
 
-    fn holds(&self, source: &JvmSource) -> bool {
+    fn holds(&self, source: &model::Source) -> bool {
         self.0.iter().any(|container| container.holds(source))
     }
 }
@@ -64,40 +64,40 @@ impl JvmScope {
 /// What one source can see. Opaque on purpose: nothing outside reads its
 /// shape, so it can become a handle into a persisted scope table later.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct JvmScopeQuery(Scope);
+pub struct ScopeQuery(Selection);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Scope {
+enum Selection {
     /// Nothing has told us what this source can see. Everything in the lake
     /// is visible, which is what a cold start serves before the first import.
     Unscoped,
     /// More than one because a tree can be claimed by two units, and a file
     /// checked into both is compiled by both.
-    Scopes(Vec<JvmScope>),
+    Scopes(Vec<Scope>),
 }
 
-impl JvmScopeQuery {
-    pub fn unscoped() -> JvmScopeQuery {
-        JvmScopeQuery(Scope::Unscoped)
+impl ScopeQuery {
+    pub fn unscoped() -> ScopeQuery {
+        ScopeQuery(Selection::Unscoped)
     }
 
-    pub fn of(scopes: Vec<JvmScope>) -> JvmScopeQuery {
-        JvmScopeQuery(Scope::Scopes(scopes))
+    pub fn of(scopes: Vec<Scope>) -> ScopeQuery {
+        ScopeQuery(Selection::Scopes(scopes))
     }
 
     /// Visible under any one scope is visible. That is the permissive reading
     /// of shared code: the strict one analyses the file once per scope and
     /// reports per context, which needs an analysis to have a context first.
-    pub fn contains(&self, source: &JvmSource) -> bool {
+    pub fn contains(&self, source: &model::Source) -> bool {
         match &self.0 {
-            Scope::Unscoped => true,
-            Scope::Scopes(scopes) => scopes.iter().any(|scope| scope.holds(source)),
+            Selection::Unscoped => true,
+            Selection::Scopes(scopes) => scopes.iter().any(|scope| scope.holds(source)),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JvmScopeMembership {
+pub enum ScopeMembership {
     InScope,
     OutsideScope,
 }
@@ -106,15 +106,15 @@ pub enum JvmScopeMembership {
 /// which revision. The engine builds it per request and hands it to the
 /// language verticals, so resolution asks about names instead of about jars
 /// and classpath order.
-pub struct JvmQuery<'jvm> {
-    jvm: &'jvm PlatformJvm,
-    scope: JvmScopeQuery,
+pub struct Query<'jvm> {
+    jvm: &'jvm Platform,
+    scope: ScopeQuery,
     pub revision: Revision,
 }
 
-impl<'jvm> JvmQuery<'jvm> {
-    pub fn new(jvm: &'jvm PlatformJvm, scope: JvmScopeQuery, revision: Revision) -> JvmQuery<'jvm> {
-        JvmQuery {
+impl<'jvm> Query<'jvm> {
+    pub fn new(jvm: &'jvm Platform, scope: ScopeQuery, revision: Revision) -> Query<'jvm> {
+        Query {
             jvm,
             scope,
             revision,
@@ -123,30 +123,36 @@ impl<'jvm> JvmQuery<'jvm> {
 
     /// Every declaration of this binary name in the lake at this query's
     /// revision. Scope membership is a separate question.
-    pub fn classes_named(&self, fqn: &JvmQualifiedName) -> Vec<(&'jvm JvmSource, &'jvm JvmClass)> {
+    pub fn classes_named(
+        &self,
+        fqn: &model::BinaryName,
+    ) -> Vec<(&'jvm model::Source, &'jvm model::Class)> {
         self.all_classes()
             .filter(|(_, class)| class.fqn == *fqn)
             .collect()
     }
 
     /// Whether `candidate_source` is visible from this query's viewpoint.
-    pub fn scope_membership(&self, candidate_source: &JvmSource) -> JvmScopeMembership {
+    pub fn scope_membership(&self, candidate_source: &model::Source) -> ScopeMembership {
         if self.scope.contains(candidate_source) {
-            JvmScopeMembership::InScope
+            ScopeMembership::InScope
         } else {
-            JvmScopeMembership::OutsideScope
+            ScopeMembership::OutsideScope
         }
     }
 
     /// Package in the binary-name sense: `p.Outer$Inner` lives in `p`, so
     /// nested classes come back too; languages filter by `enclosing`.
-    pub fn classes_in_package(&self, package: &str) -> Vec<(&'jvm JvmSource, &'jvm JvmClass)> {
+    pub fn classes_in_package(
+        &self,
+        package: &str,
+    ) -> Vec<(&'jvm model::Source, &'jvm model::Class)> {
         self.all_classes()
             .filter(|(_, class)| class.fqn.package() == package)
             .collect()
     }
 
-    fn all_classes(&self) -> impl Iterator<Item = (&'jvm JvmSource, &'jvm JvmClass)> {
+    fn all_classes(&self) -> impl Iterator<Item = (&'jvm model::Source, &'jvm model::Class)> {
         self.jvm
             .classes
             .iter_at(self.revision)

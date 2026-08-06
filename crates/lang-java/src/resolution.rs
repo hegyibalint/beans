@@ -1,9 +1,6 @@
 use beans_core::language::NavigationTarget;
 use beans_core::model::Offset;
-use beans_platform_jvm::{
-    model::{JvmQualifiedName, JvmSource},
-    query::JvmScopeMembership,
-};
+use beans_platform_jvm as jvm;
 
 use crate::{
     accessibility::{JavaSite, is_accessible, is_compiled_type_accessible},
@@ -52,19 +49,19 @@ pub enum JavaTypeTarget {
     /// The resolution target is coming from the `lang-java` land.
     /// We store the raw declaration ID, as we have access to the model and its declarations.
     Java {
-        source: JvmSource,
+        source: jvm::model::Source,
         declaration: JavaDeclarationId,
     },
     /// The resulution target is coming from the `platform-jvm` land (i.e. anything but a Java source file).
     /// We store the "coordinate" pointing at the resource (e.g., a `.class`, a `.jar`, etc) and the FQN in there what we resolved to.
     Jvm {
-        source: JvmSource,
-        fqn: JvmQualifiedName,
+        source: jvm::model::Source,
+        fqn: jvm::model::BinaryName,
     },
 }
 
 impl JavaTypeTarget {
-    pub(crate) fn source(&self) -> &JvmSource {
+    pub(crate) fn source(&self) -> &jvm::model::Source {
         match self {
             Self::Java { source, .. } | Self::Jvm { source, .. } => source,
         }
@@ -246,7 +243,7 @@ impl IntoIterator for ResolutionCandidates {
 /// out.
 pub fn resolve_type_name(
     name: &JavaName,
-    source: &JvmSource,
+    source: &jvm::model::Source,
     file: &JavaFile,
     current_lexical_scope_id: JavaLexicalScopeId,
     query: &JavaQuery,
@@ -256,7 +253,7 @@ pub fn resolve_type_name(
 
 pub(crate) fn resolve_type_candidates(
     name: &JavaName,
-    source: &JvmSource,
+    source: &jvm::model::Source,
     file: &JavaFile,
     current_lexical_scope_id: JavaLexicalScopeId,
     query: &JavaQuery,
@@ -293,7 +290,7 @@ pub(crate) fn resolve_type_candidates(
 
 fn candidates_from_lexical_scopes(
     name: &JavaIdentifier,
-    source: &JvmSource,
+    source: &jvm::model::Source,
     file: &JavaFile,
     current_lexical_scope_id: JavaLexicalScopeId,
 ) -> ResolutionCandidates {
@@ -327,7 +324,7 @@ fn candidates_from_lexical_scopes(
 #[cfg(test)]
 fn resolve_type_from_lexical_scopes(
     name: &JavaIdentifier,
-    source: &JvmSource,
+    source: &jvm::model::Source,
     file: &JavaFile,
     current_lexical_scope_id: JavaLexicalScopeId,
 ) -> JavaTypeResolution {
@@ -336,7 +333,7 @@ fn resolve_type_from_lexical_scopes(
 
 fn candidates_from_exact_imports(
     name: &JavaIdentifier,
-    source: &JvmSource,
+    source: &jvm::model::Source,
     file: &JavaFile,
     query: &JavaQuery,
 ) -> ResolutionCandidates {
@@ -357,7 +354,7 @@ fn candidates_from_exact_imports(
 #[cfg(test)]
 fn resolve_type_from_exact_imports(
     name: &JavaIdentifier,
-    source: &JvmSource,
+    source: &jvm::model::Source,
     file: &JavaFile,
     query: &JavaQuery,
 ) -> JavaTypeResolution {
@@ -490,7 +487,7 @@ fn resolve_canonical_name(
         for path in paths {
             match path {
                 CanonicalPath::Package(prefix) => {
-                    let name = JvmQualifiedName::in_package(&prefix, &segment.text);
+                    let name = jvm::model::BinaryName::in_package(&prefix, &segment.text);
                     let candidates = classify_types_named(query, &name, from);
                     if !candidates.commits_type_path() {
                         next.push(CanonicalPath::Package(name.as_str().to_owned()));
@@ -578,7 +575,7 @@ fn candidates_from_same_package(
 
     classify_types_named(
         query,
-        &JvmQualifiedName::in_package(&package, &name.text),
+        &jvm::model::BinaryName::in_package(&package, &name.text),
         from,
     )
 }
@@ -586,7 +583,7 @@ fn candidates_from_same_package(
 #[cfg(test)]
 fn resolve_from_same_package(
     name: &JavaIdentifier,
-    source: &JvmSource,
+    source: &jvm::model::Source,
     file: &JavaFile,
     query: &JavaQuery,
 ) -> JavaTypeResolution {
@@ -620,14 +617,14 @@ fn candidates_from_java_lang(
 ) -> ResolutionCandidates {
     classify_types_named(
         query,
-        &JvmQualifiedName::in_package("java.lang", &name.text),
+        &jvm::model::BinaryName::in_package("java.lang", &name.text),
         from,
     )
 }
 
 fn classify_types_named(
     query: &JavaQuery,
-    fqn: &JvmQualifiedName,
+    fqn: &jvm::model::BinaryName,
     from: &JavaSite,
 ) -> ResolutionCandidates {
     query
@@ -642,7 +639,7 @@ fn classify_type_target(
     query: &JavaQuery,
     from: &JavaSite,
 ) -> ClassifiedJavaTypeCandidate {
-    if query.scope_membership(&target) == JvmScopeMembership::OutsideScope {
+    if query.scope_membership(&target) == jvm::query::ScopeMembership::OutsideScope {
         return ClassifiedJavaTypeCandidate::Invalid(InvalidJavaTypeCandidate {
             target,
             reasons: vec![JavaTypeInvalidity::OutsideScope],
@@ -731,11 +728,11 @@ fn find_member(
 /// Resolves the occurrence at `offset` to the declarations it refers to.
 /// This is the go-to-declaration entry point.
 pub fn resolve_occurrence_at(
-    source: &JvmSource,
+    source: &jvm::model::Source,
     file: &JavaFile,
     offset: Offset,
     query: &JavaQuery,
-) -> Vec<NavigationTarget<JvmSource>> {
+) -> Vec<NavigationTarget<jvm::model::Source>> {
     let Some((_, entity)) = file.position_index.tightest_containing(offset) else {
         return Vec::new();
     };
@@ -772,12 +769,12 @@ pub fn resolve_occurrence_at(
 }
 
 pub(crate) fn resolve_expression(
-    source: &JvmSource,
+    source: &jvm::model::Source,
     file: &JavaFile,
     body_id: JavaBodyId,
     expression_id: JavaBodyNodeId,
     query: &JavaQuery,
-) -> Vec<(JvmSource, JavaDeclarationId)> {
+) -> Vec<(jvm::model::Source, JavaDeclarationId)> {
     let body = &file.bodies[body_id.0];
     let scope = body.node(expression_id).scope;
     let Some(expression) = body.expression(expression_id) else {
@@ -834,12 +831,12 @@ pub(crate) fn resolve_expression(
 /// The class through which member lookup for `expression` runs: the declared
 /// type of the expression, or the type itself for static access (`Bar.asd`).
 fn resolve_receiver_class(
-    source: &JvmSource,
+    source: &jvm::model::Source,
     file: &JavaFile,
     body_id: JavaBodyId,
     expression_id: JavaBodyNodeId,
     query: &JavaQuery,
-) -> Option<(JvmSource, JavaDeclarationId)> {
+) -> Option<(jvm::model::Source, JavaDeclarationId)> {
     let body = &file.bodies[body_id.0];
     let scope = body.node(expression_id).scope;
     let Some(expression) = body.expression(expression_id) else {
@@ -926,12 +923,12 @@ fn resolve_receiver_class(
 
 /// A syntactic type annotation resolved to its declaring class.
 fn resolve_type_reference(
-    source: &JvmSource,
+    source: &jvm::model::Source,
     file: &JavaFile,
     type_ref: &JavaTypeRef,
     scope: JavaLexicalScopeId,
     query: &JavaQuery,
-) -> Vec<(JvmSource, JavaDeclarationId)> {
+) -> Vec<(jvm::model::Source, JavaDeclarationId)> {
     if type_ref.primitive {
         return Vec::new();
     }

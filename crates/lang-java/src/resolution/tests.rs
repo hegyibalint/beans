@@ -13,11 +13,7 @@ use beans_core::{
     model::{Offset, OffsetSpan},
     storage::Revision,
 };
-use beans_platform_jvm::{
-    PlatformJvm,
-    model::{JvmAccessLevel, JvmClass, JvmKind},
-    query::{JvmContainer, JvmQuery, JvmScope, JvmScopeQuery},
-};
+use beans_platform_jvm as jvm;
 
 use crate::{
     LanguageJava,
@@ -36,8 +32,8 @@ fn identifier(text: &str) -> JavaIdentifier {
     }
 }
 
-fn source(path: &str) -> JvmSource {
-    JvmSource::SourceFile {
+fn source(path: &str) -> jvm::model::Source {
+    jvm::model::Source::SourceFile {
         path: PathBuf::from(path),
     }
 }
@@ -80,11 +76,11 @@ fn declaring_scope_of(file: &JavaFile, name: &str) -> JavaLexicalScopeId {
 
 fn java_query<'a>(
     java: &'a LanguageJava,
-    jvm: &'a PlatformJvm,
+    jvm: &'a jvm::Platform,
     revision: Revision,
 ) -> JavaQuery<'a> {
     JavaQuery::new(
-        JvmQuery::new(jvm, JvmScopeQuery::unscoped(), revision),
+        jvm::query::Query::new(jvm, jvm::query::ScopeQuery::unscoped(), revision),
         java,
     )
 }
@@ -92,12 +88,12 @@ fn java_query<'a>(
 fn file_model<'java>(
     java: &'java LanguageJava,
     revision: Revision,
-    source: &JvmSource,
+    source: &jvm::model::Source,
 ) -> &'java JavaFile {
     java.model_at(source, revision).unwrap()
 }
 
-fn compilation_unit_site<'a>(source: &'a JvmSource, file: &'a JavaFile) -> JavaSite<'a> {
+fn compilation_unit_site<'a>(source: &'a jvm::model::Source, file: &'a JavaFile) -> JavaSite<'a> {
     JavaSite {
         source,
         file,
@@ -107,11 +103,11 @@ fn compilation_unit_site<'a>(source: &'a JvmSource, file: &'a JavaFile) -> JavaS
 
 fn process(
     java: &mut LanguageJava,
-    jvm: &mut PlatformJvm,
+    jvm: &mut jvm::Platform,
     revision: Revision,
     path: &str,
     contents: &str,
-) -> JvmSource {
+) -> jvm::model::Source {
     let source = source(path);
     java.process(source.clone(), revision, jvm, contents);
     source
@@ -122,18 +118,18 @@ fn process(
 /// a `JavaTypeTarget::Jvm` for one, so what it knows about the declaration is
 /// the binary name and the access level.
 fn compiled_class(
-    jvm: &mut PlatformJvm,
+    jvm: &mut jvm::Platform,
     revision: Revision,
-    source: JvmSource,
+    source: jvm::model::Source,
     fqn: &str,
-    access: JvmAccessLevel,
-) -> JvmSource {
+    access: jvm::model::AccessLevel,
+) -> jvm::model::Source {
     jvm.register(
         revision,
         source.clone(),
-        vec![JvmClass {
-            fqn: JvmQualifiedName::new(fqn),
-            kind: JvmKind::Class,
+        vec![jvm::model::Class {
+            fqn: jvm::model::BinaryName::new(fqn),
+            kind: jvm::model::TypeKind::Class,
             access: Some(access),
             enclosing: None,
             superclass: None,

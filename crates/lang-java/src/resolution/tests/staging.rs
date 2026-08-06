@@ -13,8 +13,8 @@ use super::*;
 /// the label a user would be shown.
 fn resolve(
     java: &LanguageJava,
-    jvm: &PlatformJvm,
-    source: &JvmSource,
+    jvm: &jvm::Platform,
+    source: &jvm::model::Source,
     name: &str,
 ) -> Option<String> {
     let revision = Revision::default();
@@ -40,10 +40,10 @@ fn resolve(
 }
 
 /// A world holding `files`, with the last one as the file doing the asking.
-fn asking(files: &[(&str, &str)]) -> (LanguageJava, PlatformJvm, JvmSource) {
+fn asking(files: &[(&str, &str)]) -> (LanguageJava, jvm::Platform, jvm::model::Source) {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     let mut asker = None;
     for (path, contents) in files {
         asker = Some(process(&mut java, &mut jvm, revision, path, contents));
@@ -213,7 +213,7 @@ fn an_inaccessible_import_does_not_hide_an_accessible_same_package_type() {
 fn an_outside_scope_import_does_not_hide_an_in_scope_package_type() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     process(
         &mut java,
         &mut jvm,
@@ -238,9 +238,9 @@ fn an_outside_scope_import_does_not_hide_an_in_scope_package_type() {
     jvm.register_scopes(
         revision,
         asker.clone(),
-        vec![JvmScope::of(vec![JvmContainer::Source(PathBuf::from(
-            "app",
-        ))])],
+        vec![jvm::query::Scope::of(vec![jvm::query::Container::Source(
+            PathBuf::from("app"),
+        )])],
     );
     let file = file_model(&java, revision, &asker);
     let body = type_declaration(file, file.top_level_declarations[0]).body_scope;
@@ -269,7 +269,7 @@ fn an_outside_scope_import_does_not_hide_an_in_scope_package_type() {
 fn a_name_known_only_outside_scope_is_unresolved() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     let outside_source = process(
         &mut java,
         &mut jvm,
@@ -287,9 +287,9 @@ fn a_name_known_only_outside_scope_is_unresolved() {
     jvm.register_scopes(
         revision,
         asker.clone(),
-        vec![JvmScope::of(vec![JvmContainer::Source(PathBuf::from(
-            "app",
-        ))])],
+        vec![jvm::query::Scope::of(vec![jvm::query::Container::Source(
+            PathBuf::from("app"),
+        )])],
     );
     let file = file_model(&java, revision, &asker);
     let body = type_declaration(file, file.top_level_declarations[0]).body_scope;
@@ -297,7 +297,7 @@ fn a_name_known_only_outside_scope_is_unresolved() {
         file_model(&java, revision, &outside_source).top_level_declarations[0];
     let query = JavaQuery::new(jvm.query_from(&asker, revision), &java);
 
-    let candidates = query.types_named(&JvmQualifiedName::new("p.X"));
+    let candidates = query.types_named(&jvm::model::BinaryName::new("p.X"));
     assert_eq!(
         candidates,
         vec![JavaTypeTarget::Java {
@@ -307,7 +307,7 @@ fn a_name_known_only_outside_scope_is_unresolved() {
     );
     assert_eq!(
         query.scope_membership(&candidates[0]),
-        JvmScopeMembership::OutsideScope
+        jvm::query::ScopeMembership::OutsideScope
     );
     let candidates = resolve_type_candidates(
         &JavaName::Simple(identifier("X")),
@@ -342,7 +342,7 @@ fn a_name_no_stage_answers_is_unresolved() {
 fn a_qualified_name_does_not_fall_through_to_the_stages() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     process(
         &mut java,
         &mut jvm,

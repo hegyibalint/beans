@@ -9,12 +9,12 @@
 use super::*;
 
 fn jar_class(
-    jvm: &mut PlatformJvm,
+    jvm: &mut jvm::Platform,
     revision: Revision,
     fqn: &str,
-    access: JvmAccessLevel,
-) -> JvmSource {
-    let source = JvmSource::JarEntry {
+    access: jvm::model::AccessLevel,
+) -> jvm::model::Source {
+    let source = jvm::model::Source::JarEntry {
         jar_path: PathBuf::from("lib.jar"),
         entry_path: format!("{}.class", fqn.replace('.', "/")),
     };
@@ -23,8 +23,8 @@ fn jar_class(
 
 fn resolve(
     java: &LanguageJava,
-    jvm: &PlatformJvm,
-    asker: &JvmSource,
+    jvm: &jvm::Platform,
+    asker: &jvm::model::Source,
     name: &str,
 ) -> JavaTypeResolution {
     let revision = Revision::default();
@@ -44,8 +44,8 @@ fn resolve(
 fn a_package_private_compiled_type_is_reached_only_from_its_own_package() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
-    let jar = jar_class(&mut jvm, revision, "p.X", JvmAccessLevel::Package);
+    let mut jvm = jvm::Platform::new();
+    let jar = jar_class(&mut jvm, revision, "p.X", jvm::model::AccessLevel::Package);
     let neighbour = process(
         &mut java,
         &mut jvm,
@@ -65,7 +65,7 @@ fn a_package_private_compiled_type_is_reached_only_from_its_own_package() {
         resolve(&java, &jvm, &neighbour, "X"),
         JavaTypeResolution::Resolved(JavaTypeTarget::Jvm {
             source: jar,
-            fqn: JvmQualifiedName::new("p.X"),
+            fqn: jvm::model::BinaryName::new("p.X"),
         })
     );
 
@@ -86,9 +86,19 @@ fn a_package_private_compiled_type_is_reached_only_from_its_own_package() {
 fn a_private_member_of_a_compiled_type_is_reached_by_nobody() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
-    jar_class(&mut jvm, revision, "p.Outer", JvmAccessLevel::Public);
-    jar_class(&mut jvm, revision, "p.Outer$Inner", JvmAccessLevel::Private);
+    let mut jvm = jvm::Platform::new();
+    jar_class(
+        &mut jvm,
+        revision,
+        "p.Outer",
+        jvm::model::AccessLevel::Public,
+    );
+    jar_class(
+        &mut jvm,
+        revision,
+        "p.Outer$Inner",
+        jvm::model::AccessLevel::Private,
+    );
     let asker = process(
         &mut java,
         &mut jvm,
@@ -112,9 +122,19 @@ fn a_private_member_of_a_compiled_type_is_reached_by_nobody() {
 fn a_public_member_of_a_compiled_type_is_reached_through_its_dollar_name() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
-    jar_class(&mut jvm, revision, "p.Outer", JvmAccessLevel::Public);
-    let inner = jar_class(&mut jvm, revision, "p.Outer$Inner", JvmAccessLevel::Public);
+    let mut jvm = jvm::Platform::new();
+    jar_class(
+        &mut jvm,
+        revision,
+        "p.Outer",
+        jvm::model::AccessLevel::Public,
+    );
+    let inner = jar_class(
+        &mut jvm,
+        revision,
+        "p.Outer$Inner",
+        jvm::model::AccessLevel::Public,
+    );
     let asker = process(
         &mut java,
         &mut jvm,
@@ -127,7 +147,7 @@ fn a_public_member_of_a_compiled_type_is_reached_through_its_dollar_name() {
         resolve(&java, &jvm, &asker, "Inner"),
         JavaTypeResolution::Resolved(JavaTypeTarget::Jvm {
             source: inner,
-            fqn: JvmQualifiedName::new("p.Outer$Inner"),
+            fqn: jvm::model::BinaryName::new("p.Outer$Inner"),
         })
     );
 }

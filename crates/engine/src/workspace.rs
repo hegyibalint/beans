@@ -1,8 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use beans_platform_jvm::model::JvmSource;
-use beans_platform_jvm::query::{JvmContainer, JvmScope};
+use beans_platform_jvm as jvm;
 use beans_workspace::model::{Selector, Unit, Workspace};
 
 /// The dependency graph, flattened into one scope per unit and then forgotten.
@@ -17,7 +16,7 @@ struct ScopedUnit {
     /// file belongs to it. Narrower than `scope`, which also holds everything
     /// the unit may look at.
     owns: Vec<PathBuf>,
-    scope: JvmScope,
+    scope: jvm::query::Scope,
 }
 
 impl Scopes {
@@ -28,7 +27,7 @@ impl Scopes {
                 .iter()
                 .map(|unit| ScopedUnit {
                     owns: owned_trees(unit),
-                    scope: JvmScope::of(visible_containers(unit, workspace)),
+                    scope: jvm::query::Scope::of(visible_containers(unit, workspace)),
                 })
                 .collect(),
         }
@@ -39,8 +38,8 @@ impl Scopes {
     ///
     /// Empty is not "sees nothing": a caller must leave such a source
     /// unregistered so it stays unscoped.
-    pub(crate) fn of_source(&self, source: &JvmSource) -> Vec<JvmScope> {
-        let JvmSource::SourceFile { path } = source else {
+    pub(crate) fn of_source(&self, source: &jvm::model::Source) -> Vec<jvm::query::Scope> {
+        let jvm::model::Source::SourceFile { path } = source else {
             // Only hand written sources are placed by a workspace. Compiled
             // inputs are reached through a unit's classpath, never owned by one.
             return Vec::new();
@@ -72,17 +71,22 @@ fn owned_trees(unit: &Unit) -> Vec<PathBuf> {
 /// descriptor means, and it belongs to the workspace layer rather than here;
 /// with `app -> lib -> core` this gives `app` the sources of `lib` and not
 /// those of `core`.
-fn visible_containers(unit: &Unit, workspace: &Workspace) -> Vec<JvmContainer> {
-    let mut containers: Vec<JvmContainer> = owned_trees(unit)
+fn visible_containers(unit: &Unit, workspace: &Workspace) -> Vec<jvm::query::Container> {
+    let mut containers: Vec<jvm::query::Container> = owned_trees(unit)
         .into_iter()
-        .map(JvmContainer::Source)
+        .map(jvm::query::Container::Source)
         .collect();
 
-    containers.extend(unit.classpath.iter().cloned().map(JvmContainer::Artifact));
+    containers.extend(
+        unit.classpath
+            .iter()
+            .cloned()
+            .map(jvm::query::Container::Artifact),
+    );
 
     // A JDK is one image, so this says "the whole runtime is visible", which
     // JPMS says is not true. Splitting it needs the lake to hold modules.
-    containers.extend(runtime_image(unit).map(JvmContainer::Artifact));
+    containers.extend(runtime_image(unit).map(jvm::query::Container::Artifact));
 
     for dependency in &unit.depends_on {
         let Some(dependency) = workspace.units.iter().find(|u| u.id == *dependency) else {
@@ -93,7 +97,7 @@ fn visible_containers(unit: &Unit, workspace: &Workspace) -> Vec<JvmContainer> {
         containers.extend(
             owned_trees(dependency)
                 .into_iter()
-                .map(JvmContainer::Source),
+                .map(jvm::query::Container::Source),
         );
     }
 

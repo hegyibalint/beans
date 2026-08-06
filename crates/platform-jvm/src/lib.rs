@@ -2,26 +2,25 @@ use std::path::PathBuf;
 
 use beans_core::storage::{Revision, RevisionedStorage};
 
-use crate::model::{JvmClass, JvmSource};
-use crate::query::{JvmQuery, JvmScope, JvmScopeQuery};
+use crate::query::{Query, Scope, ScopeQuery};
 
 mod class_file;
 mod container;
 pub mod model;
 pub mod query;
 
-pub struct PlatformJvm {
+pub struct Platform {
     /// A source's value is its whole contribution, so re-registering a
     /// source replaces everything it previously declared.
-    classes: RevisionedStorage<JvmSource, Vec<JvmClass>>,
+    classes: RevisionedStorage<model::Source, Vec<model::Class>>,
     /// Keyed by the source doing the asking, because visibility runs one way:
     /// an app sees its library and the library does not see back.
-    scopes: RevisionedStorage<JvmSource, Vec<JvmScope>>,
+    scopes: RevisionedStorage<model::Source, Vec<Scope>>,
 }
 
-impl PlatformJvm {
-    pub fn new() -> PlatformJvm {
-        PlatformJvm {
+impl Platform {
+    pub fn new() -> Platform {
+        Platform {
             classes: RevisionedStorage::new(),
             scopes: RevisionedStorage::new(),
         }
@@ -30,9 +29,9 @@ impl PlatformJvm {
     pub fn register(
         &mut self,
         revision: Revision,
-        jvm_source: JvmSource,
-        jvm_classes: Vec<JvmClass>,
-    ) -> &[JvmClass] {
+        jvm_source: model::Source,
+        jvm_classes: Vec<model::Class>,
+    ) -> &[model::Class] {
         self.classes.put(revision, jvm_source, jvm_classes)
     }
 
@@ -41,8 +40,8 @@ impl PlatformJvm {
     pub fn register_scopes(
         &mut self,
         revision: Revision,
-        jvm_source: JvmSource,
-        jvm_scopes: Vec<JvmScope>,
+        jvm_source: model::Source,
+        jvm_scopes: Vec<Scope>,
     ) {
         self.scopes.put(revision, jvm_source, jvm_scopes);
     }
@@ -53,18 +52,18 @@ impl PlatformJvm {
     ///
     /// The scope is looked up here rather than passed in, so a caller says
     /// where it is standing instead of carrying a scope from the wrong file.
-    pub fn query_from(&self, jvm_source: &JvmSource, revision: Revision) -> JvmQuery<'_> {
-        JvmQuery::new(self, self.scope_of(jvm_source, revision), revision)
+    pub fn query_from(&self, jvm_source: &model::Source, revision: Revision) -> Query<'_> {
+        Query::new(self, self.scope_of(jvm_source, revision), revision)
     }
 
     /// A source nobody has scoped sees everything. That is the one answer that
     /// keeps a scratch file, an unopened project and a half-finished import
     /// working, and it makes scoping something a project opts into rather than
     /// something every caller has to remember to set up.
-    fn scope_of(&self, jvm_source: &JvmSource, revision: Revision) -> JvmScopeQuery {
+    fn scope_of(&self, jvm_source: &model::Source, revision: Revision) -> ScopeQuery {
         match self.scopes.get(jvm_source, revision) {
-            Some(scopes) => JvmScopeQuery::of(scopes.clone()),
-            None => JvmScopeQuery::unscoped(),
+            Some(scopes) => ScopeQuery::of(scopes.clone()),
+            None => ScopeQuery::unscoped(),
         }
     }
 

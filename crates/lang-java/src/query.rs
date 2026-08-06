@@ -1,5 +1,4 @@
-use beans_platform_jvm::model::{JvmAccessLevel, JvmClass, JvmQualifiedName, JvmSource};
-use beans_platform_jvm::query::{JvmQuery, JvmScopeMembership};
+use beans_platform_jvm as jvm;
 
 use crate::LanguageJava;
 use crate::model::{JavaDeclaration, JavaFile};
@@ -8,23 +7,23 @@ use crate::resolution::JavaTypeTarget;
 /// The JVM query plus this vertical's own models. Candidate discovery remains
 /// broad; Java resolution asks this query about scope when a stage needs it.
 pub struct JavaQuery<'a> {
-    jvm: JvmQuery<'a>,
+    jvm: jvm::query::Query<'a>,
     java: &'a LanguageJava,
 }
 
 impl<'a> JavaQuery<'a> {
-    pub fn new(jvm: JvmQuery<'a>, java: &'a LanguageJava) -> JavaQuery<'a> {
+    pub fn new(jvm: jvm::query::Query<'a>, java: &'a LanguageJava) -> JavaQuery<'a> {
         JavaQuery { jvm, java }
     }
 
-    pub fn model_of(&self, source: &JvmSource) -> Option<&'a JavaFile> {
+    pub fn model_of(&self, source: &jvm::model::Source) -> Option<&'a JavaFile> {
         self.java.model_at(source, self.jvm.revision)
     }
 
     /// Every declaration of this binary name, each seen through the best view
     /// we hold of it. Resolution applies scope before deciding whether the name
     /// is contested.
-    pub fn types_named(&self, fqn: &JvmQualifiedName) -> Vec<JavaTypeTarget> {
+    pub fn types_named(&self, fqn: &jvm::model::BinaryName) -> Vec<JavaTypeTarget> {
         self.jvm
             .classes_named(fqn)
             .into_iter()
@@ -32,7 +31,7 @@ impl<'a> JavaQuery<'a> {
             .collect()
     }
 
-    pub fn scope_membership(&self, target: &JavaTypeTarget) -> JvmScopeMembership {
+    pub fn scope_membership(&self, target: &JavaTypeTarget) -> jvm::query::ScopeMembership {
         self.jvm.scope_membership(target.source())
     }
 
@@ -46,9 +45,9 @@ impl<'a> JavaQuery<'a> {
     /// resolution reads as permission.
     pub fn class_access(
         &self,
-        source: &JvmSource,
-        fqn: &JvmQualifiedName,
-    ) -> Option<JvmAccessLevel> {
+        source: &jvm::model::Source,
+        fqn: &jvm::model::BinaryName,
+    ) -> Option<jvm::model::AccessLevel> {
         self.jvm
             .classes_named(fqn)
             .into_iter()
@@ -59,7 +58,7 @@ impl<'a> JavaQuery<'a> {
     /// A file this vertical parsed gives a declaration to navigate to.
     /// Anything else, a class file or a Kotlin source, only ever has the
     /// lossy projection the lake holds.
-    fn view_of(&self, source: &JvmSource, class: &JvmClass) -> JavaTypeTarget {
+    fn view_of(&self, source: &jvm::model::Source, class: &jvm::model::Class) -> JavaTypeTarget {
         let declaration = self.model_of(source).and_then(|file| {
             file.top_level_declarations.iter().copied().find(|id| {
                 let JavaDeclaration::Type(declaration) = &file.declarations[id.0] else {
@@ -90,58 +89,54 @@ mod tests {
     use std::path::PathBuf;
 
     use beans_core::storage::Revision;
-    use beans_platform_jvm::{
-        PlatformJvm,
-        model::{JvmAccessLevel, JvmKind, JvmSource},
-        query::{JvmContainer, JvmScope},
-    };
+    use beans_platform_jvm as jvm;
 
     use super::*;
 
     #[test]
     fn a_projected_target_retains_its_source_for_scope_membership() {
         let revision = Revision::default();
-        let class_source = JvmSource::JarEntry {
+        let class_source = jvm::model::Source::JarEntry {
             jar_path: PathBuf::from("dependency.jar"),
             entry_path: "p/X.class".to_string(),
         };
-        let class = JvmClass {
-            fqn: JvmQualifiedName::new("p.X"),
-            kind: JvmKind::Class,
-            access: Some(JvmAccessLevel::Public),
+        let class = jvm::model::Class {
+            fqn: jvm::model::BinaryName::new("p.X"),
+            kind: jvm::model::TypeKind::Class,
+            access: Some(jvm::model::AccessLevel::Public),
             enclosing: None,
             superclass: None,
             interfaces: Vec::new(),
             fields: Vec::new(),
             methods: Vec::new(),
         };
-        let asking_source = JvmSource::SourceFile {
+        let asking_source = jvm::model::Source::SourceFile {
             path: PathBuf::from("app/p/Test.java"),
         };
-        let mut jvm = PlatformJvm::new();
+        let mut jvm = jvm::Platform::new();
         jvm.register(revision, class_source.clone(), vec![class]);
         jvm.register_scopes(
             revision,
             asking_source.clone(),
-            vec![JvmScope::of(vec![JvmContainer::Source(PathBuf::from(
-                "app",
-            ))])],
+            vec![jvm::query::Scope::of(vec![jvm::query::Container::Source(
+                PathBuf::from("app"),
+            )])],
         );
         let java = LanguageJava::new();
         let query = JavaQuery::new(jvm.query_from(&asking_source, revision), &java);
 
-        let targets = query.types_named(&JvmQualifiedName::new("p.X"));
+        let targets = query.types_named(&jvm::model::BinaryName::new("p.X"));
 
         assert_eq!(
             targets,
             vec![JavaTypeTarget::Jvm {
                 source: class_source,
-                fqn: JvmQualifiedName::new("p.X"),
+                fqn: jvm::model::BinaryName::new("p.X"),
             }]
         );
         assert_eq!(
             query.scope_membership(&targets[0]),
-            JvmScopeMembership::OutsideScope
+            jvm::query::ScopeMembership::OutsideScope
         );
     }
 }

@@ -2,11 +2,11 @@ use std::path::PathBuf;
 
 use beans_core::analysis::diagnostic::{DiagnosticSeverity, Diagnostics};
 use beans_core::model::{LineColumnPosition, LineColumnSpan};
-use beans_platform_jvm::model::JvmSource;
+use beans_platform_jvm as jvm;
 use lsp_types::{Position, Uri};
 
-pub fn uri_to_source(uri: &Uri) -> Option<JvmSource> {
-    Some(JvmSource::SourceFile {
+pub fn uri_to_source(uri: &Uri) -> Option<jvm::model::Source> {
+    Some(jvm::model::Source::SourceFile {
         path: uri_to_path(uri)?,
     })
 }
@@ -23,9 +23,11 @@ pub fn uri_to_path(uri: &Uri) -> Option<PathBuf> {
 
 /// The inverse of `uri_to_source` for on-disk sources. Only `SourceFile`
 /// names a real path; the virtual JVM sources have no `file:` URI.
-pub fn source_to_uri(source: &JvmSource) -> Option<Uri> {
+pub fn source_to_uri(source: &jvm::model::Source) -> Option<Uri> {
     match source {
-        JvmSource::SourceFile { path } => format!("file://{}", path.to_str()?).parse().ok(),
+        jvm::model::Source::SourceFile { path } => {
+            format!("file://{}", path.to_str()?).parse().ok()
+        }
         _ => None,
     }
 }
@@ -85,7 +87,7 @@ fn translate_severity(severity: DiagnosticSeverity) -> lsp_types::DiagnosticSeve
 mod tests {
     use super::*;
 
-    fn source_of(raw: &str) -> Option<JvmSource> {
+    fn source_of(raw: &str) -> Option<jvm::model::Source> {
         uri_to_source(&raw.parse().expect("valid uri"))
     }
 
@@ -93,7 +95,7 @@ mod tests {
     fn file_uri_becomes_a_source_file() {
         assert_eq!(
             source_of("file:///home/beans/Foo.java"),
-            Some(JvmSource::SourceFile {
+            Some(jvm::model::Source::SourceFile {
                 path: PathBuf::from("/home/beans/Foo.java"),
             })
         );
@@ -103,7 +105,7 @@ mod tests {
     fn percent_escapes_are_decoded() {
         assert_eq!(
             source_of("file:///home/my%20project/Foo.java"),
-            Some(JvmSource::SourceFile {
+            Some(jvm::model::Source::SourceFile {
                 path: PathBuf::from("/home/my project/Foo.java"),
             })
         );

@@ -9,8 +9,7 @@ use beans_core::language::{Language, LanguageProcessing, NavigationTarget};
 use beans_core::model::Offset;
 use beans_core::storage::Revision;
 use beans_lang_java::LanguageJava;
-use beans_platform_jvm::PlatformJvm;
-use beans_platform_jvm::model::JvmSource;
+use beans_platform_jvm as jvm;
 use beans_test_support::markers::{Cursor, strip_markers};
 
 /// Files loaded into a fresh language, one bumped revision each and queried at
@@ -18,7 +17,7 @@ use beans_test_support::markers::{Cursor, strip_markers};
 /// so every position a test names is a cursor rather than an offset.
 struct Workspace {
     language: LanguageJava,
-    platform: PlatformJvm,
+    platform: jvm::Platform,
     revision: Revision,
     cursors: Vec<Cursor>,
 }
@@ -26,7 +25,7 @@ struct Workspace {
 impl Workspace {
     fn load(files: &[(&str, &str)]) -> Workspace {
         let mut language = LanguageJava::new();
-        let mut platform = PlatformJvm::new();
+        let mut platform = jvm::Platform::new();
         let mut revision = Revision::default();
         let mut cursors = Vec::new();
 
@@ -61,7 +60,7 @@ impl Workspace {
         cursor
     }
 
-    fn declarations_at(&self, name: &str) -> Vec<NavigationTarget<JvmSource>> {
+    fn declarations_at(&self, name: &str) -> Vec<NavigationTarget<jvm::model::Source>> {
         let cursor = self.cursor(name);
         self.language
             .find_declarations_for(
@@ -98,8 +97,8 @@ impl Workspace {
     }
 }
 
-fn source(path: &PathBuf) -> JvmSource {
-    JvmSource::SourceFile { path: path.clone() }
+fn source(path: &PathBuf) -> jvm::model::Source {
+    jvm::model::Source::SourceFile { path: path.clone() }
 }
 
 /// The worked example from PLAN.md, with `B` in a second file so member lookup

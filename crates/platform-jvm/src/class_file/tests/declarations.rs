@@ -1,6 +1,4 @@
-use crate::model::{
-    JvmAccessLevel, JvmKind, JvmPrimitive, JvmQualifiedName, JvmReturnType, JvmType,
-};
+use crate::model;
 
 use super::parse_type;
 
@@ -22,7 +20,7 @@ fn internal_names_and_descriptors_become_jvm_model_types() {
 
     assert_eq!(class.fqn.as_str(), "beans.fixture.Feature");
     assert_eq!(
-        class.superclass.as_ref().map(JvmQualifiedName::as_str),
+        class.superclass.as_ref().map(model::BinaryName::as_str),
         Some("java.lang.Object")
     );
     assert_eq!(class.interfaces[0].as_str(), "java.io.Serializable");
@@ -30,7 +28,7 @@ fn internal_names_and_descriptors_become_jvm_model_types() {
     assert_eq!(class.fields[0].name, "values");
     assert_eq!(
         class.fields[0].jvm_type,
-        JvmType::Array(Box::new(JvmType::Primitive(JvmPrimitive::Int)))
+        model::Type::Array(Box::new(model::Type::Primitive(model::Primitive::Int)))
     );
 
     let combine = class
@@ -41,14 +39,14 @@ fn internal_names_and_descriptors_become_jvm_model_types() {
     assert_eq!(
         combine.params,
         [
-            JvmType::Class(JvmQualifiedName::new("java.lang.String")),
-            JvmType::Primitive(JvmPrimitive::Long),
+            model::Type::Class(model::BinaryName::new("java.lang.String")),
+            model::Type::Primitive(model::Primitive::Long),
         ]
     );
     assert_eq!(
         combine.return_type,
-        JvmReturnType::Value(JvmType::Array(Box::new(JvmType::Array(Box::new(
-            JvmType::Class(JvmQualifiedName::new("java.lang.Object")),
+        model::ReturnType::Value(model::Type::Array(Box::new(model::Type::Array(Box::new(
+            model::Type::Class(model::BinaryName::new("java.lang.Object")),
         )))))
     );
 }
@@ -56,11 +54,11 @@ fn internal_names_and_descriptors_become_jvm_model_types() {
 #[test]
 fn class_flags_and_the_record_attribute_determine_type_kind() {
     for (bytes, expected) in [
-        (FEATURE, JvmKind::Class),
-        (POINT, JvmKind::Record),
-        (MARKER, JvmKind::AnnotationInterface),
-        (MODE, JvmKind::Enum),
-        (CONTRACT, JvmKind::Interface),
+        (FEATURE, model::TypeKind::Class),
+        (POINT, model::TypeKind::Record),
+        (MARKER, model::TypeKind::AnnotationInterface),
+        (MODE, model::TypeKind::Enum),
+        (CONTRACT, model::TypeKind::Interface),
     ] {
         assert_eq!(parse_type(bytes).kind, expected);
     }
@@ -74,12 +72,12 @@ fn class_flags_and_the_record_attribute_determine_type_kind() {
 #[test]
 fn a_nested_class_keeps_the_access_level_of_its_source() {
     for (bytes, expected) in [
-        (FEATURE, Some(JvmAccessLevel::Public)),
-        (CONTRACT, Some(JvmAccessLevel::Package)),
-        (MEMBER, Some(JvmAccessLevel::Public)),
-        (GUARDED, Some(JvmAccessLevel::Protected)),
-        (SHARED, Some(JvmAccessLevel::Package)),
-        (HIDDEN, Some(JvmAccessLevel::Private)),
+        (FEATURE, Some(model::AccessLevel::Public)),
+        (CONTRACT, Some(model::AccessLevel::Package)),
+        (MEMBER, Some(model::AccessLevel::Public)),
+        (GUARDED, Some(model::AccessLevel::Protected)),
+        (SHARED, Some(model::AccessLevel::Package)),
+        (HIDDEN, Some(model::AccessLevel::Private)),
         // JLS §8.1.1: access control does not reach a local class.
         (LOCAL, None),
     ] {
@@ -101,15 +99,15 @@ fn fields_and_methods_carry_their_own_access_level() {
         method.expect("the fixture declares it").access
     };
 
-    assert_eq!(field("values"), JvmAccessLevel::Public);
-    assert_eq!(field("guarded"), JvmAccessLevel::Protected);
-    assert_eq!(field("shared"), JvmAccessLevel::Package);
-    assert_eq!(field("hidden"), JvmAccessLevel::Private);
+    assert_eq!(field("values"), model::AccessLevel::Public);
+    assert_eq!(field("guarded"), model::AccessLevel::Protected);
+    assert_eq!(field("shared"), model::AccessLevel::Package);
+    assert_eq!(field("hidden"), model::AccessLevel::Private);
 
-    assert_eq!(method("combine"), JvmAccessLevel::Public);
-    assert_eq!(method("guard"), JvmAccessLevel::Protected);
-    assert_eq!(method("share"), JvmAccessLevel::Package);
-    assert_eq!(method("hide"), JvmAccessLevel::Private);
+    assert_eq!(method("combine"), model::AccessLevel::Public);
+    assert_eq!(method("guard"), model::AccessLevel::Protected);
+    assert_eq!(method("share"), model::AccessLevel::Package);
+    assert_eq!(method("hide"), model::AccessLevel::Private);
 }
 
 #[test]
@@ -117,7 +115,7 @@ fn member_and_local_classes_retain_their_enclosing_class() {
     for bytes in [MEMBER, LOCAL] {
         let class = parse_type(bytes);
         assert_eq!(
-            class.enclosing.as_ref().map(JvmQualifiedName::as_str),
+            class.enclosing.as_ref().map(model::BinaryName::as_str),
             Some("beans.fixture.Feature")
         );
     }

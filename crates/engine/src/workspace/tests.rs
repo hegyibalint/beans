@@ -3,7 +3,7 @@ mod sources;
 
 use std::path::PathBuf;
 
-use beans_platform_jvm::model::JvmSource;
+use beans_platform_jvm as jvm;
 use beans_workspace::model::{Selector, Unit, Workspace};
 
 use super::*;
@@ -34,8 +34,8 @@ fn workspace(units: Vec<Unit>) -> Workspace {
     }
 }
 
-fn source_file(path: &str) -> JvmSource {
-    JvmSource::SourceFile {
+fn source_file(path: &str) -> jvm::model::Source {
+    jvm::model::Source::SourceFile {
         path: PathBuf::from(path),
     }
 }

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use beans_core::analysis::diagnostic::{DiagnosticSeverity, Diagnostics};
-use beans_platform_jvm::model::JvmSource;
+use beans_platform_jvm as jvm;
 
 use crate::accessibility::{JavaSite, is_accessible};
 use crate::model::{
@@ -18,7 +18,7 @@ use crate::resolution::{
 /// matching declaration but the host compilation described by §7.3 cannot
 /// observe its source.
 pub fn type_scope_diagnostics(
-    source: &JvmSource,
+    source: &jvm::model::Source,
     file: &JavaFile,
     query: &JavaQuery,
 ) -> Vec<Diagnostics> {
@@ -57,7 +57,7 @@ pub fn type_scope_diagnostics(
 /// the thing you may not touch is more useful than pretending it is missing,
 /// so the check runs here rather than inside `resolve_expression`.
 pub fn access_diagnostics(
-    source: &JvmSource,
+    source: &jvm::model::Source,
     file: &JavaFile,
     query: &JavaQuery,
 ) -> Vec<Diagnostics> {
@@ -227,10 +227,7 @@ mod tests {
     use std::path::PathBuf;
 
     use beans_core::{language::LanguageProcessing, storage::Revision};
-    use beans_platform_jvm::{
-        PlatformJvm,
-        query::{JvmContainer, JvmScope},
-    };
+    use beans_platform_jvm as jvm;
 
     use super::*;
     use crate::{LanguageJava, parser::JavaParser};
@@ -239,19 +236,19 @@ mod tests {
         JavaParser::new().parse(contents)
     }
 
-    fn source(path: &str) -> JvmSource {
-        JvmSource::SourceFile {
+    fn source(path: &str) -> jvm::model::Source {
+        jvm::model::Source::SourceFile {
             path: PathBuf::from(path),
         }
     }
 
     fn process(
         java: &mut LanguageJava,
-        jvm: &mut PlatformJvm,
+        jvm: &mut jvm::Platform,
         revision: Revision,
         path: &str,
         contents: &str,
-    ) -> JvmSource {
+    ) -> jvm::model::Source {
         let source = source(path);
         java.process(source.clone(), revision, jvm, contents);
         source
@@ -261,7 +258,7 @@ mod tests {
     fn flags_a_known_type_outside_the_compilation_scope() {
         let revision = Revision::default();
         let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
+        let mut jvm = jvm::Platform::new();
         process(
             &mut java,
             &mut jvm,
@@ -274,9 +271,9 @@ mod tests {
         jvm.register_scopes(
             revision,
             current.clone(),
-            vec![JvmScope::of(vec![JvmContainer::Source(PathBuf::from(
-                "main",
-            ))])],
+            vec![jvm::query::Scope::of(vec![jvm::query::Container::Source(
+                PathBuf::from("main"),
+            )])],
         );
         let file = java.model_at(&current, revision).unwrap();
         let query = JavaQuery::new(jvm.query_from(&current, revision), &java);
@@ -298,7 +295,7 @@ mod tests {
     fn an_inaccessible_type_has_no_scope_diagnostic() {
         let revision = Revision::default();
         let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
+        let mut jvm = jvm::Platform::new();
         process(
             &mut java,
             &mut jvm,
@@ -323,7 +320,7 @@ mod tests {
     fn a_type_absent_from_the_lake_has_no_scope_diagnostic() {
         let revision = Revision::default();
         let mut java = LanguageJava::new();
-        let mut jvm = PlatformJvm::new();
+        let mut jvm = jvm::Platform::new();
         let current = process(
             &mut java,
             &mut jvm,

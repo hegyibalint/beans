@@ -4,7 +4,7 @@ use super::*;
 fn a_static_import_does_not_introduce_a_type_name_yet() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     let current_source = process(
         &mut java,
         &mut jvm,
@@ -31,7 +31,7 @@ fn a_static_import_does_not_introduce_a_type_name_yet() {
 fn an_exact_import_resolves_a_top_level_type() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     let imported_source = process(
         &mut java,
         &mut jvm,
@@ -68,7 +68,7 @@ fn an_exact_import_resolves_a_top_level_type() {
 fn an_exact_import_outside_scope_is_retained_as_invalid() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     let imported_source = process(
         &mut java,
         &mut jvm,
@@ -86,16 +86,16 @@ fn an_exact_import_outside_scope_is_retained_as_invalid() {
     jvm.register_scopes(
         revision,
         importing_source.clone(),
-        vec![JvmScope::of(vec![JvmContainer::Source(PathBuf::from(
-            "app",
-        ))])],
+        vec![jvm::query::Scope::of(vec![jvm::query::Container::Source(
+            PathBuf::from("app"),
+        )])],
     );
     let imported_declaration =
         file_model(&java, revision, &imported_source).top_level_declarations[0];
     let importing_file = file_model(&java, revision, &importing_source);
     let query = JavaQuery::new(jvm.query_from(&importing_source, revision), &java);
 
-    let candidates = query.types_named(&JvmQualifiedName::new("p.X"));
+    let candidates = query.types_named(&jvm::model::BinaryName::new("p.X"));
     assert_eq!(
         candidates,
         vec![JavaTypeTarget::Java {
@@ -105,7 +105,7 @@ fn an_exact_import_outside_scope_is_retained_as_invalid() {
     );
     assert_eq!(
         query.scope_membership(&candidates[0]),
-        JvmScopeMembership::OutsideScope
+        jvm::query::ScopeMembership::OutsideScope
     );
     let JavaTypeResolution::Unresolved { invalid_candidates } = resolve_type_from_exact_imports(
         &identifier("X"),
@@ -123,7 +123,7 @@ fn an_exact_import_outside_scope_is_retained_as_invalid() {
 fn an_exact_import_resolves_a_member_type() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     let outer_source = process(
         &mut java,
         &mut jvm,
@@ -161,7 +161,7 @@ fn an_exact_import_resolves_a_member_type() {
 fn an_outside_scope_type_path_reaches_its_member_as_invalid_evidence() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     process(
         &mut java,
         &mut jvm,
@@ -179,9 +179,9 @@ fn an_outside_scope_type_path_reaches_its_member_as_invalid_evidence() {
     jvm.register_scopes(
         revision,
         importing_source.clone(),
-        vec![JvmScope::of(vec![JvmContainer::Source(PathBuf::from(
-            "app",
-        ))])],
+        vec![jvm::query::Scope::of(vec![jvm::query::Container::Source(
+            PathBuf::from("app"),
+        )])],
     );
     let importing_file = file_model(&java, revision, &importing_source);
     let query = JavaQuery::new(jvm.query_from(&importing_source, revision), &java);
@@ -201,7 +201,7 @@ fn an_outside_scope_type_path_reaches_its_member_as_invalid_evidence() {
 fn an_exact_import_does_not_skip_an_intermediate_name_segment() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     process(
         &mut java,
         &mut jvm,
@@ -235,7 +235,7 @@ fn an_exact_import_does_not_skip_an_intermediate_name_segment() {
 fn an_exact_import_uses_the_file_package_as_the_type_boundary() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     let imported_source = process(
         &mut java,
         &mut jvm,
@@ -274,7 +274,7 @@ fn an_exact_import_uses_the_file_package_as_the_type_boundary() {
 fn an_exact_import_walks_nesting_below_the_boundary_to_the_end() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     let outer_source = process(
         &mut java,
         &mut jvm,
@@ -316,7 +316,7 @@ fn an_exact_import_walks_nesting_below_the_boundary_to_the_end() {
 fn an_import_is_not_in_scope_in_a_later_import() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     process(
         &mut java,
         &mut jvm,
@@ -362,7 +362,7 @@ fn an_import_is_not_in_scope_in_a_later_import() {
 fn an_outside_scope_type_prefix_leaves_the_package_path_open() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     process(
         &mut java,
         &mut jvm,
@@ -387,9 +387,9 @@ fn an_outside_scope_type_prefix_leaves_the_package_path_open() {
     jvm.register_scopes(
         revision,
         importing_source.clone(),
-        vec![JvmScope::of(vec![JvmContainer::Source(PathBuf::from(
-            "app",
-        ))])],
+        vec![jvm::query::Scope::of(vec![jvm::query::Container::Source(
+            PathBuf::from("app"),
+        )])],
     );
     let inner = file_model(&java, revision, &inner_source).top_level_declarations[0];
     let importing_file = file_model(&java, revision, &importing_source);
@@ -417,7 +417,7 @@ fn an_outside_scope_type_prefix_leaves_the_package_path_open() {
 fn an_inaccessible_type_prefix_does_not_fall_back_to_a_package() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     process(
         &mut java,
         &mut jvm,
@@ -460,7 +460,7 @@ fn an_inaccessible_type_prefix_does_not_fall_back_to_a_package() {
 fn an_import_of_the_compilation_units_own_type_names_that_type() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     let own_source = process(
         &mut java,
         &mut jvm,

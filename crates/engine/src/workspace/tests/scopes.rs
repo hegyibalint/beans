@@ -2,19 +2,19 @@
 // dependency edge is ever followed, so it is the only place one can be followed
 // wrongly; everything downstream sees a flat set of containers and no graph.
 
-use beans_platform_jvm::query::JvmScopeQuery;
+use beans_platform_jvm as jvm;
 
 use super::*;
 
 /// Every scope claiming the file at `path`, which is what the engine registers.
-fn claiming(workspace: &Workspace, path: &str) -> Vec<JvmScope> {
+fn claiming(workspace: &Workspace, path: &str) -> Vec<jvm::query::Scope> {
     Scopes::of(workspace).of_source(&source_file(path))
 }
 
 /// Can a file at `from` reach `to` once the workspace is flattened? Asked
-/// through `JvmScopeQuery`, which is the door the platform uses.
-fn reaches(workspace: &Workspace, from: &str, to: &JvmSource) -> bool {
-    JvmScopeQuery::of(claiming(workspace, from)).contains(to)
+/// through `jvm::query::ScopeQuery`, which is the door the platform uses.
+fn reaches(workspace: &Workspace, from: &str, to: &jvm::model::Source) -> bool {
+    jvm::query::ScopeQuery::of(claiming(workspace, from)).contains(to)
 }
 
 fn depending(id: &str, trees: &[&str], depends_on: &[&str]) -> Unit {
@@ -83,7 +83,7 @@ fn a_listed_file_is_a_tree_of_one() {
 #[test]
 fn only_a_source_file_is_placed_by_a_workspace() {
     let workspace = workspace(vec![unit("app", vec![tree("app/src")])]);
-    let entry = JvmSource::JarEntry {
+    let entry = jvm::model::Source::JarEntry {
         jar_path: PathBuf::from("lib.jar"),
         entry_path: "p/A.class".to_string(),
     };
@@ -151,7 +151,7 @@ fn a_unit_sees_what_it_links_against() {
         classpath: vec![PathBuf::from("lib.jar")],
         ..unit("app", vec![tree("app/src")])
     }]);
-    let entry = JvmSource::JarEntry {
+    let entry = jvm::model::Source::JarEntry {
         jar_path: PathBuf::from("lib.jar"),
         entry_path: "p/A.class".to_string(),
     };
@@ -166,7 +166,7 @@ fn a_unit_sees_a_standalone_class_file_it_links_against() {
         classpath: vec![class_file.clone()],
         ..unit("app", vec![tree("app/src")])
     }]);
-    let source = JvmSource::ClassFile { path: class_file };
+    let source = jvm::model::Source::ClassFile { path: class_file };
 
     assert!(reaches(&workspace, "app/src/p/A.java", &source));
 }
@@ -179,7 +179,7 @@ fn a_jdk_home_contributes_its_runtime_image() {
         jdk_home: Some(PathBuf::from("/jdk")),
         ..unit("app", vec![tree("app/src")])
     }]);
-    let entry = JvmSource::JimageEntry {
+    let entry = jvm::model::Source::JimageEntry {
         jimage_path: PathBuf::from("/jdk/lib/modules"),
         entry_path: "java.base/java/lang/String.class".to_string(),
     };

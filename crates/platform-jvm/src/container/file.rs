@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use super::{Error, Step, at};
 use crate::class_file::{self, ParseOutcome};
-use crate::model::JvmSource;
+use crate::model;
 
 pub(super) fn open(path: &Path) -> Frame {
     Frame {
@@ -30,7 +30,7 @@ impl Frame {
 
         match class_file::parse(buffer) {
             Ok(ParseOutcome::Class(class)) => Step::Emit(Ok((
-                JvmSource::ClassFile {
+                model::Source::ClassFile {
                     path: self.path.clone(),
                 },
                 class,

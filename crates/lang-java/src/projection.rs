@@ -1,10 +1,10 @@
-use beans_platform_jvm::model::{JvmAccessLevel, JvmClass, JvmKind, JvmQualifiedName};
+use beans_platform_jvm as jvm;
 
 use crate::model::{JavaAccessLevel, JavaDeclaration, JavaFile, JavaTypeKind};
 
 /// Declarations only for now: the class identities fall out of the file
 /// alone, while members and supertypes need resolution against the lake.
-pub fn project_to_jvm(file: &JavaFile) -> Vec<JvmClass> {
+pub fn project_to_jvm(file: &JavaFile) -> Vec<jvm::model::Class> {
     let package = file.package.as_ref().map(|name| name.dotted());
 
     file.top_level_declarations
@@ -19,20 +19,20 @@ pub fn project_to_jvm(file: &JavaFile) -> Vec<JvmClass> {
                 None => name,
             };
             let kind = match declaration.kind {
-                JavaTypeKind::Class => JvmKind::Class,
-                JavaTypeKind::Interface => JvmKind::Interface,
-                JavaTypeKind::Enum => JvmKind::Enum,
-                JavaTypeKind::Record => JvmKind::Record,
-                JavaTypeKind::AnnotationInterface => JvmKind::AnnotationInterface,
+                JavaTypeKind::Class => jvm::model::TypeKind::Class,
+                JavaTypeKind::Interface => jvm::model::TypeKind::Interface,
+                JavaTypeKind::Enum => jvm::model::TypeKind::Enum,
+                JavaTypeKind::Record => jvm::model::TypeKind::Record,
+                JavaTypeKind::AnnotationInterface => jvm::model::TypeKind::AnnotationInterface,
             };
-            Some(JvmClass {
-                fqn: JvmQualifiedName::new(binary_name),
+            Some(jvm::model::Class {
+                fqn: jvm::model::BinaryName::new(binary_name),
                 kind,
                 access: declaration.access.map(|access| match access.level {
-                    JavaAccessLevel::Public => JvmAccessLevel::Public,
-                    JavaAccessLevel::Protected => JvmAccessLevel::Protected,
-                    JavaAccessLevel::Package => JvmAccessLevel::Package,
-                    JavaAccessLevel::Private => JvmAccessLevel::Private,
+                    JavaAccessLevel::Public => jvm::model::AccessLevel::Public,
+                    JavaAccessLevel::Protected => jvm::model::AccessLevel::Protected,
+                    JavaAccessLevel::Package => jvm::model::AccessLevel::Package,
+                    JavaAccessLevel::Private => jvm::model::AccessLevel::Private,
                 }),
                 enclosing: None,
                 superclass: None,
@@ -71,7 +71,7 @@ mod tests {
         let model = parser.parse("package p;\n\npublic class Open {}\nclass Closed {}\n");
 
         let classes = project_to_jvm(&model);
-        let projected: Vec<(&str, Option<JvmAccessLevel>)> = classes
+        let projected: Vec<(&str, Option<jvm::model::AccessLevel>)> = classes
             .iter()
             .map(|class| (class.fqn.as_str(), class.access))
             .collect();
@@ -79,8 +79,8 @@ mod tests {
         assert_eq!(
             projected,
             [
-                ("p.Open", Some(JvmAccessLevel::Public)),
-                ("p.Closed", Some(JvmAccessLevel::Package)),
+                ("p.Open", Some(jvm::model::AccessLevel::Public)),
+                ("p.Closed", Some(jvm::model::AccessLevel::Package)),
             ]
         );
     }

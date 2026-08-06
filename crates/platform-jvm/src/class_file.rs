@@ -4,17 +4,14 @@ use cafebabe::attributes::{AttributeData, AttributeInfo, InnerClassEntry};
 use cafebabe::descriptors::{ClassName, FieldDescriptor, FieldType, ReturnDescriptor};
 use cafebabe::{AccessFlags, ClassAccessFlags, ParseOptions};
 
-use crate::model::{
-    JvmAccessLevel, JvmClass, JvmField, JvmKind, JvmMethod, JvmPrimitive, JvmQualifiedName,
-    JvmReturnType, JvmType,
-};
+use crate::model;
 
 #[derive(Debug)]
 pub(crate) struct ParseError(cafebabe::ParseError);
 
 #[derive(Debug)]
 pub(crate) enum ParseOutcome {
-    Class(JvmClass),
+    Class(model::Class),
     ModuleDescriptor,
 }
 
@@ -52,7 +49,7 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<ParseOutcome, ParseError> {
     let fields = class
         .fields
         .iter()
-        .map(|field| JvmField {
+        .map(|field| model::Field {
             name: field.name.to_string(),
             access: access_level(field.access_flags.bits()),
             jvm_type: jvm_type(&field.descriptor),
@@ -61,18 +58,20 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<ParseOutcome, ParseError> {
     let methods = class
         .methods
         .iter()
-        .map(|method| JvmMethod {
+        .map(|method| model::Method {
             name: method.name.to_string(),
             access: access_level(method.access_flags.bits()),
             params: method.descriptor.parameters.iter().map(jvm_type).collect(),
             return_type: match &method.descriptor.return_type {
-                ReturnDescriptor::Return(descriptor) => JvmReturnType::Value(jvm_type(descriptor)),
-                ReturnDescriptor::Void => JvmReturnType::Void,
+                ReturnDescriptor::Return(descriptor) => {
+                    model::ReturnType::Value(jvm_type(descriptor))
+                }
+                ReturnDescriptor::Void => model::ReturnType::Void,
             },
         })
         .collect();
 
-    Ok(ParseOutcome::Class(JvmClass {
+    Ok(ParseOutcome::Class(model::Class {
         fqn,
         kind,
         access,
@@ -84,27 +83,27 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<ParseOutcome, ParseError> {
     }))
 }
 
-fn class_kind(flags: ClassAccessFlags, attributes: &[AttributeInfo<'_>]) -> JvmKind {
+fn class_kind(flags: ClassAccessFlags, attributes: &[AttributeInfo<'_>]) -> model::TypeKind {
     if flags.contains(ClassAccessFlags::ANNOTATION) {
-        JvmKind::AnnotationInterface
+        model::TypeKind::AnnotationInterface
     } else if flags.contains(ClassAccessFlags::ENUM) {
-        JvmKind::Enum
+        model::TypeKind::Enum
     } else if attributes
         .iter()
         .any(|attribute| matches!(attribute.data, AttributeData::Record(_)))
     {
-        JvmKind::Record
+        model::TypeKind::Record
     } else if flags.contains(ClassAccessFlags::INTERFACE) {
-        JvmKind::Interface
+        model::TypeKind::Interface
     } else {
-        JvmKind::Class
+        model::TypeKind::Class
     }
 }
 
 fn enclosing_class(
     this_class: &ClassName<'_>,
     attributes: &[AttributeInfo<'_>],
-) -> Option<JvmQualifiedName> {
+) -> Option<model::BinaryName> {
     let lexical_enclosing = attributes
         .iter()
         .find_map(|attribute| match &attribute.data {
@@ -131,7 +130,7 @@ fn class_access(
     this_class: &ClassName<'_>,
     flags: ClassAccessFlags,
     attributes: &[AttributeInfo<'_>],
-) -> Option<JvmAccessLevel> {
+) -> Option<model::AccessLevel> {
     let Some(entry) = inner_class_entry(this_class, attributes) else {
         return Some(access_level(flags.bits()));
     };
@@ -161,38 +160,38 @@ fn inner_class_entry<'a, 'class>(
 /// The three access bits, which JVMS gives one meaning and one value in every
 /// table that carries them (§4.1, §4.5, §4.6, §4.7.6). None of them set is
 /// package access, so the answer is total and a caller never combines bits.
-fn access_level(flags: u16) -> JvmAccessLevel {
+fn access_level(flags: u16) -> model::AccessLevel {
     let is_set = |flag: AccessFlags| flags & flag.bits() != 0;
 
     if is_set(AccessFlags::PUBLIC) {
-        JvmAccessLevel::Public
+        model::AccessLevel::Public
     } else if is_set(AccessFlags::PROTECTED) {
-        JvmAccessLevel::Protected
+        model::AccessLevel::Protected
     } else if is_set(AccessFlags::PRIVATE) {
-        JvmAccessLevel::Private
+        model::AccessLevel::Private
     } else {
-        JvmAccessLevel::Package
+        model::AccessLevel::Package
     }
 }
 
-fn qualified_name(internal_name: &str) -> JvmQualifiedName {
-    JvmQualifiedName::new(internal_name.replace('/', "."))
+fn qualified_name(internal_name: &str) -> model::BinaryName {
+    model::BinaryName::new(internal_name.replace('/', "."))
 }
 
-fn jvm_type(descriptor: &FieldDescriptor<'_>) -> JvmType {
+fn jvm_type(descriptor: &FieldDescriptor<'_>) -> model::Type {
     let mut jvm_type = match &descriptor.field_type {
-        FieldType::Byte => JvmType::Primitive(JvmPrimitive::Byte),
-        FieldType::Char => JvmType::Primitive(JvmPrimitive::Char),
-        FieldType::Double => JvmType::Primitive(JvmPrimitive::Double),
-        FieldType::Float => JvmType::Primitive(JvmPrimitive::Float),
-        FieldType::Integer => JvmType::Primitive(JvmPrimitive::Int),
-        FieldType::Long => JvmType::Primitive(JvmPrimitive::Long),
-        FieldType::Short => JvmType::Primitive(JvmPrimitive::Short),
-        FieldType::Boolean => JvmType::Primitive(JvmPrimitive::Boolean),
-        FieldType::Object(name) => JvmType::Class(qualified_name(name)),
+        FieldType::Byte => model::Type::Primitive(model::Primitive::Byte),
+        FieldType::Char => model::Type::Primitive(model::Primitive::Char),
+        FieldType::Double => model::Type::Primitive(model::Primitive::Double),
+        FieldType::Float => model::Type::Primitive(model::Primitive::Float),
+        FieldType::Integer => model::Type::Primitive(model::Primitive::Int),
+        FieldType::Long => model::Type::Primitive(model::Primitive::Long),
+        FieldType::Short => model::Type::Primitive(model::Primitive::Short),
+        FieldType::Boolean => model::Type::Primitive(model::Primitive::Boolean),
+        FieldType::Object(name) => model::Type::Class(qualified_name(name)),
     };
     for _ in 0..descriptor.dimensions {
-        jvm_type = JvmType::Array(Box::new(jvm_type));
+        jvm_type = model::Type::Array(Box::new(jvm_type));
     }
     jvm_type
 }

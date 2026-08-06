@@ -11,12 +11,12 @@
 use super::*;
 
 fn runtime_class(
-    jvm: &mut PlatformJvm,
+    jvm: &mut jvm::Platform,
     revision: Revision,
     fqn: &str,
-    access: JvmAccessLevel,
-) -> JvmSource {
-    let source = JvmSource::JimageEntry {
+    access: jvm::model::AccessLevel,
+) -> jvm::model::Source {
+    let source = jvm::model::Source::JimageEntry {
         jimage_path: PathBuf::from("jdk/lib/modules"),
         entry_path: format!("java.base/{}.class", fqn.replace('.', "/")),
     };
@@ -27,7 +27,7 @@ fn runtime_class(
 fn resolve(
     java: &LanguageJava,
     query: &JavaQuery,
-    asker: &JvmSource,
+    asker: &jvm::model::Source,
     name: &str,
 ) -> JavaTypeResolution {
     let file = file_model(java, Revision::default(), asker);
@@ -46,12 +46,12 @@ fn resolve(
 fn a_simple_name_reaches_java_lang_without_an_import() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     let runtime = runtime_class(
         &mut jvm,
         revision,
         "java.lang.String",
-        JvmAccessLevel::Public,
+        jvm::model::AccessLevel::Public,
     );
     let asker = process(
         &mut java,
@@ -65,7 +65,7 @@ fn a_simple_name_reaches_java_lang_without_an_import() {
         resolve(&java, &java_query(&java, &jvm, revision), &asker, "String"),
         JavaTypeResolution::Resolved(JavaTypeTarget::Jvm {
             source: runtime,
-            fqn: JvmQualifiedName::new("java.lang.String"),
+            fqn: jvm::model::BinaryName::new("java.lang.String"),
         })
     );
 }
@@ -76,8 +76,13 @@ fn a_simple_name_reaches_java_lang_without_an_import() {
 fn no_other_package_of_the_runtime_is_implicitly_imported() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
-    runtime_class(&mut jvm, revision, "java.util.List", JvmAccessLevel::Public);
+    let mut jvm = jvm::Platform::new();
+    runtime_class(
+        &mut jvm,
+        revision,
+        "java.util.List",
+        jvm::model::AccessLevel::Public,
+    );
     let asker = process(
         &mut java,
         &mut jvm,
@@ -106,12 +111,12 @@ fn no_other_package_of_the_runtime_is_implicitly_imported() {
 fn a_package_private_class_of_java_lang_is_not_imported() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     runtime_class(
         &mut jvm,
         revision,
         "java.lang.Shutdown",
-        JvmAccessLevel::Package,
+        jvm::model::AccessLevel::Package,
     );
     let asker = process(
         &mut java,
@@ -140,12 +145,12 @@ fn a_package_private_class_of_java_lang_is_not_imported() {
 fn a_runtime_outside_the_scope_answers_as_evidence_only() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     runtime_class(
         &mut jvm,
         revision,
         "java.lang.String",
-        JvmAccessLevel::Public,
+        jvm::model::AccessLevel::Public,
     );
     let asker = process(
         &mut java,
@@ -157,9 +162,9 @@ fn a_runtime_outside_the_scope_answers_as_evidence_only() {
     jvm.register_scopes(
         revision,
         asker.clone(),
-        vec![JvmScope::of(vec![JvmContainer::Source(PathBuf::from(
-            "app",
-        ))])],
+        vec![jvm::query::Scope::of(vec![jvm::query::Container::Source(
+            PathBuf::from("app"),
+        )])],
     );
     let query = JavaQuery::new(jvm.query_from(&asker, revision), &java);
 

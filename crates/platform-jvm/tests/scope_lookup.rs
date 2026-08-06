@@ -8,26 +8,24 @@
 use std::path::PathBuf;
 
 use beans_core::storage::Revision;
-use beans_platform_jvm::PlatformJvm;
-use beans_platform_jvm::model::{JvmAccessLevel, JvmClass, JvmKind, JvmQualifiedName, JvmSource};
-use beans_platform_jvm::query::{JvmContainer, JvmScope, JvmScopeMembership};
+use beans_platform_jvm as jvm;
 
 const APP: &str = "app/src";
 const LIB: &str = "lib/src";
 const CORE: &str = "core/src";
 const COMMON: &str = "common/src";
 
-fn source_file(tree: &str, relative: &str) -> JvmSource {
-    JvmSource::SourceFile {
+fn source_file(tree: &str, relative: &str) -> jvm::model::Source {
+    jvm::model::Source::SourceFile {
         path: PathBuf::from(tree).join(relative),
     }
 }
 
-fn class(fqn: &str) -> JvmClass {
-    JvmClass {
-        fqn: JvmQualifiedName::new(fqn),
-        kind: JvmKind::Class,
-        access: Some(JvmAccessLevel::Public),
+fn class(fqn: &str) -> jvm::model::Class {
+    jvm::model::Class {
+        fqn: jvm::model::BinaryName::new(fqn),
+        kind: jvm::model::TypeKind::Class,
+        access: Some(jvm::model::AccessLevel::Public),
         enclosing: None,
         superclass: None,
         interfaces: Vec::new(),
@@ -36,29 +34,29 @@ fn class(fqn: &str) -> JvmClass {
     }
 }
 
-fn tree(directory: &str) -> JvmContainer {
-    JvmContainer::Source(PathBuf::from(directory))
+fn tree(directory: &str) -> jvm::query::Container {
+    jvm::query::Container::Source(PathBuf::from(directory))
 }
 
-fn app() -> JvmSource {
+fn app() -> jvm::model::Source {
     source_file(APP, "p/App.java")
 }
 
-fn lib() -> JvmSource {
+fn lib() -> jvm::model::Source {
     source_file(LIB, "p/Lib.java")
 }
 
-fn core() -> JvmSource {
+fn core() -> jvm::model::Source {
     source_file(CORE, "p/Core.java")
 }
 
-fn shared() -> JvmSource {
+fn shared() -> jvm::model::Source {
     source_file(COMMON, "p/Shared.java")
 }
 
 /// The four files in the lake, and nothing scoped yet.
-fn lake() -> (PlatformJvm, Revision) {
-    let mut jvm = PlatformJvm::new();
+fn lake() -> (jvm::Platform, Revision) {
+    let mut jvm = jvm::Platform::new();
     let mut revision = Revision::default();
 
     jvm.register(revision.bump(), app(), vec![class("p.App")]);
@@ -72,12 +70,12 @@ fn lake() -> (PlatformJvm, Revision) {
 /// The graph flattened, which is the only place dependency edges exist. `app`
 /// lists `lib` and `core` because it reaches them through `lib`; that walk
 /// happens here and never again.
-fn scoped() -> (PlatformJvm, Revision) {
+fn scoped() -> (jvm::Platform, Revision) {
     let (mut jvm, mut revision) = lake();
 
-    let core_scope = JvmScope::of(vec![tree(CORE)]);
-    let lib_scope = JvmScope::of(vec![tree(LIB), tree(COMMON), tree(CORE)]);
-    let app_scope = JvmScope::of(vec![tree(APP), tree(COMMON), tree(LIB), tree(CORE)]);
+    let core_scope = jvm::query::Scope::of(vec![tree(CORE)]);
+    let lib_scope = jvm::query::Scope::of(vec![tree(LIB), tree(COMMON), tree(CORE)]);
+    let app_scope = jvm::query::Scope::of(vec![tree(APP), tree(COMMON), tree(LIB), tree(CORE)]);
 
     let revision = revision.bump();
     jvm.register_scopes(revision, app(), vec![app_scope.clone()]);
@@ -89,12 +87,12 @@ fn scoped() -> (PlatformJvm, Revision) {
     (jvm, revision)
 }
 
-fn sees(jvm: &PlatformJvm, revision: Revision, asker: &JvmSource, fqn: &str) -> bool {
+fn sees(jvm: &jvm::Platform, revision: Revision, asker: &jvm::model::Source, fqn: &str) -> bool {
     let query = jvm.query_from(asker, revision);
     query
-        .classes_named(&JvmQualifiedName::new(fqn))
+        .classes_named(&jvm::model::BinaryName::new(fqn))
         .into_iter()
-        .any(|(source, _)| query.scope_membership(source) == JvmScopeMembership::InScope)
+        .any(|(source, _)| query.scope_membership(source) == jvm::query::ScopeMembership::InScope)
 }
 
 #[test]
@@ -113,11 +111,11 @@ fn visibility_runs_one_way() {
 
     assert!(sees(&jvm, revision, &app(), "p.Core"));
     let query = jvm.query_from(&core(), revision);
-    let app = query.classes_named(&JvmQualifiedName::new("p.App"));
+    let app = query.classes_named(&jvm::model::BinaryName::new("p.App"));
     assert_eq!(app.len(), 1);
     assert_eq!(
         query.scope_membership(app[0].0),
-        JvmScopeMembership::OutsideScope
+        jvm::query::ScopeMembership::OutsideScope
     );
 }
 
@@ -166,7 +164,11 @@ fn re_registering_replaces_the_whole_scope() {
     let (mut jvm, mut revision) = scoped();
 
     let revision = revision.bump();
-    jvm.register_scopes(revision, core(), vec![JvmScope::of(vec![tree(APP)])]);
+    jvm.register_scopes(
+        revision,
+        core(),
+        vec![jvm::query::Scope::of(vec![tree(APP)])],
+    );
 
     assert!(sees(&jvm, revision, &core(), "p.App"));
     assert!(!sees(&jvm, revision, &core(), "p.Core"));
@@ -196,7 +198,7 @@ fn an_empty_scope_list_sees_nothing() {
 #[test]
 fn a_source_a_workspace_never_places_stays_unscoped() {
     let (jvm, revision) = scoped();
-    let entry = JvmSource::JarEntry {
+    let entry = jvm::model::Source::JarEntry {
         jar_path: PathBuf::from("lib.jar"),
         entry_path: "p/Other.class".to_string(),
     };

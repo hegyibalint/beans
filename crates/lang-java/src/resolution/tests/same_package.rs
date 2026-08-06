@@ -4,7 +4,7 @@ use super::*;
 fn resolves_a_top_level_type_by_its_package_spelling() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     let resolved_source = process(
         &mut java,
         &mut jvm,
@@ -41,7 +41,7 @@ fn resolves_a_top_level_type_by_its_package_spelling() {
 fn a_same_package_type_outside_scope_is_retained_as_invalid() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     let resolved_source = process(
         &mut java,
         &mut jvm,
@@ -59,16 +59,16 @@ fn a_same_package_type_outside_scope_is_retained_as_invalid() {
     jvm.register_scopes(
         revision,
         current_source.clone(),
-        vec![JvmScope::of(vec![JvmContainer::Source(PathBuf::from(
-            "app",
-        ))])],
+        vec![jvm::query::Scope::of(vec![jvm::query::Container::Source(
+            PathBuf::from("app"),
+        )])],
     );
     let resolved_declaration =
         file_model(&java, revision, &resolved_source).top_level_declarations[0];
     let current_file = file_model(&java, revision, &current_source);
     let query = JavaQuery::new(jvm.query_from(&current_source, revision), &java);
 
-    let candidates = query.types_named(&JvmQualifiedName::new("p.X"));
+    let candidates = query.types_named(&jvm::model::BinaryName::new("p.X"));
     assert_eq!(
         candidates,
         vec![JavaTypeTarget::Java {
@@ -78,7 +78,7 @@ fn a_same_package_type_outside_scope_is_retained_as_invalid() {
     );
     assert_eq!(
         query.scope_membership(&candidates[0]),
-        JvmScopeMembership::OutsideScope
+        jvm::query::ScopeMembership::OutsideScope
     );
     let resolved = candidates_from_same_package(
         &identifier("X"),
@@ -93,7 +93,7 @@ fn a_same_package_type_outside_scope_is_retained_as_invalid() {
 fn ignores_a_type_from_another_package() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     process(
         &mut java,
         &mut jvm,
@@ -127,7 +127,7 @@ fn ignores_a_type_from_another_package() {
 fn resolves_a_type_from_the_unnamed_package() {
     let revision = Revision::default();
     let mut java = LanguageJava::new();
-    let mut jvm = PlatformJvm::new();
+    let mut jvm = jvm::Platform::new();
     let resolved_source = process(&mut java, &mut jvm, revision, "X.java", "class X {}");
     let current_source = process(&mut java, &mut jvm, revision, "Test.java", "class Test {}");
     let resolved_declaration =

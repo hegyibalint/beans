@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::model::JvmSource;
+use crate::model;
 
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src/container/archive/tests/fixtures/classes.jar")
@@ -28,14 +28,14 @@ fn streams_root_class_entries_and_continues_after_a_bad_one() {
     assert_eq!(point.fqn.as_str(), "beans.fixture.Point");
     assert_eq!(
         feature_source,
-        JvmSource::JarEntry {
+        model::Source::JarEntry {
             jar_path: path.clone(),
             entry_path: "beans/fixture/Feature.class".to_string(),
         }
     );
     assert_eq!(
         point_source,
-        JvmSource::JarEntry {
+        model::Source::JarEntry {
             jar_path: path,
             entry_path: "beans/fixture/Point.class".to_string(),
         }
