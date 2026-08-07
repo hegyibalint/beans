@@ -76,6 +76,54 @@ Not built yet. Nothing is wrong; there is just no code.
   seven names for these; do not take them as a starting point, because nobody
   decided whether an import problem is four codes or one code with a reason.
 
+- **Skipping a collapsed parse.** The `process` in
+  `crates/lang-java/src/lib.rs` stores whatever came back and projects it, so a
+  parse that recovered nothing replaces a file's model with an empty one and
+  withdraws its classes from the lake. Measured on the engine: while `Foo.java`
+  is mid-edit, its own analysis goes quiet, and an untouched `Bar.java` keeps a
+  clean report while its `Foo f` drops from one target to none. Nothing squiggles
+  today only because an unknown type has no diagnostic yet, which is the entry
+  above; the day it does, every dependent file lights up whenever someone is
+  typing.
+
+  Decided: skip the write when a parse both errored and produced no top-level
+  declaration, leaving the last good model live. Both conditions are needed —
+  `has_error` alone is true for `class A {`, which recovers with a `MISSING }`
+  and a complete model, and a file holding only a package declaration has no
+  declaration and no error. Skipping is the whole implementation, because
+  `RevisionedStorage::get` already answers with the newest version not newer
+  than the revision asked for.
+
+  What it asks of the parser: a collapsed parse is an ordinary outcome and has to
+  be reported rather than asserted against. Tree-sitter's recovery is cost-based,
+  and for some inputs the cheapest tree it finds throws the file structure away —
+  `class A { void m() { int x = 1; y` parses to a bare `ERROR` root with no
+  `program` above it, which the `debug_assert_eq!(root.kind(), "program")` in
+  `crates/lang-java/src/parser.rs` currently treats as impossible. Nothing in a
+  `JavaFile` can say a parse recovered nothing, and `has_error` lives only on the
+  tree, so the judgement is the parser's to make and to hand back. `parse`
+  returning `Option<JavaFile>` is the small answer; a status the model carries is
+  the larger one, and it is what a consumer would need to know it is being served
+  something stale.
+
+  Accepted with it: the kept model's spans point into text that has changed, so
+  navigation inside that one file can land wrong until it parses again, and a
+  deleted class stays visible for as long. Stale is right for navigation and
+  highlighting and questionable for diagnostics, which nothing distinguishes yet.
+
+- **Repairing a collapsed parse instead of skipping it.** The better answer, and
+  not the one we chose. A collapse needs unbalanced braces *and* something
+  unfinished; a balanced buffer never collapses, whatever is half-typed in it.
+  Appending the missing braces restores a full tree, measured: `class A { void
+  m() { int x = 1; Str` has no scopes at all, and the same text with `}}` parses
+  to a complete program. Tree-sitter cannot say where the brace belongs in
+  exactly the cases that need it — a recovered parse reports one `MISSING "}"`
+  per brace, and a collapsed one reports no `MISSING` at all and a single `ERROR`
+  over the whole file — so the count has to be ours, which means a scanner that
+  skips strings, char literals, comments and text blocks. An unterminated `"`
+  breaks the count and stays a job for skipping. Would remove every cost the
+  entry above accepts.
+
 - **JPMS.** A JDK goes into the lake as one image, so the whole runtime is
   visible to everything. See the `crates/engine/src/workspace.rs`; splitting it
   needs the lake to hold modules. The module name is no longer the obstacle:
