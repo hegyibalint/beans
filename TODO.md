@@ -34,6 +34,44 @@ Behavior that contradicts a specification we have read.
   number on it: one class of JDK 26's 27,923, `jdk.jpackage`'s
   `PackageBuilder`. Ours to fix only by patching or replacing `cafebabe`.
 
+- **A class we cannot find is accessible to everybody.** The
+  `is_compiled_type_accessible` in `crates/lang-java/src/accessibility.rs` reads
+  `None` as "access control does not apply", which JLS §8.1.1 says of a local or
+  anonymous class. But the `class_access` in `crates/lang-java/src/query.rs`
+  also answers `None` when it simply did not find the class: it throws the
+  `model::Class` away at `view_of` and re-finds it by `(source, fqn)`, so any
+  divergence between the two lookups — a revision skew, a `TypeTarget::Compiled`
+  built somewhere else — turns into silent permission. §6.6.1 is not consulted
+  at all in that case. The failure direction is the quiet one: a wrong `true`
+  grants access and squiggles nothing.
+
+  The fix removes the branch rather than patching it. `view_of` already holds
+  the `&model::Class`, so carrying the level on `TypeTarget::Compiled` makes the
+  question unaskable, and it also deletes the second full scan the entry in
+  **Missing** below is about.
+
+- **A nested class whose file says nothing about itself gets a confident wrong
+  answer.** The `class_access` in `crates/platform-jvm/src/class_file.rs`
+  explains at length why §4.7.6 must win over the header — javac widens
+  `protected` to `ACC_PUBLIC` and drops `private` — and then falls back to that
+  same header when no `InnerClasses` entry names this class. A producer that is
+  not javac (ASM, an obfuscator, an older compiler) can omit the table, and then
+  a `private` nested class reports `Package` and a `protected` one reports
+  `Public`. Three lines below, the local and anonymous case answers `None`
+  because it has no evidence; this branch has no evidence either and answers
+  `Some`. No fixture covers a nested class without an `InnerClasses` entry.
+
+- **`Thread$State` spelled as one identifier skips a check the dotted spelling
+  makes.** `$` is a legal Java identifier character, so the parser hands
+  `Thread$State` to stage 3 and stage 4 as a simple name, and
+  `BinaryName::in_package` in `crates/lang-java/src/resolution.rs` glues it
+  straight onto a package to reach the nested binary name. The
+  `resolve_canonical_name` walk is careful here — it classifies `Thread` first
+  and `propagate`s an inaccessible parent onto the member — but this path never
+  sees the enclosing type, so a public nested type inside a package-private
+  outer resolves with the outer unchecked. Narrow, and the only place where two
+  spellings of one reference take different rules.
+
 ## Missing
 
 Not built yet. Nothing is wrong; there is just no code.
@@ -143,6 +181,19 @@ Not built yet. Nothing is wrong; there is just no code.
   the decompressor by name instead. `zip` is implemented; shipped JDKs use
   neither.
 
+- **Nothing indexes the lake.** Every lookup is a linear scan: `all_classes` in
+  `crates/platform-jvm/src/query.rs` walks every source × every class at the
+  revision, and `classes_named` and `classes_in_package` both filter it.
+  Resolution asks several times per name — stage 3, then stage 4's
+  `java.lang.<Name>` probe, then `class_access` re-asking for a class the
+  candidate already came from — and `analyze` runs the whole of
+  `type_scope_diagnostics` on every `didChange`. With a JDK image in the lake
+  that is ~30,000 classes per traversal, multiplied by the type references in
+  the file, on every keystroke. Nothing is wrong with the answers; there is just
+  no index to ask instead. A name-keyed and package-keyed map rebuilt per
+  revision is the obvious shape, and the `class_access` half of it disappears
+  anyway once `TypeTarget::Compiled` carries the level (see **Wrong**).
+
 ## Undecided
 
 Cannot be built until we choose.
@@ -202,6 +253,18 @@ Cannot be built until we choose.
   open. Most of ours cite one; what we have not said is what the citation buys
   us later.
 
+- **What does a unit with no JDK deserve to be told?** Since stage 4 reads the
+  implicit `java.lang.*`, a unit that names no JDK in a workspace where another
+  one does gets `type-outside-scope` on every `java.lang` name it uses —
+  `String`, `Object`, `Integer`, `Exception`, each occurrence — because the
+  image is in the lake but out of that unit's scope.
+  `tests/acceptance/tests/engine/jdk.rs` pins the `String` case. Note the shape
+  of it: if *no* unit names a JDK the same files are silent, because then
+  nothing is in the lake to be out of scope. One misconfigured unit is a single
+  fact about the unit, and we report it once per name in every file. A
+  unit-level diagnostic would say it once, but that needs somewhere for a
+  diagnostic that belongs to no file to live.
+
 ## Can't test yet
 
 The claim is clear and the observable does not exist. Nothing will tell us when
@@ -244,3 +307,13 @@ these become possible, which is why they are written down.
   resolution capability is six tests, one per rule that reaches a user. If a bug
   ever gets out that all six missed, that is the signal one of them was not
   enough, and the answer is one more test rather than a return to the old tree.
+
+- **No test imports a `java.*` type explicitly.** `grep -rn 'import java\.'
+  tests/acceptance/ crates/lang-java/tests/` returns nothing, so
+  `resolve_canonical_name` walking a package prefix against a real runtime image
+  — `java` miss, `java.util` miss, `java.util.List` hit — is exercised only by
+  `resolution/tests/compiled.rs`, over a synthetic `JarEntry` lake of hand-built
+  `model::Class` values. Jimage entry paths, the module name glued onto
+  `jvm::model::Source::JimageEntry`, and `BinaryName::in_package` could all break
+  the multi-segment walk against real JDK data with nothing going red. One file
+  in the `jdk.rs` fixture covers it.
