@@ -194,6 +194,13 @@ impl ResolutionCandidates {
         !self.valid.is_empty()
     }
 
+    /// The candidates that survived scope and §6.6.1. Completion offers these
+    /// and never the invalid ones: an invalid candidate is evidence for a
+    /// diagnostic, not a suggestion.
+    pub(crate) fn valid(&self) -> &[TypeTarget] {
+        &self.valid
+    }
+
     #[cfg(test)]
     fn has_invalidity(&self, reason: TypeInvalidity) -> bool {
         self.invalid
@@ -327,7 +334,7 @@ fn resolve_type_from_lexical_scopes(
     candidates_from_lexical_scopes(name, source, file, current_lexical_scope_id).into_resolution()
 }
 
-fn candidates_from_exact_imports(
+pub(crate) fn candidates_from_exact_imports(
     name: &model::Identifier,
     source: &jvm::model::Source,
     file: &model::File,
@@ -549,7 +556,7 @@ fn exact_import_introduces_name(import: &model::Import, name: &model::Identifier
 /// The current package plus the simple name is the binary name the lake was
 /// told about at projection time, so this is one lookup rather than a walk
 /// over every file comparing package declarations.
-fn candidates_from_same_package(
+pub(crate) fn candidates_from_same_package(
     name: &model::Identifier,
     from: &Site,
     query: &Query,
@@ -598,7 +605,7 @@ fn resolve_from_same_package(
 /// keeps `java.lang.Shutdown` off the path `java.lang.String` takes. The two
 /// disagree on why: §7.3 never imports the name, while we find the class and
 /// refuse it under §6.6.1, which leaves it behind as evidence.
-fn candidates_from_java_lang(
+pub(crate) fn candidates_from_java_lang(
     name: &model::Identifier,
     from: &Site,
     query: &Query,

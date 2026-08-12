@@ -16,7 +16,7 @@ use lsp_types::notification::{
     DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, Notification as _,
     PublishDiagnostics,
 };
-use lsp_types::request::{GotoDeclaration, GotoDefinition, HoverRequest, Request as _};
+use lsp_types::request::{Completion, GotoDeclaration, GotoDefinition, HoverRequest, Request as _};
 use lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     GotoDefinitionParams, Hover, InitializeParams, InitializeResult, InitializedParams, Location,
@@ -229,6 +229,14 @@ mod handshake {
             capabilities.hover_provider,
             Some(lsp_types::HoverProviderCapability::Simple(true))
         );
+        assert_eq!(
+            capabilities
+                .completion_provider
+                .as_ref()
+                .map(|options| options.resolve_provider),
+            Some(Some(false)),
+            "advertising resolve would invite a request we answer with nothing",
+        );
     }
 
     /// The handshake hands over to the message loop rather than ending the
@@ -416,6 +424,40 @@ mod requests {
                 Position::new(0, 6),
                 Position::new(0, 11)
             ))
+        );
+    }
+
+    /// What the answer should be is settled in `lang-java`; this is about the
+    /// envelope: a list rather than a bare array, marked incomplete because the
+    /// engine filtered by the prefix behind the caret, and each row carrying the
+    /// edit that replaces what was typed.
+    #[test]
+    fn completion_replies_with_an_incomplete_list_of_edits() {
+        let mut server = Server::started();
+        server.open(A, "class Outer {\n    class Inner {}\n    In f;\n}\n");
+        server.published();
+
+        let response = server.request(
+            Completion::METHOD,
+            lsp_types::CompletionParams {
+                text_document_position: position_in(A, Position::new(2, 6)),
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+                context: None,
+            },
+        );
+        let list: lsp_types::CompletionList =
+            serde_json::from_value(response.result.expect("a result")).expect("a CompletionList");
+
+        assert!(list.is_incomplete);
+        let labels: Vec<&str> = list.items.iter().map(|item| item.label.as_str()).collect();
+        assert_eq!(labels, ["Inner"]);
+        assert_eq!(
+            list.items[0].text_edit,
+            Some(lsp_types::CompletionTextEdit::Edit(lsp_types::TextEdit {
+                range: lsp_types::Range::new(Position::new(2, 4), Position::new(2, 6)),
+                new_text: "Inner".to_string(),
+            }))
         );
     }
 }

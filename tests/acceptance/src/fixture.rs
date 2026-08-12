@@ -40,6 +40,8 @@ enum Expect {
     ResolvesTo { cursor: String, fqn: String },
     DoesNotResolve { cursor: String },
     AmbiguousBetween { cursor: String, fqns: Vec<String> },
+    CompletesWith { cursor: String, labels: Vec<String> },
+    DoesNotComplete { cursor: String, label: String },
 }
 
 impl Fixture {
@@ -139,6 +141,25 @@ impl Fixture {
         })
     }
 
+    /// Every named label must be offered at the cursor. Containment rather than
+    /// equality on purpose: which names are in scope is settled in
+    /// `lang-java`, and repeating the whole list here would restate it.
+    pub fn completes_with(self, cursor: &str, labels: &[&str]) -> Self {
+        self.push_expectation(Expect::CompletesWith {
+            cursor: cursor.to_string(),
+            labels: labels.iter().map(|label| (*label).to_string()).collect(),
+        })
+    }
+
+    /// The quiet half: a name that must not be offered. Without it, an
+    /// enumeration that offers everything satisfies every positive expectation.
+    pub fn does_not_complete(self, cursor: &str, label: &str) -> Self {
+        self.push_expectation(Expect::DoesNotComplete {
+            cursor: cursor.to_string(),
+            label: label.to_string(),
+        })
+    }
+
     pub fn ambiguous_between(self, cursor: &str, fqns: &[&str]) -> Self {
         self.push_expectation(Expect::AmbiguousBetween {
             cursor: cursor.to_string(),
@@ -225,6 +246,15 @@ impl Fixture {
                         expected.sort();
                         labels == expected
                     }
+                    Expect::CompletesWith { cursor, labels } => {
+                        let cursor = find_cursor(&cursors, cursor, &analysis.file);
+                        let offered = completion_labels(&beans, &analysis.file, cursor.offset);
+                        labels.iter().all(|label| offered.contains(label))
+                    }
+                    Expect::DoesNotComplete { cursor, label } => {
+                        let cursor = find_cursor(&cursors, cursor, &analysis.file);
+                        !completion_labels(&beans, &analysis.file, cursor.offset).contains(label)
+                    }
                 };
                 assert!(
                     met,
@@ -260,6 +290,15 @@ fn resolution_labels(beans: &Beans, file: &Path, offset: usize) -> Vec<String> {
         .collect()
 }
 
+fn completion_labels(beans: &Beans, file: &Path, offset: usize) -> Vec<String> {
+    beans
+        .complete_at(&jvm_source(file), Offset(offset))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|item| item.label)
+        .collect()
+}
+
 fn find_cursor<'a>(cursors: &'a [Cursor], name: &str, file: &Path) -> &'a Cursor {
     let cursor = cursors
         .iter()
@@ -289,6 +328,13 @@ fn describe(expect: &Expect) -> String {
             "expected <cur:{cursor}> to be ambiguous between {}",
             fqns.join(", ")
         ),
+        Expect::CompletesWith { cursor, labels } => format!(
+            "expected <cur:{cursor}> to complete with {}",
+            labels.join(", ")
+        ),
+        Expect::DoesNotComplete { cursor, label } => {
+            format!("expected <cur:{cursor}> not to complete with `{label}`")
+        }
     }
 }
 

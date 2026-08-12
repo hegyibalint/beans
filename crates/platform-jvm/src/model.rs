@@ -159,6 +159,14 @@ impl BinaryName {
     pub fn nested(&self, simple_name: &str) -> BinaryName {
         BinaryName(format!("{}${simple_name}", self.0))
     }
+
+    /// Whether this names a type declared inside another, which §13.1 spells
+    /// with a `$`. A top-level class whose own identifier contains one is legal
+    /// (§3.8) and reads the same way; javac calls the collision a duplicate
+    /// class rather than distinguishing them, so neither can we.
+    pub fn is_nested(&self) -> bool {
+        self.0.contains('$')
+    }
 }
 
 impl fmt::Display for BinaryName {

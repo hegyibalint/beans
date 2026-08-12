@@ -1,7 +1,7 @@
 use beans_core::{
     analysis::FileAnalysis,
     file::TextFile,
-    language::{Language, LanguageProcessing, NavigationTarget},
+    language::{CompletionItem, Language, LanguageProcessing, NavigationTarget},
     model::{LineColumnPosition, LineColumnSpan, Offset, OffsetSpan},
     storage::{Revision, RevisionedStorage},
 };
@@ -167,6 +167,25 @@ impl Beans {
         }
 
         None
+    }
+
+    /// The names in scope at `offset`, for a client to offer.
+    ///
+    /// The text comes from here rather than from the language, because this is
+    /// where it is stored; a vertical holding its own copy would be a second
+    /// one that can disagree with this at the same revision.
+    pub fn complete_at(
+        &self,
+        source: &jvm::model::Source,
+        offset: Offset,
+    ) -> Option<Vec<CompletionItem<jvm::model::Source>>> {
+        if !self.lang_java.accepts(source) {
+            return None;
+        }
+
+        let contents = self.text_files.get(source, self.revision)?.contents();
+        self.lang_java
+            .complete_at(source, offset, self.revision, &self.platform_jvm, contents)
     }
 
     /// A display name for the declaration whose name sits at `span`,

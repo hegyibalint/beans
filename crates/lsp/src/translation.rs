@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use beans_core::analysis::diagnostic::{DiagnosticSeverity, Diagnostics};
+use beans_core::language::{CompletionItem, CompletionItemKind};
 use beans_core::model::{LineColumnPosition, LineColumnSpan};
 use beans_platform_jvm as jvm;
 use lsp_types::{Position, Uri};
@@ -71,6 +72,48 @@ pub fn translate_diagnostics(
         source: Some("beans".to_string()),
         message: diagnostic.message.clone(),
         ..Default::default()
+    }
+}
+
+/// Translates one completion row. The range it overwrites is computed by the
+/// engine from the file's text and handed in, so this stays text-free like
+/// every other translation here.
+///
+/// The handle is not sent yet. It exists so the item's shape is right; nothing
+/// asks for a row to be resolved until there is something expensive to say.
+pub fn translate_completion_item(
+    replace: Option<lsp_types::Range>,
+    item: &CompletionItem<jvm::model::Source>,
+) -> lsp_types::CompletionItem {
+    lsp_types::CompletionItem {
+        label: item.label.clone(),
+        kind: Some(translate_completion_kind(item.kind)),
+        detail: item.detail.clone(),
+        text_edit: replace.map(|range| {
+            lsp_types::CompletionTextEdit::Edit(lsp_types::TextEdit {
+                range,
+                new_text: item.label.clone(),
+            })
+        }),
+        ..Default::default()
+    }
+}
+
+/// LSP's vocabulary is not ours and does not have to be: it has no record and
+/// no annotation interface, and it draws parameters with the variable icon.
+fn translate_completion_kind(kind: CompletionItemKind) -> lsp_types::CompletionItemKind {
+    match kind {
+        CompletionItemKind::Class => lsp_types::CompletionItemKind::CLASS,
+        CompletionItemKind::Interface => lsp_types::CompletionItemKind::INTERFACE,
+        CompletionItemKind::Enum => lsp_types::CompletionItemKind::ENUM,
+        CompletionItemKind::Record => lsp_types::CompletionItemKind::STRUCT,
+        CompletionItemKind::AnnotationInterface => lsp_types::CompletionItemKind::INTERFACE,
+        CompletionItemKind::Method => lsp_types::CompletionItemKind::METHOD,
+        CompletionItemKind::Field => lsp_types::CompletionItemKind::FIELD,
+        CompletionItemKind::Variable | CompletionItemKind::Parameter => {
+            lsp_types::CompletionItemKind::VARIABLE
+        }
+        CompletionItemKind::TypeParameter => lsp_types::CompletionItemKind::TYPE_PARAMETER,
     }
 }
 

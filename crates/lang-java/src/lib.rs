@@ -1,4 +1,5 @@
 mod accessibility;
+mod completion;
 mod diagnostics;
 mod model;
 mod parser;
@@ -7,7 +8,7 @@ mod query;
 mod resolution;
 
 use beans_core::analysis::FileAnalysis;
-use beans_core::language::{LanguageProcessing, NavigationTarget};
+use beans_core::language::{CompletionItem, LanguageProcessing, NavigationTarget};
 use beans_core::model::{Offset, OffsetSpan};
 use beans_core::storage::Revision;
 use beans_core::storage::RevisionedStorage;
@@ -119,6 +120,20 @@ impl beans_core::language::Language<jvm::model::Source, jvm::Platform> for Langu
         let java_model = self.file_models.get(source, revision)?;
         let query = Query::new(platform_jvm.query_from(source, revision), self);
         Some(resolve_occurrence_at(source, java_model, offset, &query))
+    }
+
+    fn complete_at(
+        &self,
+        java_source: &jvm::model::Source,
+        offset: Offset,
+        revision: Revision,
+        platform_jvm: &jvm::Platform,
+        contents: &str,
+    ) -> Option<Vec<CompletionItem<jvm::model::Source>>> {
+        let java_model = self.file_models.get(java_source, revision)?;
+        let point = completion::Point::at(java_source, java_model, offset, contents)?;
+        let query = Query::new(platform_jvm.query_from(java_source, revision), self);
+        Some(completion::complete(&point, &query, revision))
     }
 }
 

@@ -16,13 +16,14 @@ use lsp_types::notification::{
     PublishDiagnostics,
 };
 use lsp_types::request::{
-    GotoDeclaration, GotoDeclarationParams, GotoDeclarationResponse, GotoDefinition, HoverRequest,
-    Request as _,
+    Completion, GotoDeclaration, GotoDeclarationParams, GotoDeclarationResponse, GotoDefinition,
+    HoverRequest, Request as _,
 };
 use lsp_types::{
-    DeclarationCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
-    HoverParams, HoverProviderCapability, MarkedString, OneOf, PublishDiagnosticsParams,
-    ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
+    CompletionList, CompletionOptions, CompletionParams, CompletionResponse, DeclarationCapability,
+    GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents, HoverParams,
+    HoverProviderCapability, MarkedString, OneOf, PublishDiagnosticsParams, ServerCapabilities,
+    TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
 };
 use lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
@@ -35,8 +36,8 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::translation::{
-    position_to_line_column, source_to_uri, text_range_to_range, translate_diagnostics,
-    uri_to_path, uri_to_source,
+    position_to_line_column, source_to_uri, text_range_to_range, translate_completion_item,
+    translate_diagnostics, uri_to_path, uri_to_source,
 };
 
 /// A process-global JSONL sink for raw protocol traffic, in the shape of a
@@ -87,6 +88,12 @@ pub fn run(conn: Connection, mut beans: Beans) {
         declaration_provider: Some(DeclarationCapability::Simple(true)),
         definition_provider: Some(OneOf::Left(true)),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
+        // No resolve provider: nothing we can say about a row is expensive
+        // enough to defer yet, so every item arrives complete.
+        completion_provider: Some(CompletionOptions {
+            resolve_provider: Some(false),
+            ..Default::default()
+        }),
         ..Default::default()
     };
     let server_capabilities = serde_json::to_value(&capabilities).unwrap();
@@ -146,6 +153,12 @@ fn handle_request(conn: &Connection, beans: &Beans, request: ServerRequest) {
                 .extract::<HoverParams>(HoverRequest::METHOD)
                 .unwrap();
             ServerResponse::new_ok(id, handle_request_hover(beans, params))
+        }
+        Completion::METHOD => {
+            let (id, params) = request
+                .extract::<CompletionParams>(Completion::METHOD)
+                .unwrap();
+            ServerResponse::new_ok(id, handle_request_completion(beans, params))
         }
         _ => return,
     };
@@ -208,6 +221,33 @@ fn handle_request_hover(beans: &Beans, params: HoverParams) -> Option<Hover> {
             .text_range(&declaration.source, declaration.span)
             .map(text_range_to_range),
     })
+}
+
+/// `isIncomplete` is always true: the engine filtered by the prefix behind the
+/// caret, so the list describes this keystroke and not the next one.
+fn handle_request_completion(
+    beans: &Beans,
+    params: CompletionParams,
+) -> Option<CompletionResponse> {
+    let request = params.text_document_position;
+    let source = uri_to_source(&request.text_document.uri)?;
+    let offset = beans.offset_at(&source, position_to_line_column(request.position))?;
+
+    let items = beans
+        .complete_at(&source, offset)?
+        .iter()
+        .map(|item| {
+            let replace = beans
+                .text_range(&source, item.replace)
+                .map(text_range_to_range);
+            translate_completion_item(replace, item)
+        })
+        .collect();
+
+    Some(CompletionResponse::List(CompletionList {
+        is_incomplete: true,
+        items,
+    }))
 }
 
 fn handle_notification(conn: &Connection, beans: &mut Beans, notification: ServerNotification) {

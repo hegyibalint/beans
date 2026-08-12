@@ -6,6 +6,53 @@ pub struct NavigationTarget<Source> {
     pub span: OffsetSpan,
 }
 
+/// One row a client may offer the user. Everything a list needs to render is
+/// here; the handle is for the second half of the exchange.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompletionItem<Source> {
+    pub label: String,
+    pub kind: CompletionItemKind,
+    pub detail: Option<String>,
+    /// What accepting this row overwrites.
+    pub replace: OffsetSpan,
+    pub handle: Option<Handle<Source>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompletionItemKind {
+    Class,
+    Interface,
+    Enum,
+    Record,
+    AnnotationInterface,
+    Method,
+    Field,
+    Variable,
+    Parameter,
+    TypeParameter,
+}
+
+/// A note a language vertical writes to itself, handed out with an item and
+/// given back untouched when the client asks for more about that one row.
+///
+/// The payload is opaque here on purpose. The JVM is the only vocabulary its
+/// languages share, and above that line identity does not unify: a Clojure
+/// `deftype` has a binary name, while a `defn` has a var with no type and no
+/// member to hang it on. So only the vertical that minted a payload ever reads
+/// it, and this crate carries it without looking inside.
+///
+/// The two fields that are not opaque are the two questions `core` already
+/// answers. `source` routes, the way `LanguageProcessing::accepts` routes
+/// everything else. `revision` pins: `RevisionedStorage` keeps history, so a
+/// handle never goes stale — it is either valid, or invalid because the source
+/// did not exist then, was deleted by then, or names nothing in that model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Handle<Source> {
+    pub source: Source,
+    pub revision: Revision,
+    pub payload: String,
+}
+
 pub trait LanguageProcessing<Source, Platform> {
     fn accepts(&self, source: &Source) -> bool;
 
@@ -35,6 +82,21 @@ pub trait Language<Source, Platform>: LanguageProcessing<Source, Platform> {
         _revision: Revision,
         _platform: &Platform,
     ) -> Option<Vec<NavigationTarget<Source>>> {
+        None
+    }
+
+    /// The names in scope at `offset`. Takes the text because a caret is a
+    /// lexical position before it is a semantic one: the prefix behind it and
+    /// the character in front of it are both facts about characters, and no
+    /// model holds them.
+    fn complete_at(
+        &self,
+        _source: &Source,
+        _offset: Offset,
+        _revision: Revision,
+        _platform: &Platform,
+        _contents: &str,
+    ) -> Option<Vec<CompletionItem<Source>>> {
         None
     }
 }
