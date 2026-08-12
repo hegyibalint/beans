@@ -91,6 +91,29 @@ Not built yet. Nothing is wrong; there is just no code.
 
 - **Import suggestions**, stage 6. No JLS section; this is ours.
 
+- **Completion offers types and nothing else.** The
+  `crates/lang-java/src/completion.rs` mirrors the four type stages of
+  `resolve_type_candidates` and stops there, so a caret is never offered a
+  local, a parameter, a field or a method. The inverses are `resolve_variable_name`
+  and `find_member`, both of which it already has the visibility to call.
+
+  Two smaller gaps sit inside the stages it does have. On-demand and static
+  imports spell no name, because the entry above has not read them yet. And
+  every name a stage produces is resolved to decide whether to offer it, which
+  is one resolution per candidate per keystroke; the shape is what was wanted
+  first, and an index is what replaces the scan.
+
+- **Nothing ever drops a revision.** `Beans::process` bumps one per call and the
+  LSP declares `TextDocumentSyncKind::FULL`, so an editor sends the whole
+  document on every keystroke; `text_files`, `file_models` and the lake each
+  `put` a full copy, and `RevisionedStorage` appends without ever removing. A
+  long editing session therefore retains every version of every file's text and
+  model, and there is no pruning, compaction or watermark anywhere in
+  `crates/core/src/storage.rs` or `crates/engine/src/lib.rs`. What is missing is
+  a floor revision — the oldest anyone can still ask about — below which
+  versions can collapse. Storing the syntax tree, below, multiplies whatever
+  this costs.
+
 - **The members of a compiled type.** The `find_member` in the `resolution.rs`
   walks a `model::File`'s scopes, so a field or a method of a class file reaches
   nothing: `Instant.now()` has no answer even with the JDK in scope. Its type
@@ -233,6 +256,28 @@ Cannot be built until we choose.
   currently treats two in-scope declarations as ambiguity. A class path would
   rank containers instead; its current order is a `HashMap`'s.
 
+- **Does lang-java keep the syntax tree?** The `Parser::parse` in
+  `crates/lang-java/src/parser.rs` drops the tree-sitter `Tree` as soon as
+  `parse_program` has walked it, so the only thing that outlives a parse is the
+  `model::File`. Keeping it means keeping the text too: a `Tree` holds offsets
+  and nothing else, which is why every function in that file takes both a `Node`
+  and an `&str`.
+
+  What it would unlock: structural edits, which is the real motivation —
+  Roslyn, JDT and rust-analyzer all compute edits against a full-fidelity tree
+  and emit text edits at the boundary, while a `model::File` is a semantic arena
+  with no syntax in it. Also semantic highlighting, and a grammar-based answer to
+  what a caret sits in, where `completion.rs` reads one character of lookbehind.
+  Incremental parsing is on the list and blocked regardless: the LSP declares
+  FULL sync, so there are no incremental edits to feed it.
+
+  What makes it safe to defer: incremental parsing was measured to produce
+  byte-identical trees, so a stored tree buys speed and edits and never
+  correctness. Nothing decided later is foreclosed by not storing one now.
+  `Tree` is `Clone`, `Send` and `Sync` in tree-sitter 0.25, so
+  `RevisionedStorage<Source, Tree>` is mechanically fine; what it needs first is
+  the floor revision above.
+
 - **How are specification editions configured?** We read JLS 26 and hardcode it.
   A project on an older language level is a real case and we have no place to
   put the setting.
@@ -302,6 +347,10 @@ these become possible, which is why they are written down.
 
 - **The `parser.rs` and the `model.rs` still keep their tests inline.** 14 tests
   in 1399 lines and 4 in 737. Both will grow.
+
+- **`crates/core` depends on `tree-sitter` and never uses it.** Nothing under
+  `crates/core/src` names it. The dependency belongs to whoever parses, which is
+  `lang-java`, and it already declares its own.
 
 - **Acceptance is thin on purpose now, and we should watch it.** The Java type
   resolution capability is six tests, one per rule that reaches a user. If a bug
