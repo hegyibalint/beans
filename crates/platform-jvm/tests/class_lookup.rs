@@ -168,7 +168,7 @@ fn package_discovery_is_not_filtered_by_scope() {
     let (jvm, revision) = lake();
     let query = holding(&jvm, revision, vec![sources(SOURCES)]);
 
-    let found = query.classes_in_package("p");
+    let found = query.classes_in_package("p").collect::<Vec<_>>();
     let names: Vec<&str> = found.iter().map(|(_, class)| class.fqn.as_str()).collect();
 
     assert_eq!(names.len(), 3, "found {names:?}");

@@ -7,8 +7,7 @@ use crate::accessibility::Site;
 use crate::model;
 use crate::query::Query;
 use crate::resolution::{
-    ResolutionCandidates, TypeTarget, candidates_from_java_lang, candidates_from_same_package,
-    resolve_type_candidates,
+    InScopeType, TypeTarget, Wanted, first_stage_that_answers, types_in_scope,
 };
 
 /// JLS 26 §6.3 names what completion is asked about:
@@ -67,14 +66,13 @@ impl<'a> Point<'a> {
     }
 }
 
-/// The stages of `resolve_type_candidates`, in the same order, each turned
-/// around: instead of asking whether a stage spells one name, ask what it
-/// spells at all.
+/// The names in scope at `point`, one row each.
 ///
-/// `or_stage` stops at the first stage with a valid candidate; completion
-/// cannot, because every stage contributes names. The same rule applies per
-/// name instead — a name an earlier stage produced is not looked for in a later
-/// one — which is what keeps this and resolution answering alike.
+/// Resolution and completion ask the same enumeration two different questions:
+/// `resolve_type_name` filters `types_in_scope` by one name, this filters it by
+/// a prefix. Both then hand what they kept to `first_stage_that_answers`, so
+/// §6.4.1's order is applied by one function over one chain and neither side can
+/// drift from the other.
 pub(crate) fn complete(
     point: &Point,
     query: &Query,
@@ -84,37 +82,56 @@ pub(crate) fn complete(
         return Vec::new();
     }
 
-    let mut items = types_in_lexical_scopes(point, revision);
-    push_imports(&mut items, point, query, revision);
+    let mut items = Vec::new();
+    let in_scope = types_in_scope(&point.at, query, Wanted::StartingWith(point.prefix));
+    for (name, candidates) in by_name(in_scope) {
+        // The whole chain for one spelling, settled the way resolution settles
+        // it. A type this file cannot see is evidence for a diagnostic rather
+        // than a suggestion, so only the valid half is offered.
+        let answered = first_stage_that_answers(candidates.into_iter(), &point.at, query);
+        let Some(target) = answered.valid().first() else {
+            continue;
+        };
 
-    // The two stages that name types nobody wrote down. Each name is enumerated
-    // cheaply and handed back to the resolution stage that owns it, and only
-    // what that stage calls valid is offered — a type this file cannot see is
-    // evidence for a diagnostic, not a suggestion.
-    for (name, candidates) in found_names(point, query) {
-        push_resolved(&mut items, point, query, revision, &name, candidates);
+        items.push(CompletionItem {
+            label: name,
+            kind: kind_of(target, query),
+            detail: target_label(target, query),
+            replace: point.replace,
+            handle: handle_for(target, query, revision),
+        });
     }
 
+    push_unplaced_imports(&mut items, point, revision);
     items
 }
 
-/// Stage 2, §7.5.1. A single-type import introduces its last segment, and that
-/// segment is in the model already.
+/// The chain grouped by spelling, keeping the order stages produced them in so
+/// the fold still sees §6.4.1's ranking.
+fn by_name(candidates: impl Iterator<Item = InScopeType>) -> Vec<(String, Vec<InScopeType>)> {
+    let mut grouped: Vec<(String, Vec<InScopeType>)> = Vec::new();
+
+    for candidate in candidates {
+        match grouped.iter_mut().find(|(name, _)| *name == candidate.name) {
+            Some((_, group)) => group.push(candidate),
+            None => grouped.push((candidate.name.clone(), vec![candidate])),
+        }
+    }
+
+    grouped
+}
+
+/// §7.5.1's names that the chain could not place.
 ///
-/// The name is offered whether or not anything answers it, which is the one
-/// place completion deliberately outlives resolution: an import is not a name we
-/// propose, it is one the user wrote, sitting in the buffer and already carrying
-/// its own squiggle when it is wrong.
-///
-/// What it *means* is still resolution's to say. An import naming an
-/// inaccessible type is a compile-time error (§7.5.1) and resolution keeps
-/// walking past it, so labelling the row with the import's own spelling would
-/// name a type the user cannot have. The import's spelling is the fallback for
-/// when nothing at all answers, and nothing else.
-fn push_imports(
+/// This is the one place completion outlives resolution. An import is not a name
+/// we propose; it is one the user wrote, sitting in the buffer and already
+/// carrying its own squiggle when it is wrong, so declining to finish typing it
+/// protects nobody. What it *means* is still resolution's to say — anything the
+/// chain placed is already offered above, with the winner's own label — and the
+/// import's spelling is the fallback for when nothing answers at all.
+fn push_unplaced_imports(
     items: &mut Vec<CompletionItem<jvm::model::Source>>,
     point: &Point,
-    query: &Query,
     revision: Revision,
 ) {
     for import in &point.at.file.imports {
@@ -128,116 +145,22 @@ fn push_imports(
             continue;
         }
 
-        let resolved = resolve_type_candidates(
-            &model::Name::Simple(name.clone()),
-            point.at.source,
-            point.at.file,
-            point.at.scope,
-            query,
-        );
-        let target = resolved.valid().first();
         let dotted = import.name.dotted();
-
         items.push(CompletionItem {
             label: name.text.clone(),
             kind: CompletionItemKind::Class,
-            detail: target
-                .and_then(|target| target_label(target, query))
-                .or(Some(dotted.clone())),
+            detail: Some(dotted.clone()),
             replace: point.replace,
             handle: Some(Handle {
-                source: target.map_or_else(|| point.at.source.clone(), |t| t.source().clone()),
+                source: point.at.source.clone(),
                 revision,
-                payload: target
-                    .and_then(|target| target_label(target, query))
-                    .unwrap_or(dotted),
+                payload: dotted,
             }),
         });
     }
 }
 
-/// Stages 3 and 4, each as the names it can spell paired with what resolution
-/// makes of them.
-fn found_names<'a>(
-    point: &'a Point,
-    query: &'a Query,
-) -> impl Iterator<Item = (String, ResolutionCandidates)> + 'a {
-    let package = point
-        .at
-        .file
-        .package
-        .as_ref()
-        .map(model::Name::dotted)
-        .unwrap_or_default();
-
-    // Stage 3, §6.3: the top-level types of this compilation unit's package.
-    let same_package = query
-        .top_level_names_in_package(&package)
-        .into_iter()
-        .map(move |name| {
-            let candidates = candidates_from_same_package(&identifier(&name), &point.at, query);
-            (name, candidates)
-        });
-
-    // Stage 4, §7.3: `java.lang` is imported on demand into every compilation
-    // unit, so it is stage 3 with the package fixed.
-    let java_lang = query
-        .top_level_names_in_package("java.lang")
-        .into_iter()
-        .map(move |name| {
-            let candidates = candidates_from_java_lang(&identifier(&name), &point.at, query);
-            (name, candidates)
-        });
-
-    same_package.chain(java_lang)
-}
-
-fn push_resolved(
-    items: &mut Vec<CompletionItem<jvm::model::Source>>,
-    point: &Point,
-    query: &Query,
-    revision: Revision,
-    name: &str,
-    candidates: ResolutionCandidates,
-) {
-    if !name.starts_with(point.prefix) {
-        return;
-    }
-    // §6.4.1 read per name: an earlier stage already won this spelling.
-    if items.iter().any(|item| item.label == name) {
-        return;
-    }
-    // Ambiguity survives resolution and does not survive into the list: two
-    // declarations of one name are still one row, because the user is picking a
-    // name. Which of them it turns out to be is a diagnostic's job once the name
-    // is written.
-    let Some(target) = candidates.valid().first() else {
-        return;
-    };
-
-    items.push(CompletionItem {
-        label: name.to_string(),
-        kind: CompletionItemKind::Class,
-        detail: target_label(target, query),
-        replace: point.replace,
-        handle: target_handle(target, query, revision),
-    });
-}
-
-/// A `TypeRef`-shaped identifier for a name we are asking about rather than one
-/// we read. The span is the caret's own: §6.3's rule that a local is in scope
-/// only after its declarator is asked against where we are standing.
-fn identifier(text: &str) -> model::Identifier {
-    model::Identifier {
-        text: text.to_string(),
-        span: OffsetSpan {
-            start: Offset(0),
-            end: Offset(0),
-        },
-    }
-}
-
-/// The dotted name to show beside the label. A file we parsed knows its own
+/// The dotted name to show beside a label. A file we parsed knows its own
 /// (`p.Outer.Inner`); anything else is a binary name and already is one.
 fn target_label(target: &TypeTarget, query: &Query) -> Option<String> {
     match target {
@@ -249,64 +172,6 @@ fn target_label(target: &TypeTarget, query: &Query) -> Option<String> {
     }
 }
 
-/// Every one of these stages reaches a type nameable from another file, which
-/// is exactly the condition for having a handle at all.
-fn target_handle(
-    target: &TypeTarget,
-    query: &Query,
-    revision: Revision,
-) -> Option<Handle<jvm::model::Source>> {
-    Some(Handle {
-        source: target.source().clone(),
-        revision,
-        payload: target_label(target, query)?,
-    })
-}
-
-/// The inverse of `candidates_from_lexical_scopes`. That one asks each scope
-/// whether it spells one name; this one asks what it spells at all.
-///
-/// §6.4.1 makes nearest-first right in both directions: a type declaration
-/// shadows every other type of that name in scope where it occurs, so the first
-/// scope to offer a name is the one that owns it.
-fn types_in_lexical_scopes(
-    point: &Point,
-    revision: Revision,
-) -> Vec<CompletionItem<jvm::model::Source>> {
-    let file = point.at.file;
-    let mut items: Vec<CompletionItem<jvm::model::Source>> = Vec::new();
-
-    for (_, scope) in file.iter_scope_chain(point.at.scope) {
-        for declaration_id in scope.declarations.iter().copied() {
-            let declaration = &file.declarations[declaration_id.0];
-            let kind = match declaration {
-                model::Declaration::Type(declaration) => type_kind(declaration.kind),
-                model::Declaration::TypeParameter(_) => CompletionItemKind::TypeParameter,
-                _ => continue,
-            };
-            let Some(name) = declaration.name() else {
-                continue;
-            };
-            if !name.text.starts_with(point.prefix) {
-                continue;
-            }
-            if items.iter().any(|item| item.label == name.text) {
-                continue;
-            }
-
-            items.push(CompletionItem {
-                label: name.text.clone(),
-                kind,
-                detail: file.declaration_label(declaration_id),
-                replace: point.replace,
-                handle: handle_for(point.at.source, file, declaration_id, revision),
-            });
-        }
-    }
-
-    items
-}
-
 /// `None` means one thing: this declaration's identity is file-local.
 ///
 /// A type parameter is never nameable from elsewhere. Neither is a local or an
@@ -315,17 +180,28 @@ fn types_in_lexical_scopes(
 /// confines them to one block regardless. Nothing that cannot be named from
 /// another file needs a handle, because a handle exists to be given away.
 fn handle_for(
-    source: &jvm::model::Source,
-    file: &model::File,
-    declaration_id: model::DeclarationId,
+    target: &TypeTarget,
+    query: &Query,
     revision: Revision,
 ) -> Option<Handle<jvm::model::Source>> {
-    let model::Declaration::Type(declaration) = &file.declarations[declaration_id.0] else {
-        return None;
+    let TypeTarget::Parsed {
+        source,
+        declaration,
+    } = target
+    else {
+        return Some(Handle {
+            source: target.source().clone(),
+            revision,
+            payload: target_label(target, query)?,
+        });
     };
 
+    let file = query.model_of(source)?;
+    let model::Declaration::Type(type_declaration) = &file.declarations[declaration.0] else {
+        return None;
+    };
     let declared_under_a_method = file
-        .iter_scope_chain(declaration.declaring_scope)
+        .iter_scope_chain(type_declaration.declaring_scope)
         .filter_map(|(_, scope)| scope.owner)
         .any(|owner| !matches!(file.declarations[owner.0], model::Declaration::Type(_)));
     if declared_under_a_method {
@@ -335,7 +211,7 @@ fn handle_for(
     Some(Handle {
         source: source.clone(),
         revision,
-        payload: file.declaration_label(declaration_id)?,
+        payload: target_label(target, query)?,
     })
 }
 
@@ -373,6 +249,27 @@ fn context_before(before_prefix: &str) -> Context {
     match before_prefix.chars().rev().find(|c| !c.is_whitespace()) {
         Some('.') => Context::Qualified,
         _ => Context::Unqualified,
+    }
+}
+
+/// What a row's icon says. A file we parsed carries the source keyword; the
+/// lake carries the projection of it, and neither is more authoritative than
+/// the other about a type it holds.
+fn kind_of(target: &TypeTarget, query: &Query) -> CompletionItemKind {
+    let TypeTarget::Parsed {
+        source,
+        declaration,
+    } = target
+    else {
+        return CompletionItemKind::Class;
+    };
+    let Some(file) = query.model_of(source) else {
+        return CompletionItemKind::Class;
+    };
+    match &file.declarations[declaration.0] {
+        model::Declaration::Type(declaration) => type_kind(declaration.kind),
+        model::Declaration::TypeParameter(_) => CompletionItemKind::TypeParameter,
+        _ => CompletionItemKind::Class,
     }
 }
 
