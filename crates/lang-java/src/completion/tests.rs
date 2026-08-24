@@ -1,3 +1,4 @@
+mod agreement;
 mod imports;
 mod java_lang;
 mod lexical;

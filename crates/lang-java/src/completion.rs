@@ -8,6 +8,7 @@ use crate::model;
 use crate::query::Query;
 use crate::resolution::{
     ResolutionCandidates, TypeTarget, candidates_from_java_lang, candidates_from_same_package,
+    resolve_type_candidates,
 };
 
 /// JLS 26 §6.3 names what completion is asked about:
@@ -84,7 +85,7 @@ pub(crate) fn complete(
     }
 
     let mut items = types_in_lexical_scopes(point, revision);
-    push_imports(&mut items, point, revision);
+    push_imports(&mut items, point, query, revision);
 
     // The two stages that name types nobody wrote down. Each name is enumerated
     // cheaply and handed back to the resolution stage that owns it, and only
@@ -98,16 +99,22 @@ pub(crate) fn complete(
 }
 
 /// Stage 2, §7.5.1. A single-type import introduces its last segment, and that
-/// segment is already in the model — this asks nothing of the lake.
+/// segment is in the model already.
 ///
-/// Nor does it check that the import resolves, which is the one place
-/// completion deliberately offers a name resolution rejects. An import is not a
-/// name we propose; it is one the user wrote, sitting in the buffer, already
-/// carrying its own squiggle when it is wrong. Declining to finish typing it
-/// protects nobody and reads as a bug.
+/// The name is offered whether or not anything answers it, which is the one
+/// place completion deliberately outlives resolution: an import is not a name we
+/// propose, it is one the user wrote, sitting in the buffer and already carrying
+/// its own squiggle when it is wrong.
+///
+/// What it *means* is still resolution's to say. An import naming an
+/// inaccessible type is a compile-time error (§7.5.1) and resolution keeps
+/// walking past it, so labelling the row with the import's own spelling would
+/// name a type the user cannot have. The import's spelling is the fallback for
+/// when nothing at all answers, and nothing else.
 fn push_imports(
     items: &mut Vec<CompletionItem<jvm::model::Source>>,
     point: &Point,
+    query: &Query,
     revision: Revision,
 ) {
     for import in &point.at.file.imports {
@@ -121,16 +128,29 @@ fn push_imports(
             continue;
         }
 
+        let resolved = resolve_type_candidates(
+            &model::Name::Simple(name.clone()),
+            point.at.source,
+            point.at.file,
+            point.at.scope,
+            query,
+        );
+        let target = resolved.valid().first();
         let dotted = import.name.dotted();
+
         items.push(CompletionItem {
             label: name.text.clone(),
             kind: CompletionItemKind::Class,
-            detail: Some(dotted.clone()),
+            detail: target
+                .and_then(|target| target_label(target, query))
+                .or(Some(dotted.clone())),
             replace: point.replace,
             handle: Some(Handle {
-                source: point.at.source.clone(),
+                source: target.map_or_else(|| point.at.source.clone(), |t| t.source().clone()),
                 revision,
-                payload: dotted,
+                payload: target
+                    .and_then(|target| target_label(target, query))
+                    .unwrap_or(dotted),
             }),
         });
     }
