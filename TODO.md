@@ -313,9 +313,9 @@ Cannot be built until we choose.
   queries keep answering at the current one — the same caret with no JDK in the
   lake answers in under 0.1 ms, against 769 ms with one.
 
-  Worth knowing before it is built: it changes what a list does under the cursor.
-  Four names arriving instantly and 108 more landing 770 ms later is a list that
-  jumps on every keystroke, so it wants the index above landed first.
+  Reading a JDK must not be what decides whether a caret gets an answer. Blocking
+  is the current behaviour rather than a requirement, and nothing above it asked
+  for it.
 
 - **Which architectural properties deserve their own tests?** Revision
   snapshots, replacement, deletion and batching are exercised only through
