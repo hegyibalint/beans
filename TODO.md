@@ -217,6 +217,15 @@ Not built yet. Nothing is wrong; there is just no code.
   revision is the obvious shape, and the `class_access` half of it disappears
   anyway once `TypeTarget::Compiled` carries the level (see **Wrong**).
 
+  Completion put a number on it, being the thing that asks the most: one
+  `classes_named` is a 2.75 ms pass over ~28,000 classes, and one keystroke in a
+  file with a JDK in scope costs 770 ms. That is 145 top-level `java.lang`
+  names, each scanned for twice — once to resolve and once for `class_access`.
+  Ten runs back to back gave 776 ms first and 776 ms last, so there is no
+  warm-up anyone is waiting on. Kept on purpose: the scans are what show where
+  an index would pay, and replacing them before the shape is settled would be
+  guessing.
+
 ## Undecided
 
 Cannot be built until we choose.
@@ -287,7 +296,26 @@ Cannot be built until we choose.
   seconds of the debug suite. The index is 1% of the file and already knows
   every name, and the perfect hash `container/jimage/index.rs` reads past
   exists to answer one of them at a time. What blocks the change is storage:
-  nothing says what `PlatformJvm` holds for a name it has not projected yet.
+  nothing says what `jvm::Platform` holds for a name it has not projected yet.
+  Measured at the engine surface rather than in the suite: `open_workspace` on
+  `examples/beans` with `jdk_home` set takes 4.67 s before it answers anything.
+
+  This is the one cost an index does not touch. Indexing the lake makes a lookup
+  cheap and does nothing about filling it, because 28,000 class files are parsed
+  either way. So the question is *when* rather than *how fast*, and it has two
+  answers: read less, or serve while reading.
+
+  Serving while reading needs one thing `Beans` does not do. `RevisionedStorage`
+  already answers at whatever revision it is asked for, so serving an older world
+  costs nothing. What fuses them is `Beans::process`, which bumps the revision
+  and publishes it in the same act, leaving no revision that is written and not
+  yet read. Splitting those would let a JDK load into the next revision while
+  queries keep answering at the current one — the same caret with no JDK in the
+  lake answers in under 0.1 ms, against 769 ms with one.
+
+  Worth knowing before it is built: it changes what a list does under the cursor.
+  Four names arriving instantly and 108 more landing 770 ms later is a list that
+  jumps on every keystroke, so it wants the index above landed first.
 
 - **Which architectural properties deserve their own tests?** Revision
   snapshots, replacement, deletion and batching are exercised only through
