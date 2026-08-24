@@ -142,14 +142,17 @@ impl<'jvm> Query<'jvm> {
     }
 
     /// Package in the binary-name sense: `p.Outer$Inner` lives in `p`, so
-    /// nested classes come back too; languages filter by `enclosing`.
-    pub fn classes_in_package(
-        &self,
-        package: &str,
-    ) -> Vec<(&'jvm model::Source, &'jvm model::Class)> {
+    /// nested classes come back too; languages filter by `$` (§13.1).
+    ///
+    /// Lazy, and that is load-bearing rather than a style. A resolver chains
+    /// this stage behind nearer ones and must not pay a full traversal for a
+    /// name an earlier stage already answered.
+    pub fn classes_in_package<'a>(
+        &'a self,
+        package: &'a str,
+    ) -> impl Iterator<Item = (&'jvm model::Source, &'jvm model::Class)> + 'a {
         self.all_classes()
-            .filter(|(_, class)| class.fqn.package() == package)
-            .collect()
+            .filter(move |(_, class)| class.fqn.package() == package)
     }
 
     fn all_classes(&self) -> impl Iterator<Item = (&'jvm model::Source, &'jvm model::Class)> {

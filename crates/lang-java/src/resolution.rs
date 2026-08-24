@@ -143,13 +143,6 @@ pub(crate) struct ResolutionCandidates {
 }
 
 impl ResolutionCandidates {
-    fn from_valid(candidates: impl IntoIterator<Item = TypeTarget>) -> Self {
-        candidates
-            .into_iter()
-            .map(ClassifiedTypeCandidate::Valid)
-            .collect()
-    }
-
     fn push(&mut self, candidate: ClassifiedTypeCandidate) {
         match candidate {
             ClassifiedTypeCandidate::Valid(target) => {
@@ -163,19 +156,6 @@ impl ResolutionCandidates {
                 }
             }
         }
-    }
-
-    fn or_stage(mut self, next: impl FnOnce() -> Self) -> Self {
-        if !self.valid.is_empty() {
-            return self;
-        }
-
-        let next = next();
-        self.valid = next.valid;
-        for candidate in next.invalid {
-            self.push(ClassifiedTypeCandidate::Invalid(candidate));
-        }
-        self
     }
 
     fn into_resolution(self) -> TypeResolution {
@@ -274,67 +254,294 @@ pub(crate) fn resolve_type_candidates(
         scope: current_lexical_scope_id,
     };
 
-    // Stage 1. Type parameters, member types and local types, nearest scope
-    // first. §6.4.1: a type declaration shadows every other type of that name
-    // in scope where it occurs, which is what makes nearest-first right.
-    candidates_from_lexical_scopes(name, source, file, current_lexical_scope_id)
-        // Stage 2. §7.5.1 rejects an inaccessible import. For useful recovery,
-        // follow javac: retain that failure without letting it hide an
-        // accessible answer from a lower stage.
-        .or_stage(|| candidates_from_exact_imports(name, source, file, query))
-        // Stage 3. Top-level types of the current package, in scope by §6.3.
-        .or_stage(|| candidates_from_same_package(name, &from, query))
-        // Stage 4. On-demand imports, of which §7.3's implicit `java.lang` one
-        // is the only one we read; §7.5.2's written-out ones join it here.
-        .or_stage(|| candidates_from_java_lang(name, &from, query))
-    // Stages 5–6 (module imports, suggestions) are not implemented. Their
-    // absence means no valid candidate, never a guess.
+    first_stage_that_answers(
+        types_in_scope(&from, query, Wanted::Exactly(&name.text)),
+        &from,
+        query,
+    )
 }
 
-fn candidates_from_lexical_scopes(
-    name: &model::Identifier,
-    source: &jvm::model::Source,
-    file: &model::File,
-    current_lexical_scope_id: model::LexicalScopeId,
-) -> ResolutionCandidates {
-    for (_, scope) in file.iter_scope_chain(current_lexical_scope_id) {
-        let candidates = scope
-            .declarations
-            .iter()
-            .copied()
-            .filter_map(|declaration_id| {
-                let declaration = file.declarations.get(declaration_id.0)?;
-                let declaration_name = match declaration {
-                    model::Declaration::Type(declaration) => declaration.name.as_ref(),
-                    model::Declaration::TypeParameter(declaration) => Some(&declaration.name),
-                    _ => None,
-                }?;
+/// Which rule put a candidate where it is. Ordering is the whole content of
+/// §6.4.1, so it lives here and is read by both the resolver above and the
+/// enumeration completion runs over the same chain.
+///
+/// Lexical scopes are one stage *each* rather than one between them: §6.4.1
+/// shadows across the chain as well as across the stages, so an inner
+/// declaration has to beat an outer one of the same name outright.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Stage {
+    /// Type parameters, member types and local types, by distance from the
+    /// point. §6.3 for being in scope, §6.4.1 for nearest-first.
+    LexicalScope(usize),
+    /// §7.5.1.
+    ExactImport,
+    /// §6.3: the top-level types of this compilation unit's package.
+    SamePackage,
+    /// §7.3's implicit `java.lang.*`. §7.5.2's written-out on-demand imports
+    /// join it here when they are read.
+    JavaLang,
+}
 
-                (declaration_name.text == name.text).then(|| TypeTarget::Parsed {
-                    source: source.clone(),
-                    declaration: declaration_id,
-                })
-            });
-        let candidates = ResolutionCandidates::from_valid(candidates);
-        if candidates.has_valid() {
-            return candidates;
+/// One candidate a stage spells, before scope and §6.6.1 have been asked about
+/// it. Classification is deliberately late: it costs two lake lookups, and
+/// resolving one name must not pay for the whole package it sits in.
+pub(crate) struct InScopeType {
+    pub(crate) name: String,
+    pub(crate) stage: Stage,
+    candidate: Unclassified,
+}
+
+enum Unclassified {
+    Target(TypeTarget),
+    /// §6.5.4.2's walk classifies each segment on the way, because an
+    /// inaccessible enclosing type has to propagate onto its member. What it
+    /// hands back is already decided.
+    Decided(ClassifiedTypeCandidate),
+}
+
+impl InScopeType {
+    pub(crate) fn classify(self, query: &Query, from: &Site) -> ClassifiedTypeCandidate {
+        match self.candidate {
+            Unclassified::Target(target) => classify_type_target(target, query, from),
+            Unclassified::Decided(candidate) => candidate,
+        }
+    }
+}
+
+/// What the chain is being asked for.
+///
+/// The two questions cost different things and a stage can tell them apart: one
+/// name is a keyed lookup into the lake, a prefix is a traversal of a package.
+/// Stating it here is what lets resolution and completion share one enumeration
+/// without resolution paying completion's price — filtering the answers instead
+/// would build a candidate for all 145 types of `java.lang` to keep one.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Wanted<'a> {
+    Exactly(&'a str),
+    StartingWith(&'a str),
+}
+
+impl Wanted<'_> {
+    fn matches(&self, name: &str) -> bool {
+        match self {
+            Self::Exactly(wanted) => name == *wanted,
+            Self::StartingWith(prefix) => name.starts_with(prefix),
         }
     }
 
-    ResolutionCandidates::default()
+    /// The one name a stage may look up directly, if that is what was asked.
+    fn keyed(&self) -> Option<&str> {
+        match self {
+            Self::Exactly(wanted) => Some(wanted),
+            Self::StartingWith(_) => None,
+        }
+    }
+}
+
+/// Every type in scope at `from` that `wanted` admits, in the order §6.4.1 ranks
+/// them.
+///
+/// This is the one statement of that order. `resolve_type_name` filters it by
+/// one name; completion filters it by a prefix. Lazily chained, so a name found
+/// in a near stage never enumerates a far one.
+///
+/// Stages 5 and 6 (module imports, suggestions) are not implemented. Their
+/// absence means no candidate, never a guess.
+pub(crate) fn types_in_scope<'a>(
+    from: &'a Site<'a>,
+    query: &'a Query<'a>,
+    wanted: Wanted<'a>,
+) -> impl Iterator<Item = InScopeType> + 'a {
+    lexical_scopes(from, wanted)
+        .chain(exact_imports(from, query, wanted))
+        .chain(same_package(from, query, wanted))
+        .chain(java_lang(from, query, wanted))
+}
+
+/// §6.4.1 as a fold: the first stage to produce a valid candidate answers, and
+/// the invalid ones passed over on the way are kept.
+///
+/// Keeping them is what javac does and what recovery needs — an inaccessible
+/// import is evidence worth reporting, and it must not hide an accessible
+/// answer from a later stage. It is also why this cannot be `find`.
+pub(crate) fn first_stage_that_answers(
+    candidates: impl Iterator<Item = InScopeType>,
+    from: &Site,
+    query: &Query,
+) -> ResolutionCandidates {
+    let mut answered = ResolutionCandidates::default();
+    let mut stage = None;
+
+    for candidate in candidates {
+        if stage != Some(candidate.stage) {
+            if answered.has_valid() {
+                break;
+            }
+            stage = Some(candidate.stage);
+        }
+        answered.push(candidate.classify(query, from));
+    }
+
+    answered
+}
+
+/// Stage 1. §6.3 puts type parameters, member types and local types in scope;
+/// §6.4.1 makes the nearest declaration shadow the rest, which is why each
+/// scope in the chain is its own stage rather than all of them being one.
+fn lexical_scopes<'a>(
+    from: &'a Site<'a>,
+    wanted: Wanted<'a>,
+) -> impl Iterator<Item = InScopeType> + 'a {
+    from.file
+        .iter_scope_chain(from.scope)
+        .enumerate()
+        .flat_map(move |(depth, (_, scope))| {
+            scope
+                .declarations
+                .iter()
+                .copied()
+                .filter_map(move |declaration_id| {
+                    let declaration = from.file.declarations.get(declaration_id.0)?;
+                    let name = match declaration {
+                        model::Declaration::Type(declaration) => declaration.name.as_ref(),
+                        model::Declaration::TypeParameter(declaration) => Some(&declaration.name),
+                        _ => None,
+                    }?;
+                    if !wanted.matches(&name.text) {
+                        return None;
+                    }
+
+                    Some(InScopeType {
+                        name: name.text.clone(),
+                        stage: Stage::LexicalScope(depth),
+                        // Valid outright rather than classified: the chain only
+                        // ever reaches declarations of this file that enclose
+                        // the point, so both ends of §6.6.1's question are the
+                        // same compilation unit and scope membership is a
+                        // question about somewhere else.
+                        candidate: Unclassified::Decided(ClassifiedTypeCandidate::Valid(
+                            TypeTarget::Parsed {
+                                source: from.source.clone(),
+                                declaration: declaration_id,
+                            },
+                        )),
+                    })
+                })
+        })
+}
+
+/// Stage 2. §7.5.1 rejects an inaccessible import, and javac keeps that failure
+/// as recovery evidence without letting it hide an answer from a later stage —
+/// which is what `first_stage_that_answers` does with the invalid half.
+fn exact_imports<'a>(
+    from: &'a Site<'a>,
+    query: &'a Query<'a>,
+    wanted: Wanted<'a>,
+) -> impl Iterator<Item = InScopeType> + 'a {
+    from.file
+        .imports
+        .iter()
+        .filter(|import| import.kind == model::ImportKind::Type)
+        .filter_map(move |import| {
+            let name = import.name.segments().last()?.text.clone();
+            // Before the walk, not after: §6.5.4.2 probes the lake once per
+            // segment, and an import nobody asked about should cost nothing.
+            if !wanted.matches(&name) {
+                return None;
+            }
+            Some((name, resolve_canonical_name(&import.name, from, query)))
+        })
+        .flat_map(|(name, candidates)| {
+            candidates.into_iter().map(move |candidate| InScopeType {
+                name: name.clone(),
+                stage: Stage::ExactImport,
+                candidate: Unclassified::Decided(candidate),
+            })
+        })
+}
+
+/// Stage 3. §6.3: the top-level types of this compilation unit's package.
+///
+/// A member type is dropped rather than offered: §6.5.5.1 puts one in scope by
+/// its simple name inside its enclosing type or through an import, never by
+/// sharing a package. The lake carries the package and nothing else about where
+/// a type sits, so §13.1's `$` is what tells them apart.
+fn same_package<'a>(
+    from: &'a Site<'a>,
+    query: &'a Query<'a>,
+    wanted: Wanted<'a>,
+) -> impl Iterator<Item = InScopeType> + 'a {
+    let package = from
+        .file
+        .package
+        .as_ref()
+        .map(model::Name::dotted)
+        .unwrap_or_default();
+
+    types_of_package(package, Stage::SamePackage, query, wanted)
+}
+
+/// Deferred so that building the chain costs nothing: the package traversal
+/// only runs if something pulls from this stage, which only happens when every
+/// nearer stage came up empty.
+fn types_of_package<'a>(
+    package: String,
+    stage: Stage,
+    query: &'a Query<'a>,
+    wanted: Wanted<'a>,
+) -> impl Iterator<Item = InScopeType> + 'a {
+    std::iter::once(package).flat_map(move |package| {
+        // One name is the binary name the lake was told at projection time, so
+        // it is a lookup rather than a walk over the package. A prefix has no
+        // such key and traverses.
+        let found: Vec<(String, TypeTarget)> = match wanted.keyed() {
+            Some(name) => query
+                .types_named(&jvm::model::BinaryName::in_package(&package, name))
+                .into_iter()
+                .map(|target| (name.to_string(), target))
+                .collect(),
+            None => query
+                .top_level_types_in_package(&package)
+                .filter(|(name, _)| wanted.matches(name))
+                .collect(),
+        };
+
+        found.into_iter().map(move |(name, target)| InScopeType {
+            name,
+            stage,
+            candidate: Unclassified::Target(target),
+        })
+    })
+}
+
+/// Stage 4. §7.3 treats every compilation unit as if `import java.lang.*;` stood
+/// after its package declaration, so this is stage 3 with the package fixed.
+///
+/// §7.3 imports the `public` types and a runtime image is full of the others.
+/// Keeping `java.lang.Shutdown` off the path `java.lang.String` takes is
+/// §6.6.1's doing, applied when these are classified rather than here.
+fn java_lang<'a>(
+    _from: &'a Site<'a>,
+    query: &'a Query<'a>,
+    wanted: Wanted<'a>,
+) -> impl Iterator<Item = InScopeType> + 'a {
+    types_of_package("java.lang".to_string(), Stage::JavaLang, query, wanted)
+}
+
+/// One stage of the chain, asked about one name. Every case that used to call a
+/// stage function directly goes through here, so a stage is still testable in
+/// isolation now that the pipeline is shared.
+#[cfg(test)]
+fn one_stage(
+    candidates: impl Iterator<Item = InScopeType>,
+    from: &Site,
+    query: &Query,
+) -> ResolutionCandidates {
+    first_stage_that_answers(candidates, from, query)
 }
 
 #[cfg(test)]
-fn resolve_type_from_lexical_scopes(
-    name: &model::Identifier,
-    source: &jvm::model::Source,
-    file: &model::File,
-    current_lexical_scope_id: model::LexicalScopeId,
-) -> TypeResolution {
-    candidates_from_lexical_scopes(name, source, file, current_lexical_scope_id).into_resolution()
-}
-
-pub(crate) fn candidates_from_exact_imports(
+fn candidates_from_exact_imports(
     name: &model::Identifier,
     source: &jvm::model::Source,
     file: &model::File,
@@ -345,13 +552,51 @@ pub(crate) fn candidates_from_exact_imports(
         file,
         scope: model::LexicalScopeId(0),
     };
+    one_stage(
+        exact_imports(&from, query, Wanted::Exactly(&name.text)),
+        &from,
+        query,
+    )
+}
 
-    file.imports
-        .iter()
-        .filter(|import| import.kind == model::ImportKind::Type)
-        .filter(|import| exact_import_introduces_name(import, name))
-        .flat_map(|import| resolve_canonical_name(&import.name, &from, query))
-        .collect()
+#[cfg(test)]
+fn candidates_from_same_package(
+    name: &model::Identifier,
+    from: &Site,
+    query: &Query,
+) -> ResolutionCandidates {
+    one_stage(
+        same_package(from, query, Wanted::Exactly(&name.text)),
+        from,
+        query,
+    )
+}
+
+#[cfg(test)]
+fn resolve_type_from_lexical_scopes(
+    name: &model::Identifier,
+    source: &jvm::model::Source,
+    file: &model::File,
+    current_lexical_scope_id: model::LexicalScopeId,
+) -> TypeResolution {
+    let from = Site {
+        source,
+        file,
+        scope: current_lexical_scope_id,
+    };
+    // Stage 1 decides its own candidates, so the query is never consulted.
+    let jvm = jvm::Platform::new();
+    let java = crate::Language::new();
+    let query = Query::new(
+        jvm::query::Query::new(&jvm, jvm::query::ScopeQuery::unscoped(), Default::default()),
+        &java,
+    );
+    one_stage(
+        lexical_scopes(&from, Wanted::Exactly(&name.text)),
+        &from,
+        &query,
+    )
+    .into_resolution()
 }
 
 #[cfg(test)]
@@ -361,7 +606,27 @@ fn resolve_type_from_exact_imports(
     file: &model::File,
     query: &Query,
 ) -> TypeResolution {
+    let from = Site {
+        source,
+        file,
+        scope: model::LexicalScopeId(0),
+    };
     candidates_from_exact_imports(name, source, file, query).into_resolution()
+}
+
+#[cfg(test)]
+fn resolve_from_same_package(
+    name: &model::Identifier,
+    source: &jvm::model::Source,
+    file: &model::File,
+    query: &Query,
+) -> TypeResolution {
+    let from = Site {
+        source,
+        file,
+        scope: model::LexicalScopeId(0),
+    };
+    candidates_from_same_package(name, &from, query).into_resolution()
 }
 
 /// A dotted name hides where the package stops and the type begins. JLS 26
@@ -543,78 +808,6 @@ fn member_types(target: &TypeTarget, name: &model::Identifier, query: &Query) ->
         }
         TypeTarget::Compiled { fqn, .. } => query.types_named(&fqn.nested(&name.text)),
     }
-}
-
-fn exact_import_introduces_name(import: &model::Import, name: &model::Identifier) -> bool {
-    import
-        .name
-        .segments()
-        .last()
-        .is_some_and(|imported| imported.text == name.text)
-}
-
-/// The current package plus the simple name is the binary name the lake was
-/// told about at projection time, so this is one lookup rather than a walk
-/// over every file comparing package declarations.
-pub(crate) fn candidates_from_same_package(
-    name: &model::Identifier,
-    from: &Site,
-    query: &Query,
-) -> ResolutionCandidates {
-    let package = from
-        .file
-        .package
-        .as_ref()
-        .map(model::Name::dotted)
-        .unwrap_or_default();
-
-    classify_types_named(
-        query,
-        &jvm::model::BinaryName::in_package(&package, &name.text),
-        from,
-    )
-}
-
-#[cfg(test)]
-fn resolve_from_same_package(
-    name: &model::Identifier,
-    source: &jvm::model::Source,
-    file: &model::File,
-    query: &Query,
-) -> TypeResolution {
-    candidates_from_same_package(
-        name,
-        &Site {
-            source,
-            file,
-            scope: model::LexicalScopeId(0),
-        },
-        query,
-    )
-    .into_resolution()
-}
-
-/// §7.3: every compilation unit is treated as if `import java.lang.*;` stood
-/// after its package declaration, so the package is fixed and the lookup is
-/// stage 3's with another prefix glued on. Nothing answers until a JDK is in the
-/// lake, and a runtime image out of this unit's scope answers as evidence only,
-/// which is what a project naming no JDK is told about `String`.
-///
-/// §7.3 imports the `public` types of `java.lang` and a runtime image is full of
-/// the others, so the accessibility check inside `classify_types_named` is what
-/// keeps `java.lang.Shutdown` off the path `java.lang.String` takes. The two
-/// disagree on why: §7.3 never imports the name, while we find the class and
-/// refuse it under §6.6.1, which leaves it behind as evidence.
-pub(crate) fn candidates_from_java_lang(
-    name: &model::Identifier,
-    from: &Site,
-    query: &Query,
-) -> ResolutionCandidates {
-    classify_types_named(
-        query,
-        &jvm::model::BinaryName::in_package("java.lang", &name.text),
-        from,
-    )
 }
 
 fn classify_types_named(

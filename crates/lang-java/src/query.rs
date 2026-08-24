@@ -31,21 +31,28 @@ impl<'a> Query<'a> {
             .collect()
     }
 
-    /// The simple names of the top-level types a package declares.
+    /// The top-level types a package declares, each with the best view we hold
+    /// of it, paired with the simple name it is in scope under.
     ///
     /// Nested types are dropped rather than returned: §6.5.5.1 puts a member
     /// type in scope by its simple name only inside its enclosing type or
     /// through an import, never by living in the same package. The lake cannot
     /// make that distinction for us — `classes_in_package` says so itself —
     /// because a binary name carries the package and nothing else about where
-    /// the type sits.
-    pub fn top_level_names_in_package(&self, package: &str) -> Vec<String> {
+    /// the type sits, so §13.1's `$` is what is left to read.
+    pub fn top_level_types_in_package<'q>(
+        &'q self,
+        package: &'q str,
+    ) -> impl Iterator<Item = (String, TypeTarget)> + 'q {
         self.jvm
             .classes_in_package(package)
-            .into_iter()
             .filter(|(_, class)| !class.fqn.is_nested())
-            .map(|(_, class)| class.fqn.simple_name().to_string())
-            .collect()
+            .map(move |(source, class)| {
+                (
+                    class.fqn.simple_name().to_string(),
+                    self.view_of(source, class),
+                )
+            })
     }
 
     pub fn scope_membership(&self, target: &TypeTarget) -> jvm::query::ScopeMembership {

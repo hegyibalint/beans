@@ -29,12 +29,14 @@ fn one_classpath_lands_at_one_revision() {
     assert!(
         jvm.query_from(&viewpoint, before)
             .classes_in_package("beans.fixture")
+            .collect::<Vec<_>>()
             .is_empty()
     );
 
     let classes = jvm
         .query_from(&viewpoint, imported)
-        .classes_in_package("beans.fixture");
+        .classes_in_package("beans.fixture")
+        .collect::<Vec<_>>();
     assert_eq!(classes.len(), 2);
     for expected in classpath {
         assert!(classes.iter().any(|(source, _)| {
@@ -56,7 +58,8 @@ fn a_jar_streams_its_root_classes_into_the_lake() {
 
     let classes = jvm
         .query_from(&viewpoint, revision)
-        .classes_in_package("beans.fixture");
+        .classes_in_package("beans.fixture")
+        .collect::<Vec<_>>();
     assert_eq!(classes.len(), 2);
     assert!(classes.iter().all(|(source, _)| {
         matches!(source, jvm::model::Source::JarEntry { jar_path: source_jar, .. } if source_jar == &jar_path)
