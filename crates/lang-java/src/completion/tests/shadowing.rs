@@ -35,7 +35,10 @@ class Test {
 ",
         ),
         ("p/Contested.java", "package p;\nclass Contested {}\n"),
-        ("q/Contested.java", "package q;\nclass Contested {}\n"),
+        (
+            "q/Contested.java",
+            "package q;\npublic class Contested {}\n",
+        ),
     ])
     .complete();
 

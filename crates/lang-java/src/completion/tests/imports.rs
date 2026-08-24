@@ -54,3 +54,31 @@ class Test {
 
     assert_eq!(labels(&items), ["Test"]);
 }
+
+/// The name is still offered, but the row must not name a type the user cannot
+/// have. §7.5.1 makes importing an inaccessible type a compile-time error, so
+/// resolution walks past it and reaches the sibling in this package instead —
+/// and that is what will happen when the user picks the row.
+#[test]
+fn an_inaccessible_import_is_labelled_with_what_actually_wins() {
+    let items = Workspace::of(&[
+        (
+            "p/Test.java",
+            "package p;
+import q.Contested;
+class Test {
+    <cur> field;
+}
+",
+        ),
+        ("p/Contested.java", "package p;\nclass Contested {}\n"),
+        ("q/Contested.java", "package q;\nclass Contested {}\n"),
+    ])
+    .complete();
+
+    assert!(labels(&items).contains(&"Contested"));
+    assert_eq!(
+        item(&items, "Contested").detail.as_deref(),
+        Some("p.Contested")
+    );
+}
