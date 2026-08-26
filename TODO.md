@@ -89,19 +89,38 @@ Not built yet. Nothing is wrong; there is just no code.
 
 - **Module imports**, stage 5 (§7.5.5). Needs the lake to hold modules first.
 
-- **Import suggestions**, stage 6. No JLS section; this is ours.
+- **Import suggestions**, stage 6. No JLS section; this is ours, and it is the
+  absence a user meets first: `ConcurrentHashMap` is on the classpath and in the
+  lake, and §6.5.5.1 wants a simple type name to be *in scope*, which it is not
+  without an import. So the row has to carry the import along with the name.
 
-- **Completion offers types and nothing else.** The
-  `crates/lang-java/src/completion.rs` mirrors the four type stages of
-  `resolve_type_candidates` and stops there, so a caret is never offered a
-  local, a parameter, a field or a method. The inverses are `resolve_variable_name`
-  and `find_member`, both of which it already has the visibility to call.
+  Four things it needs. A prefix query over the whole lake, where today's is per
+  package — and the one place the linear scans really bite, since it walks 28,000
+  classes rather than a package's 145. An item that carries an edit;
+  `CompletionItem` has `replace` and no insert. Somewhere to put that edit, which
+  `model::Import` cannot answer: it carries the name's span, not the
+  declaration's, so "after the last import" is not a question the model can be
+  asked. And one name stops being one row — `List` is `java.util.List` *and*
+  `java.awt.List` — which is the only piece that is shape rather than effort, and
+  nothing built forecloses it, because an importable candidate does not shadow
+  and appends rather than merges.
 
-  Two smaller gaps sit inside the stages it does have. On-demand and static
-  imports spell no name, because the entry above has not read them yet. And
-  every name a stage produces is resolved to decide whether to offer it, which
-  is one resolution per candidate per keystroke; the shape is what was wanted
-  first, and an index is what replaces the scan.
+  Undecided with it: what to do when an importable name is already in scope. It
+  cannot be imported without a conflict, so it is either dropped or offered with
+  a fully-qualified insertion instead. IDEA does the latter.
+
+- **A type position is offered variables and methods too.** The `Context` in
+  `crates/lang-java/src/completion.rs` distinguishes a qualified caret from an
+  unqualified one and nothing else, so `new ‸` and a type annotation get the
+  whole list. §4.11 names the 17 contexts where a type is what is wanted.
+  Harmless in the way a superset is, which is why it is still here. With it comes
+  the one test never written, `namespaces.rs`: a type position offers no locals.
+  The other half of that claim, that a dot offers nothing, is in `lexical.rs`.
+
+- **Every name completion offers is resolved to decide whether to offer it.**
+  One resolution per candidate per keystroke, which with a JDK in scope is the
+  770 ms the index entry above is about. The shape was wanted before the speed,
+  and an index is what replaces the scan rather than a cache around it.
 
 - **Nothing ever drops a revision.** `Beans::process` bumps one per call and the
   LSP declares `TextDocumentSyncKind::FULL`, so an editor sends the whole
@@ -122,9 +141,28 @@ Not built yet. Nothing is wrong; there is just no code.
   and `jvm::model::Method::access` are decoded, pinned by
   `class_file/tests/declarations.rs`, and read by nobody.
 
-- **Inherited member types** (§§8.2 and 9.2). A member type of a superclass or a
+- **Inherited members** (§§8.2 and 9.2). A member of a superclass or a
   superinterface is in scope in the subclass, and we do not walk the hierarchy.
-  The same hierarchy is what `Protected` needs above.
+  The same hierarchy is what `Protected` needs above. Member types are one half;
+  the other is every method, which is why `toString` is offered in no Java class
+  at all — the most visible absence completion has, and the only one that reads
+  as wrong rather than unbuilt.
+
+  The walk itself is not the problem. §8.4.8 makes it nearest-first, which is the
+  same fold `first_stage_that_answers` already runs, and a handful of hops costs
+  nothing once a hop is an index lookup rather than a traversal. Do not cache a
+  hierarchy on top of a linear scan; index the lake and the walk is free.
+
+  The problem is that there is no hierarchy to walk. `projection.rs` writes
+  `superclass: None` and `interfaces: Vec::new()` for every parsed Java class, so
+  a source type contributes none of it to the lake — class files do, since
+  `class_file.rs` decodes all three. Under that sit two more: `model::TypeDeclaration`
+  has no `interfaces` field, and the parser reads `extends` and never `implements`.
+
+  And the last step is the same tension method descriptors have. A `TypeRef` is a
+  name as written; the lake wants a `BinaryName`; turning one into the other is
+  resolution, and `project_to_jvm(file)` has no query. Either projection gains
+  one, or the lake stores supertypes unresolved and resolves them on read.
 
 - **Qualified type references** (§6.5.5.2). The `resolve_type_name` returns
   `Unresolved` for anything that is not a simple name; the
