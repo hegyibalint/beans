@@ -7,7 +7,8 @@ use crate::accessibility::Site;
 use crate::model;
 use crate::query::Query;
 use crate::resolution::{
-    InScopeType, TypeTarget, Wanted, first_stage_that_answers, types_in_scope,
+    InScopeMethod, InScopeType, InScopeVariable, TypeTarget, Wanted, first_stage_that_answers,
+    methods_in_scope, types_in_scope, variables_in_scope,
 };
 
 /// JLS 26 §6.3 names what completion is asked about:
@@ -103,7 +104,98 @@ pub(crate) fn complete(
     }
 
     push_unplaced_imports(&mut items, point, revision);
+    push_variables(&mut items, point);
+    push_methods(&mut items, point);
     items
+}
+
+/// §6.5.6's namespace. Nothing here is classified: a declaration reached through
+/// your own scope chain is inside the compilation unit you are standing in, so
+/// §6.6.1 has nothing to ask.
+///
+/// No handle. A local, a parameter and a type parameter have no binary name and
+/// never will; a field does, but naming one needs the enclosing type and that is
+/// the same identity question methods have.
+fn push_variables(items: &mut Vec<CompletionItem<jvm::model::Source>>, point: &Point) {
+    let file = point.at.file;
+    let mut depth_of: Vec<(String, usize)> = Vec::new();
+
+    for variable in variables_in_scope(
+        file,
+        point.at.scope,
+        point.replace.end,
+        Wanted::StartingWith(point.prefix),
+    ) {
+        // §6.4.1 per name: a nearer declaration takes the spelling outright.
+        if let Some((_, won)) = depth_of.iter().find(|(name, _)| *name == variable.name) {
+            if *won != variable.depth {
+                continue;
+            }
+        }
+        depth_of.push((variable.name.clone(), variable.depth));
+
+        let declaration = &file.declarations[variable.declaration.0];
+        items.push(CompletionItem {
+            label: variable.name,
+            kind: match declaration {
+                model::Declaration::Parameter(_) => CompletionItemKind::Parameter,
+                model::Declaration::Field(_) => CompletionItemKind::Field,
+                _ => CompletionItemKind::Variable,
+            },
+            detail: written_type(declaration),
+            replace: point.replace,
+            handle: None,
+        });
+    }
+}
+
+/// §6.5.7's namespace, for a call with no receiver.
+///
+/// One row per declaration rather than per name, unlike every other namespace
+/// here. A user completing a type is choosing a name; a user completing a call
+/// is choosing between signatures, and §15.12.2 would need arguments nobody has
+/// typed yet to pick for them.
+fn push_methods(items: &mut Vec<CompletionItem<jvm::model::Source>>, point: &Point) {
+    let file = point.at.file;
+
+    for method in methods_in_scope(file, point.at.scope, Wanted::StartingWith(point.prefix)) {
+        items.push(CompletionItem {
+            label: method.name,
+            kind: CompletionItemKind::Method,
+            detail: Some(signature(file, method.declaration)),
+            replace: point.replace,
+            handle: None,
+        });
+    }
+}
+
+/// A declaration's type as it is written, not as it resolves. `String s` reads
+/// `String` whether or not anything answers that name, which is what an editor
+/// shows and costs nothing to produce.
+fn written_type(declaration: &model::Declaration) -> Option<String> {
+    Some(declaration.type_ref()?.name.dotted())
+}
+
+/// `(int, String) -> void`, from the source spelling of each part. Enough to
+/// tell two overloads apart, which is the only thing the list needs it for.
+fn signature(file: &model::File, declaration: model::DeclarationId) -> String {
+    let model::Declaration::Method(method) = &file.declarations[declaration.0] else {
+        return String::new();
+    };
+
+    let parameters: Vec<String> = method
+        .parameters
+        .iter()
+        .map(|parameter| {
+            written_type(&file.declarations[parameter.0]).unwrap_or_else(|| "?".to_string())
+        })
+        .collect();
+    let returns = method
+        .return_type
+        .as_ref()
+        .map_or_else(|| "void".to_string(), |ty| ty.name.dotted());
+
+    format!("({}) -> {returns}", parameters.join(", "))
 }
 
 /// The chain grouped by spelling, keeping the order stages produced them in so

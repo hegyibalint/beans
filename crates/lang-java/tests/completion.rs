@@ -13,7 +13,7 @@ use beans_platform_jvm as jvm;
 use beans_test_support::markers::strip_markers;
 
 #[test]
-fn types_in_scope_reach_the_public_api() {
+fn what_is_in_scope_reaches_the_public_api() {
     let path = PathBuf::from("app/p/Test.java");
     let stripped = strip_markers(
         "package p;
@@ -45,6 +45,8 @@ class Test {
         )
         .expect("a parsed Java file completes");
 
+    // One row from each namespace §6.1 has: a type, and the method the caret
+    // sits inside. Which names each produces is settled in `completion/tests`.
     let labels: Vec<&str> = items.iter().map(|item| item.label.as_str()).collect();
-    assert_eq!(labels, ["Inner", "Test"]);
+    assert_eq!(labels, ["Inner", "Test", "m"]);
 }

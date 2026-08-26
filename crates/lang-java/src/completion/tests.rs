@@ -2,8 +2,10 @@ mod agreement;
 mod imports;
 mod java_lang;
 mod lexical;
+mod methods;
 mod same_package;
 mod shadowing;
+mod variables;
 
 use std::path::PathBuf;
 
@@ -105,6 +107,26 @@ impl Workspace {
 /// One file, no lake beyond what it projects itself.
 fn complete_at_cursor(contents: &str) -> Vec<CompletionItem<jvm::model::Source>> {
     Workspace::of(&[("p/Test.java", contents)]).complete()
+}
+
+/// Only the rows §6.5.5 produced, for a claim that is about types while the
+/// other two namespaces share the same list.
+fn type_labels(items: &[CompletionItem<jvm::model::Source>]) -> Vec<&str> {
+    items
+        .iter()
+        .filter(|item| {
+            matches!(
+                item.kind,
+                CompletionItemKind::Class
+                    | CompletionItemKind::Interface
+                    | CompletionItemKind::Enum
+                    | CompletionItemKind::Record
+                    | CompletionItemKind::AnnotationInterface
+                    | CompletionItemKind::TypeParameter
+            )
+        })
+        .map(|item| item.label.as_str())
+        .collect()
 }
 
 fn labels(items: &[CompletionItem<jvm::model::Source>]) -> Vec<&str> {
