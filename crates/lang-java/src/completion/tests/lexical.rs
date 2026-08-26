@@ -18,7 +18,9 @@ class Sibling {}
     );
 
     // §6.4.1's nearest-first, which is also the order resolution stops in.
-    assert_eq!(labels(&items), ["Inner", "Test", "Sibling"]);
+    // Filtered to types: variables and methods share the list and have their
+    // own ordering rules.
+    assert_eq!(type_labels(&items), ["Inner", "Test", "Sibling"]);
 }
 
 #[test]
@@ -124,21 +126,4 @@ class Test {
 
     assert!(item(&items, "Member").handle.is_some());
     assert!(item(&items, "Local").handle.is_none());
-}
-
-#[test]
-fn only_types_are_offered_yet() {
-    let items = complete_at_cursor(
-        "package p;
-class Test {
-    int field;
-    void method() {
-        <cur>
-    }
-}
-",
-    );
-
-    assert!(!labels(&items).contains(&"field"));
-    assert!(!labels(&items).contains(&"method"));
 }

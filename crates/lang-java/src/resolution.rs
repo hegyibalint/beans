@@ -22,13 +22,41 @@ use crate::{model, query::Query};
 
 pub(crate) use candidates::{ResolutionCandidates, TypeInvalidity, first_stage_that_answers};
 pub use candidates::{TypeResolution, TypeTarget};
-pub(crate) use methods::find_member;
-pub(crate) use types::{
-    InScopeType, Wanted, resolve_type_candidates, resolve_type_name, types_in_scope,
-};
-pub(crate) use variables::resolve_variable_name;
+pub(crate) use methods::{InScopeMethod, find_member, methods_in_scope};
+pub(crate) use types::{InScopeType, resolve_type_candidates, resolve_type_name, types_in_scope};
+pub(crate) use variables::{InScopeVariable, resolve_variable_name, variables_in_scope};
 
 use types::resolve_type_reference;
+
+/// What the chain is being asked for.
+///
+/// The two questions cost different things and a stage can tell them apart: one
+/// name is a keyed lookup into the lake, a prefix is a traversal of a package.
+/// Stating it here is what lets resolution and completion share one enumeration
+/// without resolution paying completion's price — filtering the answers instead
+/// would build a candidate for all 145 types of `java.lang` to keep one.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Wanted<'a> {
+    Exactly(&'a str),
+    StartingWith(&'a str),
+}
+
+impl Wanted<'_> {
+    pub(crate) fn matches(&self, name: &str) -> bool {
+        match self {
+            Self::Exactly(wanted) => name == *wanted,
+            Self::StartingWith(prefix) => name.starts_with(prefix),
+        }
+    }
+
+    /// The one name a stage may look up directly, if that is what was asked.
+    pub(super) fn keyed(&self) -> Option<&str> {
+        match self {
+            Self::Exactly(wanted) => Some(wanted),
+            Self::StartingWith(_) => None,
+        }
+    }
+}
 
 /// Resolves the occurrence at `offset` to the declarations it refers to.
 /// This is the go-to-declaration entry point.

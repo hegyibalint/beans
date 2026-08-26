@@ -12,6 +12,8 @@ use crate::model;
 use super::methods::find_member;
 use crate::query::Query;
 
+use super::Wanted;
+
 use super::candidates::{
     ClassifiedTypeCandidate, InvalidTypeCandidate, ResolutionCandidates, TypeInvalidity,
     TypeResolution, TypeTarget, first_stage_that_answers,
@@ -104,36 +106,6 @@ impl InScopeType {
         match self.candidate {
             Unclassified::Target(target) => classify_type_target(target, query, from),
             Unclassified::Decided(candidate) => candidate,
-        }
-    }
-}
-
-/// What the chain is being asked for.
-///
-/// The two questions cost different things and a stage can tell them apart: one
-/// name is a keyed lookup into the lake, a prefix is a traversal of a package.
-/// Stating it here is what lets resolution and completion share one enumeration
-/// without resolution paying completion's price — filtering the answers instead
-/// would build a candidate for all 145 types of `java.lang` to keep one.
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum Wanted<'a> {
-    Exactly(&'a str),
-    StartingWith(&'a str),
-}
-
-impl Wanted<'_> {
-    fn matches(&self, name: &str) -> bool {
-        match self {
-            Self::Exactly(wanted) => name == *wanted,
-            Self::StartingWith(prefix) => name.starts_with(prefix),
-        }
-    }
-
-    /// The one name a stage may look up directly, if that is what was asked.
-    fn keyed(&self) -> Option<&str> {
-        match self {
-            Self::Exactly(wanted) => Some(wanted),
-            Self::StartingWith(_) => None,
         }
     }
 }
