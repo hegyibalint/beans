@@ -205,7 +205,7 @@ fn an_inaccessible_import_does_not_hide_an_accessible_same_package_type() {
         body,
         &java_query(&java, &jvm, Revision::default()),
     );
-    assert_eq!(candidates.valid.len(), 1);
+    assert_eq!(candidates.valid().len(), 1);
     assert!(candidates.has_invalidity(TypeInvalidity::Inaccessible));
 }
 
