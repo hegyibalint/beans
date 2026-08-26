@@ -223,8 +223,22 @@ fn handle_request_hover(beans: &Beans, params: HoverParams) -> Option<Hover> {
     })
 }
 
-/// `isIncomplete` is always true: the engine filtered by the prefix behind the
-/// caret, so the list describes this keystroke and not the next one.
+/// `isIncomplete` is the only freshness lever the protocol gives a server.
+///
+/// There is no `workspace/completion/refresh` — code lens, diagnostics, inlay
+/// hints, inline values and semantic tokens each have one and completion does
+/// not — so a list handed over cannot be updated. Saying it is incomplete is
+/// what makes the client come back, which it reports as
+/// `CompletionTriggerKind::TRIGGER_FOR_INCOMPLETE_COMPLETIONS`.
+///
+/// True unconditionally, for now, because the engine cannot say whether it
+/// answered from everything it will eventually hold: reading a JDK is not
+/// separable from publishing it. When it is, this becomes that question, and
+/// `false` lets the client cache the list and filter it locally.
+///
+/// It is *not* about our filtering by prefix. That reasoning would make `false`
+/// look like an optimisation and would quietly remove the only way a list ever
+/// changes.
 fn handle_request_completion(
     beans: &Beans,
     params: CompletionParams,
