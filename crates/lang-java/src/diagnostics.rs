@@ -21,8 +21,8 @@ pub fn type_scope_diagnostics(
 ) -> Vec<Diagnostics> {
     file.declarations
         .iter()
-        .filter_map(|declaration| {
-            let type_ref = declaration.type_ref()?;
+        .flat_map(|declaration| written_types(declaration).map(move |ty| (declaration, ty)))
+        .filter_map(|(declaration, type_ref)| {
             if type_ref.primitive {
                 return None;
             }
@@ -47,6 +47,22 @@ pub fn type_scope_diagnostics(
                 })
         })
         .collect()
+}
+
+/// Every type a declaration names in source: the one it is annotated with, and
+/// for a type declaration each name in its `extends` and `implements` clauses.
+/// §8.1.4 and §9.1.3 make a supertype a type reference like any other, so the
+/// same question is worth asking of it.
+fn written_types(declaration: &model::Declaration) -> impl Iterator<Item = &model::TypeRef> {
+    let supertypes = match declaration {
+        model::Declaration::Type(declaration) => Some(declaration.supertypes()),
+        _ => None,
+    };
+
+    declaration
+        .type_ref()
+        .into_iter()
+        .chain(supertypes.into_iter().flatten().map(|(_, ty)| ty))
 }
 
 /// Flags member accesses that resolve to a declaration JLS 26 §6.6.1 does not
@@ -163,13 +179,17 @@ pub fn unresolved_name_diagnostics(model: &model::File) -> Vec<Diagnostics> {
 
     let mut diagnostics = Vec::new();
     for body in &model.bodies {
-        // A superclass hides inherited members from us; bare names inherited
-        // through it would be false positives.
+        // A supertype hides inherited members from us; bare names inherited
+        // through one would be false positives. §9.3 makes an interface's
+        // fields constants a class reaches by their simple name, so
+        // `implements` counts here exactly as `extends` does.
         let inherits = model.iter_scope_chain(body.scope).any(|(_, scope)| {
             scope
                 .owner
                 .is_some_and(|owner| match &model.declarations[owner.0] {
-                    model::Declaration::Type(declaration) => declaration.superclass.is_some(),
+                    model::Declaration::Type(declaration) => {
+                        declaration.supertypes().next().is_some()
+                    }
                     _ => false,
                 })
         });
@@ -286,6 +306,43 @@ mod tests {
             "type X is outside the current compilation scope"
         );
         let start = contents.find("X target").unwrap();
+        assert_eq!(diagnostics[0].span.start.0, start);
+        assert_eq!(diagnostics[0].span.end.0, start + 1);
+    }
+
+    /// §8.1.5's `implements` names a type like any other, so it is asked the
+    /// same question. Written with `implements` rather than `extends` because
+    /// only one of the two clauses is new: the superclass reached this check
+    /// through `Declaration::type_ref`, and the interface list never did.
+    #[test]
+    fn flags_a_supertype_outside_the_compilation_scope() {
+        let revision = Revision::default();
+        let mut java = Language::new();
+        let mut jvm = jvm::Platform::new();
+        process(
+            &mut java,
+            &mut jvm,
+            revision,
+            "test/p/X.java",
+            "package p; public interface X {}",
+        );
+        let contents = "package p; class Test implements X {}";
+        let current = process(&mut java, &mut jvm, revision, "main/p/Test.java", contents);
+        jvm.register_scopes(
+            revision,
+            current.clone(),
+            vec![jvm::query::Scope::of(vec![jvm::query::Container::Source(
+                PathBuf::from("main"),
+            )])],
+        );
+        let file = java.model_at(&current, revision).unwrap();
+        let query = Query::new(jvm.query_from(&current, revision), &java);
+
+        let diagnostics = type_scope_diagnostics(&current, file, &query);
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, "type-outside-scope");
+        let start = contents.find("X {}").unwrap();
         assert_eq!(diagnostics[0].span.start.0, start);
         assert_eq!(diagnostics[0].span.end.0, start + 1);
     }

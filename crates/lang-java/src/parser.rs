@@ -261,6 +261,7 @@ fn add_type_declaration(
         .child_by_field_name("superclass")
         .and_then(|superclass| superclass.named_child(0))
         .and_then(|ty| parse_type_ref(ty, src));
+    let interfaces = parse_super_interfaces(node, src);
     let body_scope = new_scope(file, declaring_scope, None, body.byte_range().into());
 
     let declaration = add_declaration(
@@ -272,6 +273,7 @@ fn add_type_declaration(
             kind,
             access: parse_access(node),
             superclass,
+            interfaces,
             declaring_scope,
             body_scope,
         }),
@@ -281,6 +283,32 @@ fn add_type_declaration(
     walk_type_body(body, body_scope, src, file);
 
     Some(declaration)
+}
+
+/// The direct superinterfaces of a declaration, which two clauses spell.
+///
+/// A class, enum or record writes `implements` (§8.1.5) and the grammar hands
+/// it over as the `interfaces` field. An interface writes `extends` (§9.1.3)
+/// for the same list, and the grammar gives it no field at all — an
+/// `extends_interfaces` child sits among the modifiers. Both wrap exactly one
+/// `type_list`, which is the only reason one function can answer for both.
+///
+/// An annotation interface reaches here and has neither, which is right: §9.6
+/// gives it no supertype clause to write.
+fn parse_super_interfaces(node: Node, src: &str) -> Vec<model::TypeRef> {
+    let mut cursor = node.walk();
+    let clause = node.child_by_field_name("interfaces").or_else(|| {
+        node.named_children(&mut cursor)
+            .find(|child| child.kind() == "extends_interfaces")
+    });
+    let Some(list) = clause.and_then(|clause| clause.named_child(0)) else {
+        return Vec::new();
+    };
+
+    let mut cursor = list.walk();
+    list.named_children(&mut cursor)
+        .filter_map(|ty| parse_type_ref(ty, src))
+        .collect()
 }
 
 fn walk_type_body(node: Node, scope: model::LexicalScopeId, src: &str, file: &mut model::File) {
@@ -922,6 +950,138 @@ mod tests {
                 model::TypeKind::AnnotationInterface,
             ]
         );
+    }
+
+    // JLS 26 §8.1.4 gives a class its `extends` clause and §8.1.5 its
+    // `implements`; §9.1.3 spells an interface's superinterfaces with
+    // `extends`, which is the same list under the other keyword. The model
+    // keeps the two clauses apart, so each case below asks which half a
+    // spelling landed in.
+    mod supertypes {
+        use super::*;
+
+        fn supertypes_of(
+            file: &model::File,
+            id: model::DeclarationId,
+        ) -> (Option<String>, Vec<String>) {
+            let declaration = type_declaration(file, id);
+            (
+                declaration.superclass.as_ref().map(|ty| ty.name.dotted()),
+                declaration
+                    .interfaces
+                    .iter()
+                    .map(|ty| ty.name.dotted())
+                    .collect(),
+            )
+        }
+
+        #[test]
+        fn a_class_keeps_its_superclass_apart_from_its_interfaces() {
+            let mut parser = Parser::new();
+            let file = parser.parse("class C extends B implements A, D {}");
+
+            assert_eq!(
+                supertypes_of(&file, model::DeclarationId(0)),
+                (
+                    Some("B".to_string()),
+                    vec!["A".to_string(), "D".to_string()]
+                )
+            );
+        }
+
+        /// §9.1.3: an interface `extends` its superinterfaces, so the keyword
+        /// says superclass and the meaning says interface. The grammar agrees —
+        /// it gives `interface_declaration` no `superclass` field at all — and
+        /// this is the case that would break if we read one.
+        #[test]
+        fn an_interface_extends_into_the_interface_list() {
+            let mut parser = Parser::new();
+            let file = parser.parse("interface I extends A, B {}");
+
+            assert_eq!(
+                supertypes_of(&file, model::DeclarationId(0)),
+                (None, vec!["A".to_string(), "B".to_string()])
+            );
+        }
+
+        /// §8.1.4 gives an enum `Enum` and a record `Record` implicitly, so
+        /// neither may write `extends` and both may write `implements`.
+        #[test]
+        fn an_enum_and_a_record_implement_without_extending() {
+            let mut parser = Parser::new();
+            let file = parser.parse("enum E implements A {} record R() implements A {}");
+
+            for id in [model::DeclarationId(0), model::DeclarationId(1)] {
+                assert_eq!(supertypes_of(&file, id), (None, vec!["A".to_string()]));
+            }
+        }
+
+        /// Nothing written is no supertype, not an implicit one. §8.1.4's
+        /// `Object` and §9.2's borrowed `Object` methods are resolution's to
+        /// supply, and an annotation interface (§9.6) has no clause to write.
+        #[test]
+        fn a_declaration_with_no_clause_names_no_supertype() {
+            let mut parser = Parser::new();
+            let file = parser.parse("class C {} interface I {} @interface A {}");
+
+            for id in 0..3 {
+                assert_eq!(
+                    supertypes_of(&file, model::DeclarationId(id)),
+                    (None, Vec::new())
+                );
+            }
+        }
+
+        /// §8.2 takes members from the direct superclass before the direct
+        /// superinterfaces, and this iterator is where that order is stated.
+        #[test]
+        fn the_superclass_is_enumerated_before_the_interfaces() {
+            let mut parser = Parser::new();
+            let file = parser.parse("class C extends B implements A, D {}");
+
+            let enumerated: Vec<_> = type_declaration(&file, model::DeclarationId(0))
+                .supertypes()
+                .map(|(id, ty)| (id, ty.name.dotted()))
+                .collect();
+
+            assert_eq!(
+                enumerated,
+                [
+                    (model::SupertypeId::Superclass, "B".to_string()),
+                    (model::SupertypeId::Interface(0), "A".to_string()),
+                    (model::SupertypeId::Interface(1), "D".to_string()),
+                ]
+            );
+        }
+
+        /// Two names in one clause have to be told apart: a caret in `A` and a
+        /// caret in `D` are different references, and `EntityId::TypeRef` names
+        /// only the declaration that owns them.
+        #[test]
+        fn a_caret_lands_on_the_supertype_it_is_inside() {
+            let content = "class C extends B implements A, D {}";
+            let mut parser = Parser::new();
+            let file = parser.parse(content);
+
+            let at = |needle: &str| {
+                let offset = Offset(content.find(needle).expect("spelled once"));
+                file.position_index.tightest_containing(offset).unwrap().1
+            };
+
+            let owner = model::DeclarationId(0);
+            assert_eq!(
+                at("B"),
+                model::EntityId::Supertype(owner, model::SupertypeId::Superclass)
+            );
+            assert_eq!(
+                at("A"),
+                model::EntityId::Supertype(owner, model::SupertypeId::Interface(0))
+            );
+            assert_eq!(
+                at("D"),
+                model::EntityId::Supertype(owner, model::SupertypeId::Interface(1))
+            );
+        }
     }
 
     // JLS 26 §6.6.1 gives four levels and no fifth for "nothing was written".

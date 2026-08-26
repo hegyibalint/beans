@@ -248,14 +248,16 @@ impl Declaration {
         }
     }
 
-    /// The type annotation owned by this declaration, if any.
+    /// The type annotation owned by this declaration, if any. A type
+    /// declaration has none: its `extends` and `implements` clauses are a list
+    /// rather than an annotation, and `TypeDeclaration::supertypes` answers
+    /// for them.
     pub fn type_ref(&self) -> Option<&TypeRef> {
         match self {
             Self::Field(declaration) => declaration.referenced_type.as_ref(),
             Self::Method(declaration) => declaration.return_type.as_ref(),
             Self::Parameter(declaration) => declaration.ty.as_ref(),
             Self::Local(declaration) => declaration.ty.as_ref(),
-            Self::Type(declaration) => declaration.superclass.as_ref(),
             _ => None,
         }
     }
@@ -279,9 +281,57 @@ pub struct TypeDeclaration {
     /// `None` where §8.1.1 says access control does not apply: local and
     /// anonymous classes.
     pub access: Option<Access>,
+    /// §8.1.4's `extends` clause. Only a normal class declaration has one, so
+    /// this is `None` for an interface, an enum and a record however they were
+    /// written.
     pub superclass: Option<TypeRef>,
+    /// §8.1.5's `implements` clause, and §9.1.3's `extends` clause — which is
+    /// the same list under a different keyword, and why an interface's
+    /// supertypes land here rather than in `superclass`.
+    pub interfaces: Vec<TypeRef>,
     pub declaring_scope: LexicalScopeId,
     pub body_scope: LexicalScopeId,
+}
+
+/// Which supertype of a declaration, for something holding on to one.
+///
+/// Two clauses rather than one flat index, because a flat index means
+/// different things depending on what was written: position 0 is the
+/// superclass in `class C extends B implements A` and a superinterface in
+/// `interface I extends A`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SupertypeId {
+    Superclass,
+    Interface(usize),
+}
+
+impl TypeDeclaration {
+    /// Every supertype this declaration names, in §8.2's order: what it
+    /// inherits from its direct superclass, then from its direct
+    /// superinterfaces.
+    ///
+    /// Only what was written. §8.1.4 gives a class with no `extends` clause
+    /// `Object` as its direct superclass type, and §9.2 does the equivalent for
+    /// a bare interface, but neither appears in the source and neither belongs
+    /// in a model of it.
+    pub fn supertypes(&self) -> impl Iterator<Item = (SupertypeId, &TypeRef)> {
+        self.superclass
+            .iter()
+            .map(|type_ref| (SupertypeId::Superclass, type_ref))
+            .chain(
+                self.interfaces
+                    .iter()
+                    .enumerate()
+                    .map(|(index, type_ref)| (SupertypeId::Interface(index), type_ref)),
+            )
+    }
+
+    pub fn supertype(&self, id: SupertypeId) -> Option<&TypeRef> {
+        match id {
+            SupertypeId::Superclass => self.superclass.as_ref(),
+            SupertypeId::Interface(index) => self.interfaces.get(index),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -464,8 +514,12 @@ pub enum Expression {
 pub enum EntityId {
     Declaration(DeclarationId),
     /// The type annotation owned by a declaration (field/parameter/local type,
-    /// method return type, superclass).
+    /// method return type).
     TypeRef(DeclarationId),
+    /// One name written in a type declaration's `extends` or `implements`
+    /// clause. Separate from `TypeRef` because there can be several and a
+    /// caret has to land on the one it is inside.
+    Supertype(DeclarationId, SupertypeId),
     BodyNode(BodyId, BodyNodeId),
     Scope(LexicalScopeId),
     Import(usize),
@@ -491,6 +545,11 @@ impl PositionIndex {
             }
             if let Some(type_ref) = declaration.type_ref() {
                 entries.push((type_ref.span, EntityId::TypeRef(id)));
+            }
+            if let Declaration::Type(declaration) = declaration {
+                for (supertype, type_ref) in declaration.supertypes() {
+                    entries.push((type_ref.span, EntityId::Supertype(id, supertype)));
+                }
             }
         }
 
@@ -591,6 +650,7 @@ mod tests {
                 kind: TypeKind::Class,
                 access: None,
                 superclass: None,
+                interfaces: Vec::new(),
                 declaring_scope: declaring,
                 body_scope: body,
             })

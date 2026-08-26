@@ -151,6 +151,27 @@ fn a_parameter_type_resolves_to_a_class_in_another_file() {
     worked_example().assert_resolves("B_ref", "B");
 }
 
+/// §8.1.4's `extends` and §8.1.5's `implements` name types like any other
+/// reference, so a caret in one has to reach what it names. All three in one
+/// test because the model files them in two different halves and one arm of
+/// `resolve_occurrence_at` answers for both.
+#[test]
+fn a_supertype_resolves_to_the_type_it_names() {
+    let workspace = Workspace::load(&[
+        ("Base.java", "class <cur:Base>Base {}\n"),
+        ("Left.java", "interface <cur:Left>Left {}\n"),
+        ("Right.java", "interface <cur:Right>Right {}\n"),
+        (
+            "C.java",
+            "class C extends <cur:extends>Base implements <cur:first>Left, <cur:second>Right {}\n",
+        ),
+    ]);
+
+    workspace.assert_resolves("extends", "Base");
+    workspace.assert_resolves("first", "Left");
+    workspace.assert_resolves("second", "Right");
+}
+
 fn local_class_example() -> Workspace {
     Workspace::load(&[(
         "A.java",

@@ -79,6 +79,18 @@ pub fn resolve_occurrence_at(
             };
             resolve_type_reference(source, file, type_ref, declaration.declaring_scope(), query)
         }
+        // §8.1.4 and §9.1.3 want the name in an `extends` or `implements`
+        // clause resolved where it was written, so the scope is the one the
+        // type is declared in and not its own body.
+        model::EntityId::Supertype(owner, supertype) => {
+            let model::Declaration::Type(declaration) = &file.declarations[owner.0] else {
+                return Vec::new();
+            };
+            let Some(type_ref) = declaration.supertype(supertype) else {
+                return Vec::new();
+            };
+            resolve_type_reference(source, file, type_ref, declaration.declaring_scope, query)
+        }
         model::EntityId::BodyNode(body, node) => {
             let model::BodyNodeKind::Expression(_) = &file.bodies[body.0].node(node).kind else {
                 return Vec::new();
