@@ -1054,6 +1054,25 @@ mod tests {
             );
         }
 
+        /// A supertype is a type reference like any other, so `TypeRef` keeps
+        /// the erased head and drops the type arguments — the same erasure
+        /// `jvm::model::Type` commits to. Nothing pinned that anywhere before,
+        /// and the supertype clauses are now a second place relying on it.
+        #[test]
+        fn a_supertype_keeps_its_erased_head() {
+            let mut parser = Parser::new();
+            let file = parser
+                .parse("class C<T> extends Base<T> implements Plain, java.util.List<String> {}");
+
+            assert_eq!(
+                supertypes_of(&file, model::DeclarationId(0)),
+                (
+                    Some("Base".to_string()),
+                    vec!["Plain".to_string(), "java.util.List".to_string()]
+                )
+            );
+        }
+
         /// Two names in one clause have to be told apart: a caret in `A` and a
         /// caret in `D` are different references, and `EntityId::TypeRef` names
         /// only the declaration that owns them.
