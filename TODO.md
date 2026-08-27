@@ -72,6 +72,29 @@ Behavior that contradicts a specification we have read.
   outer resolves with the outer unchecked. Narrow, and the only place where two
   spellings of one reference take different rules.
 
+- **An anonymous class body is invisible, and `this` inside one points
+  outward.** The `parse_expression` in `crates/lang-java/src/parser.rs` handles
+  `object_creation_expression` by reading its `type` and its `arguments` and
+  never its `class_body`, so nothing an anonymous class declares reaches the
+  model. Measured: `new R() { int field; public void run(int arg) { int inAnon
+  = 1; } }` inside `Outer.m` contributes the declarations `["Outer", "m"]` and
+  nothing else — `field`, `arg` and `inAnon` do not exist. The same shape
+  written as a local class yields all seven.
+
+  The wrong answer is `this`. §15.9.5 makes it denote the anonymous instance;
+  `File::enclosing_type_declaration` looks up the scope chain for a scope owned
+  by a type declaration, finds none inside the anonymous body, and answers with
+  the enclosing class. So a caret at `this.` in an anonymous class would be
+  offered the *outer* class's members, confidently and with nothing to squiggle.
+
+  The fix walks the body rather than patching the walk.
+  `enclosing_type_declaration` is right for every construct we do model, and
+  starts answering correctly on its own once an anonymous body owns a scope
+  with a type declaration in it. What stands in the way is naming: §13.1 gives
+  an anonymous class a digit sequence after the `$` that
+  `jvm::model::BinaryName::nested` cannot spell, which is its own entry under
+  **Undecided**.
+
 ## Missing
 
 Not built yet. Nothing is wrong; there is just no code.
@@ -263,6 +286,26 @@ Not built yet. Nothing is wrong; there is just no code.
   warm-up anyone is waiting on. Kept on purpose: the scans are what show where
   an index would pay, and replacing them before the shape is settled would be
   guessing.
+
+- **A lambda body is invisible.** The `parse_expression` in
+  `crates/lang-java/src/parser.rs` has no `lambda_expression` arm, so one falls
+  to `_ => return None` and neither its parameters nor its statements reach the
+  model. Measured: `run(p -> { int inLambda = 1; })` inside `Outer.m`
+  contributes the declarations `["Outer", "m"]`, so neither `p` nor `inLambda`
+  is in scope at a caret inside the lambda.
+
+  Absent rather than wrong, which is what separates it from the anonymous class
+  entry above: `this` is accidentally right here. §15.27.2 gives a lambda body
+  the same `this` as its surrounding context, and `enclosing_type_declaration`
+  looks for a scope owned by a *type* declaration, which a lambda never is. It
+  stays right once lambdas are parsed, because the scope a lambda introduces
+  still has no type owner.
+
+  What it needs: the grammar's `lambda_expression` carries `parameters` and
+  `body`, the body being a block or a single expression (§15.27). A parameter
+  may be written without a type (`p ->`), which `ParameterDeclaration.ty` being
+  `Option` already allows; saying what `p` *is* needs the target functional
+  interface type (§15.27.3), and there is nothing to ask that of yet.
 
 ## Undecided
 
