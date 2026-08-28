@@ -25,6 +25,14 @@
 #
 # jdk_home = "/path/to/jdk"
 
+# The guided tour. Its own unit because a source file belongs to a unit or to
+# nothing: `of_source` places a file by which unit's tree it sits under, and an
+# unplaced file is unscoped, which makes every name it writes out of scope.
+#
+# Depends on nothing, so everything it shows is in one directory.
+[unit.demo]
+sources = ["demo"]
+
 [unit.a-main]
 sources = ["a/src/main/java"]
 
