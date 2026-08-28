@@ -177,18 +177,17 @@ fn written_type(declaration: &model::Declaration) -> Option<String> {
     Some(declaration.type_ref()?.ty.to_string())
 }
 
-/// `int, String` — the parameter types beside the method name, which is what a
-/// row carries.
+/// `int factor, String name` — the parameter list a reader of the source would
+/// see, which is what a Java row carries beside the method name. Types and
+/// names both, the way JDT and IntelliJ read one: §8.4.2 makes a signature the
+/// name and the parameter types, but a person picking an overload out of a
+/// popup is reading the names.
 ///
-/// Types and not names, though a Java source declaration has both. A compiled
-/// method usually has only the types: JVMS §4.7.24 makes `MethodParameters`
-/// optional, and javac writes it only under `-parameters`, so most of a jar and
-/// much of a runtime image carries no parameter name at all. Showing names
-/// where we happen to have them would format one list two ways depending on
-/// where each method came from.
-///
-/// §8.4.2 agrees about which half matters: a signature is the name and the
-/// parameter types, and what a parameter is called is not part of it.
+/// A name is not always there to show. JVMS §4.7.24 makes `MethodParameters`
+/// optional and javac writes it only under `-parameters`, so a method we
+/// decoded rather than parsed will usually arrive with types alone — the same
+/// arm a parse that recovered without a name lands in. Each half falls back to
+/// the other rather than to a row that lies.
 fn parameters(file: &model::File, declaration: model::DeclarationId) -> String {
     let model::Declaration::Method(method) = &file.declarations[declaration.0] else {
         return String::new();
@@ -198,7 +197,13 @@ fn parameters(file: &model::File, declaration: model::DeclarationId) -> String {
         .parameters
         .iter()
         .map(|parameter| {
-            written_type(&file.declarations[parameter.0]).unwrap_or_else(|| "?".to_string())
+            let parameter = &file.declarations[parameter.0];
+            match (written_type(parameter), parameter.name()) {
+                (Some(ty), Some(name)) => format!("{ty} {}", name.text),
+                (Some(ty), None) => ty,
+                (None, Some(name)) => name.text.clone(),
+                (None, None) => "?".to_string(),
+            }
         })
         .collect::<Vec<_>>()
         .join(", ")

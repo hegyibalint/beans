@@ -30,13 +30,13 @@ public class Demo {
      *
      *   types      Demo, Widget, Neighbour, Base, Marker
      *   variables  total, factor, count, widgets, grid
-     *   methods    describe(int), render(Widget[], Widget[]), shadowing(),
-     *              navigation(Neighbour), diagnostics(Neighbour), notYet()
+     *   methods    describe(int factor), render(Widget[] items, Widget[] more),
+     *              shadowing(), navigation(Neighbour neighbour),
+     *              diagnostics(Neighbour neighbour), notYet()
      *
-     * A method row reads with its parameter types and inserts the bare name.
-     * Types and not names, because JVMS 4.7.24 makes `MethodParameters`
-     * optional and most compiled methods carry no parameter name to show.
-     * The return type is the grey text to the right of the row.
+     * A method row reads with its parameters, the way every Java tool shows
+     * one, and inserts the bare name. Its return type is the grey text to the
+     * right of the row.
      *
      * Note what is NOT there: `hidden` from Neighbour, because 6.6.1 keeps a
      * private field inside its own top level class.
@@ -69,7 +69,7 @@ public class Demo {
         // `render(Widget...)` declare the same parameter type.
         //
         // Complete `render` itself and the row reads
-        //   render(Widget[], Widget[])          void
+        //   render(Widget[] items, Widget[] more)          void
         // and accepting it writes `render`, not the parameters.
     }
 
