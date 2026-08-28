@@ -1,3 +1,5 @@
+use std::fmt;
+
 use beans_core::model::{Offset, OffsetSpan};
 
 #[derive(Debug, Clone)]
@@ -263,14 +265,110 @@ impl Declaration {
     }
 }
 
-/// A type as written in source. Resolution against the model happens later.
+/// One place a type was written. §10.2 lets a single type come from up to
+/// three places — `int[] f[]` is `int[][]`, with brackets on the type and on
+/// the declarator — so the span covers the occurrence rather than the type.
 #[derive(Debug, Clone)]
 pub struct TypeRef {
     pub span: OffsetSpan,
-    /// The erased head of the type: `List` for `List<String>`, `String` for `String[]`.
-    pub name: Name,
-    /// Primitives and `void` never resolve to declarations.
-    pub primitive: bool,
+    pub ty: Type,
+}
+
+/// JLS 26 §4.3's *Type*, as written. Unresolved on purpose: `Named` holds a
+/// spelling and what it denotes is §6.5.5's business.
+///
+/// Type arguments are dropped. §4.6 erases them and the lake holds erased
+/// types, so `List<String>` and `List` are one thing here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Type {
+    /// §4.2.
+    Primitive(Primitive),
+    /// §4.3 lists *ClassOrInterfaceType* and *TypeVariable* separately, but
+    /// they are one spelling — `T` and `String` are the same syntax and only
+    /// resolution can tell them apart.
+    Named(Name),
+    /// §10.1: "The component type of an array may itself be an array type."
+    /// The grammar spells this flat (a base plus *Dims*) while the type system
+    /// is recursive; this follows the type system, because §10.2 can spread
+    /// one type's brackets across the text with no contiguous middle to point
+    /// at.
+    Array(Box<Type>),
+    /// §8.4.5's *Result* is `UnannType` or `void`, so `void` is not a *Type*
+    /// at all. It lives here anyway rather than in a second enum used by one
+    /// field; the cost is that `Array(Void)` is representable, and the grammar
+    /// cannot produce it.
+    Void,
+}
+
+/// §4.2's primitive types. `void` is not among them (§4.2, §8.4.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Primitive {
+    Boolean,
+    Byte,
+    Char,
+    Short,
+    Int,
+    Long,
+    Float,
+    Double,
+}
+
+impl Type {
+    /// The name this type is rooted in, if it is rooted in one at all. An
+    /// array defers to its component type (§10.1), so `String[][]` answers
+    /// `String`.
+    pub fn named(&self) -> Option<&Name> {
+        match self {
+            Self::Named(name) => Some(name),
+            Self::Array(component) => component.named(),
+            Self::Primitive(_) | Self::Void => None,
+        }
+    }
+}
+
+impl Primitive {
+    /// The keyword, which §3.9 makes a keyword and not an identifier — the
+    /// reason these are an enum rather than a `Name` with a flag beside it.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Boolean => "boolean",
+            Self::Byte => "byte",
+            Self::Char => "char",
+            Self::Short => "short",
+            Self::Int => "int",
+            Self::Long => "long",
+            Self::Float => "float",
+            Self::Double => "double",
+        }
+    }
+
+    pub fn from_keyword(keyword: &str) -> Option<Primitive> {
+        Some(match keyword {
+            "boolean" => Self::Boolean,
+            "byte" => Self::Byte,
+            "char" => Self::Char,
+            "short" => Self::Short,
+            "int" => Self::Int,
+            "long" => Self::Long,
+            "float" => Self::Float,
+            "double" => Self::Double,
+            _ => return None,
+        })
+    }
+}
+
+/// The type as a reader of the source would see it, which is what an editor
+/// shows beside a completion row. Not the resolved type: `String` reads
+/// `String` whether or not anything answers that name.
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Primitive(primitive) => f.write_str(primitive.keyword()),
+            Self::Named(name) => f.write_str(&name.dotted()),
+            Self::Array(component) => write!(f, "{component}[]"),
+            Self::Void => f.write_str("void"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -621,11 +621,13 @@ pub(super) fn resolve_type_reference(
     scope: model::LexicalScopeId,
     query: &Query,
 ) -> Vec<(jvm::model::Source, model::DeclarationId)> {
-    if type_ref.primitive {
+    // A primitive and `void` name no declaration (§4.2, §8.4.5); an array
+    // resolves through its component type (§10.1).
+    let Some(name) = type_ref.ty.named() else {
         return Vec::new();
-    }
+    };
 
-    match resolve_type_name(&type_ref.name, source, file, scope, query) {
+    match resolve_type_name(name, source, file, scope, query) {
         TypeResolution::Resolved(TypeTarget::Parsed {
             source,
             declaration,

@@ -362,6 +362,7 @@ fn parse_field_declaration(
         let name = declarator
             .child_by_field_name("name")
             .and_then(|name| parse_identifier(name, src));
+        let extra = dimensions_of(declarator, src);
         add_declaration(
             file,
             scope,
@@ -369,7 +370,7 @@ fn parse_field_declaration(
                 span: declarator.byte_range().into(),
                 name,
                 access,
-                referenced_type: ty.clone(),
+                referenced_type: ty.clone().map(|ty| with_extra_dimensions(ty, extra)),
                 declaring_scope: scope,
             }),
         );
@@ -383,9 +384,13 @@ fn parse_method_declaration(
     file: &mut model::File,
 ) -> Option<model::DeclarationId> {
     let name = parse_identifier(node.child_by_field_name("name")?, src)?;
+    // §10.2 lets the brackets sit after the parameter list: `int m()[]` returns
+    // `int[]`. Obsolete style, still legal.
+    let trailing = dimensions_of(node, src);
     let return_type = node
         .child_by_field_name("type")
-        .and_then(|ty| parse_type_ref(ty, src));
+        .and_then(|ty| parse_type_ref(ty, src))
+        .map(|ty| with_extra_dimensions(ty, trailing));
     let method_scope = new_scope(file, declaring_scope, None, node.byte_range().into());
 
     // Declare before parsing the contents so declaration ids follow source order.
@@ -458,15 +463,19 @@ fn parse_formal_parameters(
     let mut result = Vec::new();
     let mut cursor = parameters.walk();
     for parameter in parameters.named_children(&mut cursor) {
-        if parameter.kind() != "formal_parameter" && parameter.kind() != "spread_parameter" {
-            continue;
-        }
-        let name = parameter
-            .child_by_field_name("name")
-            .and_then(|name| parse_identifier(name, src));
-        let ty = parameter
-            .child_by_field_name("type")
-            .and_then(|ty| parse_type_ref(ty, src));
+        let (name, ty) = match parameter.kind() {
+            "formal_parameter" => (
+                parameter
+                    .child_by_field_name("name")
+                    .and_then(|name| parse_identifier(name, src)),
+                parameter
+                    .child_by_field_name("type")
+                    .and_then(|ty| parse_type_ref(ty, src))
+                    .map(|ty| with_extra_dimensions(ty, dimensions_of(parameter, src))),
+            ),
+            "spread_parameter" => parse_spread_parameter(parameter, src),
+            _ => continue,
+        };
         let declaration = add_declaration(
             file,
             scope,
@@ -480,6 +489,40 @@ fn parse_formal_parameters(
         result.push(declaration);
     }
     result
+}
+
+/// A variable arity parameter, `String... args`.
+///
+/// §8.4.1 makes its declared type an array type, and §10.2 says why: "the
+/// ellipsis of a variable arity parameter is treated as a bracket pair". So
+/// `foo(String...)` and `foo(String[])` declare the same parameter type and are
+/// override-equivalent (§8.4.2) — which is the whole reason this cannot be
+/// skipped.
+///
+/// The grammar gives this node no fields at all. Its type is a plain child, and
+/// its name lives inside a nested `variable_declarator`, which may carry
+/// brackets of its own.
+fn parse_spread_parameter(
+    node: Node,
+    src: &str,
+) -> (Option<model::Identifier>, Option<model::TypeRef>) {
+    let mut cursor = node.walk();
+    let mut declarator = None;
+    let mut ty = None;
+    for child in node.named_children(&mut cursor) {
+        match child.kind() {
+            "variable_declarator" => declarator = Some(child),
+            "modifiers" | "annotation" | "marker_annotation" => {}
+            _ => ty = ty.or_else(|| parse_type_ref(child, src)),
+        }
+    }
+
+    let name = declarator
+        .and_then(|declarator| declarator.child_by_field_name("name"))
+        .and_then(|name| parse_identifier(name, src));
+    let extra = 1 + declarator.map_or(0, |declarator| dimensions_of(declarator, src));
+
+    (name, ty.map(|ty| with_extra_dimensions(ty, extra)))
 }
 
 fn parse_body(
@@ -654,13 +697,14 @@ fn parse_local_variable_declaration(
         let name = declarator
             .child_by_field_name("name")
             .and_then(|name| parse_identifier(name, src));
+        let extra = dimensions_of(declarator, src);
         let declaration = add_declaration(
             file,
             scope,
             model::Declaration::Local(model::LocalDeclaration {
                 span: declarator.byte_range().into(),
                 name,
-                ty: ty.clone(),
+                ty: ty.clone().map(|ty| with_extra_dimensions(ty, extra)),
                 declaring_scope: scope,
             }),
         );
@@ -770,24 +814,24 @@ fn parse_argument_list(
 }
 
 fn parse_type_ref(node: Node, src: &str) -> Option<model::TypeRef> {
-    let span = node.byte_range().into();
+    Some(model::TypeRef {
+        span: node.byte_range().into(),
+        ty: parse_type(node, src)?,
+    })
+}
+
+fn parse_type(node: Node, src: &str) -> Option<model::Type> {
     match node.kind() {
-        "type_identifier" => Some(model::TypeRef {
-            span,
-            name: model::Name::Simple(parse_identifier(node, src)?),
-            primitive: false,
-        }),
-        "integral_type" | "floating_point_type" | "boolean_type" | "void_type" => {
-            Some(model::TypeRef {
-                span,
-                name: model::Name::Simple(model::Identifier {
-                    text: util_copy_source(node, src),
-                    span,
-                }),
-                primitive: true,
-            })
+        "type_identifier" => Some(model::Type::Named(model::Name::Simple(parse_identifier(
+            node, src,
+        )?))),
+        // §8.4.5: not a Type, and only a method result.
+        "void_type" => Some(model::Type::Void),
+        "integral_type" | "floating_point_type" | "boolean_type" => {
+            model::Primitive::from_keyword(&util_copy_source(node, src)).map(model::Type::Primitive)
         }
         "generic_type" | "scoped_type_identifier" | "scoped_identifier" => {
+            let span = node.byte_range().into();
             let mut segments = Vec::new();
             collect_type_segments(node, src, &mut segments);
             let name = match segments.len() {
@@ -795,16 +839,41 @@ fn parse_type_ref(node: Node, src: &str) -> Option<model::TypeRef> {
                 1 => model::Name::Simple(segments.pop().unwrap()),
                 _ => model::Name::Qualified(model::QualifiedName::new(segments, span)),
             };
-            Some(model::TypeRef {
-                span,
-                name,
-                primitive: false,
-            })
+            Some(model::Type::Named(name))
         }
-        "array_type" => node
-            .child_by_field_name("element")
-            .and_then(|element| parse_type_ref(element, src)),
+        "array_type" => {
+            let element = parse_type(node.child_by_field_name("element")?, src)?;
+            Some(arrayed(element, dimensions_of(node, src)))
+        }
         _ => None,
+    }
+}
+
+/// §10.1's bracket pairs. A `dimensions` node holds all of them at once and may
+/// carry an annotation before each (§9.7.4), so the brackets are counted rather
+/// than the children.
+fn dimensions_of(node: Node, src: &str) -> usize {
+    node.child_by_field_name("dimensions")
+        .map_or(0, |dims| src[dims.byte_range()].matches('[').count())
+}
+
+fn arrayed(ty: model::Type, dimensions: usize) -> model::Type {
+    (0..dimensions).fold(ty, |ty, _| model::Type::Array(Box::new(ty)))
+}
+
+/// §10.2: the array type of a variable is its element type, then the bracket
+/// pairs following its identifier in the declarator, then the bracket pairs on
+/// the type at the head of the declaration. A method composes the same way with
+/// the pairs after its parameter list.
+///
+/// Which bracket contributed which level cannot be observed — every level of an
+/// array is the same thing — so they simply add. What matters is that they are
+/// counted per *declarator*: §10.2's `short s, aas[][]` declares a `short` and a
+/// `short[][]` from one type.
+fn with_extra_dimensions(type_ref: model::TypeRef, extra: usize) -> model::TypeRef {
+    model::TypeRef {
+        span: type_ref.span,
+        ty: arrayed(type_ref.ty, extra),
     }
 }
 
@@ -966,11 +1035,11 @@ mod tests {
         ) -> (Option<String>, Vec<String>) {
             let declaration = type_declaration(file, id);
             (
-                declaration.superclass.as_ref().map(|ty| ty.name.dotted()),
+                declaration.superclass.as_ref().map(|ty| ty.ty.to_string()),
                 declaration
                     .interfaces
                     .iter()
-                    .map(|ty| ty.name.dotted())
+                    .map(|ty| ty.ty.to_string())
                     .collect(),
             )
         }
@@ -1041,7 +1110,7 @@ mod tests {
 
             let enumerated: Vec<_> = type_declaration(&file, model::DeclarationId(0))
                 .supertypes()
-                .map(|(id, ty)| (id, ty.name.dotted()))
+                .map(|(id, ty)| (id, ty.ty.to_string()))
                 .collect();
 
             assert_eq!(
@@ -1099,6 +1168,135 @@ mod tests {
             assert_eq!(
                 at("D"),
                 model::EntityId::Supertype(owner, model::SupertypeId::Interface(1))
+            );
+        }
+    }
+
+    // JLS 26 §10.2 builds one type out of up to three places: the element type
+    // at the head of the declaration, the bracket pairs after the declarator's
+    // identifier, and the bracket pairs on the type. Each case below writes the
+    // brackets somewhere different and asks what type came out.
+    mod types {
+        use super::*;
+
+        /// Every declaration that names a type, rendered as a reader sees it.
+        fn written(file: &model::File) -> Vec<(String, String)> {
+            file.declarations
+                .iter()
+                .filter_map(|declaration| {
+                    Some((
+                        declaration.name()?.text.clone(),
+                        declaration.type_ref()?.ty.to_string(),
+                    ))
+                })
+                .collect()
+        }
+
+        fn parse(src: &str) -> model::File {
+            Parser::new().parse(src)
+        }
+
+        #[test]
+        fn brackets_on_the_type_are_kept() {
+            assert_eq!(
+                written(&parse("class A { int[][] f; }")),
+                [("f".to_string(), "int[][]".to_string())]
+            );
+        }
+
+        /// §10.2's second source: "any bracket pairs that follow the variable's
+        /// *Identifier* in the declarator".
+        #[test]
+        fn brackets_after_the_identifier_are_kept() {
+            assert_eq!(
+                written(&parse("class A { int f[]; }")),
+                [("f".to_string(), "int[]".to_string())]
+            );
+        }
+
+        /// Mixed notation, which §10.2 permits and advises against.
+        #[test]
+        fn brackets_on_both_sides_add_up() {
+            assert_eq!(
+                written(&parse("class A { int[] f[]; }")),
+                [("f".to_string(), "int[][]".to_string())]
+            );
+        }
+
+        /// §10.2's own Example 10.2-1: one declaration, one element type, two
+        /// declarators, two different types. This is why the brackets belong to
+        /// the declarator and not to the declaration.
+        #[test]
+        fn one_declaration_can_declare_two_different_types() {
+            assert_eq!(
+                written(&parse("class A { short s, aas[][]; }")),
+                [
+                    ("s".to_string(), "short".to_string()),
+                    ("aas".to_string(), "short[][]".to_string()),
+                ]
+            );
+        }
+
+        /// §10.2 again: "the element type in the *Result*, then any bracket
+        /// pairs that follow the formal parameter list". Obsolete style, legal.
+        #[test]
+        fn a_method_may_write_its_brackets_after_the_parameter_list() {
+            assert_eq!(
+                written(&parse("class A { int m()[] { return null; } }")),
+                [("m".to_string(), "int[]".to_string())]
+            );
+        }
+
+        /// §8.4.1 makes a variable arity parameter's declared type an array
+        /// type, and §10.2 says why: the ellipsis "is treated as a bracket
+        /// pair". So this and `String[]` are the same parameter type, which
+        /// §8.4.2 needs in order to call them override-equivalent.
+        #[test]
+        fn a_variable_arity_parameter_is_an_array() {
+            assert_eq!(
+                written(&parse("class A { void v(String... args) {} }")),
+                [
+                    ("v".to_string(), "void".to_string()),
+                    ("args".to_string(), "String[]".to_string()),
+                ]
+            );
+            assert_eq!(
+                written(&parse("class A { void v(String[] args) {} }")),
+                [
+                    ("v".to_string(), "void".to_string()),
+                    ("args".to_string(), "String[]".to_string()),
+                ]
+            );
+        }
+
+        /// §4.2 lists eight primitives and `void` is not among them; §8.4.5
+        /// makes it a *Result* and nothing else. The model says so rather than
+        /// carrying a flag beside a `Name` holding a keyword (§3.9).
+        #[test]
+        fn void_is_its_own_thing() {
+            let file = parse("class A { void m() {} int n() { return 0; } }");
+            let types: Vec<_> = file
+                .declarations
+                .iter()
+                .filter_map(|declaration| declaration.type_ref().map(|ty| ty.ty.clone()))
+                .collect();
+
+            assert_eq!(
+                types,
+                [
+                    model::Type::Void,
+                    model::Type::Primitive(model::Primitive::Int),
+                ]
+            );
+        }
+
+        /// §4.6 erases type arguments and the lake holds erased types, so the
+        /// array wrapping survives and the arguments do not.
+        #[test]
+        fn a_generic_array_keeps_the_brackets_and_drops_the_arguments() {
+            assert_eq!(
+                written(&parse("class A { java.util.List<String>[] g; }")),
+                [("g".to_string(), "java.util.List[]".to_string())]
             );
         }
     }
@@ -1321,7 +1519,10 @@ mod tests {
                 end: Offset(17)
             }
         );
-        assert!(field.referenced_type.as_ref().unwrap().primitive);
+        assert!(matches!(
+            field.referenced_type.as_ref().unwrap().ty,
+            model::Type::Primitive(model::Primitive::Int)
+        ));
 
         let model::Declaration::Method(method) = &file.declarations[2] else {
             panic!("D2 is the method");
@@ -1347,7 +1548,7 @@ mod tests {
             }
         );
         let param_ty = parameter.ty.as_ref().unwrap();
-        assert!(!param_ty.primitive);
+        assert!(matches!(param_ty.ty, model::Type::Named(_)));
         assert_eq!(
             param_ty.span,
             OffsetSpan {

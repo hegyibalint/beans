@@ -23,26 +23,21 @@ pub fn type_scope_diagnostics(
         .iter()
         .flat_map(|declaration| written_types(declaration).map(move |ty| (declaration, ty)))
         .filter_map(|(declaration, type_ref)| {
-            if type_ref.primitive {
-                return None;
-            }
+            // A primitive and `void` name no declaration (§4.2, §8.4.5); an
+            // array is asked about its component type (§10.1).
+            let name = type_ref.ty.named()?;
 
-            let resolution = resolve_type_name(
-                &type_ref.name,
-                source,
-                file,
-                declaration.declaring_scope(),
-                query,
-            );
+            let resolution =
+                resolve_type_name(name, source, file, declaration.declaring_scope(), query);
             resolution
                 .has_invalidity(TypeInvalidity::OutsideScope)
                 .then(|| Diagnostics {
-                    span: type_ref.name.span(),
+                    span: name.span(),
                     severity: DiagnosticSeverity::Error,
                     code: "type-outside-scope",
                     message: format!(
                         "type {} is outside the current compilation scope",
-                        type_ref.name.dotted()
+                        name.dotted()
                     ),
                 })
         })

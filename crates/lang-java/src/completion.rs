@@ -173,7 +173,7 @@ fn push_methods(items: &mut Vec<CompletionItem<jvm::model::Source>>, point: &Poi
 /// `String` whether or not anything answers that name, which is what an editor
 /// shows and costs nothing to produce.
 fn written_type(declaration: &model::Declaration) -> Option<String> {
-    Some(declaration.type_ref()?.name.dotted())
+    Some(declaration.type_ref()?.ty.to_string())
 }
 
 /// `(int, String) -> void`, from the source spelling of each part. Enough to
@@ -193,7 +193,7 @@ fn signature(file: &model::File, declaration: model::DeclarationId) -> String {
     let returns = method
         .return_type
         .as_ref()
-        .map_or_else(|| "void".to_string(), |ty| ty.name.dotted());
+        .map_or_else(|| "void".to_string(), |ty| ty.ty.to_string());
 
     format!("({}) -> {returns}", parameters.join(", "))
 }
