@@ -30,7 +30,12 @@ public class Demo {
      *
      *   types      Demo, Widget, Neighbour, Base, Marker
      *   variables  total, factor, count, widgets, grid
-     *   methods    describe, render, shadowing, navigation, diagnostics, notYet
+     *   methods    describe(int factor), render(..), shadowing(), navigation(..),
+     *              diagnostics(..), notYet()
+     *
+     * A method row reads with its parameters, the way every Java tool shows
+     * one, and inserts the bare name. Its return type is the grey text to the
+     * right of the row.
      *
      * Note what is NOT there: `hidden` from Neighbour, because 6.6.1 keeps a
      * private field inside its own top level class.
@@ -62,8 +67,9 @@ public class Demo {
         // treats the ellipsis as a bracket pair. So `render(Widget[])` and
         // `render(Widget...)` declare the same parameter type.
         //
-        // Complete `render` itself and the signature reads
-        //   (Widget[], Widget[]) -> void
+        // Complete `render` itself and the row reads
+        //   render(Widget[] items, Widget[] more)          void
+        // and accepting it writes `render`, not the parameters.
     }
 
     // ---------------------------------------------------------------- 3 ----

@@ -48,5 +48,5 @@ class Test {
     // One row from each namespace §6.1 has: a type, and the method the caret
     // sits inside. Which names each produces is settled in `completion/tests`.
     let labels: Vec<&str> = items.iter().map(|item| item.label.as_str()).collect();
-    assert_eq!(labels, ["Inner", "Test", "m"]);
+    assert_eq!(labels, ["Inner", "Test", "m()"]);
 }

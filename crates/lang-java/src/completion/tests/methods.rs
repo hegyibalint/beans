@@ -15,9 +15,12 @@ class Test {
 ",
     );
 
+    // The row reads the way a Java tool reads: name and parameters together.
+    // What it writes is the bare name, which `item` is keyed on.
     let labels = labels(&items);
-    assert!(labels.contains(&"sibling"));
-    assert!(labels.contains(&"m"));
+    assert!(labels.contains(&"sibling()"));
+    assert!(labels.contains(&"m()"));
+    assert_eq!(item(&items, "sibling").insert, "sibling");
 }
 
 /// §15.12.2 picks an overload from the types of the arguments, and a caret has
@@ -37,14 +40,14 @@ class Test {
 ",
     );
 
-    let details: Vec<&str> = items
+    let overloads: Vec<&str> = items
         .iter()
-        .filter(|item| item.label == "over")
-        .filter_map(|item| item.detail.as_deref())
+        .filter(|item| item.insert == "over")
+        .map(|item| item.label.as_str())
         .collect();
-    assert_eq!(details.len(), 2);
-    assert!(details.contains(&"(int) -> void"));
-    assert!(details.contains(&"(String) -> void"));
+    assert_eq!(overloads.len(), 2);
+    assert!(overloads.contains(&"over(int x)"));
+    assert!(overloads.contains(&"over(String x)"));
 }
 
 /// The signature is the only thing telling two overloads apart in the list, so
@@ -65,14 +68,9 @@ class Test {
 ",
     );
 
-    assert_eq!(
-        item(&items, "spread").detail.as_deref(),
-        Some("(String[]) -> int[]")
-    );
-    assert_eq!(
-        item(&items, "array").detail.as_deref(),
-        Some("(String[]) -> int[]")
-    );
+    assert_eq!(item(&items, "spread").label, "spread(String[] args)");
+    assert_eq!(item(&items, "array").label, "array(String[] args)");
+    assert_eq!(item(&items, "spread").detail.as_deref(), Some("int[]"));
 }
 
 #[test]
@@ -90,5 +88,5 @@ class Elsewhere {
 ",
     );
 
-    assert!(!labels(&items).contains(&"hidden"));
+    assert!(!labels(&items).contains(&"hidden()"));
 }

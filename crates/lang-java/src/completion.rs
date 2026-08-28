@@ -94,13 +94,13 @@ pub(crate) fn complete(
             continue;
         };
 
-        items.push(CompletionItem {
-            label: name,
-            kind: kind_of(target, query),
-            detail: target_label(target, query),
-            replace: point.replace,
-            handle: handle_for(target, query, revision),
-        });
+        items.push(CompletionItem::plain(
+            name,
+            kind_of(target, query),
+            target_label(target, query),
+            point.replace,
+            handle_for(target, query, revision),
+        ));
     }
 
     push_unplaced_imports(&mut items, point, revision);
@@ -135,17 +135,17 @@ fn push_variables(items: &mut Vec<CompletionItem<jvm::model::Source>>, point: &P
         depth_of.push((variable.name.clone(), variable.depth));
 
         let declaration = &file.declarations[variable.declaration.0];
-        items.push(CompletionItem {
-            label: variable.name,
-            kind: match declaration {
+        items.push(CompletionItem::plain(
+            variable.name,
+            match declaration {
                 model::Declaration::Parameter(_) => CompletionItemKind::Parameter,
                 model::Declaration::Field(_) => CompletionItemKind::Field,
                 _ => CompletionItemKind::Variable,
             },
-            detail: written_type(declaration),
-            replace: point.replace,
-            handle: None,
-        });
+            written_type(declaration),
+            point.replace,
+            None,
+        ));
     }
 }
 
@@ -160,9 +160,10 @@ fn push_methods(items: &mut Vec<CompletionItem<jvm::model::Source>>, point: &Poi
 
     for method in methods_in_scope(file, point.at.scope, Wanted::StartingWith(point.prefix)) {
         items.push(CompletionItem {
-            label: method.name,
+            label: format!("{}({})", method.name, parameters(file, method.declaration)),
+            insert: method.name,
             kind: CompletionItemKind::Method,
-            detail: Some(signature(file, method.declaration)),
+            detail: returns(file, method.declaration),
             replace: point.replace,
             handle: None,
         });
@@ -176,26 +177,44 @@ fn written_type(declaration: &model::Declaration) -> Option<String> {
     Some(declaration.type_ref()?.ty.to_string())
 }
 
-/// `(int, String) -> void`, from the source spelling of each part. Enough to
-/// tell two overloads apart, which is the only thing the list needs it for.
-fn signature(file: &model::File, declaration: model::DeclarationId) -> String {
+/// `int factor, String name` — the parameter list a reader of the source would
+/// see, which is what a Java row carries beside the method name. Types and
+/// names both, because a name is most of what tells two overloads apart to a
+/// person even when the types already do it for the compiler.
+///
+/// A parameter with no name is a parse that recovered without one, and a
+/// parameter with no type is the same; neither is worth a row that lies, so
+/// each falls back to the half that survived.
+fn parameters(file: &model::File, declaration: model::DeclarationId) -> String {
     let model::Declaration::Method(method) = &file.declarations[declaration.0] else {
         return String::new();
     };
 
-    let parameters: Vec<String> = method
+    method
         .parameters
         .iter()
         .map(|parameter| {
-            written_type(&file.declarations[parameter.0]).unwrap_or_else(|| "?".to_string())
+            let parameter = &file.declarations[parameter.0];
+            match (written_type(parameter), parameter.name()) {
+                (Some(ty), Some(name)) => format!("{ty} {}", name.text),
+                (Some(ty), None) => ty,
+                (None, Some(name)) => name.text.clone(),
+                (None, None) => "?".to_string(),
+            }
         })
-        .collect();
-    let returns = method
-        .return_type
-        .as_ref()
-        .map_or_else(|| "void".to_string(), |ty| ty.ty.to_string());
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 
-    format!("({}) -> {returns}", parameters.join(", "))
+/// What the method hands back, shown to the side of the row. §8.4.5 makes a
+/// missing *Result* impossible in legal source, so `None` is a recovered parse
+/// rather than a void method — void says so itself.
+fn returns(file: &model::File, declaration: model::DeclarationId) -> Option<String> {
+    let model::Declaration::Method(method) = &file.declarations[declaration.0] else {
+        return None;
+    };
+
+    Some(method.return_type.as_ref()?.ty.to_string())
 }
 
 /// The chain grouped by spelling, keeping the order stages produced them in so
@@ -238,17 +257,17 @@ fn push_unplaced_imports(
         }
 
         let dotted = import.name.dotted();
-        items.push(CompletionItem {
-            label: name.text.clone(),
-            kind: CompletionItemKind::Class,
-            detail: Some(dotted.clone()),
-            replace: point.replace,
-            handle: Some(Handle {
+        items.push(CompletionItem::plain(
+            name.text.clone(),
+            CompletionItemKind::Class,
+            Some(dotted.clone()),
+            point.replace,
+            Some(Handle {
                 source: point.at.source.clone(),
                 revision,
                 payload: dotted,
             }),
-        });
+        ));
     }
 }
 

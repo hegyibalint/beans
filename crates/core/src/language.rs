@@ -10,12 +10,39 @@ pub struct NavigationTarget<Source> {
 /// here; the handle is for the second half of the exchange.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompletionItem<Source> {
+    /// What the row reads as. Not what accepting it writes: a Java method is
+    /// shown with its parameters, `describe(int factor)`, and inserts a bare
+    /// name.
     pub label: String,
+    /// What accepting the row writes over `replace`. Separate from the label
+    /// because the two diverge as soon as a row says more than it inserts.
+    pub insert: String,
     pub kind: CompletionItemKind,
     pub detail: Option<String>,
     /// What accepting this row overwrites.
     pub replace: OffsetSpan,
     pub handle: Option<Handle<Source>>,
+}
+
+impl<Source> CompletionItem<Source> {
+    /// A row that reads exactly as it writes, which is every namespace but
+    /// methods.
+    pub fn plain(
+        name: String,
+        kind: CompletionItemKind,
+        detail: Option<String>,
+        replace: OffsetSpan,
+        handle: Option<Handle<Source>>,
+    ) -> CompletionItem<Source> {
+        CompletionItem {
+            insert: name.clone(),
+            label: name,
+            kind,
+            detail,
+            replace,
+            handle,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

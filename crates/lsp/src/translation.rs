@@ -92,9 +92,14 @@ pub fn translate_completion_item(
         text_edit: replace.map(|range| {
             lsp_types::CompletionTextEdit::Edit(lsp_types::TextEdit {
                 range,
-                new_text: item.label.clone(),
+                new_text: item.insert.clone(),
             })
         }),
+        // A client filters on the label unless told otherwise, and a Java
+        // method's label carries its parameters. Without this, typing `desc`
+        // still matches `describe(int factor)` but a second keystroke past the
+        // name would not.
+        filter_text: Some(item.insert.clone()),
         ..Default::default()
     }
 }
@@ -152,6 +157,46 @@ mod tests {
                 path: PathBuf::from("/home/my project/Foo.java"),
             })
         );
+    }
+
+    /// The row a user reads and the text a user gets are different strings for
+    /// a method, so accepting `describe(int factor)` has to type `describe`.
+    /// Before the two were split the label was both, and a label with
+    /// parameters in it would have written them into the buffer.
+    #[test]
+    fn a_row_inserts_what_it_says_it_inserts_rather_than_its_label() {
+        let range = lsp_types::Range {
+            start: Position {
+                line: 1,
+                character: 8,
+            },
+            end: Position {
+                line: 1,
+                character: 12,
+            },
+        };
+        let item: CompletionItem<jvm::model::Source> = CompletionItem {
+            label: "describe(int factor)".to_string(),
+            insert: "describe".to_string(),
+            kind: CompletionItemKind::Method,
+            detail: Some("void".to_string()),
+            replace: beans_core::model::OffsetSpan {
+                start: beans_core::model::Offset(0),
+                end: beans_core::model::Offset(4),
+            },
+            handle: None,
+        };
+
+        let translated = translate_completion_item(Some(range), &item);
+
+        assert_eq!(translated.label, "describe(int factor)");
+        let Some(lsp_types::CompletionTextEdit::Edit(edit)) = translated.text_edit else {
+            panic!("a row with a range carries a text edit");
+        };
+        assert_eq!(edit.new_text, "describe");
+        // Filtering follows the label unless told otherwise, and the label is
+        // no longer something the user is typing.
+        assert_eq!(translated.filter_text.as_deref(), Some("describe"));
     }
 
     #[test]

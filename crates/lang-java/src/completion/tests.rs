@@ -134,12 +134,15 @@ fn labels(items: &[CompletionItem<jvm::model::Source>]) -> Vec<&str> {
     items.iter().map(|item| item.label.as_str()).collect()
 }
 
+/// Found by what it writes, not by what it reads. A method's label carries its
+/// parameters and its insertion does not, so the insertion is the half that
+/// names a declaration.
 fn item<'a>(
     items: &'a [CompletionItem<jvm::model::Source>],
-    label: &str,
+    name: &str,
 ) -> &'a CompletionItem<jvm::model::Source> {
     items
         .iter()
-        .find(|item| item.label == label)
-        .unwrap_or_else(|| panic!("no item labelled {label:?} in {:?}", labels(items)))
+        .find(|item| item.insert == name)
+        .unwrap_or_else(|| panic!("nothing inserts {name:?} in {:?}", labels(items)))
 }
