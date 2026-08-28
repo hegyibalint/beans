@@ -177,14 +177,18 @@ fn written_type(declaration: &model::Declaration) -> Option<String> {
     Some(declaration.type_ref()?.ty.to_string())
 }
 
-/// `int factor, String name` — the parameter list a reader of the source would
-/// see, which is what a Java row carries beside the method name. Types and
-/// names both, because a name is most of what tells two overloads apart to a
-/// person even when the types already do it for the compiler.
+/// `int, String` — the parameter types beside the method name, which is what a
+/// row carries.
 ///
-/// A parameter with no name is a parse that recovered without one, and a
-/// parameter with no type is the same; neither is worth a row that lies, so
-/// each falls back to the half that survived.
+/// Types and not names, though a Java source declaration has both. A compiled
+/// method usually has only the types: JVMS §4.7.24 makes `MethodParameters`
+/// optional, and javac writes it only under `-parameters`, so most of a jar and
+/// much of a runtime image carries no parameter name at all. Showing names
+/// where we happen to have them would format one list two ways depending on
+/// where each method came from.
+///
+/// §8.4.2 agrees about which half matters: a signature is the name and the
+/// parameter types, and what a parameter is called is not part of it.
 fn parameters(file: &model::File, declaration: model::DeclarationId) -> String {
     let model::Declaration::Method(method) = &file.declarations[declaration.0] else {
         return String::new();
@@ -194,13 +198,7 @@ fn parameters(file: &model::File, declaration: model::DeclarationId) -> String {
         .parameters
         .iter()
         .map(|parameter| {
-            let parameter = &file.declarations[parameter.0];
-            match (written_type(parameter), parameter.name()) {
-                (Some(ty), Some(name)) => format!("{ty} {}", name.text),
-                (Some(ty), None) => ty,
-                (None, Some(name)) => name.text.clone(),
-                (None, None) => "?".to_string(),
-            }
+            written_type(&file.declarations[parameter.0]).unwrap_or_else(|| "?".to_string())
         })
         .collect::<Vec<_>>()
         .join(", ")

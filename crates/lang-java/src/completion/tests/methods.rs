@@ -46,8 +46,8 @@ class Test {
         .map(|item| item.label.as_str())
         .collect();
     assert_eq!(overloads.len(), 2);
-    assert!(overloads.contains(&"over(int x)"));
-    assert!(overloads.contains(&"over(String x)"));
+    assert!(overloads.contains(&"over(int)"));
+    assert!(overloads.contains(&"over(String)"));
 }
 
 /// The signature is the only thing telling two overloads apart in the list, so
@@ -68,8 +68,8 @@ class Test {
 ",
     );
 
-    assert_eq!(item(&items, "spread").label, "spread(String[] args)");
-    assert_eq!(item(&items, "array").label, "array(String[] args)");
+    assert_eq!(item(&items, "spread").label, "spread(String[])");
+    assert_eq!(item(&items, "array").label, "array(String[])");
     assert_eq!(item(&items, "spread").detail.as_deref(), Some("int[]"));
 }
 

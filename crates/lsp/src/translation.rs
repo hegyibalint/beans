@@ -96,9 +96,9 @@ pub fn translate_completion_item(
             })
         }),
         // A client filters on the label unless told otherwise, and a Java
-        // method's label carries its parameters. Without this, typing `desc`
-        // still matches `describe(int factor)` but a second keystroke past the
-        // name would not.
+        // method's label carries its parameter types. Without this, typing
+        // `desc` still matches `describe(int)` by prefix, but a keystroke past
+        // the name would not.
         filter_text: Some(item.insert.clone()),
         ..Default::default()
     }
@@ -160,7 +160,7 @@ mod tests {
     }
 
     /// The row a user reads and the text a user gets are different strings for
-    /// a method, so accepting `describe(int factor)` has to type `describe`.
+    /// a method, so accepting `describe(int)` has to type `describe`.
     /// Before the two were split the label was both, and a label with
     /// parameters in it would have written them into the buffer.
     #[test]
@@ -176,7 +176,7 @@ mod tests {
             },
         };
         let item: CompletionItem<jvm::model::Source> = CompletionItem {
-            label: "describe(int factor)".to_string(),
+            label: "describe(int)".to_string(),
             insert: "describe".to_string(),
             kind: CompletionItemKind::Method,
             detail: Some("void".to_string()),
@@ -189,7 +189,7 @@ mod tests {
 
         let translated = translate_completion_item(Some(range), &item);
 
-        assert_eq!(translated.label, "describe(int factor)");
+        assert_eq!(translated.label, "describe(int)");
         let Some(lsp_types::CompletionTextEdit::Edit(edit)) = translated.text_edit else {
             panic!("a row with a range carries a text edit");
         };
