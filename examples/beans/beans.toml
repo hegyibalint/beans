@@ -25,13 +25,26 @@
 #
 # jdk_home = "/path/to/jdk"
 
-# The guided tour. Its own unit because a source file belongs to a unit or to
-# nothing: `of_source` places a file by which unit's tree it sits under, and an
-# unplaced file is unscoped, which makes every name it writes out of scope.
+# The guided tour: `Demo.java` at the top, and the file it navigates to under
+# `demo/`.
 #
-# Depends on nothing, so everything it shows is in one directory.
+# A unit is not needed for the tour to *resolve*. A file no unit declares stays
+# unscoped, and unscoped sees everything rather than nothing — which is what
+# keeps a scratch file working next to a project.
+#
+# It is needed for the tour to be *loaded*. Only a unit's sources are read at
+# startup, so without this the second file would not be in the lake and step
+# 4's F12 into `demo/Neighbour.java` would find nothing until you opened it by
+# hand.
+#
+# `Demo.java` is named directly rather than by its directory, because its
+# directory is the example root and a unit claiming that would swallow `a/` and
+# `b/` too. A selector naming one file is a tree of one.
+#
+# Depends on nothing: everything the tour shows is decided inside these two
+# files.
 [unit.demo]
-sources = ["demo"]
+sources = ["Demo.java", "demo"]
 
 [unit.a-main]
 sources = ["a/src/main/java"]

@@ -5,3 +5,4 @@
 mod classpath;
 mod jdk;
 mod scoping;
+mod selectors;

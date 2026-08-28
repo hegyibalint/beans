@@ -13,7 +13,7 @@
  * so no runtime image is in the lake and `java.lang` names resolve to nothing.
  * Step 6 is the one that depends on it; `mise where java` prints the path.
  */
-public class Presentation {
+public class Demo {
 
     int count;
     Widget[] widgets;
@@ -28,7 +28,7 @@ public class Presentation {
      * Expect all three of JLS 6.1's namespaces at once, because an unqualified
      * caret is 6.5.2's *AmbiguousName* and the spec itself does not choose:
      *
-     *   types      Presentation, Widget, Neighbour, Base, Marker
+     *   types      Demo, Widget, Neighbour, Base, Marker
      *   variables  total, factor, count, widgets, grid
      *   methods    describe, render, shadowing, navigation, diagnostics, notYet
      *
@@ -90,7 +90,7 @@ public class Presentation {
      *   Neighbour   another file in this unit — a file you never opened
      *   count       the field at the top
      *   describe    the method above
-     *   this        the class Presentation
+     *   this        the class Demo
      */
     void navigation(Neighbour neighbour) {
         Widget widget = null;

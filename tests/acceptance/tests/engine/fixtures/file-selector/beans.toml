@@ -1,0 +1,6 @@
+# One unit naming a single file rather than a tree.
+#
+# `Sibling.java` sits in the same directory and is deliberately not named, so
+# the fixture can tell "a tree of one" apart from "the directory it is in".
+[unit.one]
+sources = ["Named.java"]

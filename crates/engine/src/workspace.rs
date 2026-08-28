@@ -161,6 +161,17 @@ pub(crate) fn java_sources(workspace: &Workspace) -> Vec<PathBuf> {
 /// source sets that were never created, and a missing directory contributes
 /// nothing rather than failing the whole import.
 fn collect(directory: &Path, into: &mut Vec<PathBuf>) {
+    // A selector may name one file rather than a tree, which `owned_trees`
+    // already accounts for on the scoping side: a path is a prefix of itself,
+    // so such a file belongs to the unit that named it. Reading has to agree,
+    // or the file is in scope and never loaded.
+    if directory.is_file() {
+        if is_java(directory) {
+            into.push(directory.to_path_buf());
+        }
+        return;
+    }
+
     let Ok(entries) = fs::read_dir(directory) else {
         return;
     };
