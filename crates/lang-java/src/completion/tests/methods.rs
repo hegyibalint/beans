@@ -47,6 +47,34 @@ class Test {
     assert!(details.contains(&"(String) -> void"));
 }
 
+/// The signature is the only thing telling two overloads apart in the list, so
+/// a parameter has to carry the brackets §10.2 gave it — including the pair an
+/// ellipsis stands for (§8.4.1). Written both ways round because they are the
+/// same declared type, and §8.4.2 would call them override-equivalent.
+#[test]
+fn a_signature_carries_the_brackets_of_its_parameters() {
+    let items = complete_at_cursor(
+        "package p;
+class Test {
+    int[] spread(String... args) { return null; }
+    int[] array(String[] args) { return null; }
+    void m() {
+        <cur>
+    }
+}
+",
+    );
+
+    assert_eq!(
+        item(&items, "spread").detail.as_deref(),
+        Some("(String[]) -> int[]")
+    );
+    assert_eq!(
+        item(&items, "array").detail.as_deref(),
+        Some("(String[]) -> int[]")
+    );
+}
+
 #[test]
 fn a_method_of_another_type_in_the_file_is_not_offered() {
     let items = complete_at_cursor(

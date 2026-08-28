@@ -83,6 +83,49 @@ class Test {
     );
 }
 
+/// §10.2 composes one type from the brackets on the type and the brackets on
+/// the declarator, and the row shows what was written. All three of these read
+/// as their element type before arrays reached the model.
+#[test]
+fn an_array_is_offered_with_its_brackets() {
+    let items = complete_at_cursor(
+        "package p;
+class Test {
+    String[] field;
+    void m(int grid[][]) {
+        String[][] local = null;
+        <cur>
+    }
+}
+",
+    );
+
+    assert_eq!(item(&items, "field").detail.as_deref(), Some("String[]"));
+    assert_eq!(item(&items, "grid").detail.as_deref(), Some("int[][]"));
+    assert_eq!(item(&items, "local").detail.as_deref(), Some("String[][]"));
+}
+
+/// §8.4.1 makes a variable arity parameter's declared type an array type, and
+/// §10.2 says why: "the ellipsis of a variable arity parameter is treated as a
+/// bracket pair". The grammar gives that node no fields at all, so this
+/// parameter used to reach the model with no name, and a caret in the body was
+/// offered nothing for it.
+#[test]
+fn a_variable_arity_parameter_is_offered_as_an_array() {
+    let items = complete_at_cursor(
+        "package p;
+class Test {
+    void m(String... args) {
+        <cur>
+    }
+}
+",
+    );
+
+    assert!(labels(&items).contains(&"args"));
+    assert_eq!(item(&items, "args").detail.as_deref(), Some("String[]"));
+}
+
 #[test]
 fn a_variable_carries_no_handle() {
     let items = complete_at_cursor(
