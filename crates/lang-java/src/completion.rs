@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use beans_core::language::{CompletionItem, CompletionItemKind, Handle};
 use beans_core::model::{Offset, OffsetSpan};
 use beans_core::storage::Revision;
@@ -8,7 +10,8 @@ use crate::model;
 use crate::query::Query;
 use crate::resolution::{
     InScopeMethod, InScopeType, InScopeVariable, TypeTarget, Wanted, first_stage_that_answers,
-    members_of, methods_in_scope, resolve_receiver_name, types_in_scope, variables_in_scope,
+    members_in_hierarchy, methods_in_scope, resolve_receiver_name, types_in_scope,
+    variables_in_scope,
 };
 
 /// JLS 26 §6.3 names what completion is asked about:
@@ -130,51 +133,68 @@ pub(crate) fn complete(
 /// Every row here is classified, which is the difference from the unqualified
 /// case. A member of another type is exactly the relation §6.6.1 governs, so
 /// `neighbour.hidden` has to be absent rather than offered and then rejected.
-///
-/// No inheritance: `members_of` reads the type's own body scope, so a
-/// subclass's caret sees none of what §8.2 gives it. That walk is its own entry
-/// in `TODO.md`.
+/// Asking it per member rather than per receiver is what §8.2 requires once the
+/// walk crosses files: a `private` field of a superclass is declared somewhere
+/// the caret cannot reach even though the receiver is somewhere it can.
 fn members(
     point: &Point,
     query: &Query,
     class_source: &jvm::model::Source,
     class: model::DeclarationId,
 ) -> Vec<CompletionItem<jvm::model::Source>> {
-    let Some(class_file) = query.model_of(class_source) else {
-        return Vec::new();
-    };
     let wanted = Wanted::StartingWith(point.prefix);
     let mut items = Vec::new();
-
-    let reachable = |declaration: &model::Declaration| {
-        let (access, scope) = match declaration {
-            model::Declaration::Field(field) => (field.access, field.declaring_scope),
-            model::Declaration::Method(method) => (method.access, method.declaring_scope),
-            model::Declaration::Type(ty) => (ty.access, ty.declaring_scope),
-            _ => return false,
-        };
-        is_accessible(
-            access,
-            &Site {
-                source: class_source,
-                file: class_file,
-                scope,
-            },
-            &point.at,
-        )
-    };
 
     for namespace in [
         model::Namespace::Type,
         model::Namespace::Variable,
         model::Namespace::Method,
     ] {
-        for member in members_of(class_file, class, namespace, wanted) {
-            let declaration = &class_file.declarations[member.0];
+        let mut shown = HashSet::new();
+
+        for (member_source, member) in
+            members_in_hierarchy(class_source, class, namespace, wanted, query)
+        {
+            let Some(member_file) = query.model_of(&member_source) else {
+                continue;
+            };
+            let declaration = &member_file.declarations[member.0];
             let Some(name) = declaration.name() else {
                 continue;
             };
-            if !reachable(declaration) {
+
+            let (access, scope) = match declaration {
+                model::Declaration::Field(field) => (field.access, field.declaring_scope),
+                model::Declaration::Method(method) => (method.access, method.declaring_scope),
+                model::Declaration::Type(ty) => (ty.access, ty.declaring_scope),
+                _ => continue,
+            };
+            if !is_accessible(
+                access,
+                &Site {
+                    source: &member_source,
+                    file: member_file,
+                    scope,
+                },
+                &point.at,
+            ) {
+                continue;
+            }
+
+            // The list arrives nearest first, so the first row to claim a
+            // spelling is the one that wins. §8.3 and §8.5 make that hiding, for
+            // a field and a member type. A method is neither hidden nor
+            // duplicated but overridden (§8.4.8) or overloaded (§8.4.9), and
+            // §8.4.2 makes the parameter types the half that separates the two —
+            // so the key carries them, and an override collapses onto the
+            // nearest declaration while a genuine overload keeps its own row.
+            let key = match declaration {
+                model::Declaration::Method(_) => {
+                    format!("{}({})", name.text, parameter_types(member_file, member))
+                }
+                _ => name.text.clone(),
+            };
+            if !shown.insert(key) {
                 continue;
             }
 
@@ -182,10 +202,10 @@ fn members(
                 // One row per declaration rather than per name, for the reason
                 // `push_methods` gives: §15.12.2 needs arguments to choose.
                 model::Declaration::Method(_) => CompletionItem {
-                    label: format!("{}({})", name.text, parameters(class_file, member)),
+                    label: format!("{}({})", name.text, parameters(member_file, member)),
                     insert: name.text.clone(),
                     kind: CompletionItemKind::Method,
-                    detail: returns(class_file, member),
+                    detail: returns(member_file, member),
                     replace: point.replace,
                     handle: None,
                 },
@@ -302,6 +322,23 @@ fn parameters(file: &model::File, declaration: model::DeclarationId) -> String {
                 (None, None) => "?".to_string(),
             }
         })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// `int, String` — §8.4.2's half of a signature, as written rather than as
+/// resolved. Two spellings of one type (`List` and `java.util.List`) read as
+/// two signatures here, which makes this an approximation; resolving both
+/// parameter lists to compare them is what it would take to stop being one.
+fn parameter_types(file: &model::File, declaration: model::DeclarationId) -> String {
+    let model::Declaration::Method(method) = &file.declarations[declaration.0] else {
+        return String::new();
+    };
+
+    method
+        .parameters
+        .iter()
+        .map(|parameter| written_type(&file.declarations[parameter.0]).unwrap_or_default())
         .collect::<Vec<_>>()
         .join(", ")
 }

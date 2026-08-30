@@ -10,6 +10,7 @@
 //! which is §6.5.2's job and belongs to none of them.
 
 pub(crate) mod candidates;
+pub(crate) mod hierarchy;
 pub(crate) mod methods;
 pub(crate) mod types;
 pub(crate) mod variables;
@@ -22,7 +23,8 @@ use crate::{model, query::Query};
 
 pub(crate) use candidates::{ResolutionCandidates, TypeInvalidity, first_stage_that_answers};
 pub use candidates::{TypeResolution, TypeTarget};
-pub(crate) use methods::{InScopeMethod, find_member, members_of, methods_in_scope};
+pub(crate) use hierarchy::{find_member, members_in_hierarchy};
+pub(crate) use methods::{InScopeMethod, methods_in_scope};
 pub(crate) use types::{InScopeType, resolve_type_candidates, resolve_type_name, types_in_scope};
 pub(crate) use variables::{InScopeVariable, resolve_variable_name, variables_in_scope};
 
@@ -140,13 +142,13 @@ pub(crate) fn resolve_expression(
             else {
                 return Vec::new();
             };
-            let Some(class_file) = query.model_of(&class_source) else {
-                return Vec::new();
-            };
-            find_member(class_file, class, name, model::Namespace::Variable)
-                .into_iter()
-                .map(|member| (class_source.clone(), member))
-                .collect()
+            find_member(
+                &class_source,
+                class,
+                name,
+                model::Namespace::Variable,
+                query,
+            )
         }
         model::Expression::MethodCall { receiver, name, .. } => {
             let receiver_class = match receiver {
@@ -158,13 +160,7 @@ pub(crate) fn resolve_expression(
             let Some((class_source, class)) = receiver_class else {
                 return Vec::new();
             };
-            let Some(class_file) = query.model_of(&class_source) else {
-                return Vec::new();
-            };
-            find_member(class_file, class, name, model::Namespace::Method)
-                .into_iter()
-                .map(|member| (class_source.clone(), member))
-                .collect()
+            find_member(&class_source, class, name, model::Namespace::Method, query)
         }
         model::Expression::ObjectCreation { ty, .. } => {
             resolve_type_reference(source, file, ty, scope, query)
@@ -198,20 +194,16 @@ fn resolve_receiver_class(
         model::Expression::FieldAccess { receiver, name } => {
             let (class_source, class) =
                 resolve_receiver_class(source, file, body_id, *receiver, query)?;
-            let class_file = query.model_of(&class_source)?;
-            let member = find_member(class_file, class, name, model::Namespace::Variable)
-                .into_iter()
-                .next()?;
-            let declaration = &class_file.declarations[member.0];
-            resolve_type_reference(
+            let member = find_member(
                 &class_source,
-                class_file,
-                declaration.type_ref()?,
-                declaration.declaring_scope(),
+                class,
+                name,
+                model::Namespace::Variable,
                 query,
             )
             .into_iter()
-            .next()
+            .next()?;
+            type_of_member(member, query)
         }
         model::Expression::MethodCall { receiver, name, .. } => {
             let receiver_class = match receiver {
@@ -221,20 +213,10 @@ fn resolve_receiver_class(
                     .map(|declaration| (source.clone(), declaration)),
             }?;
             let (class_source, class) = receiver_class;
-            let class_file = query.model_of(&class_source)?;
-            let member = find_member(class_file, class, name, model::Namespace::Method)
+            let member = find_member(&class_source, class, name, model::Namespace::Method, query)
                 .into_iter()
                 .next()?;
-            let declaration = &class_file.declarations[member.0];
-            resolve_type_reference(
-                &class_source,
-                class_file,
-                declaration.type_ref()?,
-                declaration.declaring_scope(),
-                query,
-            )
-            .into_iter()
-            .next()
+            type_of_member(member, query)
         }
         model::Expression::ObjectCreation { ty, .. } => {
             resolve_type_reference(source, file, ty, scope, query)
@@ -243,6 +225,32 @@ fn resolve_receiver_class(
         }
         model::Expression::Assign { .. } | model::Expression::Literal => None,
     }
+}
+
+/// The class a declaration's written type denotes.
+///
+/// The declaration arrives with the source it was found in rather than the one
+/// the receiver had, and that is the point: a `model::DeclarationId` is an index
+/// into one `model::File`, and since `find_member` walks a hierarchy the member
+/// it returns is often declared in a different file from the receiver. §6.5.6.2
+/// then resolves the *declared* type where it was written, so the scope is the
+/// member's own.
+fn type_of_member(
+    member: (jvm::model::Source, model::DeclarationId),
+    query: &Query,
+) -> Option<(jvm::model::Source, model::DeclarationId)> {
+    let (source, member) = member;
+    let file = query.model_of(&source)?;
+    let declaration = &file.declarations[member.0];
+    resolve_type_reference(
+        &source,
+        file,
+        declaration.type_ref()?,
+        declaration.declaring_scope(),
+        query,
+    )
+    .into_iter()
+    .next()
 }
 
 /// §6.5.2.1 for one segment: a variable if the scope chain spells the name, and
@@ -311,20 +319,16 @@ pub(crate) fn resolve_receiver_name(
 
     for segment in rest {
         let (class_source, class) = current;
-        let class_file = query.model_of(&class_source)?;
-        let member = find_member(class_file, class, segment, model::Namespace::Variable)
-            .into_iter()
-            .next()?;
-        let declaration = &class_file.declarations[member.0];
-        current = resolve_type_reference(
+        let member = find_member(
             &class_source,
-            class_file,
-            declaration.type_ref()?,
-            declaration.declaring_scope(),
+            class,
+            segment,
+            model::Namespace::Variable,
             query,
         )
         .into_iter()
         .next()?;
+        current = type_of_member(member, query)?;
     }
 
     Some(current)

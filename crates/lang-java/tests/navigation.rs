@@ -226,3 +226,50 @@ fn resolves_a_cross_file_type_when_the_caret_is_at_its_right_edge() {
 
     assert_eq!(workspace.labels_at("edge"), vec!["p.B".to_string()]);
 }
+
+/// §8.2 makes an inherited field a member of the subclass, so a reference
+/// through a subclass reference has to land in the superclass's file.
+#[test]
+fn a_field_access_reaches_a_field_of_the_superclass() {
+    let workspace = Workspace::load(&[
+        (
+            "p/Base.java",
+            "package p;\npublic class Base {\n    public int <cur:inherited>inherited;\n    public void <cur:shared>shared() {}\n}\n",
+        ),
+        (
+            "p/Widget.java",
+            "package p;\npublic class Widget extends Base {\n}\n",
+        ),
+        (
+            "p/Test.java",
+            "package p;\nclass Test {\n    void m(Widget widget) {\n        int read = widget.<cur:field_use>inherited;\n        widget.<cur:call>shared();\n    }\n}\n",
+        ),
+    ]);
+
+    workspace.assert_resolves("field_use", "inherited");
+    workspace.assert_resolves("call", "shared");
+}
+
+/// §8.3: the nearest declaration hides the one above it, so two declarations of
+/// one name give the reference exactly one target and it is the subclass's.
+#[test]
+fn a_hidden_field_resolves_to_the_declaration_that_hides_it() {
+    let workspace = Workspace::load(&[(
+        "A.java",
+        "class Base {\n    int value;\n}\nclass Widget extends Base {\n    int <cur:near>value;\n}\nclass Test {\n    void m(Widget widget) {\n        int read = widget.<cur:use>value;\n    }\n}\n",
+    )]);
+
+    workspace.assert_resolves("use", "near");
+}
+
+/// A call with no receiver runs through §15.12.1's "class to search", which
+/// §8.2 has already extended past the enclosing class's own body.
+#[test]
+fn an_unqualified_call_reaches_an_inherited_method() {
+    let workspace = Workspace::load(&[(
+        "A.java",
+        "class Base {\n    void <cur:helper>helper() {}\n}\nclass Widget extends Base {\n    void m() {\n        <cur:call>helper();\n    }\n}\n",
+    )]);
+
+    workspace.assert_resolves("call", "helper");
+}

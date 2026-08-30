@@ -1,6 +1,7 @@
 mod agreement;
 mod handles;
 mod imports;
+mod inheritance;
 mod java_lang;
 mod lexical;
 mod members;

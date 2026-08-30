@@ -2,7 +2,7 @@
 //!
 //! Which class to search is §15.12.1 and is answered here. Which overload
 //! applies is §15.12.2, needs the types of the arguments, and is not built —
-//! `find_member` hands back every method of the name and lets the caller decide.
+//! `members_of` hands back every method of the name and lets the caller decide.
 
 use crate::model;
 
@@ -63,8 +63,9 @@ pub(crate) fn methods_in_scope<'a>(
 /// `Exactly` for one name, completion asks `StartingWith` for a prefix, and one
 /// function answers both so the two cannot drift.
 ///
-/// No inheritance yet: §8.2 puts a superclass's members in scope too and only
-/// this type's own body scope is searched.
+/// One type's own body scope and nothing above it. §8.2's inherited members are
+/// `hierarchy::members_in_hierarchy`, which is this function folded over the
+/// supertypes; the split is that only this half stays inside one `model::File`.
 pub(crate) fn members_of<'a>(
     file: &'a model::File,
     type_declaration: model::DeclarationId,
@@ -87,20 +88,4 @@ pub(crate) fn members_of<'a>(
                     && member.name().is_some_and(|name| wanted.matches(&name.text))
             })
     })
-}
-
-/// The members of a type with a matching name in the given namespace.
-pub(crate) fn find_member(
-    file: &model::File,
-    type_declaration: model::DeclarationId,
-    name: &model::Identifier,
-    namespace: model::Namespace,
-) -> Vec<model::DeclarationId> {
-    members_of(
-        file,
-        type_declaration,
-        namespace,
-        Wanted::Exactly(&name.text),
-    )
-    .collect()
 }

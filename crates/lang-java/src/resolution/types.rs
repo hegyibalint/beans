@@ -9,7 +9,7 @@ use beans_platform_jvm as jvm;
 use crate::accessibility::{Site, is_accessible, is_compiled_type_accessible};
 use crate::model;
 
-use super::methods::find_member;
+use super::methods::members_of;
 use crate::query::Query;
 
 use super::Wanted;
@@ -416,7 +416,7 @@ fn resolve_from_same_package(
 ///
 /// p      probe p             miss  -> package p
 /// Outer  probe p.Outer       hit   -> type, Parsed arm
-/// Inner  find_member(Inner)  hit   -> type, Parsed arm
+/// Inner  members_of(Inner)   hit   -> type, Parsed arm
 /// ```
 ///
 /// 3. The same spelling against a class file. Nesting is flat in the lake, and
@@ -543,13 +543,17 @@ fn member_types(target: &TypeTarget, name: &model::Identifier, query: &Query) ->
             let Some(file) = query.model_of(source) else {
                 return Vec::new();
             };
-            find_member(file, *declaration, name, model::Namespace::Type)
-                .into_iter()
-                .map(|declaration| TypeTarget::Parsed {
-                    source: source.clone(),
-                    declaration,
-                })
-                .collect()
+            members_of(
+                file,
+                *declaration,
+                model::Namespace::Type,
+                Wanted::Exactly(&name.text),
+            )
+            .map(|declaration| TypeTarget::Parsed {
+                source: source.clone(),
+                declaration,
+            })
+            .collect()
         }
         TypeTarget::Compiled { fqn, .. } => query.types_named(&fqn.nested(&name.text)),
     }
