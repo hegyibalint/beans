@@ -113,6 +113,12 @@ Behavior that contradicts a specification we have read.
   brackets do not compound it: `foo(bar.`, `if (a.` and `new Foo(a.` all keep
   their enclosing method, and the receiver stays readable in every one.
 
+  What it eats does not merely vanish, it is reparented. Measured in
+  `examples/beans/Demo.java`: `this.` inside a method offers `Base`, `Marker`
+  and `Widget` as member types of `Demo`, because the consumed run swallowed
+  `Demo`'s own closing brace and the three top level siblings after it landed
+  inside its body scope. So the list is both short and salted.
+
   Worse when nothing follows at all. With `this.` written in a class's *last*
   member there is no member left to eat, and the whole `class_declaration`
   collapses into an `ERROR` — no type declaration, no method, no scope, so
