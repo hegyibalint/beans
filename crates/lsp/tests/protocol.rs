@@ -237,6 +237,14 @@ mod handshake {
             Some(Some(false)),
             "advertising resolve would invite a request we answer with nothing",
         );
+        assert_eq!(
+            capabilities
+                .completion_provider
+                .as_ref()
+                .and_then(|options| options.trigger_characters.clone()),
+            Some(vec![".".to_string()]),
+            "without this a member list only appears when the user asks for one",
+        );
     }
 
     /// The handshake hands over to the message loop rather than ending the

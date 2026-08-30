@@ -90,8 +90,15 @@ pub fn run(conn: Connection, mut beans: Beans) {
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         // No resolve provider: nothing we can say about a row is expensive
         // enough to defer yet, so every item arrives complete.
+        //
+        // A `.` is the one character worth firing on unprompted, because JLS
+        // §6.5.6.2 makes what follows it a different question rather than more
+        // of the same one — nothing in scope is an answer there. The client
+        // fires it wherever it is typed, comments and string literals included,
+        // and we answer those too; `TODO.md` says so.
         completion_provider: Some(CompletionOptions {
             resolve_provider: Some(false),
+            trigger_characters: Some(vec![".".to_string()]),
             ..Default::default()
         }),
         ..Default::default()

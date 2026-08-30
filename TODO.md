@@ -98,6 +98,28 @@ Behavior that contradicts a specification we have read.
   `jvm::model::BinaryName::nested` cannot spell, which is its own entry under
   **Undecided**.
 
+- **A caret inside a comment or a string literal is offered the program's
+  names.** §3.7 makes a comment's text not a token of the program and §3.10.5
+  says the same of a string literal's body, so §6.5 has nothing to classify
+  there and the answer is no list at all. Measured: with `class Widget { int
+  own; }` in scope, a caret at `// see widget.‸ in prose` is offered `own`, and
+  so is one at `String s = "widget.‸";`. The `Point::at` in
+  `crates/lang-java/src/completion.rs` reads one character of lookbehind and
+  `enclosing_scope` answers from a span that covers the comment along with the
+  code around it, so neither half can tell.
+
+  Latent until the LSP started firing on `.`. Ctrl-space did this all along and
+  nobody met it, because nobody asks for completion inside a javadoc; a trigger
+  character asks on every dot typed, javadoc included, and this file's own prose
+  is full of them. Accepted deliberately rather than overlooked — the guard is
+  worth more once there is something to build it on.
+
+  Two ways to build it. A lexical scan of `contents` tracking comment, string,
+  char and text-block state answers it in one pass, which next to the lake scan
+  below costs nothing. The structural answer is the syntax tree, which would say
+  what node an offset is in directly and replace the lookbehind too; that is the
+  *Does lang-java keep the syntax tree?* entry under **Undecided**.
+
 - **A dot with no name after it eats the rest of the enclosing class.**
   Tree-sitter reaches forward for the identifier a `.` needs, and whatever it
   reaches across stops existing. Measured on a class declaring `field`, `m`,
