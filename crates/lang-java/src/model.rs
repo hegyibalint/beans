@@ -492,6 +492,10 @@ pub struct ConstructorDeclaration {
 pub struct MethodDeclaration {
     pub span: OffsetSpan,
     pub name: Option<Identifier>,
+    /// §8.4.3's access modifier, read the same way a field's is. `None` where
+    /// §8.1.1 puts a declaration outside access control, which for a method
+    /// means one declared in a local or anonymous class.
+    pub access: Option<Access>,
     pub return_type: Option<TypeRef>,
     pub parameters: Vec<DeclarationId>,
     pub declaring_scope: LexicalScopeId,
@@ -776,6 +780,7 @@ mod tests {
                         end: Offset(10),
                     },
                     name: Some(name.clone()),
+                    access: None,
                     return_type: None,
                     parameters: Vec::new(),
                     declaring_scope: LexicalScopeId(0),

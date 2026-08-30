@@ -400,6 +400,7 @@ fn parse_method_declaration(
         model::Declaration::Method(model::MethodDeclaration {
             span: node.byte_range().into(),
             name: Some(name),
+            access: parse_access(node),
             return_type,
             parameters: Vec::new(),
             declaring_scope,
