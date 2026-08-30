@@ -3,6 +3,7 @@ mod handles;
 mod imports;
 mod java_lang;
 mod lexical;
+mod members;
 mod methods;
 mod same_package;
 mod shadowing;
@@ -94,12 +95,12 @@ impl Workspace {
             .java
             .model_at(&self.caret, self.revision)
             .expect("the caret's file was parsed");
-        let point = Point::at(&self.caret, file, self.offset, &self.text)
-            .expect("the caret is inside the compilation unit");
         let query = Query::new(
             jvm::query::Query::new(&self.jvm, jvm::query::ScopeQuery::unscoped(), self.revision),
             &self.java,
         );
+        let point = Point::at(&self.caret, file, self.offset, &self.text, &query)
+            .expect("the caret is inside the compilation unit");
 
         complete(&point, &query, self.revision)
     }

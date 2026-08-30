@@ -22,7 +22,7 @@ use crate::{model, query::Query};
 
 pub(crate) use candidates::{ResolutionCandidates, TypeInvalidity, first_stage_that_answers};
 pub use candidates::{TypeResolution, TypeTarget};
-pub(crate) use methods::{InScopeMethod, find_member, methods_in_scope};
+pub(crate) use methods::{InScopeMethod, find_member, members_of, methods_in_scope};
 pub(crate) use types::{InScopeType, resolve_type_candidates, resolve_type_name, types_in_scope};
 pub(crate) use variables::{InScopeVariable, resolve_variable_name, variables_in_scope};
 
@@ -193,34 +193,7 @@ fn resolve_receiver_class(
             Some((source.clone(), declaration))
         }
         model::Expression::NameRef { name } => {
-            if let Some(variable) = resolve_variable_name(file, name, scope).into_iter().next() {
-                let declaration = &file.declarations[variable.0];
-                let type_ref = declaration.type_ref()?;
-                return resolve_type_reference(
-                    source,
-                    file,
-                    type_ref,
-                    declaration.declaring_scope(),
-                    query,
-                )
-                .into_iter()
-                .next();
-            }
-
-            // Not a variable: try a type name for static access (`Bar.asd`).
-            match resolve_type_name(
-                &model::Name::Simple(name.clone()),
-                source,
-                file,
-                scope,
-                query,
-            ) {
-                TypeResolution::Resolved(TypeTarget::Parsed {
-                    source,
-                    declaration,
-                }) => Some((source, declaration)),
-                _ => None,
-            }
+            resolve_name_as_class(name, source, file, scope, query)
         }
         model::Expression::FieldAccess { receiver, name } => {
             let (class_source, class) =
@@ -270,4 +243,89 @@ fn resolve_receiver_class(
         }
         model::Expression::Assign { .. } | model::Expression::Literal => None,
     }
+}
+
+/// §6.5.2.1 for one segment: a variable if the scope chain spells the name, and
+/// a type otherwise, which is what makes `Bar.asd` reach a static member.
+fn resolve_name_as_class(
+    name: &model::Identifier,
+    source: &jvm::model::Source,
+    file: &model::File,
+    scope: model::LexicalScopeId,
+    query: &Query,
+) -> Option<(jvm::model::Source, model::DeclarationId)> {
+    if let Some(variable) = resolve_variable_name(file, name, scope).into_iter().next() {
+        let declaration = &file.declarations[variable.0];
+        let type_ref = declaration.type_ref()?;
+        return resolve_type_reference(
+            source,
+            file,
+            type_ref,
+            declaration.declaring_scope(),
+            query,
+        )
+        .into_iter()
+        .next();
+    }
+
+    match resolve_type_name(
+        &model::Name::Simple(name.clone()),
+        source,
+        file,
+        scope,
+        query,
+    ) {
+        TypeResolution::Resolved(TypeTarget::Parsed {
+            source,
+            declaration,
+        }) => Some((source, declaration)),
+        _ => None,
+    }
+}
+
+/// The class a receiver denotes, read from how it is written rather than from
+/// an expression the parser produced.
+///
+/// `resolve_receiver_class` answers the same question from a `BodyNodeId`. A
+/// caret at `a.` has no such node — a trailing dot recovers into an `ERROR`, or
+/// worse, and TODO.md records how much worse — so completion has only the
+/// spelling to go on. §6.5.2's *AmbiguousName* is exactly a chain of
+/// identifiers waiting to be classified, and §6.5.2.1 classifies it left to
+/// right: the first segment names a variable or a type, and every later one is
+/// a field of what came before.
+pub(crate) fn resolve_receiver_name(
+    segments: &[model::Identifier],
+    source: &jvm::model::Source,
+    file: &model::File,
+    scope: model::LexicalScopeId,
+    query: &Query,
+) -> Option<(jvm::model::Source, model::DeclarationId)> {
+    let (first, rest) = segments.split_first()?;
+
+    // §15.8.3: `this` denotes the instance whose body the caret sits in.
+    let mut current = if first.text == "this" {
+        (source.clone(), file.enclosing_type_declaration(scope)?)
+    } else {
+        resolve_name_as_class(first, source, file, scope, query)?
+    };
+
+    for segment in rest {
+        let (class_source, class) = current;
+        let class_file = query.model_of(&class_source)?;
+        let member = find_member(class_file, class, segment, model::Namespace::Variable)
+            .into_iter()
+            .next()?;
+        let declaration = &class_file.declarations[member.0];
+        current = resolve_type_reference(
+            &class_source,
+            class_file,
+            declaration.type_ref()?,
+            declaration.declaring_scope(),
+            query,
+        )
+        .into_iter()
+        .next()?;
+    }
+
+    Some(current)
 }

@@ -3,12 +3,12 @@ use beans_core::model::{Offset, OffsetSpan};
 use beans_core::storage::Revision;
 use beans_platform_jvm as jvm;
 
-use crate::accessibility::Site;
+use crate::accessibility::{Site, is_accessible};
 use crate::model;
 use crate::query::Query;
 use crate::resolution::{
     InScopeMethod, InScopeType, InScopeVariable, TypeTarget, Wanted, first_stage_that_answers,
-    methods_in_scope, types_in_scope, variables_in_scope,
+    members_of, methods_in_scope, resolve_receiver_name, types_in_scope, variables_in_scope,
 };
 
 /// JLS 26 §6.3 names what completion is asked about:
@@ -29,15 +29,19 @@ pub(crate) struct Point<'a> {
     replace: OffsetSpan,
 }
 
-/// §6.5.1 classifies a name by the context it is written in. Only one
-/// distinction is load-bearing yet: everything after a `.` is a member of the
-/// receiver (§6.5.6.2), and offering names in scope there is actively wrong.
-/// Every other position is §6.5.2's *AmbiguousName*, where offering types,
-/// variables and methods together is the spec's own answer rather than a
-/// simplification.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// §6.5.1 classifies a name by the context it is written in. Everything after a
+/// `.` is a member of the receiver (§6.5.6.2), and offering names in scope there
+/// is actively wrong. Every other position is §6.5.2's *AmbiguousName*, where
+/// offering types, variables and methods together is the spec's own answer
+/// rather than a simplification.
 enum Context {
-    Qualified,
+    /// The class whose members are wanted. `None` where the receiver is an
+    /// expression lookbehind cannot read — a call, an index, a cast — or where
+    /// it reads one that resolves to nothing. Both mean an empty list, which is
+    /// still the right answer after a dot.
+    Qualified {
+        receiver: Option<(jvm::model::Source, model::DeclarationId)>,
+    },
     Unqualified,
 }
 
@@ -47,17 +51,24 @@ impl<'a> Point<'a> {
         file: &'a model::File,
         offset: Offset,
         contents: &'a str,
+        query: &Query,
     ) -> Option<Point<'a>> {
         let before = contents.get(..offset.0)?;
         let start = prefix_start(before);
+        let scope = enclosing_scope(file, offset)?;
 
         Some(Point {
             at: Site {
                 source,
                 file,
-                scope: enclosing_scope(file, offset)?,
+                scope,
             },
-            context: context_before(&before[..start]),
+            context: match qualifier_before(contents, start) {
+                Some(segments) => Context::Qualified {
+                    receiver: resolve_receiver_name(&segments, source, file, scope, query),
+                },
+                None => Context::Unqualified,
+            },
             prefix: &before[start..],
             replace: OffsetSpan {
                 start: Offset(start),
@@ -79,8 +90,11 @@ pub(crate) fn complete(
     query: &Query,
     revision: Revision,
 ) -> Vec<CompletionItem<jvm::model::Source>> {
-    if point.context == Context::Qualified {
-        return Vec::new();
+    if let Context::Qualified { receiver } = &point.context {
+        return match receiver {
+            Some((class_source, class)) => members(point, query, class_source, *class),
+            None => Vec::new(),
+        };
     }
 
     let mut items = Vec::new();
@@ -106,6 +120,89 @@ pub(crate) fn complete(
     push_unplaced_imports(&mut items, point, revision);
     push_variables(&mut items, point);
     push_methods(&mut items, point);
+    items
+}
+
+/// What a name after a dot may be: a member of the receiver's type, in all
+/// three of §6.1's namespaces at once — a field (§6.5.6.2), a method
+/// (§6.5.7.2), or a nested type (§6.5.5.2).
+///
+/// Every row here is classified, which is the difference from the unqualified
+/// case. A member of another type is exactly the relation §6.6.1 governs, so
+/// `neighbour.hidden` has to be absent rather than offered and then rejected.
+///
+/// No inheritance: `members_of` reads the type's own body scope, so a
+/// subclass's caret sees none of what §8.2 gives it. That walk is its own entry
+/// in `TODO.md`.
+fn members(
+    point: &Point,
+    query: &Query,
+    class_source: &jvm::model::Source,
+    class: model::DeclarationId,
+) -> Vec<CompletionItem<jvm::model::Source>> {
+    let Some(class_file) = query.model_of(class_source) else {
+        return Vec::new();
+    };
+    let wanted = Wanted::StartingWith(point.prefix);
+    let mut items = Vec::new();
+
+    let reachable = |declaration: &model::Declaration| {
+        let (access, scope) = match declaration {
+            model::Declaration::Field(field) => (field.access, field.declaring_scope),
+            model::Declaration::Method(method) => (method.access, method.declaring_scope),
+            model::Declaration::Type(ty) => (ty.access, ty.declaring_scope),
+            _ => return false,
+        };
+        is_accessible(
+            access,
+            &Site {
+                source: class_source,
+                file: class_file,
+                scope,
+            },
+            &point.at,
+        )
+    };
+
+    for namespace in [
+        model::Namespace::Type,
+        model::Namespace::Variable,
+        model::Namespace::Method,
+    ] {
+        for member in members_of(class_file, class, namespace, wanted) {
+            let declaration = &class_file.declarations[member.0];
+            let Some(name) = declaration.name() else {
+                continue;
+            };
+            if !reachable(declaration) {
+                continue;
+            }
+
+            items.push(match declaration {
+                // One row per declaration rather than per name, for the reason
+                // `push_methods` gives: §15.12.2 needs arguments to choose.
+                model::Declaration::Method(_) => CompletionItem {
+                    label: format!("{}({})", name.text, parameters(class_file, member)),
+                    insert: name.text.clone(),
+                    kind: CompletionItemKind::Method,
+                    detail: returns(class_file, member),
+                    replace: point.replace,
+                    handle: None,
+                },
+                _ => CompletionItem::plain(
+                    name.text.clone(),
+                    match declaration {
+                        model::Declaration::Type(ty) => type_kind(ty.kind),
+                        _ => CompletionItemKind::Field,
+                    },
+                    written_type(declaration),
+                    point.replace,
+                    None,
+                ),
+            });
+        }
+    }
+
     items
 }
 
@@ -359,11 +456,53 @@ fn is_identifier_part(character: char) -> bool {
     character.is_alphanumeric() || character == '_' || character == '$'
 }
 
-fn context_before(before_prefix: &str) -> Context {
-    match before_prefix.chars().rev().find(|c| !c.is_whitespace()) {
-        Some('.') => Context::Qualified,
-        _ => Context::Unqualified,
+/// The dotted name written immediately before the caret, in source order, or
+/// `None` if the caret is not after a dot at all.
+///
+/// This is what a caret can be told about its own position without a parse.
+/// §6.5.2's *AmbiguousName* is a chain of identifiers joined by dots, which is
+/// exactly what reads backwards from a `.`; anything else — a call, an index, a
+/// cast, a parenthesised expression — stops the walk at the first character
+/// that cannot be in a name, and the chain comes back short or empty.
+///
+/// An empty chain still says *qualified*. A caret after `foo().` is asking for
+/// a member of something, and answering with the names in scope would be the
+/// one answer §6.5.6.2 rules out.
+fn qualifier_before(contents: &str, before_prefix: usize) -> Option<Vec<model::Identifier>> {
+    let mut at = contents[..before_prefix].trim_end().len();
+    if !contents[..at].ends_with('.') {
+        return None;
     }
+    at -= '.'.len_utf8();
+
+    let mut segments = Vec::new();
+    loop {
+        at = contents[..at].trim_end().len();
+        let start = prefix_start(&contents[..at]);
+        let text = &contents[start..at];
+        // §3.8 keeps a digit out of the first position, which is also what stops
+        // the `.` of a floating-point literal (§3.10.2) reading as a receiver.
+        if text.is_empty() || text.starts_with(|character: char| character.is_ascii_digit()) {
+            break;
+        }
+
+        segments.push(model::Identifier {
+            text: text.to_string(),
+            span: OffsetSpan {
+                start: Offset(start),
+                end: Offset(at),
+            },
+        });
+
+        at = contents[..start].trim_end().len();
+        if !contents[..at].ends_with('.') {
+            break;
+        }
+        at -= '.'.len_utf8();
+    }
+
+    segments.reverse();
+    Some(segments)
 }
 
 /// What a row's icon says. A file we parsed carries the source keyword; the

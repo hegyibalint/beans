@@ -39,11 +39,11 @@ impl Workspace {
     /// The same question resolution is asked, at the same point.
     fn resolve(&self, name: &str) -> TypeResolution {
         let file = self.java.model_at(&self.caret, self.revision).unwrap();
-        let point = Point::at(&self.caret, file, self.offset, &self.text).unwrap();
         let query = Query::new(
             jvm::query::Query::new(&self.jvm, jvm::query::ScopeQuery::unscoped(), self.revision),
             &self.java,
         );
+        let point = Point::at(&self.caret, file, self.offset, &self.text, &query).unwrap();
 
         resolve_type_name(
             &model::Name::Simple(model::Identifier {

@@ -131,8 +131,8 @@ impl beans_core::language::Language<jvm::model::Source, jvm::Platform> for Langu
         contents: &str,
     ) -> Option<Vec<CompletionItem<jvm::model::Source>>> {
         let java_model = self.file_models.get(java_source, revision)?;
-        let point = completion::Point::at(java_source, java_model, offset, contents)?;
         let query = Query::new(platform_jvm.query_from(java_source, revision), self);
+        let point = completion::Point::at(java_source, java_model, offset, contents, &query)?;
         Some(completion::complete(&point, &query, revision))
     }
 }

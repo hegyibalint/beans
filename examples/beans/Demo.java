@@ -1,7 +1,7 @@
 /**
  * A guided tour of what Beans answers today.
  *
- * Seven steps. Each says what to do and what you should see; the last one says
+ * Eight steps. Each says what to do and what you should see; the last one says
  * what deliberately does not work yet, so nothing here looks broken when it is
  * merely unbuilt.
  *
@@ -32,7 +32,8 @@ public class Demo {
      *   variables  total, factor, count, widgets, grid
      *   methods    describe(int factor), render(Widget[] items, Widget[] more),
      *              shadowing(), navigation(Neighbour neighbour),
-     *              diagnostics(Neighbour neighbour), notYet()
+     *              diagnostics(Neighbour neighbour), members(Widget widget),
+     *              notYet()
      *
      * A method row reads with its parameters, the way every Java tool shows
      * one, and inserts the bare name. Its return type is the grey text to the
@@ -114,7 +115,7 @@ public class Demo {
      * `Marker` lands on the interface. Each name in the list is its own
      * reference, so the caret has to land on the one it is inside.
      *
-     * What does NOT work yet: Widget does not offer Base's members. See step 7.
+     * What does NOT work yet: Widget does not offer Base's members. See step 8.
      */
 
     // ---------------------------------------------------------------- 6 ----
@@ -144,11 +145,37 @@ public class Demo {
 
     // ---------------------------------------------------------------- 7 ----
     /**
+     * COMPLETION: the members of a receiver.
+     *
+     * On the empty line below, type `widget.` and complete. One row:
+     *
+     *   own    int
+     *
+     * That is Widget's own field and the whole list. `inherited` comes from
+     * Base, which Widget extends, and 8.2 puts it in scope here too — we do not
+     * walk the hierarchy yet, so it is absent. Step 8.
+     *
+     * Note what the list is NOT: the names in scope. 6.5.6.2 asks for a member
+     * of the receiver, so offering `count` or `describe` after the dot would be
+     * wrong rather than merely unhelpful.
+     *
+     * Also try `this.` on the same line. It offers Demo's own members, but only
+     * those declared ABOVE the caret — a trailing dot makes tree-sitter eat the
+     * rest of the class body, which is the one entry in TODO.md this file
+     * demonstrates rather than avoids. Type one more letter and it corrects
+     * itself.
+     */
+    void members(Widget widget) {
+
+    }
+
+    // ---------------------------------------------------------------- 8 ----
+    /**
      * NOT YET. Each of these is unbuilt rather than broken, and each is an
      * entry in TODO.md.
      *
-     *   widget.<caret>        A qualified caret is offered nothing. The
-     *                         receiver is known, the members are not walked.
+     *   widget.inherited      Step 7's missing row. A supertype's members need
+     *                         the hierarchy walk.
      *
      *   toString()            No class offers it. Inherited members need the
      *                         hierarchy walk, and reaching java.lang.Object

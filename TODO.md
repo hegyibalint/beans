@@ -113,6 +113,15 @@ Behavior that contradicts a specification we have read.
   brackets do not compound it: `foo(bar.`, `if (a.` and `new Foo(a.` all keep
   their enclosing method, and the receiver stays readable in every one.
 
+  Worse when nothing follows at all. With `this.` written in a class's *last*
+  member there is no member left to eat, and the whole `class_declaration`
+  collapses into an `ERROR` — no type declaration, no method, no scope, so
+  completion has nothing to stand in rather than a short list. That is the
+  collapsed parse the **Missing** entry below is about, reached by a trailing
+  dot rather than an unbalanced brace, and it is why
+  `completion/tests/members.rs::this_offers_the_members_above_the_caret_and_loses_those_below`
+  has to declare a member after the caret's method.
+
   `super.` fails the other way round. It consumes nothing, and produces no
   member access node at all, so there is no receiver to read.
 

@@ -57,25 +57,50 @@ pub(crate) fn methods_in_scope<'a>(
         })
 }
 
+/// The members a type declares in one namespace, in source order.
+///
+/// The same pairing the other three enumerations have: resolution asks
+/// `Exactly` for one name, completion asks `StartingWith` for a prefix, and one
+/// function answers both so the two cannot drift.
+///
+/// No inheritance yet: §8.2 puts a superclass's members in scope too and only
+/// this type's own body scope is searched.
+pub(crate) fn members_of<'a>(
+    file: &'a model::File,
+    type_declaration: model::DeclarationId,
+    namespace: model::Namespace,
+    wanted: Wanted<'a>,
+) -> impl Iterator<Item = model::DeclarationId> + 'a {
+    let body_scope = match &file.declarations[type_declaration.0] {
+        model::Declaration::Type(declaration) => Some(declaration.body_scope),
+        _ => None,
+    };
+
+    body_scope.into_iter().flat_map(move |body_scope| {
+        file.lexical_scopes[body_scope.0]
+            .declarations
+            .iter()
+            .copied()
+            .filter(move |member_id| {
+                let member = &file.declarations[member_id.0];
+                member.namespace() == namespace
+                    && member.name().is_some_and(|name| wanted.matches(&name.text))
+            })
+    })
+}
+
 /// The members of a type with a matching name in the given namespace.
-/// No inheritance yet: only the type's own body scope is searched.
 pub(crate) fn find_member(
     file: &model::File,
     type_declaration: model::DeclarationId,
     name: &model::Identifier,
     namespace: model::Namespace,
 ) -> Vec<model::DeclarationId> {
-    let model::Declaration::Type(declaration) = &file.declarations[type_declaration.0] else {
-        return Vec::new();
-    };
-
-    file.lexical_scopes[declaration.body_scope.0]
-        .declarations
-        .iter()
-        .copied()
-        .filter(|member_id| {
-            let member = &file.declarations[member_id.0];
-            member.namespace() == namespace && member.name().is_some_and(|n| n.text == name.text)
-        })
-        .collect()
+    members_of(
+        file,
+        type_declaration,
+        namespace,
+        Wanted::Exactly(&name.text),
+    )
+    .collect()
 }

@@ -93,8 +93,14 @@ class Shadowed {}
     );
 }
 
+/// A qualified caret never falls back to the scope chain. Here nothing answers
+/// `String` — no JDK is in this lake — so the receiver has no type and there
+/// are no members to offer; §6.5.6.2 makes the empty list the right answer, and
+/// the names in scope the wrong one.
+///
+/// What a receiver that *does* resolve offers is `members.rs`.
 #[test]
-fn a_qualified_caret_offers_nothing() {
+fn a_receiver_that_resolves_to_nothing_does_not_fall_back_to_the_scope() {
     let items = complete_at_cursor(
         "package p;
 class Test {
