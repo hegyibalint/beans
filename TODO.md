@@ -20,8 +20,11 @@ Behavior that contradicts a specification we have read.
   asserts the wrong answer on purpose, so fixing this turns that test red.
 
 - **`Protected` grants access to everybody.** JLS §6.6.2 grants it to a subclass
-  responsible for the implementation of the object, which needs a type hierarchy
-  we do not have. Two functions in `crates/lang-java/src/accessibility.rs` answer
+  responsible for the implementation of the object. `resolution/hierarchy.rs`
+  can now say whether one parsed type is below another, so half the obstacle is
+  gone; the other half is that a supertype in a class file is not in the walk at
+  all, which is its own entry below. Two functions in
+  `crates/lang-java/src/accessibility.rs` answer
   `true` unconditionally and say so in a comment: `is_accessible` for a
   declaration we parsed, and `is_compiled_type_accessible` for one we hold only a
   class file of, which puts every `protected` nested type of every jar and
@@ -142,9 +145,10 @@ Behavior that contradicts a specification we have read.
   `int after = 1;` recovers the following statement only with it. What it costs
   is a second `model::File` for one source, and therefore a second
   `model::DeclarationId` space. The `resolve_receiver_class` in
-  `crates/lang-java/src/resolution.rs` resolves a receiver against the model it
-  was handed and then looks the answer up in whatever `Query::model_of`
-  returns, so the two have to be the same model, and nothing says they are.
+  `crates/lang-java/src/resolution.rs` starts from the model it was handed, and
+  every step after it — `find_member`, `type_of_member`, the hierarchy walk —
+  re-fetches whatever `Query::model_of` returns for a source, so the two have to
+  be the same model and nothing says they are.
   Deferred until a request-scoped model can be made visible to one query and to
   nobody else, which is the same mechanism an uncommitted batch import needs.
 
@@ -209,36 +213,78 @@ Not built yet. Nothing is wrong; there is just no code.
   versions can collapse. Storing the syntax tree, below, multiplies whatever
   this costs.
 
-- **The members of a compiled type.** The `find_member` in the `resolution.rs`
-  walks a `model::File`'s scopes, so a field or a method of a class file reaches
-  nothing: `Instant.now()` has no answer even with the JDK in scope. Its type
+- **The members of a compiled type.** The `members_of` in
+  `resolution/methods.rs` walks a `model::File`'s scopes, and the hierarchy walk
+  above is that function folded over supertypes, so a field or a method of a
+  class file reaches nothing either way: `Instant.now()` has no answer even with
+  the JDK in scope. Its type
   member sibling, the `member_types` `Compiled` arm, does the same job over binary
   names and shows the shape the rest would take. Until then `jvm::model::Field::access`
   and `jvm::model::Method::access` are decoded, pinned by
   `class_file/tests/declarations.rs`, and read by nobody.
 
-- **Inherited members** (§§8.2 and 9.2). A member of a superclass or a
-  superinterface is in scope in the subclass, and we do not walk the hierarchy.
-  The same hierarchy is what `Protected` needs above. Member types are one half;
-  the other is every method, which is why `toString` is offered in no Java class
-  at all — the most visible absence completion has, and the only one that reads
-  as wrong rather than unbuilt.
+- **Inherited members, for a name that is not written after a dot.**
+  `resolution/hierarchy.rs` walks §8.2 and §9.2 now, and everything qualified
+  goes through it: `widget.inherited` completes and navigates, hiding and
+  overriding collapse onto the nearest declaration, and a diamond or a cycle
+  terminates. What is not wired to it is the unqualified half — a bare
+  `inherited` inside `Widget`'s own body.
 
-  The walk itself is not the problem. §8.4.8 makes it nearest-first, which is the
-  same fold `first_stage_that_answers` already runs, and a handful of hops costs
-  nothing once a hop is an index lookup rather than a traversal. Do not cache a
-  hierarchy on top of a linear scan; index the lake and the walk is free.
+  Half of that half already works, which is the confusing part. A call resolves,
+  because `resolve_expression` sends `MethodCall` through the walk whether or
+  not a receiver was written, and `navigation.rs::an_unqualified_call_reaches_an_inherited_method`
+  pins it. Completion does not, because `methods_in_scope` reads one body scope,
+  and neither does a bare name, because `variables_in_scope` walks the lexical
+  chain and says of itself that it is always in-file.
 
-  The problem is that there is no hierarchy to walk. `projection.rs` writes
-  `superclass: None` and `interfaces: Vec::new()` for every parsed Java class, so
-  a source type contributes none of it to the lake — class files do, since
-  `class_file.rs` decodes all three. Under that sit two more: `model::TypeDeclaration`
-  has no `interfaces` field, and the parser reads `extends` and never `implements`.
+  What it costs is the same thing the walk already cost the qualified side: a
+  `model::DeclarationId` stops being enough on its own. `resolve_variable_name`
+  returns bare ids to two callers that pair them with the *asking* file's
+  source, and an inherited field is not in that file. Ordering needs a decision
+  too — an inherited field sits at the depth of the body scope that inherited
+  it, so it has to lose to a local and beat an enclosing class's field, and
+  `InScopeVariable::depth` is where that would have to be said.
 
-  And the last step is the same tension method descriptors have. A `TypeRef` is a
+- **A member type is offered through inheritance and cannot be resolved through
+  it.** §8.5 inherits a member type, and `completion.rs`'s `members` walks the
+  `Type` namespace along with the other two, so `Widget.Nested` is offered when
+  `Nested` is declared in `Base` — pinned by
+  `completion/tests/inheritance.rs::a_member_type_of_a_superclass_is_offered`.
+  The `member_types` in `resolution/types.rs` reads one body scope, so the name
+  it offers resolves to nothing.
+
+  Not an oversight. That function is a stage of `resolve_type_name`, and the
+  walk resolves each supertype by calling `resolve_type_name` — wiring one into
+  the other is a cycle, and it needs a guard or a separate entry point before it
+  is safe.
+
+- **The hierarchy stops at anything we did not parse.**
+  `resolve_type_reference` drops a `TypeTarget::Compiled`, so a supertype that
+  is a class file contributes nothing to the walk, and §8.1.4's implicit
+  `Object` is not written in the source and so is not in the model at all. Both
+  are why `toString` is still offered in no Java class — the most visible
+  absence completion has, and the only one that reads as wrong rather than
+  unbuilt. Needs the compiled-members entry above, and a decision about where
+  the implicit `Object` lives.
+
+  The lake is the other half. `projection.rs` writes `superclass: None` and
+  `interfaces: Vec::new()` for every parsed Java class, so a source type
+  contributes no hierarchy to it — class files do, since `class_file.rs` decodes
+  all three. Nothing needs that today, because the walk reads
+  `model::TypeDeclaration` directly and never asks the lake; a compiled subclass
+  of a parsed class is what would.
+
+  And the same tension method descriptors have sits under it. A `TypeRef` is a
   name as written; the lake wants a `BinaryName`; turning one into the other is
   resolution, and `project_to_jvm(file)` has no query. Either projection gains
   one, or the lake stores supertypes unresolved and resolves them on read.
+
+- **The walk is a traversal per keystroke.** `types_to_search` resolves every
+  supertype name from scratch on every call, and `members` calls it once per
+  namespace — three walks per popup, each one a `resolve_type_name` per hop.
+  Free on `examples/beans`, and the scan entry below is what it multiplies. Do
+  not cache a hierarchy on top of a linear scan; index the lake and the walk is
+  free.
 
 - **Qualified type references** (§6.5.5.2). The `resolve_type_name` returns
   `Unresolved` for anything that is not a simple name; the
