@@ -95,6 +95,44 @@ Behavior that contradicts a specification we have read.
   `jvm::model::BinaryName::nested` cannot spell, which is its own entry under
   **Undecided**.
 
+- **A dot with no name after it eats the rest of the enclosing class.**
+  Tree-sitter reaches forward for the identifier a `.` needs, and whatever it
+  reaches across stops existing. Measured on a class declaring `field`, `m`,
+  `first` and `second`, with `this.` written inside `m`: the tree holds `field`
+  and `m` and nothing else, both methods below being consumed as the
+  invocation's name and argument list. §8.2 puts every member in scope
+  throughout the body, so completing `this.` offers only what was declared
+  above the caret, and go-to-definition on the rest fails while the dot is
+  incomplete.
+
+  How far it reaches depends on what precedes the dot. A bare identifier is
+  benign: `a.` recovers into an `ERROR` holding `a` and the dot, and no sibling
+  is lost. Anything the grammar already reads as an expression runs away —
+  `this.` takes the rest of the class body, while `list.get(0).`, `items[0].`,
+  `new Foo().` and `f(x, y).` each take the following member. Unbalanced
+  brackets do not compound it: `foo(bar.`, `if (a.` and `new Foo(a.` all keep
+  their enclosing method, and the receiver stays readable in every one.
+
+  `super.` fails the other way round. It consumes nothing, and produces no
+  member access node at all, so there is no receiver to read.
+
+  Self-correcting, which is what keeps it out of sight: one more keystroke and
+  `this.g` parses to a clean `field_access` with every member back, so only the
+  first popup after the dot is short.
+
+  The fix is the trick IntelliJ and rust-analyzer both use — insert a
+  placeholder identifier where the name is missing, parse that, and record the
+  name as missing rather than as the placeholder. Measured, `x;` restores every
+  case above; the semicolon earns its place because `something.` followed by
+  `int after = 1;` recovers the following statement only with it. What it costs
+  is a second `model::File` for one source, and therefore a second
+  `model::DeclarationId` space. The `resolve_receiver_class` in
+  `crates/lang-java/src/resolution.rs` resolves a receiver against the model it
+  was handed and then looks the answer up in whatever `Query::model_of`
+  returns, so the two have to be the same model, and nothing says they are.
+  Deferred until a request-scoped model can be made visible to one query and to
+  nobody else, which is the same mechanism an uncommitted batch import needs.
+
 ## Missing
 
 Not built yet. Nothing is wrong; there is just no code.
