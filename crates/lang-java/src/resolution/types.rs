@@ -6,7 +6,7 @@
 
 use beans_platform_jvm as jvm;
 
-use crate::accessibility::{Site, is_accessible, is_compiled_type_accessible};
+use crate::accessibility::{Site, is_accessible, is_compiled_accessible};
 use crate::model;
 
 use super::methods::members_of;
@@ -612,19 +612,24 @@ fn type_target_is_accessible(target: &TypeTarget, query: &Query, from: &Site) ->
         // A binary name carries its own package (§13.1), so the declaring end of
         // §6.6.1 needs nothing the target does not already say but the level.
         TypeTarget::Compiled { source, fqn } => {
-            is_compiled_type_accessible(query.class_access(source, fqn), fqn.package(), from)
+            is_compiled_accessible(query.class_access(source, fqn), fqn.package(), from)
         }
     }
 }
 
-/// A syntactic type annotation resolved to its declaring class.
+/// A syntactic type annotation resolved to the type it names.
+///
+/// Both arms come back. A caller that needs a span to jump to drops the
+/// compiled one on the way out, but a caller walking a hierarchy must not:
+/// `Object`, `Enum` and `Record` are class files in every Java program, so
+/// filtering here would end every walk one hop early.
 pub(super) fn resolve_type_reference(
     source: &jvm::model::Source,
     file: &model::File,
     type_ref: &model::TypeRef,
     scope: model::LexicalScopeId,
     query: &Query,
-) -> Vec<(jvm::model::Source, model::DeclarationId)> {
+) -> Vec<TypeTarget> {
     // A primitive and `void` name no declaration (§4.2, §8.4.5); an array
     // resolves through its component type (§10.1).
     let Some(name) = type_ref.ty.named() else {
@@ -632,20 +637,8 @@ pub(super) fn resolve_type_reference(
     };
 
     match resolve_type_name(name, source, file, scope, query) {
-        TypeResolution::Resolved(TypeTarget::Parsed {
-            source,
-            declaration,
-        }) => vec![(source, declaration)],
-        TypeResolution::Ambiguous(targets) => targets
-            .into_iter()
-            .filter_map(|target| match target {
-                TypeTarget::Parsed {
-                    source,
-                    declaration,
-                } => Some((source, declaration)),
-                TypeTarget::Compiled { .. } => None,
-            })
-            .collect(),
+        TypeResolution::Resolved(target) => vec![target],
+        TypeResolution::Ambiguous(targets) => targets,
         _ => Vec::new(),
     }
 }

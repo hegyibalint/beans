@@ -72,11 +72,47 @@ impl<'a> Query<'a> {
         source: &jvm::model::Source,
         fqn: &jvm::model::BinaryName,
     ) -> Option<jvm::model::AccessLevel> {
+        self.compiled_class(source, fqn)
+            .and_then(|class| class.access)
+    }
+
+    /// The class the lake holds for a `TypeTarget::Compiled`.
+    ///
+    /// `model_of` for the other arm: a parsed target carries an index into a
+    /// model and a compiled one carries a name to look back up. The source is
+    /// part of the key because two containers may declare the same binary name,
+    /// which the lake preserves rather than resolves.
+    pub fn compiled_class(
+        &self,
+        source: &jvm::model::Source,
+        fqn: &jvm::model::BinaryName,
+    ) -> Option<&'a jvm::model::Class> {
         self.jvm
             .classes_named(fqn)
             .into_iter()
             .find(|(class_source, _)| *class_source == source)
-            .and_then(|(_, class)| class.access)
+            .map(|(_, class)| class)
+    }
+
+    /// The member types a compiled type declares, which §13.1 spells by joining
+    /// the enclosing binary name to the simple one with a `$`.
+    ///
+    /// One level only. `Outer$Inner$Deeper` is a member of `Outer$Inner` and not
+    /// of `Outer`, so a second `$` in the remainder rules the candidate out.
+    pub fn compiled_member_types<'q>(
+        &'q self,
+        fqn: &'q jvm::model::BinaryName,
+    ) -> impl Iterator<Item = (&'a jvm::model::Source, &'a jvm::model::Class)> + 'q {
+        let prefix = format!("{fqn}$");
+        self.jvm
+            .classes_in_package(fqn.package())
+            .filter(move |(_, class)| {
+                class
+                    .fqn
+                    .as_str()
+                    .strip_prefix(prefix.as_str())
+                    .is_some_and(|rest| !rest.contains('$'))
+            })
     }
 
     /// A file this vertical parsed gives a declaration to navigate to.

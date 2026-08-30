@@ -103,6 +103,23 @@ pub enum ReturnType {
     Void,
 }
 
+/// Spelled the way JLS §4.2 spells it, which is also how a reader expects to
+/// see it in a row: a descriptor's `I` is `int` everywhere but the class file.
+impl fmt::Display for Primitive {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Boolean => "boolean",
+            Self::Byte => "byte",
+            Self::Char => "char",
+            Self::Short => "short",
+            Self::Int => "int",
+            Self::Long => "long",
+            Self::Float => "float",
+            Self::Double => "double",
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Primitive {
     Boolean,

@@ -1,5 +1,7 @@
 mod agreement;
+mod compiled;
 mod handles;
+mod implicit_supertypes;
 mod imports;
 mod inheritance;
 mod java_lang;
@@ -70,23 +72,19 @@ impl Workspace {
     /// A class the lake holds with no Java model behind it: what a jar, a jmod
     /// or a runtime image contributes, and the only way to put something in
     /// `java.lang` without reading a JDK.
-    fn compiled(mut self, path: &str, fqn: &str) -> Workspace {
+    fn compiled(self, path: &str, fqn: &str) -> Workspace {
+        self.compiled_class(path, compiled_class(fqn))
+    }
+
+    /// The same, for a class whose members or supertypes are the point.
+    fn compiled_class(mut self, path: &str, class: jvm::model::Class) -> Workspace {
         let at = self.revision.bump();
         self.jvm.register(
             at,
             jvm::model::Source::ClassFile {
                 path: PathBuf::from(path),
             },
-            vec![jvm::model::Class {
-                fqn: jvm::model::BinaryName::new(fqn),
-                kind: jvm::model::TypeKind::Class,
-                access: Some(jvm::model::AccessLevel::Public),
-                enclosing: None,
-                superclass: None,
-                interfaces: Vec::new(),
-                fields: Vec::new(),
-                methods: Vec::new(),
-            }],
+            vec![class],
         );
         self
     }
@@ -110,6 +108,35 @@ impl Workspace {
 /// One file, no lake beyond what it projects itself.
 fn complete_at_cursor(contents: &str) -> Vec<CompletionItem<jvm::model::Source>> {
     Workspace::of(&[("p/Test.java", contents)]).complete()
+}
+
+/// A public class file with nothing in it, for a fixture to fill in.
+fn compiled_class(fqn: &str) -> jvm::model::Class {
+    jvm::model::Class {
+        fqn: jvm::model::BinaryName::new(fqn),
+        kind: jvm::model::TypeKind::Class,
+        access: Some(jvm::model::AccessLevel::Public),
+        enclosing: None,
+        superclass: None,
+        interfaces: Vec::new(),
+        fields: Vec::new(),
+        methods: Vec::new(),
+    }
+}
+
+fn compiled_method(name: &str, params: Vec<jvm::model::Type>, returns: &str) -> jvm::model::Method {
+    jvm::model::Method {
+        name: name.to_string(),
+        access: jvm::model::AccessLevel::Public,
+        params,
+        return_type: jvm::model::ReturnType::Value(jvm::model::Type::Class(
+            jvm::model::BinaryName::new(returns),
+        )),
+    }
+}
+
+fn class_type(fqn: &str) -> jvm::model::Type {
+    jvm::model::Type::Class(jvm::model::BinaryName::new(fqn))
 }
 
 /// Only the rows §6.5.5 produced, for a claim that is about types while the

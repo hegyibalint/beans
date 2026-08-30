@@ -46,7 +46,10 @@ impl TypeResolution {
 }
 
 /// Resolution needs to point out what type we resolved.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Hashable because the hierarchy walk needs a visited set: §8.1.5's diamond
+/// reaches one type twice and §8.1.4's forbidden cycle reaches it forever.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeTarget {
     /// A file this vertical parsed, so the whole model is in hand and the
     /// declaration is an index into it.

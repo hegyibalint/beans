@@ -1,7 +1,7 @@
 // §6.6.1 asked of a declaration Beans never parsed. A class file gives an access
 // level and a binary name and nothing else — no scope chain, no site — so the
 // rule is decided from the package the name carries (§13.1) rather than from the
-// declaration's surroundings, which is what `is_compiled_type_accessible` is.
+// declaration's surroundings, which is what `is_compiled_accessible` is.
 //
 // Until this arm existed every compiled type was accessible from everywhere, so
 // each case below is one that used to resolve.

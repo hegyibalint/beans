@@ -7,7 +7,7 @@ use crate::accessibility::{Site, is_accessible};
 use crate::model;
 use crate::query::Query;
 use crate::resolution::{
-    TypeInvalidity, resolve_expression, resolve_type_name, resolve_variable_name,
+    Member, TypeInvalidity, resolve_expression, resolve_type_name, resolve_variable_name,
 };
 
 /// JLS 26 §6.5.5.1 makes a simple type name a compile-time error unless one
@@ -99,7 +99,19 @@ pub fn access_diagnostics(
             }
             let unreachable: Vec<_> = targets
                 .iter()
-                .filter_map(|(target_source, declaration)| {
+                .filter_map(|target| {
+                    // A field in a class file is skipped rather than judged.
+                    // §6.6.1 has an answer for one — `is_compiled_accessible`
+                    // gives it — but naming the owner in the message needs the
+                    // declaring scope, which a class file does not have, and a
+                    // squiggle that cannot say whose field it is helps nobody.
+                    let Member::Parsed {
+                        source: target_source,
+                        declaration,
+                    } = target
+                    else {
+                        return None;
+                    };
                     let target_file = query.model_of(target_source)?;
                     let model::Declaration::Field(field) = &target_file.declarations[declaration.0]
                     else {

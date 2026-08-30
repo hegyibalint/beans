@@ -29,14 +29,15 @@ pub fn is_accessible(access: Option<model::Access>, declared: &Site, from: &Site
     }
 }
 
-/// §6.6.1 asked of a declaration we hold only a class file of. One end of the
-/// relation is unchanged; the other has no `Site` to stand on, so the level
-/// and the package that declared it are everything we know about it.
+/// §6.6.1 asked of a declaration we hold only a class file of — a type or, once
+/// the hierarchy walk crosses into the lake, one of its members. One end of the
+/// relation is unchanged; the other has no `Site` to stand on, so the level and
+/// the package that declared it are everything we know about it.
 ///
 /// `None` is every case with no answer rather than a permissive one: a local or
 /// anonymous class (§8.1.1), and a class the lake no longer holds. `Protected`
 /// answers `true` for the reason above.
-pub fn is_compiled_type_accessible(
+pub fn is_compiled_accessible(
     access: Option<jvm::model::AccessLevel>,
     declared_package: &str,
     from: &Site,
