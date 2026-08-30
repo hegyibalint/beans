@@ -57,7 +57,6 @@ public class Demo {
     void shadowing() {
         int count = 1;
         // complete `cou` on the next line
-
     }
 
     // ---------------------------------------------------------------- 4 ----
@@ -75,6 +74,7 @@ public class Demo {
         this.count = 1;
         describe(2);
         int borrowed = neighbour.shared;
+        widget.
     }
 
     // ---------------------------------------------------------------- 5 ----
@@ -116,21 +116,26 @@ public class Demo {
      * `count` after the dot would be wrong rather than unhelpful.
      *
      * F12 on `widget.inherited` below lands in Base.
+     *
+     * No `toString()`. 8.1.4 puts Object above every class and the walk follows
+     * that edge, but this workspace has no JDK, so there is no Object to reach.
+     * Uncomment `jdk_home` in beans.toml (`mise where java`) and the same caret
+     * gains Object's methods; a `String` receiver gains about a hundred.
      */
     void members(Widget widget) {
         int borrowed = widget.inherited;
         // type `widget.` on the next line
-
+        widget.mark();
     }
 
     // ---------------------------------------------------------------- 8 ----
     /**
      * NOT YET. Unbuilt rather than broken; each is an entry in TODO.md.
      *
-     *   toString()            the walk stops at Object: nothing writes it, and
-     *                         a compiled type has no members we can read
      *   inherited             with no dot. Only a receiver walks the hierarchy;
      *                         ctrl-space inside Widget still reads one body
+     *   point.i()             a record's accessors are declared by 8.10.3 and
+     *                         written nowhere, so nothing has them to offer
      *   this.<caret>          a trailing dot eats the rest of the class body,
      *                         so the list is short and carries stray types
      *   ConcurrentHashMap     on the classpath, not in scope, no auto-import

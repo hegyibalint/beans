@@ -19,16 +19,26 @@ Behavior that contradicts a specification we have read.
   `resolution/tests/lexical.rs::a_local_type_is_wrongly_in_scope_before_it_is_declared`
   asserts the wrong answer on purpose, so fixing this turns that test red.
 
-- **`Protected` grants access to everybody.** JLS §6.6.2 grants it to a subclass
-  responsible for the implementation of the object. `resolution/hierarchy.rs`
-  can now say whether one parsed type is below another, so half the obstacle is
-  gone; the other half is that a supertype in a class file is not in the walk at
-  all, which is its own entry below. Two functions in
-  `crates/lang-java/src/accessibility.rs` answer
-  `true` unconditionally and say so in a comment: `is_accessible` for a
-  declaration we parsed, and `is_compiled_type_accessible` for one we hold only a
-  class file of, which puts every `protected` nested type of every jar and
-  runtime image under the same choice. A wrong `false` would squiggle correct
+- **`Protected` grants access to everybody, and now everybody can see it.** JLS
+  §6.6.2 grants it to a subclass responsible for the implementation of the
+  object; §6.6.2.1 adds that access from another package is permitted only
+  through a reference whose type is the subclass. Two functions in
+  `crates/lang-java/src/accessibility.rs` answer `true` unconditionally and say
+  so in a comment: `is_accessible` for a declaration we parsed, and
+  `is_compiled_accessible` for one we hold only a class file of.
+
+  This used to cost nothing visible. It now costs two rows on *every* member
+  popup in the language, because §8.1.4 puts `Object` above every type and
+  `Object` declares `protected clone()` and `protected finalize()`. Measured
+  against a real JDK: `widget.` offers twelve rows and two of them are those.
+  Nothing else in the list is wrong — `notify`, `notifyAll` and `wait` are
+  `public final` and belong there.
+
+  The obstacle is gone, which is what changes the priority. `types_to_search`
+  answers "is this type below that one" for both halves of the lake now, so
+  §6.6.2 has the hierarchy it was waiting for; what is left is §6.6.2.1's rule
+  about the type of the qualifying reference, and deciding what a caret inside a
+  subclass should be offered on `this`. A wrong `false` would squiggle correct
   code, so it stays deliberate, and nothing tests it either way.
 
 - **A dynamic constant as a bootstrap argument loses the class.** JVMS 26 §§4.4
@@ -38,7 +48,7 @@ Behavior that contradicts a specification we have read.
   `PackageBuilder`. Ours to fix only by patching or replacing `cafebabe`.
 
 - **A class we cannot find is accessible to everybody.** The
-  `is_compiled_type_accessible` in `crates/lang-java/src/accessibility.rs` reads
+  `is_compiled_accessible` in `crates/lang-java/src/accessibility.rs` reads
   `None` as "access control does not apply", which JLS §8.1.1 says of a local or
   anonymous class. But the `class_access` in `crates/lang-java/src/query.rs`
   also answers `None` when it simply did not find the class: it throws the
@@ -48,10 +58,13 @@ Behavior that contradicts a specification we have read.
   at all in that case. The failure direction is the quiet one: a wrong `true`
   grants access and squiggles nothing.
 
-  The fix removes the branch rather than patching it. `view_of` already holds
-  the `&model::Class`, so carrying the level on `TypeTarget::Compiled` makes the
-  question unaskable, and it also deletes the second full scan the entry in
-  **Missing** below is about.
+  Now three lookups rather than two, because the hierarchy walk asks
+  `compiled_class` for the same class again to read its members and its
+  supertypes. They all go through one function at least, which is what makes the
+  fix a rewrite of one place: `view_of` already holds the `&model::Class`, so
+  carrying it — or at least the level — on `TypeTarget::Compiled` makes the
+  question unaskable and deletes the repeated scans the entry in **Missing**
+  below is about.
 
 - **A nested class whose file says nothing about itself gets a confident wrong
   answer.** The `class_access` in `crates/platform-jvm/src/class_file.rs`
@@ -235,22 +248,13 @@ Not built yet. Nothing is wrong; there is just no code.
   versions can collapse. Storing the syntax tree, below, multiplies whatever
   this costs.
 
-- **The members of a compiled type.** The `members_of` in
-  `resolution/methods.rs` walks a `model::File`'s scopes, and the hierarchy walk
-  above is that function folded over supertypes, so a field or a method of a
-  class file reaches nothing either way: `Instant.now()` has no answer even with
-  the JDK in scope. Its type
-  member sibling, the `member_types` `Compiled` arm, does the same job over binary
-  names and shows the shape the rest would take. Until then `jvm::model::Field::access`
-  and `jvm::model::Method::access` are decoded, pinned by
-  `class_file/tests/declarations.rs`, and read by nobody.
-
 - **Inherited members, for a name that is not written after a dot.**
-  `resolution/hierarchy.rs` walks §8.2 and §9.2 now, and everything qualified
-  goes through it: `widget.inherited` completes and navigates, hiding and
-  overriding collapse onto the nearest declaration, and a diamond or a cycle
-  terminates. What is not wired to it is the unqualified half — a bare
-  `inherited` inside `Widget`'s own body.
+  `resolution/hierarchy.rs` walks §8.2 and §9.2 now and everything qualified
+  goes through it, into the lake and back: `widget.inherited` completes and
+  navigates, `text.toString()` reaches `java.lang.Object` through a real runtime
+  image, hiding and overriding collapse onto the nearest declaration, and a
+  diamond or a cycle terminates. What is not wired to it is the unqualified
+  half — a bare `inherited` inside `Widget`'s own body.
 
   Half of that half already works, which is the confusing part. A call resolves,
   because `resolve_expression` sends `MethodCall` through the walk whether or
@@ -262,10 +266,20 @@ Not built yet. Nothing is wrong; there is just no code.
   What it costs is the same thing the walk already cost the qualified side: a
   `model::DeclarationId` stops being enough on its own. `resolve_variable_name`
   returns bare ids to two callers that pair them with the *asking* file's
-  source, and an inherited field is not in that file. Ordering needs a decision
-  too — an inherited field sits at the depth of the body scope that inherited
-  it, so it has to lose to a local and beat an enclosing class's field, and
-  `InScopeVariable::depth` is where that would have to be said.
+  source, and an inherited field is not in that file — `Member` is the shape it
+  would have to grow into. Ordering needs a decision too: an inherited field
+  sits at the depth of the body scope that inherited it, so it has to lose to a
+  local and beat an enclosing class's field, and `InScopeVariable::depth` is
+  where that would be said.
+
+- **A bridge method is offered as if a user had written it.** JVMS §4.6 marks a
+  compiler-generated method `ACC_SYNTHETIC` or `ACC_BRIDGE`, and
+  `crates/platform-jvm/src/class_file.rs` decodes neither, so both reach the
+  lake as ordinary methods. Measured against a real JDK: `String` offers
+  `compareTo(Object)` beside `compareTo(String)`, the first being the bridge
+  javac emits for `Comparable`. §8.4.2 makes them different signatures, so the
+  dedup in `completion.rs` keeps both, correctly — the row should not be there
+  at all. Two flags on `jvm::model::Method` and one filter.
 
 - **A member type is offered through inheritance and cannot be resolved through
   it.** §8.5 inherits a member type, and `completion.rs`'s `members` walks the
@@ -280,33 +294,35 @@ Not built yet. Nothing is wrong; there is just no code.
   the other is a cycle, and it needs a guard or a separate entry point before it
   is safe.
 
-- **The hierarchy stops at anything we did not parse.**
-  `resolve_type_reference` drops a `TypeTarget::Compiled`, so a supertype that
-  is a class file contributes nothing to the walk, and §8.1.4's implicit
-  `Object` is not written in the source and so is not in the model at all. Both
-  are why `toString` is still offered in no Java class — the most visible
-  absence completion has, and the only one that reads as wrong rather than
-  unbuilt. Needs the compiled-members entry above, and a decision about where
-  the implicit `Object` lives.
+- **A `static` member is offered through an instance receiver with nothing to
+  mark it.** §15.12.1 permits `text.format(...)` — a static method reached
+  through an *ExpressionName* — so the row is not wrong, and against a real JDK
+  `String.` carries eleven `of`-style rows a reader did not ask for. Neither
+  `jvm::model::Method` nor `model::MethodDeclaration` records `static` at all,
+  so there is nothing to rank or grey out by. Every IDE de-emphasises these.
 
-  The lake is the other half. `projection.rs` writes `superclass: None` and
-  `interfaces: Vec::new()` for every parsed Java class, so a source type
-  contributes no hierarchy to it — class files do, since `class_file.rs` decodes
-  all three. Nothing needs that today, because the walk reads
-  `model::TypeDeclaration` directly and never asks the lake; a compiled subclass
-  of a parsed class is what would.
+- **A record's and an enum's own implicit members.** §8.10.3 gives a record an
+  accessor per component plus `equals`, `hashCode` and `toString`; §8.9.3 gives
+  an enum a `public static final` field per constant plus `values()` and
+  `valueOf(String)`. Neither is inherited, so no amount of hierarchy walking
+  produces them: they are the type's own members that the source never spells.
+  `record Point(int i, int j)` therefore offers no `i()` and no `j()`.
 
-  And the same tension method descriptors have sits under it. A `TypeRef` is a
-  name as written; the lake wants a `BinaryName`; turning one into the other is
-  resolution, and `project_to_jvm(file)` has no query. Either projection gains
-  one, or the lake stores supertypes unresolved and resolves them on read.
+  A third category, and the model has no word for it. Everything in
+  `model::File` came from a token the parser read. These would have to be
+  synthesized — in the parser, where the record components are in hand, or in
+  projection, where the lake would carry them for a compiled reader too.
 
 - **The walk is a traversal per keystroke.** `types_to_search` resolves every
-  supertype name from scratch on every call, and `members` calls it once per
-  namespace — three walks per popup, each one a `resolve_type_name` per hop.
-  Free on `examples/beans`, and the scan entry below is what it multiplies. Do
-  not cache a hierarchy on top of a linear scan; index the lake and the walk is
-  free.
+  supertype name from scratch on every call, and `members` runs it once per
+  namespace — three walks per popup, each a `resolve_type_name` or a
+  `classes_named` per hop. Measured in release against a real JDK: 2.8 ms for a
+  local class, 9.5 ms for `List`, 13.4 ms for `String`, whose hierarchy is
+  `CharSequence`, `Comparable`, `Serializable`, `Constable`,
+  `ConstantDesc` and `Object`. Cheap next to the 770 ms an *unqualified* caret
+  costs, because that one resolves all 145 `java.lang` names and this resolves a
+  handful. Do not cache a hierarchy on top of a linear scan; index the lake
+  (below) and the walk is free.
 
 - **Qualified type references** (§6.5.5.2). The `resolve_type_name` returns
   `Unresolved` for anything that is not a simple name; the
