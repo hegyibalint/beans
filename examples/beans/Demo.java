@@ -99,16 +99,26 @@ public class Demo {
 
     // ---------------------------------------------------------------- 7 ----
     /**
-     * Type `widget.` on the empty line. One row:
+     * Type `widget.` on the empty line. Three rows:
      *
-     *   own    int
+     *   own          int
+     *   inherited    int
+     *   mark()       void
      *
-     * `inherited` is Base's, and we do not walk the hierarchy yet. Step 8.
+     * Only `own` is Widget's. 8.2 makes a superclass's members the subclass's
+     * own and 9.2 does the same for `implements`, so `inherited` comes from
+     * Base and `mark()` from Marker.
+     *
+     * `mark()` is declared twice and offered once: Widget overrides it (8.4.8),
+     * and two rows spelled the same are not a choice anybody can make.
      *
      * The list is not the names in scope — 6.5.6.2 asks for a member, so
      * `count` after the dot would be wrong rather than unhelpful.
+     *
+     * F12 on `widget.inherited` below lands in Base.
      */
     void members(Widget widget) {
+        int borrowed = widget.inherited;
         // type `widget.` on the next line
 
     }
@@ -117,8 +127,10 @@ public class Demo {
     /**
      * NOT YET. Unbuilt rather than broken; each is an entry in TODO.md.
      *
-     *   widget.inherited      a supertype's members need the hierarchy walk
-     *   toString()            that walk, plus the members of a compiled type
+     *   toString()            the walk stops at Object: nothing writes it, and
+     *                         a compiled type has no members we can read
+     *   inherited             with no dot. Only a receiver walks the hierarchy;
+     *                         ctrl-space inside Widget still reads one body
      *   this.<caret>          a trailing dot eats the rest of the class body,
      *                         so the list is short and carries stray types
      *   ConcurrentHashMap     on the classpath, not in scope, no auto-import
@@ -134,9 +146,13 @@ class Base {
 }
 
 interface Marker {
+    void mark();
 }
 
 /** Step 5 is about this line. */
 class Widget extends Base implements Marker {
     int own;
+
+    public void mark() {
+    }
 }
