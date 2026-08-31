@@ -1,0 +1,13 @@
+[package]
+name = "lang-java-semantics"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+name = "beans_lang_java_semantics"
+
+[dependencies]
+lang-java-model = { path = "../model" }
+lang-java-parser = { path = "../parser" }

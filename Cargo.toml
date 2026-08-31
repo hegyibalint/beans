@@ -1,16 +1,12 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/core",
-    "crates/engine",
-    "crates/lang-java",
-    "crates/lsp",
-    "crates/platform-jvm",
-    "crates/workspace",
-    "crates/workspace-beans",
-    "tests/acceptance",
+    "crates/core/model",
+    "crates/lang/java/model",
+    "crates/lang/java/parser",
+    "crates/lang/java/semantics",
+    "crates/lang/java/server",
     "tests/support",
-    "tools/java-inspect",
 ]
 
 [workspace.package]

@@ -1,0 +1,12 @@
+[package]
+name = "lang-java-model"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+name = "beans_lang_java_model"
+
+[dependencies]
+core-model = { path = "../../../core/model" }

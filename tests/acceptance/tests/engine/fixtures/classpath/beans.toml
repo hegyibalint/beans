@@ -1,6 +1,0 @@
-[unit.with-classpath]
-sources = ["with-classpath"]
-classpath = ["library/compiled-library.jar"]
-
-[unit.without-classpath]
-sources = ["without-classpath"]

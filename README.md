@@ -31,13 +31,3 @@ To support this, persistence is a key feature in Beans; with persisted models, t
 Beans is not primarily a language server. It is a language processing and indexing engine that also implements an LSP as a facet. Beans is designed to be reusable as a library and embeddable in binaries. Tools using the library can share the persisted models. This could allow interesting use cases like building CLI tools that have an immediate snapshot of your project when you use them.
 
 The idea is to allow a community to form around Beans by making it convenient for third-party tools or libraries to consume its knowledge.
-
-## Agents
-
-Creating such a project is an impossibly big task; however, with the advent of agentic coding, the possibility opens up to get such an idea off the ground. This doesn't mean that Beans welcomes or allows vibe coding. Contributors need to keep the ability to reason about what's happening.
-
-
-[^1]: Somebody might joke that probably nobody would agree on which JVM language Beans should be written in, so we are building it in Rust.
-[^2]: For example, in VS Code, when you reload a window, all language server instances are relaunched as well.
-[^3]: GraalVM is a feasible option to develop a native distribution. Beans chose Rust not because JVM-native approaches are impossible, but because Rust fits the project's goals—and because it is the language we wanted to build it in.
-[^4]: To support sidecars, we probably need some supporting JAR files, but these design details are unknown at this time.

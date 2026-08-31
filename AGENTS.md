@@ -1,11 +1,6 @@
-# Setting
-
-We are planning out the software for the time being. You should not write code until you are instructed to do so.
-Your main job is to converse, ideate, and propose solutions.
-This extends to `docs/ARCHITECTURE.md` too; should not be edited without permission.
-
-Be critical, and don't be afraid to challenge ideas. Decisions we make today can have a long-lasting impact on the project, so we should be careful and deliberate.
-There are many language servers out there, and core ideas and patterns are established in the industry. Language servers like rust-analyser, Roslyn, IDEA PSI, and Eclipse JDT are good references. We should learn from them, but at the same time open to new ideas and approaches.
+This is the new `v0.3` branch; this is a complete rewrite and reideation of `main`, i.e. `v0.2`.
+You should take minimal inspiration from the code itself, and rather focus on what was working and what became hard to manage.
+See `TODO.md` for places where we accured friction.
 
 ## References
 
@@ -16,14 +11,6 @@ For copyright reasons, we don't commit MD-ified versions of the specifications, 
 - `docs/lang-specs/jvms/se26/`, containing the JVMS 26 in Markdown
 
 Use these docs to drive the implementation, and provide citations to _why_ something is happening.
-
-# Conversation style
-
-Propose changes as text in the conversation; only touch the file when explicitly permitted.
-Don't infodump; keep the conversation focused and structured. Ask rather impose.
-I will be deliberate when it's time to make plans, write code, or make decisions.
-
-Your default should be succinct ideation and chatting. If you want to propose a change, do so in the conversation first. If I agree, I will ask you to make the change in the file.
 
 # Code style
 
