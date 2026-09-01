@@ -1,8 +1,9 @@
 mod parser;
 
 use beans_lang_java_model::{
-    File, NameRef,
+    File,
     imports::{Import, ImportType},
+    references::NameRef,
     scopes::ScopeIndex,
 };
 use tree_sitter::Node;
@@ -43,7 +44,7 @@ pub fn lower_into(content: &str) -> File {
     file
 }
 
-fn lower_type_declaration(content: &str, node: Node, scope: ScopeIndex, file: &mut File) {
+fn lower_type_declaration(_content: &str, node: Node, _scope: ScopeIndex, _file: &mut File) {
     debug_assert!(
         matches!(
             node.kind(),
@@ -56,18 +57,6 @@ fn lower_type_declaration(content: &str, node: Node, scope: ScopeIndex, file: &m
         "expected a type declaration, got `{}`",
         node.kind(),
     );
-
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "static" => is_static = true,
-            "asterisk" => is_on_demand = true,
-            "identifier" | "scoped_identifier" => {
-                name = lower_identifier(content, child);
-            }
-            _ => {}
-        }
-    }
 }
 
 fn lower_package_declaration(content: &str, node: Node) -> Option<NameRef> {

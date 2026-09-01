@@ -1,4 +1,4 @@
-use crate::NameRef;
+use crate::references::TypeRef;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccessLevel {
@@ -30,8 +30,8 @@ pub enum Modifier {
 pub struct TypeDeclaration {
     pub name: String,
     pub kind: Kind,
-    pub extends: Option<NameRef>,
-    pub implements: Vec<NameRef>,
+    pub extends: Option<TypeRef>,
+    pub implements: Vec<TypeRef>,
 
     /// Plural, as nobody stops somebody writing `public public private class A`
     /// By storing multiple ones, we can diagnose and fix these cases

@@ -1,4 +1,4 @@
-use crate::NameRef;
+use crate::references::NameRef;
 
 #[derive(Debug)]
 pub struct Import {
