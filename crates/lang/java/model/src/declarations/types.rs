@@ -1,4 +1,4 @@
-use crate::references::TypeRef;
+use crate::references::{self, TypeRef};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccessLevel {
@@ -26,12 +26,19 @@ pub enum Modifier {
     Strictfp,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeParameter {
+    pub name: String,
+    pub bounds: Vec<references::TypeBound>,
+}
+
 #[derive(Debug)]
 pub struct TypeDeclaration {
-    pub name: String,
+    pub name: Option<String>,
+    pub type_parameters: Vec<TypeParameter>,
     pub kind: Kind,
-    pub extends: Option<TypeRef>,
-    pub implements: Vec<TypeRef>,
+    pub declared_superclass: Option<TypeRef>,
+    pub declared_superinterfaces: Vec<TypeRef>,
 
     /// Plural, as nobody stops somebody writing `public public private class A`
     /// By storing multiple ones, we can diagnose and fix these cases
@@ -39,4 +46,18 @@ pub struct TypeDeclaration {
     /// Plural, as nobody stops somebody writing `abstract abstract final class A`
     /// By storing multiple ones, we can diagnose and fix these cases
     pub modifiers: Vec<Modifier>,
+}
+
+impl TypeDeclaration {
+    pub fn new(kind: Kind) -> Self {
+        Self {
+            name: None,
+            type_parameters: Vec::new(),
+            kind,
+            declared_superclass: None,
+            declared_superinterfaces: Vec::new(),
+            access: Vec::new(),
+            modifiers: Vec::new(),
+        }
+    }
 }

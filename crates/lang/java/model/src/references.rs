@@ -1,29 +1,54 @@
 /// Represents a dot-separated name broken into its components
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NameRef {
     Simple(String),
     Qualified(Vec<String>),
 }
 
-#[derive(Debug)]
-pub struct TypeRef {
-    pub components: Vec<TypeRefComponent>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeRef {
+    /// `java.util.Map<String, Integer>`
+    Named { segments: Vec<TypeNameComponent> },
+    /// `int`
+    Primitive(PrimitiveType),
+    /// `String[][]`
+    Array {
+        element: Box<TypeRef>,
+        dimensions: usize,
+    },
+    /// `void`
+    Void,
 }
 
-#[derive(Debug)]
-pub struct TypeRefComponent {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PrimitiveType {
+    Byte,
+    Short,
+    Int,
+    Long,
+    Char,
+    Float,
+    Double,
+    Boolean,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeNameComponent {
     pub name: String,
-    pub arguments: Vec<TypeArgument>,
+    pub bounds: Vec<TypeBound>,
 }
 
-#[derive(Debug)]
-pub enum TypeArgument {
-    Type(TypeRef),
-    Wildcard { bound: Option<WildcardBound> },
-}
-
-#[derive(Debug)]
-pub enum WildcardBound {
-    Extends(TypeRef),
-    Super(TypeRef),
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeBound {
+    /// `A<B>`
+    Exact { primary: TypeRef },
+    /// `A<? extends B>` or `class A<T extends B & C>`
+    Extends {
+        primary: TypeRef,
+        additional: Vec<TypeRef>,
+    },
+    /// `A<? super B>`
+    Super { primary: TypeRef },
+    /// `A<?>` or the unbounded `T` in `class A<T>`
+    Unbounded,
 }

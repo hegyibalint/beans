@@ -4,10 +4,10 @@ use beans_lang_java_model::{
     File,
     declarations::{
         Declaration,
-        types::{AccessLevel, Kind as TypeKind, Modifier, TypeDeclaration},
+        types::{AccessLevel, Kind as TypeKind, Modifier, TypeDeclaration, TypeParameter},
     },
     imports::{Import, ImportType},
-    references::NameRef,
+    references::{NameRef, PrimitiveType, TypeBound, TypeNameComponent, TypeRef},
     scopes::ScopeIndex,
 };
 use tree_sitter::Node;
@@ -62,10 +62,10 @@ fn lower_type_declaration(content: &str, node: Node, _scope: ScopeIndex, file: &
         node.kind(),
     );
 
-    let mut name = None;
-    let mut kind = None;
-    let mut access = Vec::new();
-    let mut modifiers = Vec::new();
+    let Some(kind) = lower_type_kind(node) else {
+        return;
+    };
+    let mut declaration = TypeDeclaration::new(kind);
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -78,21 +78,27 @@ fn lower_type_declaration(content: &str, node: Node, _scope: ScopeIndex, file: &
                 let mut modifier_cursor = child.walk();
                 for modifier_node in child.children(&mut modifier_cursor) {
                     if let Some(access_level) = lower_type_access_modifier(modifier_node) {
-                        access.push(access_level);
+                        declaration.access.push(access_level);
                     } else if let Some(modifier) = lower_type_modifier(modifier_node) {
-                        modifiers.push(modifier);
+                        declaration.modifiers.push(modifier);
                     }
                 }
             }
-            "class" | "enum" | "record" | "interface" | "@interface" => {
-                kind = lower_type_kind(child);
+            "class" | "enum" | "record" | "interface" | "@interface" => {}
+            "identifier" => declaration.name = node_text(child, content),
+            "type_parameters" => {
+                declaration
+                    .type_parameters
+                    .extend(lower_type_parameters(content, child));
             }
-            "identifier" => {
-                name = node_text(child, content);
+            "superclass" => {
+                declaration.declared_superclass = lower_single_type_clause(content, child);
             }
-            "type_parameters" => {}
-            "superclass" => {}
-            "super_interfaces" | "extends_interfaces" => {}
+            "super_interfaces" | "extends_interfaces" => {
+                declaration
+                    .declared_superinterfaces
+                    .extend(lower_type_list_clause(content, child));
+            }
             "permits" => {}
             "formal_parameters" => {}
             "class_body" | "enum_body" | "interface_body" | "annotation_type_body" => {}
@@ -100,18 +106,7 @@ fn lower_type_declaration(content: &str, node: Node, _scope: ScopeIndex, file: &
         }
     }
 
-    let (Some(name), Some(kind)) = (name, kind) else {
-        return;
-    };
-
-    file.declarations.push(Declaration::Type(TypeDeclaration {
-        name,
-        kind,
-        extends: None,
-        implements: Vec::new(),
-        access,
-        modifiers,
-    }));
+    file.declarations.push(Declaration::Type(declaration));
 }
 
 fn lower_type_access_modifier(node: Node) -> Option<AccessLevel> {
@@ -137,12 +132,200 @@ fn lower_type_modifier(node: Node) -> Option<Modifier> {
 
 fn lower_type_kind(node: Node) -> Option<TypeKind> {
     match node.kind() {
-        "class" => Some(TypeKind::Class),
-        "enum" => Some(TypeKind::Enum),
-        "record" => Some(TypeKind::Record),
-        "interface" => Some(TypeKind::Interface),
-        "@interface" => Some(TypeKind::AnnotationInterface),
+        "class" | "class_declaration" => Some(TypeKind::Class),
+        "enum" | "enum_declaration" => Some(TypeKind::Enum),
+        "record" | "record_declaration" => Some(TypeKind::Record),
+        "interface" | "interface_declaration" => Some(TypeKind::Interface),
+        "@interface" | "annotation_type_declaration" => Some(TypeKind::AnnotationInterface),
         _ => None,
+    }
+}
+
+fn lower_type_parameters(content: &str, node: Node) -> Vec<TypeParameter> {
+    debug_assert_eq!(node.kind(), "type_parameters");
+
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .filter(|child| child.kind() == "type_parameter")
+        .filter_map(|child| lower_type_parameter(content, child))
+        .collect()
+}
+
+fn lower_type_parameter(content: &str, node: Node) -> Option<TypeParameter> {
+    debug_assert_eq!(node.kind(), "type_parameter");
+
+    let mut name = None;
+    let mut bound = None;
+    let mut cursor = node.walk();
+
+    for child in node.named_children(&mut cursor) {
+        match child.kind() {
+            "type_identifier" => name = node_text(child, content),
+            "type_bound" => bound = lower_type_bound(content, child),
+            _ => {}
+        }
+    }
+
+    Some(TypeParameter {
+        name: name?,
+        bounds: vec![bound.unwrap_or(TypeBound::Unbounded)],
+    })
+}
+
+fn lower_type_bound(content: &str, node: Node) -> Option<TypeBound> {
+    debug_assert_eq!(node.kind(), "type_bound");
+
+    let mut cursor = node.walk();
+    let mut bounds = node
+        .named_children(&mut cursor)
+        .filter_map(|child| lower_type_ref(content, child));
+    let primary = bounds.next()?;
+
+    Some(TypeBound::Extends {
+        primary,
+        additional: bounds.collect(),
+    })
+}
+
+fn lower_single_type_clause(content: &str, node: Node) -> Option<TypeRef> {
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .find_map(|child| lower_type_ref(content, child))
+}
+
+fn lower_type_list_clause(content: &str, node: Node) -> Vec<TypeRef> {
+    let mut clause_cursor = node.walk();
+    let Some(type_list) = node
+        .named_children(&mut clause_cursor)
+        .find(|child| child.kind() == "type_list")
+    else {
+        return Vec::new();
+    };
+
+    let mut list_cursor = type_list.walk();
+    type_list
+        .named_children(&mut list_cursor)
+        .filter_map(|child| lower_type_ref(content, child))
+        .collect()
+}
+
+fn lower_type_ref(content: &str, node: Node) -> Option<TypeRef> {
+    match node.kind() {
+        "type_identifier" | "scoped_type_identifier" | "generic_type" => Some(TypeRef::Named {
+            segments: lower_type_name_segments(content, node)?,
+        }),
+        "integral_type" | "floating_point_type" | "boolean_type" => {
+            let primitive = match node_text(node, content)?.as_str() {
+                "byte" => PrimitiveType::Byte,
+                "short" => PrimitiveType::Short,
+                "int" => PrimitiveType::Int,
+                "long" => PrimitiveType::Long,
+                "char" => PrimitiveType::Char,
+                "float" => PrimitiveType::Float,
+                "double" => PrimitiveType::Double,
+                "boolean" => PrimitiveType::Boolean,
+                _ => return None,
+            };
+            Some(TypeRef::Primitive(primitive))
+        }
+        "array_type" => {
+            let element = lower_type_ref(content, node.child_by_field_name("element")?)?;
+            let dimensions_node = node.child_by_field_name("dimensions")?;
+            let mut cursor = dimensions_node.walk();
+            let dimensions = dimensions_node
+                .children(&mut cursor)
+                .filter(|child| child.kind() == "[")
+                .count();
+
+            Some(TypeRef::Array {
+                element: Box::new(element),
+                dimensions,
+            })
+        }
+        "annotated_type" => {
+            let mut cursor = node.walk();
+            node.named_children(&mut cursor)
+                .find_map(|child| lower_type_ref(content, child))
+        }
+        "void_type" => Some(TypeRef::Void),
+        _ => None,
+    }
+}
+
+fn lower_type_name_segments(content: &str, node: Node) -> Option<Vec<TypeNameComponent>> {
+    match node.kind() {
+        "type_identifier" => Some(vec![TypeNameComponent {
+            name: node_text(node, content)?,
+            bounds: Vec::new(),
+        }]),
+        "scoped_type_identifier" => {
+            let mut segments = Vec::new();
+            let mut cursor = node.walk();
+
+            for child in node.named_children(&mut cursor) {
+                if let Some(mut child_segments) = lower_type_name_segments(content, child) {
+                    segments.append(&mut child_segments);
+                }
+            }
+
+            (!segments.is_empty()).then_some(segments)
+        }
+        "generic_type" => {
+            let mut cursor = node.walk();
+            let children: Vec<_> = node.named_children(&mut cursor).collect();
+            let base = children
+                .iter()
+                .find_map(|child| lower_type_name_segments(content, *child))?;
+            let mut segments = base;
+            let arguments = children
+                .iter()
+                .find(|child| child.kind() == "type_arguments")
+                .map(|arguments| lower_type_arguments(content, *arguments))
+                .unwrap_or_default();
+            segments.last_mut()?.bounds = arguments;
+            Some(segments)
+        }
+        "annotated_type" => {
+            let mut cursor = node.walk();
+            node.named_children(&mut cursor)
+                .find_map(|child| lower_type_name_segments(content, child))
+        }
+        _ => None,
+    }
+}
+
+fn lower_type_arguments(content: &str, node: Node) -> Vec<TypeBound> {
+    debug_assert_eq!(node.kind(), "type_arguments");
+
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .filter_map(|child| match child.kind() {
+            "wildcard" => Some(lower_wildcard(content, child)),
+            _ => lower_type_ref(content, child).map(|primary| TypeBound::Exact { primary }),
+        })
+        .collect()
+}
+
+fn lower_wildcard(content: &str, node: Node) -> TypeBound {
+    debug_assert_eq!(node.kind(), "wildcard");
+
+    let mut cursor = node.walk();
+    let children: Vec<_> = node.children(&mut cursor).collect();
+    let referenced_type = children
+        .iter()
+        .find_map(|child| lower_type_ref(content, *child));
+
+    match (
+        children.iter().find(|child| child.kind() == "extends"),
+        children.iter().find(|child| child.kind() == "super"),
+        referenced_type,
+    ) {
+        (Some(_), None, Some(primary)) => TypeBound::Extends {
+            primary,
+            additional: Vec::new(),
+        },
+        (None, Some(_), Some(primary)) => TypeBound::Super { primary },
+        _ => TypeBound::Unbounded,
     }
 }
 
@@ -343,7 +526,7 @@ public final class Inventory<T extends Comparable<? super T>> implements Closeab
             panic!("expected a type declaration");
         };
 
-        assert_eq!(declaration.name, "DuplicateModifiers");
+        assert_eq!(declaration.name.as_deref(), Some("DuplicateModifiers"));
         assert_eq!(
             declaration.access,
             [
