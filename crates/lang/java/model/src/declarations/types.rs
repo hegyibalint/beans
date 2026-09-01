@@ -30,7 +30,7 @@ pub enum Modifier {
 pub struct TypeDeclaration {
     pub name: String,
     pub kind: Kind,
-    pub extends: NameRef,
+    pub extends: Option<NameRef>,
     pub implements: Vec<NameRef>,
 
     /// Plural, as nobody stops somebody writing `public public private class A`
