@@ -2,6 +2,10 @@ mod parser;
 
 use beans_lang_java_model::{
     File,
+    declarations::{
+        Declaration,
+        types::{AccessLevel, Kind as TypeKind, Modifier, TypeDeclaration},
+    },
     imports::{Import, ImportType},
     references::NameRef,
     scopes::ScopeIndex,
@@ -44,7 +48,7 @@ pub fn lower_into(content: &str) -> File {
     file
 }
 
-fn lower_type_declaration(_content: &str, node: Node, _scope: ScopeIndex, _file: &mut File) {
+fn lower_type_declaration(content: &str, node: Node, _scope: ScopeIndex, file: &mut File) {
     debug_assert!(
         matches!(
             node.kind(),
@@ -57,6 +61,93 @@ fn lower_type_declaration(_content: &str, node: Node, _scope: ScopeIndex, _file:
         "expected a type declaration, got `{}`",
         node.kind(),
     );
+
+    let mut name = None;
+    let mut kind = None;
+    let mut access = Vec::new();
+    let mut modifiers = Vec::new();
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.is_extra() {
+            continue;
+        }
+
+        match child.kind() {
+            "modifiers" => {
+                let mut modifier_cursor = child.walk();
+                for modifier_node in child.children(&mut modifier_cursor) {
+                    if let Some(access_level) = lower_type_access_modifier(modifier_node) {
+                        access.push(access_level);
+                    } else if let Some(modifier) = lower_type_modifier(modifier_node) {
+                        modifiers.push(modifier);
+                    }
+                }
+            }
+            "class" | "enum" | "record" | "interface" | "@interface" => {
+                kind = lower_type_kind(child);
+            }
+            "identifier" => {
+                name = node_text(child, content);
+            }
+            "type_parameters" => {}
+            "superclass" => {}
+            "super_interfaces" | "extends_interfaces" => {}
+            "permits" => {}
+            "formal_parameters" => {}
+            "class_body" | "enum_body" | "interface_body" | "annotation_type_body" => {}
+            _ => {}
+        }
+    }
+
+    let (Some(name), Some(kind)) = (name, kind) else {
+        return;
+    };
+
+    file.declarations.push(Declaration::Type(TypeDeclaration {
+        name,
+        kind,
+        extends: None,
+        implements: Vec::new(),
+        access,
+        modifiers,
+    }));
+}
+
+fn lower_type_access_modifier(node: Node) -> Option<AccessLevel> {
+    match node.kind() {
+        "public" => Some(AccessLevel::Public),
+        "protected" => Some(AccessLevel::Protected),
+        "private" => Some(AccessLevel::Private),
+        _ => None,
+    }
+}
+
+fn lower_type_modifier(node: Node) -> Option<Modifier> {
+    match node.kind() {
+        "abstract" => Some(Modifier::Abstract),
+        "static" => Some(Modifier::Static),
+        "final" => Some(Modifier::Final),
+        "sealed" => Some(Modifier::Sealed),
+        "non-sealed" => Some(Modifier::NonSealed),
+        "strictfp" => Some(Modifier::Strictfp),
+        _ => None,
+    }
+}
+
+fn lower_type_kind(node: Node) -> Option<TypeKind> {
+    match node.kind() {
+        "class" => Some(TypeKind::Class),
+        "enum" => Some(TypeKind::Enum),
+        "record" => Some(TypeKind::Record),
+        "interface" => Some(TypeKind::Interface),
+        "@interface" => Some(TypeKind::AnnotationInterface),
+        _ => None,
+    }
+}
+
+fn node_text(node: Node, content: &str) -> Option<String> {
+    node.utf8_text(content.as_bytes()).ok().map(str::to_owned)
 }
 
 fn lower_package_declaration(content: &str, node: Node) -> Option<NameRef> {
@@ -112,10 +203,7 @@ fn lower_identifier(content: &str, node: Node) -> Option<NameRef> {
 
 fn collect_name_components(content: &str, node: Node) -> Option<Vec<String>> {
     match node.kind() {
-        "identifier" => {
-            let text = node.utf8_text(content.as_bytes()).ok()?;
-            Some(vec![text.to_owned()])
-        }
+        "identifier" => Some(vec![node_text(node, content)?]),
 
         "scoped_identifier" => {
             let scope = node.child_by_field_name("scope")?;
@@ -133,6 +221,10 @@ fn collect_name_components(content: &str, node: Node) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::lower_into;
+    use beans_lang_java_model::declarations::{
+        Declaration,
+        types::{AccessLevel, Kind, Modifier},
+    };
 
     const SOURCE: &str = r#"
 package com.example.inventory;
@@ -214,6 +306,66 @@ public final class Inventory<T extends Comparable<? super T>> implements Closeab
     }
 }
 "#;
+
+    #[test]
+    fn all_type_declaration_kinds_are_preserved() {
+        let file = lower_into(
+            "class C {} enum E {} record R() {} interface I {} @interface Annotation {}",
+        );
+
+        let kinds: Vec<_> = file
+            .declarations
+            .iter()
+            .map(|declaration| match declaration {
+                Declaration::Type(declaration) => declaration.kind,
+                _ => panic!("expected a type declaration"),
+            })
+            .collect();
+
+        assert_eq!(
+            kinds,
+            [
+                Kind::Class,
+                Kind::Enum,
+                Kind::Record,
+                Kind::Interface,
+                Kind::AnnotationInterface,
+            ]
+        );
+    }
+
+    #[test]
+    fn duplicate_and_conflicting_type_modifiers_are_preserved() {
+        let file = lower_into(
+            "public public protected private abstract abstract static final sealed non-sealed strictfp class DuplicateModifiers {}",
+        );
+        let Declaration::Type(declaration) = &file.declarations[0] else {
+            panic!("expected a type declaration");
+        };
+
+        assert_eq!(declaration.name, "DuplicateModifiers");
+        assert_eq!(
+            declaration.access,
+            [
+                AccessLevel::Public,
+                AccessLevel::Public,
+                AccessLevel::Protected,
+                AccessLevel::Private,
+            ]
+        );
+        assert_eq!(
+            declaration.modifiers,
+            [
+                Modifier::Abstract,
+                Modifier::Abstract,
+                Modifier::Static,
+                Modifier::Final,
+                Modifier::Sealed,
+                Modifier::NonSealed,
+                Modifier::Strictfp,
+            ]
+        );
+    }
 
     #[test]
     fn compilation_unit_with_nested_declarations_and_expression_chains_lowers() {
