@@ -1,30 +1,40 @@
-pub mod class;
-pub mod declaration;
+use crate::scopes::ScopeIndex;
+
+pub mod declarations;
 pub mod imports;
-pub mod scope;
+pub mod scopes;
 
 /// Represents a dot-separated name broken into its components
-pub struct NameRef {
-    components: Vec<&str>,
+#[derive(Debug)]
+pub enum NameRef {
+    Simple(String),
+    Qualified(Vec<String>),
 }
 
 /// Represents a whole `.java` file.
+#[derive(Debug)]
 pub struct File {
     /// The package name, if exists
-    package_name: Option<NameRef>,
-    /// The list of imports
-    imports: Vec<imports::Import>,
-    /// The declared classes in the file
-    classes: Vec<class::Class>,
+    pub package_name: Option<NameRef>,
+    pub imports: Vec<imports::Import>,
 
-    /// The root scope of this file
-    root_scope: &scopes::Scope,
-    /// Flat list of all further scopes in the file
-    scopes: Map<scopes::Scope>,
+    pub declarations: Vec<declarations::Declaration>,
+    pub scopes: Vec<scopes::Scope>,
 }
 
 impl File {
+    pub const ROOT_SCOPE_ID: ScopeIndex = 0;
+
     pub fn new() -> File {
-        todo!()
+        Self {
+            package_name: None,
+            imports: Vec::new(),
+
+            declarations: Vec::new(),
+            scopes: vec![
+                // In scopes, we create the 0th element, the root scope
+                scopes::Scope::new(),
+            ],
+        }
     }
 }

@@ -3,10 +3,8 @@ resolver = "3"
 members = [
     "crates/core/model",
     "crates/lang/java/model",
-    "crates/lang/java/parser",
     "crates/lang/java/semantics",
     "crates/lang/java/server",
-    "tests/support",
 ]
 
 [workspace.package]

@@ -1,16 +1,11 @@
 use std::sync::OnceLock;
 
-pub struct Resolvable<S, R, F> {
+pub struct Resolvable<S, R> {
     source: S,
-    resolution: OnceLock<Resolution<R, F>>,
+    resolution: OnceLock<R>,
 }
 
-pub enum Resolution<R, F> {
-    Resolved(R),
-    Failed(F),
-}
-
-impl<S, R, F> Resolvable<S, R, F> {
+impl<S, R> Resolvable<S, R> {
     pub fn new(source: S) -> Self {
         Self {
             source,
@@ -22,14 +17,11 @@ impl<S, R, F> Resolvable<S, R, F> {
         &self.source
     }
 
-    pub fn resolution(&self) -> Option<&Resolution<R, F>> {
+    pub fn resolution(&self) -> Option<&R> {
         self.resolution.get()
     }
 
-    pub fn get_or_init(
-        &self,
-        resolve: impl FnOnce(&S) -> Resolution<R, F>,
-    ) -> &Resolution<R, F> {
+    pub fn get_or_init(&self, resolve: impl FnOnce(&S) -> R) -> &R {
         self.resolution.get_or_init(|| resolve(&self.source))
     }
 }

@@ -82,7 +82,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lang-java-parser"
+name = "lang-java-semantics"
 version = "0.0.1"
 dependencies = [
  "lang-java-model",
@@ -91,18 +91,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "lang-java-semantics"
-version = "0.0.1"
-dependencies = [
- "lang-java-model",
-]
-
-[[package]]
 name = "lang-java-server"
 version = "0.0.1"
 dependencies = [
  "lang-java-model",
- "lang-java-parser",
  "lang-java-semantics",
  "lsp-types",
 ]
@@ -250,10 +242,6 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
-
-[[package]]
-name = "test-support"
-version = "0.0.1"
 
 [[package]]
 name = "tree-sitter"

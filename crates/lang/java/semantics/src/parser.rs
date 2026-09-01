@@ -1,6 +1,6 @@
 use tree_sitter::{Parser, Tree};
 
-pub fn parse(content: &str) -> Tree {
+pub(super) fn parse(content: &str) -> Tree {
     let mut parser = Parser::new();
     parser
         .set_language(&tree_sitter_java::LANGUAGE.into())

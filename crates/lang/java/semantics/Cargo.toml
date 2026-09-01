@@ -10,4 +10,5 @@ name = "beans_lang_java_semantics"
 
 [dependencies]
 lang-java-model = { path = "../model" }
-lang-java-parser = { path = "../parser" }
+tree-sitter.workspace = true
+tree-sitter-java.workspace = true

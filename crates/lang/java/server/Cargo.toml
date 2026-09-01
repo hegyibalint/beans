@@ -10,6 +10,5 @@ name = "beans_lang_java_server"
 
 [dependencies]
 lang-java-model = { path = "../model" }
-lang-java-parser = { path = "../parser" }
 lang-java-semantics = { path = "../semantics" }
 lsp-types.workspace = true
