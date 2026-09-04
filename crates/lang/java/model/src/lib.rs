@@ -16,6 +16,12 @@ pub struct File {
     scopes: Vec<scopes::Scope>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ScopedDeclaration<'a> {
+    pub scope: scopes::IndexedScope<'a>,
+    pub declaration: declarations::IndexedDeclaration<'a>,
+}
+
 impl File {
     pub const ROOT_SCOPE_ID: ScopeIndex = ScopeIndex::new(0);
 
@@ -32,8 +38,8 @@ impl File {
         }
     }
 
-    pub fn declarations(&self) -> &[declarations::Declaration] {
-        &self.declarations
+    pub fn scope(&self, index: ScopeIndex) -> Option<&scopes::Scope> {
+        self.scopes.get(index.as_usize())
     }
 
     pub fn declaration(
@@ -43,12 +49,23 @@ impl File {
         self.declarations.get(index.as_usize())
     }
 
-    pub fn scopes(&self) -> &[scopes::Scope] {
-        &self.scopes
+    pub fn iter_scopes(&self) -> impl Iterator<Item = scopes::IndexedScope<'_>> + '_ {
+        self.scopes
+            .iter()
+            .enumerate()
+            .map(|(index, scope)| scopes::IndexedScope {
+                index: ScopeIndex::new(index),
+                scope,
+            })
     }
 
-    pub fn scope(&self, index: ScopeIndex) -> Option<&scopes::Scope> {
-        self.scopes.get(index.as_usize())
+    pub fn iter_declarations(&self) -> impl Iterator<Item = ScopedDeclaration<'_>> + '_ {
+        self.iter_scopes().flat_map(move |scope| {
+            scope
+                .scope
+                .iter_declarations(self)
+                .map(move |declaration| ScopedDeclaration { scope, declaration })
+        })
     }
 
     pub fn add_declaration(
@@ -123,7 +140,11 @@ mod tests {
 
         assert!(file.declaration(declaration).is_some());
         assert_eq!(
-            file.scope(File::ROOT_SCOPE_ID).unwrap().declarations(),
+            file.scope(File::ROOT_SCOPE_ID)
+                .unwrap()
+                .iter_declarations(&file)
+                .map(|indexed_declaration| indexed_declaration.index)
+                .collect::<Vec<_>>(),
             [declaration]
         );
     }

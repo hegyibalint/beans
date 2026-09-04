@@ -1,6 +1,6 @@
 use crate::references::NameRef;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Import {
     name: NameRef,
     typ: ImportType,
@@ -10,9 +10,17 @@ impl Import {
     pub fn new(name: NameRef, typ: ImportType) -> Self {
         Self { name, typ }
     }
+
+    pub fn name(&self) -> &NameRef {
+        &self.name
+    }
+
+    pub fn typ(&self) -> ImportType {
+        self.typ
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImportType {
     /// JLS 7.5.1 Single-Type-Import Declarations
     ///

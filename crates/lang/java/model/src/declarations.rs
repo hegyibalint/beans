@@ -10,7 +10,7 @@ impl DeclarationIndex {
         Self(index)
     }
 
-    pub const fn as_usize(self) -> usize {
+    pub(crate) const fn as_usize(self) -> usize {
         self.0
     }
 }
@@ -20,4 +20,10 @@ pub enum Declaration {
     Type(types::TypeDeclaration),
     Field(fields::FieldDeclaration),
     Method(methods::MethodDeclaration),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct IndexedDeclaration<'a> {
+    pub index: DeclarationIndex,
+    pub declaration: &'a Declaration,
 }

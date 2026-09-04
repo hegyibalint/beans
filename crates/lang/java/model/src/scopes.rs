@@ -1,14 +1,20 @@
-use crate::declarations;
+use crate::{File, declarations};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScopeIndex(usize);
+
+#[derive(Debug, Clone, Copy)]
+pub struct IndexedScope<'a> {
+    pub index: ScopeIndex,
+    pub scope: &'a Scope,
+}
 
 impl ScopeIndex {
     pub(crate) const fn new(index: usize) -> Self {
         Self(index)
     }
 
-    pub const fn as_usize(self) -> usize {
+    pub(crate) const fn as_usize(self) -> usize {
         self.0
     }
 }
@@ -46,7 +52,18 @@ impl Scope {
         self.declarations.push(declaration);
     }
 
-    pub fn declarations(&self) -> &[declarations::DeclarationIndex] {
-        &self.declarations
+    pub fn iter_declarations<'a>(
+        &'a self,
+        file: &'a File,
+    ) -> impl Iterator<Item = declarations::IndexedDeclaration<'a>> + 'a {
+        self.declarations
+            .iter()
+            .copied()
+            .map(move |index| declarations::IndexedDeclaration {
+                index,
+                declaration: file
+                    .declaration(index)
+                    .expect("scope contains an invalid declaration index"),
+            })
     }
 }
