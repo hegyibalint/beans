@@ -26,9 +26,14 @@ pub enum Modifier {
     Strictfp,
 }
 
+/// Represents a single type parameter used in a type declaration.
+/// For example, `<A extends org.foo.Bar<String>>`
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeParameter {
+    /// The name of the placeholder.
+    /// Often used ones are `T`, `A`, etc...
     pub name: String,
+    /// What bounds the `name` abides to
     pub bounds: Vec<references::TypeBound>,
 }
 

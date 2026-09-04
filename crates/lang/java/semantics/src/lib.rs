@@ -3,7 +3,7 @@ mod parser;
 use beans_lang_java_model::{
     File,
     declarations::{
-        Declaration,
+        Declaration, DeclarationIndex,
         types::{AccessLevel, Kind as TypeKind, Modifier, TypeDeclaration, TypeParameter},
     },
     imports::{Import, ImportType},
@@ -38,7 +38,7 @@ pub fn lower_into(content: &str) -> File {
             | "enum_declaration"
             | "record_declaration"
             | "annotation_type_declaration" => {
-                lower_type_declaration(content, node, File::ROOT_SCOPE_ID, &mut file)
+                let _ = lower_type_declaration(content, node, File::ROOT_SCOPE_ID, &mut file);
             }
 
             _ => {}
@@ -48,7 +48,12 @@ pub fn lower_into(content: &str) -> File {
     file
 }
 
-fn lower_type_declaration(content: &str, node: Node, _scope: ScopeIndex, file: &mut File) {
+fn lower_type_declaration(
+    content: &str,
+    node: Node,
+    parent_scope: ScopeIndex,
+    file: &mut File,
+) -> Option<DeclarationIndex> {
     debug_assert!(
         matches!(
             node.kind(),
@@ -62,10 +67,10 @@ fn lower_type_declaration(content: &str, node: Node, _scope: ScopeIndex, file: &
         node.kind(),
     );
 
-    let Some(kind) = lower_type_kind(node) else {
-        return;
-    };
+    let kind = lower_type_kind(node)?;
+    let scope = file.new_scope(parent_scope);
     let mut declaration = TypeDeclaration::new(kind);
+    let mut body = None;
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -101,12 +106,38 @@ fn lower_type_declaration(content: &str, node: Node, _scope: ScopeIndex, file: &
             }
             "permits" => {}
             "formal_parameters" => {}
-            "class_body" | "enum_body" | "interface_body" | "annotation_type_body" => {}
+            "class_body" | "enum_body" | "interface_body" | "annotation_type_body" => {
+                body = Some(child);
+            }
             _ => {}
         }
     }
 
-    file.declarations.push(Declaration::Type(declaration));
+    let declaration = file.add_declaration(parent_scope, Declaration::Type(declaration));
+
+    if let Some(body) = body {
+        lower_type_body(content, body, scope, file);
+    }
+
+    Some(declaration)
+}
+
+fn lower_type_body(content: &str, node: Node, scope: ScopeIndex, file: &mut File) {
+    let mut cursor = node.walk();
+
+    for child in node.named_children(&mut cursor) {
+        match child.kind() {
+            "class_declaration"
+            | "interface_declaration"
+            | "enum_declaration"
+            | "record_declaration"
+            | "annotation_type_declaration" => {
+                let _ = lower_type_declaration(content, child, scope, file);
+            }
+            "enum_body_declarations" => lower_type_body(content, child, scope, file),
+            _ => {}
+        }
+    }
 }
 
 fn lower_type_access_modifier(node: Node) -> Option<AccessLevel> {
@@ -404,9 +435,12 @@ fn collect_name_components(content: &str, node: Node) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::lower_into;
-    use beans_lang_java_model::declarations::{
-        Declaration,
-        types::{AccessLevel, Kind, Modifier},
+    use beans_lang_java_model::{
+        File,
+        declarations::{
+            Declaration,
+            types::{AccessLevel, Kind, Modifier},
+        },
     };
 
     const SOURCE: &str = r#"
@@ -497,7 +531,7 @@ public final class Inventory<T extends Comparable<? super T>> implements Closeab
         );
 
         let kinds: Vec<_> = file
-            .declarations
+            .declarations()
             .iter()
             .map(|declaration| match declaration {
                 Declaration::Type(declaration) => declaration.kind,
@@ -515,6 +549,15 @@ public final class Inventory<T extends Comparable<? super T>> implements Closeab
                 Kind::AnnotationInterface,
             ]
         );
+        assert_eq!(
+            file.scope(File::ROOT_SCOPE_ID)
+                .unwrap()
+                .declarations()
+                .iter()
+                .map(|index| index.as_usize())
+                .collect::<Vec<_>>(),
+            [0, 1, 2, 3, 4]
+        );
     }
 
     #[test]
@@ -522,7 +565,7 @@ public final class Inventory<T extends Comparable<? super T>> implements Closeab
         let file = lower_into(
             "public public protected private abstract abstract static final sealed non-sealed strictfp class DuplicateModifiers {}",
         );
-        let Declaration::Type(declaration) = &file.declarations[0] else {
+        let Declaration::Type(declaration) = &file.declarations()[0] else {
             panic!("expected a type declaration");
         };
 
