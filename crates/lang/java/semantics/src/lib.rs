@@ -186,20 +186,20 @@ fn lower_type_parameter(content: &str, node: Node) -> Option<TypeParameter> {
     debug_assert_eq!(node.kind(), "type_parameter");
 
     let mut name = None;
-    let mut bound = None;
+    let mut bounds = Vec::new();
     let mut cursor = node.walk();
 
     for child in node.named_children(&mut cursor) {
         match child.kind() {
             "type_identifier" => name = node_text(child, content),
-            "type_bound" => bound = lower_type_bound(content, child),
+            "type_bound" => bounds.extend(lower_type_bound(content, child)),
             _ => {}
         }
     }
 
     Some(TypeParameter {
         name: name?,
-        bounds: vec![bound.unwrap_or(TypeBound::Unbounded)],
+        bounds,
     })
 }
 
@@ -331,13 +331,13 @@ fn lower_type_arguments(content: &str, node: Node) -> Vec<TypeBound> {
     let mut cursor = node.walk();
     node.named_children(&mut cursor)
         .filter_map(|child| match child.kind() {
-            "wildcard" => Some(lower_wildcard(content, child)),
+            "wildcard" => lower_wildcard(content, child),
             _ => lower_type_ref(content, child).map(|primary| TypeBound::Exact { primary }),
         })
         .collect()
 }
 
-fn lower_wildcard(content: &str, node: Node) -> TypeBound {
+fn lower_wildcard(content: &str, node: Node) -> Option<TypeBound> {
     debug_assert_eq!(node.kind(), "wildcard");
 
     let mut cursor = node.walk();
@@ -351,12 +351,13 @@ fn lower_wildcard(content: &str, node: Node) -> TypeBound {
         children.iter().find(|child| child.kind() == "super"),
         referenced_type,
     ) {
-        (Some(_), None, Some(primary)) => TypeBound::Extends {
+        (Some(_), None, Some(primary)) => Some(TypeBound::Extends {
             primary,
             additional: Vec::new(),
-        },
-        (None, Some(_), Some(primary)) => TypeBound::Super { primary },
-        _ => TypeBound::Unbounded,
+        }),
+        (None, Some(_), Some(primary)) => Some(TypeBound::Super { primary }),
+        (None, None, None) => Some(TypeBound::Unbounded),
+        _ => None,
     }
 }
 
@@ -441,6 +442,7 @@ mod tests {
             Declaration,
             types::{AccessLevel, Kind, Modifier},
         },
+        references::{TypeBound, TypeRef},
     };
 
     const SOURCE: &str = r#"
@@ -591,6 +593,29 @@ public final class Inventory<T extends Comparable<? super T>> implements Closeab
                 Modifier::Strictfp,
             ]
         );
+    }
+
+    #[test]
+    fn type_parameter_without_declared_bound_has_empty_bounds() {
+        let file = lower_into("class C<T> {}");
+        let Declaration::Type(declaration) = &file.declarations()[0] else {
+            panic!("expected a type declaration");
+        };
+
+        assert!(declaration.type_parameters[0].bounds.is_empty());
+    }
+
+    #[test]
+    fn unbounded_wildcard_is_preserved() {
+        let file = lower_into("class C implements Comparable<?> {}");
+        let Declaration::Type(declaration) = &file.declarations()[0] else {
+            panic!("expected a type declaration");
+        };
+        let TypeRef::Named { segments } = &declaration.declared_superinterfaces[0] else {
+            panic!("expected a named superinterface");
+        };
+
+        assert_eq!(segments[0].bounds, [TypeBound::Unbounded]);
     }
 
     #[test]

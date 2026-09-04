@@ -35,6 +35,8 @@ pub enum PrimitiveType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeNameComponent {
     pub name: String,
+    /// The type arguments applied to this name component.
+    /// Empty when the source has no explicit type arguments.
     pub bounds: Vec<TypeBound>,
 }
 
@@ -49,6 +51,6 @@ pub enum TypeBound {
     },
     /// `A<? super B>`
     Super { primary: TypeRef },
-    /// `A<?>` or the unbounded `T` in `class A<T>`
+    /// `A<?>`
     Unbounded,
 }
