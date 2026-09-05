@@ -7,7 +7,7 @@ use beans_lang_java_model::{
     },
     imports::{Import, ImportType},
     references::{NameRef, PrimitiveType, TypeBound, TypeNameComponent, TypeRef},
-    scopes::ScopeIndex,
+    scopes::{ScopeIndex, ScopeKind},
 };
 use tree_sitter::Node;
 
@@ -50,7 +50,7 @@ pub fn lower_into(content: &str) -> File {
 fn lower_type_declaration(
     content: &str,
     node: Node,
-    parent_scope: ScopeIndex,
+    current_scope: ScopeIndex,
     file: &mut File,
 ) -> Option<DeclarationIndex> {
     debug_assert!(
@@ -66,9 +66,7 @@ fn lower_type_declaration(
         node.kind(),
     );
 
-    let kind = lower_type_kind(node)?;
-    let scope = file.new_scope(parent_scope);
-    let mut declaration = TypeDeclaration::new(kind);
+    let mut declaration = TypeDeclaration::new(lower_type_kind(node)?);
     let mut body = None;
 
     let mut cursor = node.walk();
@@ -112,16 +110,18 @@ fn lower_type_declaration(
         }
     }
 
-    let declaration = file.add_declaration(scope, Declaration::Type(declaration));
+    let declaration = file.add_declaration(current_scope, Declaration::Type(declaration));
+    let body_scope =
+        file.new_child_scope(current_scope, ScopeKind::TypeBody { owner: declaration });
 
     if let Some(body) = body {
-        lower_type_body(content, body, scope, file);
+        lower_type_body(content, body, body_scope, file);
     }
 
     Some(declaration)
 }
 
-fn lower_type_body(content: &str, node: Node, scope: ScopeIndex, file: &mut File) {
+fn lower_type_body(content: &str, node: Node, current_scope: ScopeIndex, file: &mut File) {
     let mut cursor = node.walk();
 
     for child in node.named_children(&mut cursor) {
@@ -131,9 +131,9 @@ fn lower_type_body(content: &str, node: Node, scope: ScopeIndex, file: &mut File
             | "enum_declaration"
             | "record_declaration"
             | "annotation_type_declaration" => {
-                let _ = lower_type_declaration(content, child, scope, file);
+                let _ = lower_type_declaration(content, child, current_scope, file);
             }
-            "enum_body_declarations" => lower_type_body(content, child, scope, file),
+            "enum_body_declarations" => lower_type_body(content, child, current_scope, file),
             _ => {}
         }
     }

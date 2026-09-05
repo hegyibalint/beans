@@ -49,17 +49,17 @@ fn duplicate_declaration_names_remain_independently_findable() {
         panic!("expected two declarations named `Duplicate`");
     };
 
-    assert_ne!(first.scope_id, second.scope_id);
+    assert_eq!(first.declaring_scope_id, second.declaring_scope_id);
     assert_ne!(first.declaration_id, second.declaration_id);
     assert!(
         first
-            .scope
+            .declaring_scope
             .iter_declarations(&file)
             .any(|indexed_declaration| indexed_declaration.index == first.declaration_id)
     );
     assert!(
         second
-            .scope
+            .declaring_scope
             .iter_declarations(&file)
             .any(|indexed_declaration| indexed_declaration.index == second.declaration_id)
     );

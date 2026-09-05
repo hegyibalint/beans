@@ -2,12 +2,12 @@ use beans_lang_java_model::{
     File,
     declarations::{Declaration, DeclarationIndex, types::TypeDeclaration},
     references::{TypeNameComponent, TypeRef},
-    scopes::{Scope, ScopeIndex},
+    scopes::{IndexedScope, Scope, ScopeIndex, ScopeKind},
 };
 
 struct ScopedTypeDeclaration<'a> {
-    scope_id: ScopeIndex,
-    scope: &'a Scope,
+    declaring_scope_id: ScopeIndex,
+    declaring_scope: &'a Scope,
     declaration_id: DeclarationIndex,
     declaration: &'a TypeDeclaration,
 }
@@ -20,8 +20,8 @@ fn find_type_declarations<'a>(file: &'a File, name: &str) -> Vec<ScopedTypeDecla
             };
 
             (declaration.name.as_deref() == Some(name)).then_some(ScopedTypeDeclaration {
-                scope_id: scoped_declaration.scope.index,
-                scope: scoped_declaration.scope.scope,
+                declaring_scope_id: scoped_declaration.scope.index,
+                declaring_scope: scoped_declaration.scope.scope,
                 declaration_id: scoped_declaration.declaration.index,
                 declaration,
             })
@@ -37,6 +37,18 @@ fn find_type_declaration<'a>(file: &'a File, name: &str) -> ScopedTypeDeclaratio
         0 => panic!("expected one type declaration named `{name}`, found none"),
         count => panic!("expected one type declaration named `{name}`, found {count}"),
     }
+}
+
+fn find_type_body_scope(file: &File, declaration_id: DeclarationIndex) -> IndexedScope<'_> {
+    let mut findings = file.iter_scopes().filter(|scope| {
+        scope.scope.kind()
+            == ScopeKind::TypeBody {
+                owner: declaration_id,
+            }
+    });
+    let scope = findings.next().expect("expected a type body scope");
+    assert!(findings.next().is_none(), "expected one type body scope");
+    scope
 }
 
 fn raw_type(names: &[&str]) -> TypeRef {
