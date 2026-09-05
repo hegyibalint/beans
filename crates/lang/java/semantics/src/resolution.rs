@@ -1,60 +1,106 @@
-use beans_lang_java_model::File;
+use beans_core_model as core_model;
+use beans_lang_java_model as java_model;
 
-// Resolves a `Resolvable` by following [JLS $6.5](https://docs.oracle.com/javase/specs/jls/se21/html/jls-6.html#jls-6.5) (and others concerns like §6.6 (accessibility))
-//
-pub fn resolve(_file: &File, _at: usize) {
-    // 1. Classify by context (§6.5.1).
-    //
-    // Seven categories, decided by where the name sits. No lookup happens
-    // here.
+/// The answer to what a `TypeRef` actually responds to, given the classpath
+pub enum ResolutionResult {
+    Resolved,
+    Ambigous,
+    NotFound,
+}
 
-    // 2. Reclassify (§6.5.2, §6.5.4).
-    //
-    // Only AmbiguousName and PackageOrTypeName. Variable beats type beats
-    // package (§6.4.2), and "package" is answered without checking one
-    // exists. A qualified name classifies its prefix first, recursively.
+impl ResolutionResult {
+    fn or_else(self, next: impl FnOnce() -> Self) -> Self {
+        match self {
+            Self::NotFound => next(),
+            result => result,
+        }
+    }
+}
 
-    // 3. ModuleName, PackageName (§6.5.3).
-    //
-    // §6.3: a subpackage is never in scope, `java` always is.
+pub struct Resolver {}
 
-    // 4. Simple TypeName (§6.5.5.1).
-    //
-    // Every declaration of the name in scope here (§6.3), minus the shadowed
-    // (§6.4.1), must leave exactly one. A type parameter then has static
-    // context and inner class conditions (§8.1.3).
+impl Resolver {
+    pub fn resolve(
+        &self,
+        type_ref: &java_model::references::TypeRef,
+        classpath: &core_model::Classpath,
+    ) -> ResolutionResult {
+        ResolutionInstance::new(self, type_ref, classpath).resolve()
+    }
+}
 
-    // 5. Qualified TypeName (§6.5.5.2).
-    //
-    // Exactly one accessible member type of Q. Not a member, not accessible,
-    // and more than one are three separate errors.
+struct ResolutionInstance<'a> {
+    resolver: &'a Resolver,
+    file: &'a java_model::File,
+    type_ref: &'a java_model::references::TypeRef,
+    classpath: &'a core_model::Classpath,
+}
 
-    // 6. Simple ExpressionName (§6.5.6.1).
-    //
-    // Exactly one local, parameter, exception parameter or field in scope at
-    // this point. Then static context, inner class chain, and effective
-    // finality (§4.12.4). Enum constants in a case label are a special case.
+impl<'a> ResolutionInstance<'a> {
+    fn new(
+        resolver: &'a Resolver,
+        file: &'a java_model::File,
+        type_ref: &'a java_model::references::TypeRef,
+        classpath: &'a core_model::Classpath,
+    ) -> Self {
+        Self {
+            resolver,
+            file,
+            type_ref,
+            classpath,
+        }
+    }
 
-    // 7. Qualified ExpressionName (§6.5.6.2).
-    //
-    // A package prefix is an error. A type prefix wants a static field. An
-    // expression prefix needs the type of that expression, which is §15.
+    fn resolve(&self) -> ResolutionResult {
+        // Placeholder wiring, not final Java lookup precedence or branching.
+        self.lookup_simple_type()
+            .or_else(|| self.lookup_inherited_member_types())
+            .or_else(|| self.lookup_with_owner_parameters())
+            .or_else(|| self.lookup_compilation_environment())
+            .or_else(|| self.lookup_all_sources_in_tier())
+            .or_else(|| self.lookup_qualified_type())
+            .or_else(|| self.unique())
+    }
 
-    // 8. MethodName (§6.5.7.1, §15.12.1).
-    //
-    // §15.12.1 picks the type to search, in six cases. Unqualified uses the
-    // comb rule: a nested class's supertypes before the enclosing class.
-    // Overload selection is §15.12.2 and needs argument types.
+    /// JLS §6.3, §6.4.1, §6.5.5.1.
+    ///
+    /// A simple type name is a `TypeRef::Named` with exactly one segment. It
+    /// may resolve to:
+    ///
+    /// - a type parameter, such as `T`;
+    /// - a local, member, or top-level `Declaration::Type`;
+    /// - an inherited member type;
+    /// - an imported or same-package type.
+    fn lookup_simple_type(&self) -> ResolutionResult {
+        self.file.
+    }
 
-    // 9. Accessibility (§6.6.1).
-    //
-    // Part of steps 5, 7 and 8, not a filter after them. `private` reaches
-    // the enclosing *top level* type. `protected` needs §6.6.2, which needs
-    // supertypes.
+    /// JLS §8.5, §9.5.
+    fn lookup_inherited_member_types(&self) -> ResolutionResult {
+        todo!()
+    }
 
-    // 10. Answer.
-    //
-    // Resolved, not found, ambiguous, inaccessible, wrong staticness. A
-    // rejected candidate must not hide a later answer, and must survive to
-    // the diagnostic.
+    /// JLS §6.3.
+    fn lookup_with_owner_parameters(&self) -> ResolutionResult {
+        todo!()
+    }
+
+    /// JLS §6.4.1, §7.5.
+    fn lookup_compilation_environment(&self) -> ResolutionResult {
+        todo!()
+    }
+
+    /// JLS §6.4.1, §7.5.
+    fn lookup_all_sources_in_tier(&self) -> ResolutionResult {
+        todo!()
+    }
+
+    /// JLS §6.5.3, §6.5.4, §6.5.5.2.
+    fn lookup_qualified_type(&self) -> ResolutionResult {
+        todo!()
+    }
+
+    fn unique(&self) -> ResolutionResult {
+        todo!()
+    }
 }
