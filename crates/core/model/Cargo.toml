@@ -7,3 +7,6 @@ license.workspace = true
 
 [lib]
 name = "beans_core_model"
+
+[dependencies]
+blake3.workspace = true
