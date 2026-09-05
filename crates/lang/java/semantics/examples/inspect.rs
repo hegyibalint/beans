@@ -8,14 +8,27 @@
 //! cargo inspect-java --dump-cst --dump-semantic path/to/A.java
 //! ```
 
-use std::{env, error::Error, ffi::OsString, fmt::Write, fs, io, path::PathBuf, process};
+use std::{
+    collections::HashMap,
+    env,
+    error::Error,
+    ffi::OsString,
+    fmt::{self, Write},
+    fs,
+    io::{self, IsTerminal},
+    path::PathBuf,
+    process,
+};
 
 use beans_lang_java_model::{
     File,
-    declarations::{Declaration, types::TypeDeclaration},
+    declarations::{
+        Declaration, DeclarationIndex,
+        types::{AccessLevel, Kind, Modifier, TypeDeclaration},
+    },
     imports::Import,
     references::{NameRef, PrimitiveType, TypeBound, TypeNameComponent, TypeRef},
-    scopes::ScopeIndex,
+    scopes::{ScopeIndex, ScopeKind},
 };
 use beans_lang_java_semantics::lower_into;
 use tree_sitter::{Node, Parser};
@@ -44,7 +57,8 @@ fn run() -> Result<(), Box<dyn Error>> {
         if arguments.both() {
             println!("\n== semantic ==");
         }
-        print!("{}", pretty_model(&lower_into(&source)));
+        let styling = Styling::new(io::stdout().is_terminal() && env::var_os("NO_COLOR").is_none());
+        print!("{}", pretty_model(&lower_into(&source), styling));
     }
 
     Ok(())
@@ -142,67 +156,196 @@ fn write_node(node: Node<'_>, field: Option<&str>, depth: usize, output: &mut St
     writeln!(output, "{indentation})").expect("writing to a string cannot fail");
 }
 
-fn pretty_model(file: &File) -> String {
+struct InspectionIds {
+    scopes: HashMap<ScopeIndex, usize>,
+    declarations: HashMap<DeclarationIndex, usize>,
+}
+
+impl InspectionIds {
+    fn new(file: &File) -> Self {
+        let scopes = file
+            .iter_scopes()
+            .enumerate()
+            .map(|(number, indexed)| (indexed.index, number))
+            .collect();
+        let mut declarations = HashMap::new();
+        assign_declaration_ids(file, File::ROOT_SCOPE_ID, &mut declarations);
+
+        Self {
+            scopes,
+            declarations,
+        }
+    }
+
+    fn scope_number(&self, index: ScopeIndex) -> usize {
+        *self.scopes.get(&index).expect("scope is in the file")
+    }
+
+    fn declaration_number(&self, index: DeclarationIndex) -> usize {
+        *self
+            .declarations
+            .get(&index)
+            .expect("declaration is in the file")
+    }
+}
+
+fn assign_declaration_ids(
+    file: &File,
+    scope_index: ScopeIndex,
+    ids: &mut HashMap<DeclarationIndex, usize>,
+) {
+    let scope = file
+        .scope(scope_index)
+        .expect("the scope index came from the file");
+
+    for declaration in scope.iter_declarations(file) {
+        let next = ids.len();
+        ids.entry(declaration.index).or_insert(next);
+
+        if let Some(body) = body_scope(file, scope_index, declaration.index) {
+            assign_declaration_ids(file, body, ids);
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Styling {
+    enabled: bool,
+}
+
+impl Styling {
+    fn new(enabled: bool) -> Self {
+        Self { enabled }
+    }
+
+    fn color(self, value: impl fmt::Display, ansi_color: u8) -> String {
+        if self.enabled {
+            format!("\u{1b}[{ansi_color}m{value}\u{1b}[0m")
+        } else {
+            value.to_string()
+        }
+    }
+}
+
+fn scope_id(index: ScopeIndex, ids: &InspectionIds, styling: Styling) -> String {
+    styling.color(format_args!("S{}", ids.scope_number(index)), 36)
+}
+
+fn declaration_id(index: DeclarationIndex, ids: &InspectionIds, styling: Styling) -> String {
+    styling.color(format_args!("D{}", ids.declaration_number(index)), 33)
+}
+
+fn pretty_model(file: &File, styling: Styling) -> String {
+    let ids = InspectionIds::new(file);
     let mut output = String::new();
 
-    if let Some(package) = &file.package_name {
-        writeln!(output, "package {}", name(package)).expect("writing to a string cannot fail");
-    }
-
-    for import in &file.imports {
-        writeln!(output, "import {}", import_of(import)).expect("writing to a string cannot fail");
-    }
-
-    write_scope(file, File::ROOT_SCOPE_ID, 0, &mut output);
+    write_scope_structure(file, File::ROOT_SCOPE_ID, 0, &ids, styling, &mut output);
     output
 }
 
-fn write_scope(file: &File, index: ScopeIndex, depth: usize, output: &mut String) {
+fn write_scope_structure(
+    file: &File,
+    index: ScopeIndex,
+    depth: usize,
+    ids: &InspectionIds,
+    styling: Styling,
+    output: &mut String,
+) {
     let scope = file
         .scope(index)
         .expect("the scope index came from the file");
-    let indentation = "  ".repeat(depth);
+    let indentation = "    ".repeat(depth);
+    let child_indentation = "    ".repeat(depth + 1);
 
-    writeln!(output, "{indentation}scope {index:?} ({:?})", scope.kind())
-        .expect("writing to a string cannot fail");
+    match scope.kind() {
+        ScopeKind::CompilationUnit => {
+            writeln!(
+                output,
+                "{indentation}{}: compilation unit",
+                scope_id(index, ids, styling)
+            )
+            .expect("writing to a string cannot fail");
+
+            if let Some(package) = &file.package_name {
+                writeln!(output, "{child_indentation}package: {}", name(package))
+                    .expect("writing to a string cannot fail");
+            }
+            for import in &file.imports {
+                writeln!(output, "{child_indentation}import: {}", import_of(import))
+                    .expect("writing to a string cannot fail");
+            }
+        }
+        ScopeKind::TypeBody { owner } => {
+            let owner_name = match file.declaration(owner) {
+                Some(Declaration::Type(declaration)) => {
+                    declaration.name.as_deref().unwrap_or("<unnamed>")
+                }
+                _ => "<invalid owner>",
+            };
+            writeln!(
+                output,
+                "{indentation}{}: type body of {} {owner_name}",
+                scope_id(index, ids, styling),
+                declaration_id(owner, ids, styling)
+            )
+            .expect("writing to a string cannot fail");
+        }
+    }
 
     for declaration in scope.iter_declarations(file) {
         writeln!(
             output,
-            "{indentation}  {:?} {}",
-            declaration.index,
-            declaration_of(declaration.declaration)
+            "{child_indentation}{}: {}",
+            declaration_id(declaration.index, ids, styling),
+            declaration_header(declaration.declaration)
         )
         .expect("writing to a string cannot fail");
+
+        if let Declaration::Type(type_declaration) = declaration.declaration {
+            write_type_relationships(type_declaration, depth + 2, output);
+        }
     }
 
     for child in scope.child_scopes() {
-        write_scope(file, *child, depth + 1, output);
+        write_scope_structure(file, *child, depth + 1, ids, styling, output);
     }
 }
 
-fn declaration_of(declaration: &Declaration) -> String {
+fn body_scope(file: &File, parent: ScopeIndex, owner: DeclarationIndex) -> Option<ScopeIndex> {
+    file.scope(parent)?
+        .child_scopes()
+        .iter()
+        .copied()
+        .find(|child| {
+            matches!(
+                file.scope(*child).map(|scope| scope.kind()),
+                Some(ScopeKind::TypeBody { owner: child_owner }) if child_owner == owner
+            )
+        })
+}
+
+fn declaration_header(declaration: &Declaration) -> String {
     match declaration {
-        Declaration::Type(declaration) => type_declaration_of(declaration),
+        Declaration::Type(declaration) => type_declaration_header(declaration),
         Declaration::Field(_) => "field".to_owned(),
         Declaration::Method(_) => "method".to_owned(),
     }
 }
 
-fn type_declaration_of(declaration: &TypeDeclaration) -> String {
+fn type_declaration_header(declaration: &TypeDeclaration) -> String {
     let mut rendered = String::new();
 
     for access in &declaration.access {
-        write!(rendered, "{access:?} ").expect("writing to a string cannot fail");
+        write!(rendered, "{} ", access_level(*access)).expect("writing to a string cannot fail");
     }
     for modifier in &declaration.modifiers {
-        write!(rendered, "{modifier:?} ").expect("writing to a string cannot fail");
+        write!(rendered, "{} ", modifier_name(*modifier)).expect("writing to a string cannot fail");
     }
 
     write!(
         rendered,
-        "{:?} {}",
-        declaration.kind,
+        "{} {}",
+        type_kind(declaration.kind),
         declaration.name.as_deref().unwrap_or("<unnamed>")
     )
     .expect("writing to a string cannot fail");
@@ -224,21 +367,57 @@ fn type_declaration_of(declaration: &TypeDeclaration) -> String {
         write!(rendered, "<{parameters}>").expect("writing to a string cannot fail");
     }
 
+    rendered
+}
+
+fn write_type_relationships(declaration: &TypeDeclaration, depth: usize, output: &mut String) {
+    let indentation = "  ".repeat(depth);
+
     if let Some(superclass) = &declaration.declared_superclass {
-        write!(rendered, " extends {}", type_ref(superclass)).expect("writing cannot fail");
+        writeln!(output, "{indentation}extends {}", type_ref(superclass))
+            .expect("writing to a string cannot fail");
     }
 
     if !declaration.declared_superinterfaces.is_empty() {
-        let interfaces = declaration
-            .declared_superinterfaces
-            .iter()
-            .map(type_ref)
-            .collect::<Vec<_>>()
-            .join(", ");
-        write!(rendered, " implements {interfaces}").expect("writing to a string cannot fail");
+        let relationship = match declaration.kind {
+            Kind::Interface | Kind::AnnotationInterface => "extends",
+            Kind::Class | Kind::Enum | Kind::Record => "implements",
+        };
+        writeln!(output, "{indentation}{relationship}").expect("writing to a string cannot fail");
+        for interface in &declaration.declared_superinterfaces {
+            writeln!(output, "{indentation}  {}", type_ref(interface))
+                .expect("writing to a string cannot fail");
+        }
     }
+}
 
-    rendered
+fn access_level(access: AccessLevel) -> &'static str {
+    match access {
+        AccessLevel::Public => "public",
+        AccessLevel::Protected => "protected",
+        AccessLevel::Private => "private",
+    }
+}
+
+fn modifier_name(modifier: Modifier) -> &'static str {
+    match modifier {
+        Modifier::Abstract => "abstract",
+        Modifier::Static => "static",
+        Modifier::Final => "final",
+        Modifier::Sealed => "sealed",
+        Modifier::NonSealed => "non-sealed",
+        Modifier::Strictfp => "strictfp",
+    }
+}
+
+fn type_kind(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Class => "class",
+        Kind::Enum => "enum",
+        Kind::Record => "record",
+        Kind::Interface => "interface",
+        Kind::AnnotationInterface => "@interface",
+    }
 }
 
 fn import_of(import: &Import) -> String {
