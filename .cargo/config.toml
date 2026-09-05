@@ -1,0 +1,2 @@
+[alias]
+inspect-java = "run -q -p lang-java-semantics --example inspect --"
