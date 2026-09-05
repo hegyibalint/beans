@@ -3,6 +3,7 @@ use beans_lang_java_model::{
     File,
     declarations::{
         Declaration, DeclarationIndex,
+        fields::FieldDeclaration,
         types::{AccessLevel, Kind as TypeKind, Modifier, TypeDeclaration, TypeParameter},
     },
     imports::{Import, ImportType},
@@ -134,8 +135,42 @@ fn lower_type_body(content: &str, node: Node, current_scope: ScopeIndex, file: &
                 let _ = lower_type_declaration(content, child, current_scope, file);
             }
             "enum_body_declarations" => lower_type_body(content, child, current_scope, file),
+            "field_declaration" => lower_field_declaration(content, child, current_scope, file),
             _ => {}
         }
+    }
+}
+
+fn lower_field_declaration(content: &str, node: Node, current_scope: ScopeIndex, file: &mut File) {
+    debug_assert_eq!(node.kind(), "field_declaration");
+
+    let Some(declared_type) = node
+        .child_by_field_name("type")
+        .and_then(|node| lower_type_ref(content, node))
+    else {
+        return;
+    };
+
+    let mut cursor = node.walk();
+    for declarator in node
+        .named_children(&mut cursor)
+        .filter(|child| child.kind() == "variable_declarator")
+    {
+        let Some(name) = declarator
+            .child_by_field_name("name")
+            .filter(|name| name.kind() == "identifier")
+            .and_then(|name| node_text(name, content))
+        else {
+            continue;
+        };
+
+        file.add_declaration(
+            current_scope,
+            Declaration::Field(FieldDeclaration {
+                name,
+                declared_type: declared_type.clone(),
+            }),
+        );
     }
 }
 

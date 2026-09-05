@@ -84,6 +84,7 @@ fn named_segment(reference: &TypeRef) -> &TypeNameComponent {
 }
 
 mod compilation_units;
+mod fields;
 mod imports;
 mod scopes;
 mod type_declarations;

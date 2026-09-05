@@ -132,6 +132,7 @@ mod tests {
             fields::FieldDeclaration,
             types::{Kind, TypeDeclaration},
         },
+        references::{PrimitiveType, TypeRef},
         scopes::{ScopeIndex, ScopeKind},
     };
 
@@ -189,8 +190,13 @@ mod tests {
     #[should_panic(expected = "type body scope owner is not a type declaration")]
     fn new_child_scope_rejects_a_non_type_owner() {
         let mut file = File::new();
-        let declaration =
-            file.add_declaration(File::ROOT_SCOPE_ID, Declaration::Field(FieldDeclaration {}));
+        let declaration = file.add_declaration(
+            File::ROOT_SCOPE_ID,
+            Declaration::Field(FieldDeclaration {
+                name: "field".to_owned(),
+                declared_type: TypeRef::Primitive(PrimitiveType::Int),
+            }),
+        );
 
         file.new_child_scope(
             File::ROOT_SCOPE_ID,
