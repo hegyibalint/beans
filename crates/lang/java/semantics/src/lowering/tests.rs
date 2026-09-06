@@ -1,8 +1,8 @@
 use beans_lang_java_model::{
-    File,
+    File, ScopeEntry,
     declarations::{Declaration, DeclarationIndex, types::TypeDeclaration},
     references::{TypeNameComponent, TypeRef},
-    scopes::{IndexedScope, Scope, ScopeIndex, ScopeKind},
+    scopes::{Scope, ScopeIndex, ScopeKind},
 };
 
 struct ScopedTypeDeclaration<'a> {
@@ -14,15 +14,15 @@ struct ScopedTypeDeclaration<'a> {
 
 fn find_type_declarations<'a>(file: &'a File, name: &str) -> Vec<ScopedTypeDeclaration<'a>> {
     file.iter_declarations()
-        .filter_map(|scoped_declaration| {
-            let Declaration::Type(declaration) = scoped_declaration.declaration.declaration else {
+        .filter_map(|entry| {
+            let Declaration::Type(declaration) = entry.declaration else {
                 return None;
             };
 
             (declaration.name.as_deref() == Some(name)).then_some(ScopedTypeDeclaration {
-                declaring_scope_id: scoped_declaration.scope.index,
-                declaring_scope: scoped_declaration.scope.scope,
-                declaration_id: scoped_declaration.declaration.index,
+                declaring_scope_id: entry.scope_index,
+                declaring_scope: entry.scope,
+                declaration_id: entry.declaration_index,
                 declaration,
             })
         })
@@ -39,9 +39,9 @@ fn find_type_declaration<'a>(file: &'a File, name: &str) -> ScopedTypeDeclaratio
     }
 }
 
-fn find_type_body_scope(file: &File, declaration_id: DeclarationIndex) -> IndexedScope<'_> {
-    let mut findings = file.iter_scopes().filter(|scope| {
-        scope.scope.kind()
+fn find_type_body_scope(file: &File, declaration_id: DeclarationIndex) -> ScopeEntry<'_> {
+    let mut findings = file.iter_scopes().filter(|entry| {
+        entry.scope.kind()
             == ScopeKind::TypeBody {
                 owner: declaration_id,
             }

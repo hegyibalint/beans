@@ -29,9 +29,8 @@ fn two_declarations_preserve_their_names_and_source_order() {
 
     assert_eq!(
         file.iter_declarations()
-            .map(|scoped_declaration| {
-                let Declaration::Type(declaration) = scoped_declaration.declaration.declaration
-                else {
+            .map(|entry| {
+                let Declaration::Type(declaration) = entry.declaration else {
                     panic!("expected a type declaration");
                 };
                 declaration.name.as_deref()
@@ -52,16 +51,12 @@ fn duplicate_declaration_names_remain_independently_findable() {
     assert_eq!(first.declaring_scope_id, second.declaring_scope_id);
     assert_ne!(first.declaration_id, second.declaration_id);
     assert!(
-        first
-            .declaring_scope
-            .iter_declarations(&file)
-            .any(|indexed_declaration| indexed_declaration.index == first.declaration_id)
+        file.iter_declarations_in(first.declaring_scope_id)
+            .any(|entry| entry.declaration_index == first.declaration_id)
     );
     assert!(
-        second
-            .declaring_scope
-            .iter_declarations(&file)
-            .any(|indexed_declaration| indexed_declaration.index == second.declaration_id)
+        file.iter_declarations_in(second.declaring_scope_id)
+            .any(|entry| entry.declaration_index == second.declaration_id)
     );
     assert_eq!(first.declaration.kind, Kind::Class);
     assert_eq!(second.declaration.kind, Kind::Interface);

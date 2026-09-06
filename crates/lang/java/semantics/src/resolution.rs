@@ -22,10 +22,11 @@ pub struct Resolver {}
 impl Resolver {
     pub fn resolve(
         &self,
+        file: &java_model::File,
         type_ref: &java_model::references::TypeRef,
         classpath: &core_model::Classpath,
     ) -> ResolutionResult {
-        ResolutionInstance::new(self, type_ref, classpath).resolve()
+        ResolutionInstance::new(self, file, type_ref, classpath).resolve()
     }
 }
 
@@ -72,7 +73,7 @@ impl<'a> ResolutionInstance<'a> {
     /// - an inherited member type;
     /// - an imported or same-package type.
     fn lookup_simple_type(&self) -> ResolutionResult {
-        self.file.
+        todo!()
     }
 
     /// JLS §8.5, §9.5.
@@ -102,5 +103,33 @@ impl<'a> ResolutionInstance<'a> {
 
     fn unique(&self) -> ResolutionResult {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::lower_into;
+    use beans_lang_java_model::declarations::Declaration;
+
+    #[test]
+    fn target_field_exposes_the_type_reference_to_resolve() {
+        let file = lower_into(
+            "
+             class Outer {
+                 class Inner {
+                     Field target; // We will try to resolve this Field
+                 }
+             }",
+        );
+
+        let fields: Vec<_> = file
+            .iter_declarations()
+            .filter_map(|entry| match entry.declaration {
+                Declaration::Field(field) => Some(field),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(fields.len(), 1);
     }
 }

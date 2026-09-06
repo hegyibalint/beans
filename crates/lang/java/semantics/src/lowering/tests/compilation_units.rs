@@ -11,8 +11,12 @@ fn empty_compilation_unit_has_only_the_root_scope() {
     assert!(file.iter_declarations().next().is_none());
     assert_eq!(file.iter_scopes().count(), 1);
     assert_eq!(root.parent_scope(), None);
-    assert!(root.child_scopes().is_empty());
-    assert!(root.iter_declarations(&file).next().is_none());
+    assert!(root.iter_child_scopes().next().is_none());
+    assert!(
+        file.iter_declarations_in(File::ROOT_SCOPE_ID)
+            .next()
+            .is_none()
+    );
 }
 
 #[test]

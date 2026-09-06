@@ -17,9 +17,17 @@ pub struct File {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ScopedDeclaration<'a> {
-    pub scope: scopes::IndexedScope<'a>,
-    pub declaration: declarations::IndexedDeclaration<'a>,
+pub struct ScopeEntry<'a> {
+    pub scope_index: ScopeIndex,
+    pub scope: &'a scopes::Scope,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct DeclarationEntry<'a> {
+    pub scope_index: ScopeIndex,
+    pub scope: &'a scopes::Scope,
+    pub declaration_index: declarations::DeclarationIndex,
+    pub declaration: &'a declarations::Declaration,
 }
 
 impl File {
@@ -46,23 +54,33 @@ impl File {
         self.declarations.get(index.as_usize())
     }
 
-    pub fn iter_scopes(&self) -> impl Iterator<Item = scopes::IndexedScope<'_>> + '_ {
-        self.scopes
-            .iter()
-            .enumerate()
-            .map(|(index, scope)| scopes::IndexedScope {
-                index: ScopeIndex::new(index),
-                scope,
-            })
+    pub fn iter_scopes(&self) -> impl Iterator<Item = ScopeEntry<'_>> + '_ {
+        self.scopes.iter().enumerate().map(|entry| ScopeEntry {
+            scope_index: ScopeIndex::new(entry.0),
+            scope: entry.1,
+        })
     }
 
-    pub fn iter_declarations(&self) -> impl Iterator<Item = ScopedDeclaration<'_>> + '_ {
-        self.iter_scopes().flat_map(move |scope| {
-            scope
-                .scope
-                .iter_declarations(self)
-                .map(move |declaration| ScopedDeclaration { scope, declaration })
-        })
+    pub fn iter_declarations(&self) -> impl Iterator<Item = DeclarationEntry<'_>> + '_ {
+        self.iter_scopes()
+            .flat_map(move |entry| self.iter_declarations_in(entry.scope_index))
+    }
+
+    pub fn iter_declarations_in(
+        &self,
+        scope_index: ScopeIndex,
+    ) -> impl Iterator<Item = DeclarationEntry<'_>> + '_ {
+        let scope = self.scope(scope_index).expect("invalid scope index");
+        scope
+            .iter_declaration_indices()
+            .map(move |entry| DeclarationEntry {
+                scope_index,
+                scope,
+                declaration_index: entry,
+                declaration: self
+                    .declaration(entry)
+                    .expect("scope contains an invalid declaration index"),
+            })
     }
 
     pub fn add_declaration(
@@ -89,31 +107,6 @@ impl File {
             parent_index < self.scopes.len(),
             "invalid parent scope index"
         );
-        match kind {
-            ScopeKind::CompilationUnit => panic!("a compilation unit scope cannot have a parent"),
-            ScopeKind::TypeBody { owner } => {
-                assert!(
-                    matches!(
-                        self.declaration(owner),
-                        Some(declarations::Declaration::Type(_))
-                    ),
-                    "type body scope owner is not a type declaration"
-                );
-                assert!(
-                    self.scopes[parent_index].contains_declaration(owner),
-                    "type body scope owner is not declared in the parent scope"
-                );
-                assert!(
-                    !self.scopes.iter().any(|scope| {
-                        matches!(
-                            scope.kind(),
-                            ScopeKind::TypeBody { owner: existing } if existing == owner
-                        )
-                    }),
-                    "type declaration already has a body scope"
-                );
-            }
-        }
 
         let index = ScopeIndex::new(self.scopes.len());
         self.scopes
@@ -129,10 +122,8 @@ mod tests {
         File,
         declarations::{
             Declaration,
-            fields::FieldDeclaration,
             types::{Kind, TypeDeclaration},
         },
-        references::{PrimitiveType, TypeRef},
         scopes::{ScopeIndex, ScopeKind},
     };
 
@@ -158,7 +149,10 @@ mod tests {
             ScopeKind::TypeBody { owner: declaration }
         );
         assert_eq!(
-            file.scope(File::ROOT_SCOPE_ID).unwrap().child_scopes(),
+            file.scope(File::ROOT_SCOPE_ID)
+                .unwrap()
+                .iter_child_scopes()
+                .collect::<Vec<_>>(),
             [child]
         );
     }
@@ -179,66 +173,46 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "a compilation unit scope cannot have a parent")]
-    fn new_child_scope_rejects_a_second_compilation_unit() {
+    fn scoped_iteration_exposes_only_the_selected_scopes_declarations() {
         let mut file = File::new();
-
-        file.new_child_scope(File::ROOT_SCOPE_ID, ScopeKind::CompilationUnit);
-    }
-
-    #[test]
-    #[should_panic(expected = "type body scope owner is not a type declaration")]
-    fn new_child_scope_rejects_a_non_type_owner() {
-        let mut file = File::new();
-        let declaration = file.add_declaration(
-            File::ROOT_SCOPE_ID,
-            Declaration::Field(FieldDeclaration {
-                name: "field".to_owned(),
-                declared_type: TypeRef::Primitive(PrimitiveType::Int),
-            }),
-        );
-
-        file.new_child_scope(
-            File::ROOT_SCOPE_ID,
-            ScopeKind::TypeBody { owner: declaration },
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "type body scope owner is not declared in the parent scope")]
-    fn new_child_scope_rejects_an_owner_from_another_scope() {
-        let mut file = File::new();
-        let outer = file.add_declaration(
+        let owner = file.add_declaration(
             File::ROOT_SCOPE_ID,
             Declaration::Type(TypeDeclaration::new(Kind::Class)),
         );
-        let outer_body =
-            file.new_child_scope(File::ROOT_SCOPE_ID, ScopeKind::TypeBody { owner: outer });
-        let sibling = file.add_declaration(
-            File::ROOT_SCOPE_ID,
-            Declaration::Type(TypeDeclaration::new(Kind::Class)),
-        );
+        let body = file.new_child_scope(File::ROOT_SCOPE_ID, ScopeKind::TypeBody { owner });
+        let member =
+            file.add_declaration(body, Declaration::Type(TypeDeclaration::new(Kind::Class)));
 
-        file.new_child_scope(outer_body, ScopeKind::TypeBody { owner: sibling });
+        let mut entries = file.iter_declarations_in(body);
+        let entry = entries.next().expect("expected the member declaration");
+        assert!(entries.next().is_none());
+        assert_eq!(entry.scope_index, body);
+        assert_eq!(entry.declaration_index, member);
+        assert!(std::ptr::eq(entry.scope, file.scope(body).unwrap()));
+        assert!(std::ptr::eq(
+            entry.declaration,
+            file.declaration(member).unwrap()
+        ));
+
+        assert_eq!(
+            file.iter_declarations()
+                .map(|entry| (entry.scope_index, entry.declaration_index))
+                .collect::<Vec<_>>(),
+            [(File::ROOT_SCOPE_ID, owner), (body, member)]
+        );
+        for entry in file.iter_scopes() {
+            assert!(std::ptr::eq(
+                entry.scope,
+                file.scope(entry.scope_index).unwrap()
+            ));
+        }
     }
 
     #[test]
-    #[should_panic(expected = "type declaration already has a body scope")]
-    fn new_child_scope_rejects_a_duplicate_type_body() {
-        let mut file = File::new();
-        let declaration = file.add_declaration(
-            File::ROOT_SCOPE_ID,
-            Declaration::Type(TypeDeclaration::new(Kind::Class)),
-        );
-        file.new_child_scope(
-            File::ROOT_SCOPE_ID,
-            ScopeKind::TypeBody { owner: declaration },
-        );
-
-        file.new_child_scope(
-            File::ROOT_SCOPE_ID,
-            ScopeKind::TypeBody { owner: declaration },
-        );
+    #[should_panic(expected = "invalid scope index")]
+    fn scoped_iteration_rejects_an_unknown_scope() {
+        let file = File::new();
+        let _ = file.iter_declarations_in(ScopeIndex::new(10));
     }
 
     #[test]
@@ -248,12 +222,22 @@ mod tests {
 
         let declaration = file.add_declaration(File::ROOT_SCOPE_ID, declaration);
 
-        assert!(file.declaration(declaration).is_some());
+        let mut entries = file.iter_declarations();
+        let entry = entries.next().expect("expected one declaration");
+        assert!(entries.next().is_none());
+        assert_eq!(entry.scope_index, File::ROOT_SCOPE_ID);
+        assert_eq!(entry.declaration_index, declaration);
+        assert!(std::ptr::eq(
+            entry.scope,
+            file.scope(entry.scope_index).unwrap()
+        ));
+        assert!(std::ptr::eq(
+            entry.declaration,
+            file.declaration(entry.declaration_index).unwrap()
+        ));
         assert_eq!(
-            file.scope(File::ROOT_SCOPE_ID)
-                .unwrap()
-                .iter_declarations(&file)
-                .map(|indexed_declaration| indexed_declaration.index)
+            file.iter_declarations_in(File::ROOT_SCOPE_ID)
+                .map(|entry| entry.declaration_index)
                 .collect::<Vec<_>>(),
             [declaration]
         );

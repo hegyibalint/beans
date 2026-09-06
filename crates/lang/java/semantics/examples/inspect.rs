@@ -166,7 +166,10 @@ impl InspectionIds {
         let scopes = file
             .iter_scopes()
             .enumerate()
-            .map(|(number, indexed)| (indexed.index, number))
+            .map(|entry| {
+                let (number, scope_entry) = entry;
+                (scope_entry.scope_index, number)
+            })
             .collect();
         let mut declarations = HashMap::new();
         assign_declaration_ids(file, File::ROOT_SCOPE_ID, &mut declarations);
@@ -194,15 +197,11 @@ fn assign_declaration_ids(
     scope_index: ScopeIndex,
     ids: &mut HashMap<DeclarationIndex, usize>,
 ) {
-    let scope = file
-        .scope(scope_index)
-        .expect("the scope index came from the file");
-
-    for declaration in scope.iter_declarations(file) {
+    for entry in file.iter_declarations_in(scope_index) {
         let next = ids.len();
-        ids.entry(declaration.index).or_insert(next);
+        ids.entry(entry.declaration_index).or_insert(next);
 
-        if let Some(body) = body_scope(file, scope_index, declaration.index) {
+        if let Some(body) = body_scope(file, scope_index, entry.declaration_index) {
             assign_declaration_ids(file, body, ids);
         }
     }
@@ -292,36 +291,32 @@ fn write_scope_structure(
         }
     }
 
-    for declaration in scope.iter_declarations(file) {
+    for entry in file.iter_declarations_in(index) {
         writeln!(
             output,
             "{child_indentation}{}: {}",
-            declaration_id(declaration.index, ids, styling),
-            declaration_header(declaration.declaration)
+            declaration_id(entry.declaration_index, ids, styling),
+            declaration_header(entry.declaration)
         )
         .expect("writing to a string cannot fail");
 
-        if let Declaration::Type(type_declaration) = declaration.declaration {
+        if let Declaration::Type(type_declaration) = entry.declaration {
             write_type_relationships(type_declaration, depth + 2, output);
         }
     }
 
-    for child in scope.child_scopes() {
-        write_scope_structure(file, *child, depth + 1, ids, styling, output);
+    for child in scope.iter_child_scopes() {
+        write_scope_structure(file, child, depth + 1, ids, styling, output);
     }
 }
 
 fn body_scope(file: &File, parent: ScopeIndex, owner: DeclarationIndex) -> Option<ScopeIndex> {
-    file.scope(parent)?
-        .child_scopes()
-        .iter()
-        .copied()
-        .find(|child| {
-            matches!(
-                file.scope(*child).map(|scope| scope.kind()),
-                Some(ScopeKind::TypeBody { owner: child_owner }) if child_owner == owner
-            )
-        })
+    file.scope(parent)?.iter_child_scopes().find(|child| {
+        matches!(
+            file.scope(*child).map(|scope| scope.kind()),
+            Some(ScopeKind::TypeBody { owner: child_owner }) if child_owner == owner
+        )
+    })
 }
 
 fn declaration_header(declaration: &Declaration) -> String {

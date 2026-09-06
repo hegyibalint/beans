@@ -21,9 +21,3 @@ pub enum Declaration {
     Field(fields::FieldDeclaration),
     Method(methods::MethodDeclaration),
 }
-
-#[derive(Debug, Clone, Copy)]
-pub struct IndexedDeclaration<'a> {
-    pub index: DeclarationIndex,
-    pub declaration: &'a Declaration,
-}

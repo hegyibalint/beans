@@ -1,13 +1,7 @@
-use crate::{File, declarations};
+use crate::declarations;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScopeIndex(usize);
-
-#[derive(Debug, Clone, Copy)]
-pub struct IndexedScope<'a> {
-    pub index: ScopeIndex,
-    pub scope: &'a Scope,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScopeKind {
@@ -58,30 +52,17 @@ impl Scope {
         self.child_scopes.push(scope);
     }
 
-    pub fn child_scopes(&self) -> &[ScopeIndex] {
-        &self.child_scopes
+    pub fn iter_child_scopes(&self) -> impl Iterator<Item = ScopeIndex> + '_ {
+        self.child_scopes.iter().copied()
     }
 
     pub(crate) fn add_declaration(&mut self, declaration: declarations::DeclarationIndex) {
         self.declarations.push(declaration);
     }
 
-    pub(crate) fn contains_declaration(&self, declaration: declarations::DeclarationIndex) -> bool {
-        self.declarations.contains(&declaration)
-    }
-
-    pub fn iter_declarations<'a>(
-        &'a self,
-        file: &'a File,
-    ) -> impl Iterator<Item = declarations::IndexedDeclaration<'a>> + 'a {
-        self.declarations
-            .iter()
-            .copied()
-            .map(move |index| declarations::IndexedDeclaration {
-                index,
-                declaration: file
-                    .declaration(index)
-                    .expect("scope contains an invalid declaration index"),
-            })
+    pub fn iter_declaration_indices(
+        &self,
+    ) -> impl Iterator<Item = declarations::DeclarationIndex> + '_ {
+        self.declarations.iter().copied()
     }
 }
