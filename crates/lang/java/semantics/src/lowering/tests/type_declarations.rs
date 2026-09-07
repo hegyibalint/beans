@@ -51,11 +51,11 @@ fn duplicate_declaration_names_remain_independently_findable() {
     assert_eq!(first.declaring_scope_id, second.declaring_scope_id);
     assert_ne!(first.declaration_id, second.declaration_id);
     assert!(
-        file.iter_declarations_in(first.declaring_scope_id)
+        file.iter_declarations_in_scope(first.declaring_scope_id)
             .any(|entry| entry.declaration_index == first.declaration_id)
     );
     assert!(
-        file.iter_declarations_in(second.declaring_scope_id)
+        file.iter_declarations_in_scope(second.declaring_scope_id)
             .any(|entry| entry.declaration_index == second.declaration_id)
     );
     assert_eq!(first.declaration.kind, Kind::Class);

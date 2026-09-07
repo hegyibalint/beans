@@ -1,5 +1,5 @@
 use beans_core_model as core_model;
-use beans_lang_java_model as java_model;
+use beans_lang_java_model::{self as java_model, declarations::Declaration::Type};
 
 /// The answer to what a `TypeRef` actually responds to, given the classpath
 pub enum ResolutionResult {
@@ -23,30 +23,34 @@ impl Resolver {
     pub fn resolve(
         &self,
         file: &java_model::File,
+        scope_index: java_model::scopes::ScopeIndex,
         type_ref: &java_model::references::TypeRef,
-        classpath: &core_model::Classpath,
+        classpath: &core_model::classpath::Classpath,
     ) -> ResolutionResult {
-        ResolutionInstance::new(self, file, type_ref, classpath).resolve()
+        ResolutionInstance::new(self, file, scope_index, type_ref, classpath).resolve()
     }
 }
 
 struct ResolutionInstance<'a> {
     resolver: &'a Resolver,
     file: &'a java_model::File,
+    scope_index: java_model::scopes::ScopeIndex,
     type_ref: &'a java_model::references::TypeRef,
-    classpath: &'a core_model::Classpath,
+    classpath: &'a core_model::classpath::Classpath,
 }
 
 impl<'a> ResolutionInstance<'a> {
     fn new(
         resolver: &'a Resolver,
         file: &'a java_model::File,
+        scope_index: java_model::scopes::ScopeIndex,
         type_ref: &'a java_model::references::TypeRef,
-        classpath: &'a core_model::Classpath,
+        classpath: &'a core_model::classpath::Classpath,
     ) -> Self {
         Self {
             resolver,
             file,
+            scope_index,
             type_ref,
             classpath,
         }
@@ -73,7 +77,27 @@ impl<'a> ResolutionInstance<'a> {
     /// - an inherited member type;
     /// - an imported or same-package type.
     fn lookup_simple_type(&self) -> ResolutionResult {
-        todo!()
+        let java_model::references::TypeRef::Named { segments } = self.type_ref else {
+            return ResolutionResult::NotFound;
+        };
+        let [component] = segments.as_slice() else {
+            return ResolutionResult::NotFound;
+        };
+
+        let matching_parameter = self
+            .file
+            .iter_declarations_from(self.scope_index)
+            .filter_map(|entry| match entry.declaration {
+                Type(typ) => Some(typ),
+                _ => None,
+            })
+            .flat_map(|typ| typ.type_parameters.iter())
+            .find(|parameter| parameter.name == component.name);
+
+        match matching_parameter {
+            Some(_) => ResolutionResult::Resolved,
+            None => ResolutionResult::NotFound,
+        }
     }
 
     /// JLS §8.5, §9.5.
@@ -107,29 +131,4 @@ impl<'a> ResolutionInstance<'a> {
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::lower_into;
-    use beans_lang_java_model::declarations::Declaration;
-
-    #[test]
-    fn target_field_exposes_the_type_reference_to_resolve() {
-        let file = lower_into(
-            "
-             class Outer {
-                 class Inner {
-                     Field target; // We will try to resolve this Field
-                 }
-             }",
-        );
-
-        let fields: Vec<_> = file
-            .iter_declarations()
-            .filter_map(|entry| match entry.declaration {
-                Declaration::Field(field) => Some(field),
-                _ => None,
-            })
-            .collect();
-
-        assert_eq!(fields.len(), 1);
-    }
-}
+mod tests;

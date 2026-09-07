@@ -8,7 +8,7 @@ fn field_preserves_its_name_and_declared_type() {
     let owner = find_type_declaration(&file, "Owner");
     let owner_body = find_type_body_scope(&file, owner.declaration_id);
     let fields = file
-        .iter_declarations_in(owner_body.scope_index)
+        .iter_declarations_in_scope(owner_body.scope_index)
         .filter_map(|entry| match entry.declaration {
             Declaration::Field(field) => Some(field),
             _ => None,

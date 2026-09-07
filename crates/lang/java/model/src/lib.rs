@@ -63,10 +63,22 @@ impl File {
 
     pub fn iter_declarations(&self) -> impl Iterator<Item = DeclarationEntry<'_>> + '_ {
         self.iter_scopes()
-            .flat_map(move |entry| self.iter_declarations_in(entry.scope_index))
+            .flat_map(move |entry| self.iter_declarations_in_scope(entry.scope_index))
     }
 
-    pub fn iter_declarations_in(
+    pub fn iter_declarations_from(
+        self: &Self,
+        scope_index: ScopeIndex,
+    ) -> impl Iterator<Item = DeclarationEntry<'_>> + '_ {
+        std::iter::successors(Some(scope_index), |&index| {
+            self.scope(index)
+                .expect("invalid scope index")
+                .parent_scope()
+        })
+        .flat_map(move |index| self.iter_declarations_in_scope(index))
+    }
+
+    pub fn iter_declarations_in_scope(
         &self,
         scope_index: ScopeIndex,
     ) -> impl Iterator<Item = DeclarationEntry<'_>> + '_ {
@@ -183,7 +195,7 @@ mod tests {
         let member =
             file.add_declaration(body, Declaration::Type(TypeDeclaration::new(Kind::Class)));
 
-        let mut entries = file.iter_declarations_in(body);
+        let mut entries = file.iter_declarations_in_scope(body);
         let entry = entries.next().expect("expected the member declaration");
         assert!(entries.next().is_none());
         assert_eq!(entry.scope_index, body);
@@ -212,7 +224,7 @@ mod tests {
     #[should_panic(expected = "invalid scope index")]
     fn scoped_iteration_rejects_an_unknown_scope() {
         let file = File::new();
-        let _ = file.iter_declarations_in(ScopeIndex::new(10));
+        let _ = file.iter_declarations_in_scope(ScopeIndex::new(10));
     }
 
     #[test]
@@ -236,7 +248,7 @@ mod tests {
             file.declaration(entry.declaration_index).unwrap()
         ));
         assert_eq!(
-            file.iter_declarations_in(File::ROOT_SCOPE_ID)
+            file.iter_declarations_in_scope(File::ROOT_SCOPE_ID)
                 .map(|entry| entry.declaration_index)
                 .collect::<Vec<_>>(),
             [declaration]

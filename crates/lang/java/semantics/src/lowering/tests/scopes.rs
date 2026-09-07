@@ -12,7 +12,7 @@ fn top_level_declaration_is_entered_in_root_and_introduces_a_body_scope() {
     assert_eq!(file.iter_scopes().count(), 2);
     assert_eq!(declaration.declaring_scope_id, File::ROOT_SCOPE_ID);
     assert_eq!(
-        file.iter_declarations_in(File::ROOT_SCOPE_ID)
+        file.iter_declarations_in_scope(File::ROOT_SCOPE_ID)
             .map(|entry| entry.declaration_index)
             .collect::<Vec<_>>(),
         [declaration.declaration_id]
@@ -23,7 +23,7 @@ fn top_level_declaration_is_entered_in_root_and_introduces_a_body_scope() {
     );
     assert_eq!(body.scope.parent_scope(), Some(File::ROOT_SCOPE_ID));
     assert!(body.scope.iter_child_scopes().next().is_none());
-    assert!(file.iter_declarations_in(body.scope_index).next().is_none());
+    assert!(file.iter_declarations_in_scope(body.scope_index).next().is_none());
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn top_level_declarations_share_a_scope_and_introduce_distinct_body_scopes() {
         [first_body.scope_index, second_body.scope_index]
     );
     assert_eq!(
-        file.iter_declarations_in(File::ROOT_SCOPE_ID)
+        file.iter_declarations_in_scope(File::ROOT_SCOPE_ID)
             .map(|entry| entry.declaration_index)
             .collect::<Vec<_>>(),
         [first.declaration_id, second.declaration_id]
@@ -71,7 +71,7 @@ fn member_types_are_entered_in_the_containing_type_body_scope() {
     assert_eq!(first.declaring_scope_id, outer_body.scope_index);
     assert_eq!(second.declaring_scope_id, outer_body.scope_index);
     assert_eq!(
-        file.iter_declarations_in(outer_body.scope_index)
+        file.iter_declarations_in_scope(outer_body.scope_index)
             .map(|entry| entry.declaration_index)
             .collect::<Vec<_>>(),
         [first.declaration_id, second.declaration_id]

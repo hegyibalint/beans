@@ -13,7 +13,7 @@ fn empty_compilation_unit_has_only_the_root_scope() {
     assert_eq!(root.parent_scope(), None);
     assert!(root.iter_child_scopes().next().is_none());
     assert!(
-        file.iter_declarations_in(File::ROOT_SCOPE_ID)
+        file.iter_declarations_in_scope(File::ROOT_SCOPE_ID)
             .next()
             .is_none()
     );

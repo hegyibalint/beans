@@ -197,7 +197,7 @@ fn assign_declaration_ids(
     scope_index: ScopeIndex,
     ids: &mut HashMap<DeclarationIndex, usize>,
 ) {
-    for entry in file.iter_declarations_in(scope_index) {
+    for entry in file.iter_declarations_in_scope(scope_index) {
         let next = ids.len();
         ids.entry(entry.declaration_index).or_insert(next);
 
@@ -291,7 +291,7 @@ fn write_scope_structure(
         }
     }
 
-    for entry in file.iter_declarations_in(index) {
+    for entry in file.iter_declarations_in_scope(index) {
         writeln!(
             output,
             "{child_indentation}{}: {}",
