@@ -61,21 +61,32 @@ impl File {
         })
     }
 
+    pub fn iter_scopes_from(
+        &self,
+        scope_index: ScopeIndex,
+    ) -> impl Iterator<Item = ScopeEntry<'_>> + '_ {
+        std::iter::successors(Some(scope_index), |&index| {
+            self.scope(index)
+                .expect("invalid scope index")
+                .parent_scope()
+        })
+        .map(move |index| ScopeEntry {
+            scope_index: index,
+            scope: self.scope(index).expect("invalid scope index"),
+        })
+    }
+
     pub fn iter_declarations(&self) -> impl Iterator<Item = DeclarationEntry<'_>> + '_ {
         self.iter_scopes()
             .flat_map(move |entry| self.iter_declarations_in_scope(entry.scope_index))
     }
 
     pub fn iter_declarations_from(
-        self: &Self,
+        &self,
         scope_index: ScopeIndex,
     ) -> impl Iterator<Item = DeclarationEntry<'_>> + '_ {
-        std::iter::successors(Some(scope_index), |&index| {
-            self.scope(index)
-                .expect("invalid scope index")
-                .parent_scope()
-        })
-        .flat_map(move |index| self.iter_declarations_in_scope(index))
+        self.iter_scopes_from(scope_index)
+            .flat_map(move |entry| self.iter_declarations_in_scope(entry.scope_index))
     }
 
     pub fn iter_declarations_in_scope(
@@ -138,6 +149,42 @@ mod tests {
         },
         scopes::{ScopeIndex, ScopeKind},
     };
+
+    #[test]
+    fn scopes_from_walks_ancestors_including_start_and_root_but_not_siblings() {
+        let mut file = File::new();
+        let outer = file.add_declaration(
+            File::ROOT_SCOPE_ID,
+            Declaration::Type(TypeDeclaration::new(Kind::Class)),
+        );
+        let outer_scope =
+            file.new_child_scope(File::ROOT_SCOPE_ID, ScopeKind::TypeBody { owner: outer });
+        let inner = file.add_declaration(
+            outer_scope,
+            Declaration::Type(TypeDeclaration::new(Kind::Class)),
+        );
+        let inner_scope = file.new_child_scope(outer_scope, ScopeKind::TypeBody { owner: inner });
+        let sibling = file.add_declaration(
+            outer_scope,
+            Declaration::Type(TypeDeclaration::new(Kind::Class)),
+        );
+        file.new_child_scope(outer_scope, ScopeKind::TypeBody { owner: sibling });
+
+        let entries: Vec<_> = file.iter_scopes_from(inner_scope).collect();
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.scope_index)
+                .collect::<Vec<_>>(),
+            [inner_scope, outer_scope, File::ROOT_SCOPE_ID]
+        );
+        for entry in entries {
+            assert!(std::ptr::eq(
+                entry.scope,
+                file.scope(entry.scope_index).unwrap()
+            ));
+        }
+    }
 
     #[test]
     fn new_child_scope_links_parent_child_and_owner() {

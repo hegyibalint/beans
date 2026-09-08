@@ -1,5 +1,10 @@
 use beans_core_model as core_model;
-use beans_lang_java_model::{self as java_model, declarations::Declaration::Type};
+use beans_lang_java_model::{
+    self as java_model, ScopeEntry,
+    declarations::Declaration::Type,
+    references::TypeRef,
+    scopes::{ScopeIndex, ScopeKind},
+};
 
 /// The answer to what a `TypeRef` actually responds to, given the classpath
 pub enum ResolutionResult {
@@ -8,23 +13,14 @@ pub enum ResolutionResult {
     NotFound,
 }
 
-impl ResolutionResult {
-    fn or_else(self, next: impl FnOnce() -> Self) -> Self {
-        match self {
-            Self::NotFound => next(),
-            result => result,
-        }
-    }
-}
-
 pub struct Resolver {}
 
 impl Resolver {
     pub fn resolve(
         &self,
         file: &java_model::File,
-        scope_index: java_model::scopes::ScopeIndex,
-        type_ref: &java_model::references::TypeRef,
+        scope_index: ScopeIndex,
+        type_ref: &TypeRef,
         classpath: &core_model::classpath::Classpath,
     ) -> ResolutionResult {
         ResolutionInstance::new(self, file, scope_index, type_ref, classpath).resolve()
@@ -34,8 +30,8 @@ impl Resolver {
 struct ResolutionInstance<'a> {
     resolver: &'a Resolver,
     file: &'a java_model::File,
-    scope_index: java_model::scopes::ScopeIndex,
-    type_ref: &'a java_model::references::TypeRef,
+    scope_index: ScopeIndex,
+    type_ref: &'a TypeRef,
     classpath: &'a core_model::classpath::Classpath,
 }
 
@@ -43,8 +39,8 @@ impl<'a> ResolutionInstance<'a> {
     fn new(
         resolver: &'a Resolver,
         file: &'a java_model::File,
-        scope_index: java_model::scopes::ScopeIndex,
-        type_ref: &'a java_model::references::TypeRef,
+        scope_index: ScopeIndex,
+        type_ref: &'a TypeRef,
         classpath: &'a core_model::classpath::Classpath,
     ) -> Self {
         Self {
@@ -57,76 +53,89 @@ impl<'a> ResolutionInstance<'a> {
     }
 
     fn resolve(&self) -> ResolutionResult {
-        // Placeholder wiring, not final Java lookup precedence or branching.
-        self.lookup_simple_type()
-            .or_else(|| self.lookup_inherited_member_types())
-            .or_else(|| self.lookup_with_owner_parameters())
-            .or_else(|| self.lookup_compilation_environment())
-            .or_else(|| self.lookup_all_sources_in_tier())
-            .or_else(|| self.lookup_qualified_type())
-            .or_else(|| self.unique())
+        for entry in self.file.iter_scopes_from(self.scope_index) {
+            let result = self.lookup_simple_type(entry);
+
+            match result {
+                ResolutionResult::NotFound => continue,
+                result => return result,
+            }
+        }
+
+        ResolutionResult::NotFound
     }
 
     /// JLS §6.3, §6.4.1, §6.5.5.1.
-    ///
-    /// A simple type name is a `TypeRef::Named` with exactly one segment. It
-    /// may resolve to:
-    ///
-    /// - a type parameter, such as `T`;
-    /// - a local, member, or top-level `Declaration::Type`;
-    /// - an inherited member type;
-    /// - an imported or same-package type.
-    fn lookup_simple_type(&self) -> ResolutionResult {
-        let java_model::references::TypeRef::Named { segments } = self.type_ref else {
+    fn lookup_simple_type(&self, entry: ScopeEntry<'_>) -> ResolutionResult {
+        // Not a name, we are not interested
+        let TypeRef::Named { segments } = self.type_ref else {
             return ResolutionResult::NotFound;
         };
+        // Not a simple name, we are not interested
         let [component] = segments.as_slice() else {
             return ResolutionResult::NotFound;
         };
 
-        let matching_parameter = self
-            .file
-            .iter_declarations_from(self.scope_index)
-            .filter_map(|entry| match entry.declaration {
-                Type(typ) => Some(typ),
-                _ => None,
-            })
-            .flat_map(|typ| typ.type_parameters.iter())
-            .find(|parameter| parameter.name == component.name);
+        self.find_first(
+            entry,
+            &component.name,
+            &[
+                Self::lookup_simple_type_declaration,
+                Self::lookup_simple_type_parameter,
+            ],
+        )
+    }
 
-        match matching_parameter {
+    /// JLS §6.3, §6.4.1.
+    fn lookup_simple_type_declaration(
+        &self,
+        entry: ScopeEntry<'_>,
+        name: &str,
+    ) -> ResolutionResult {
+        let mut matches = self
+            .file
+            .iter_declarations_in_scope(entry.scope_index)
+            .filter_map(|entry| match entry.declaration {
+                Type(typ) if typ.name.as_deref() == Some(name) => Some(typ),
+                _ => None,
+            });
+
+        match (matches.next(), matches.next()) {
+            (None, _) => ResolutionResult::NotFound,
+            (Some(_), None) => ResolutionResult::Resolved,
+            (Some(_), Some(_)) => ResolutionResult::Ambigous,
+        }
+    }
+
+    /// JLS §6.3: a class's type parameters are in scope in its own body.
+    fn lookup_simple_type_parameter(&self, entry: ScopeEntry<'_>, name: &str) -> ResolutionResult {
+        let ScopeKind::TypeBody { owner } = entry.scope.kind() else {
+            return ResolutionResult::NotFound;
+        };
+        let Type(typ) = self.file.declaration(owner).expect("invalid scope owner") else {
+            unreachable!("type-body scope must have a type owner");
+        };
+
+        match typ.type_parameter_named(name) {
             Some(_) => ResolutionResult::Resolved,
             None => ResolutionResult::NotFound,
         }
     }
 
-    /// JLS §8.5, §9.5.
-    fn lookup_inherited_member_types(&self) -> ResolutionResult {
-        todo!()
-    }
+    fn find_first(
+        &self,
+        entry: ScopeEntry<'_>,
+        name: &str,
+        stages: &[fn(&Self, ScopeEntry<'_>, &str) -> ResolutionResult],
+    ) -> ResolutionResult {
+        for lookup in stages {
+            match lookup(self, entry, name) {
+                ResolutionResult::NotFound => continue,
+                result => return result,
+            }
+        }
 
-    /// JLS §6.3.
-    fn lookup_with_owner_parameters(&self) -> ResolutionResult {
-        todo!()
-    }
-
-    /// JLS §6.4.1, §7.5.
-    fn lookup_compilation_environment(&self) -> ResolutionResult {
-        todo!()
-    }
-
-    /// JLS §6.4.1, §7.5.
-    fn lookup_all_sources_in_tier(&self) -> ResolutionResult {
-        todo!()
-    }
-
-    /// JLS §6.5.3, §6.5.4, §6.5.5.2.
-    fn lookup_qualified_type(&self) -> ResolutionResult {
-        todo!()
-    }
-
-    fn unique(&self) -> ResolutionResult {
-        todo!()
+        ResolutionResult::NotFound
     }
 }
 

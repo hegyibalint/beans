@@ -54,6 +54,12 @@ pub struct TypeDeclaration {
 }
 
 impl TypeDeclaration {
+    pub fn type_parameter_named(&self, name: &str) -> Option<&TypeParameter> {
+        self.type_parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+    }
+
     pub fn new(kind: Kind) -> Self {
         Self {
             name: None,
@@ -63,6 +69,48 @@ impl TypeDeclaration {
             declared_superinterfaces: Vec::new(),
             access: Vec::new(),
             modifiers: Vec::new(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Kind, TypeDeclaration, TypeParameter};
+
+    #[test]
+    fn parameter_lookup_without_parameters_returns_none() {
+        let declaration = TypeDeclaration::new(Kind::Class);
+        assert!(declaration.type_parameter_named("A").is_none());
+    }
+
+    #[test]
+    fn parameter_lookup_returns_the_matching_stored_parameter() {
+        let mut declaration = TypeDeclaration::new(Kind::Class);
+        for name in ["A", "B"] {
+            declaration.type_parameters.push(TypeParameter {
+                name: name.into(),
+                bounds: vec![],
+            });
+        }
+
+        for parameter in &declaration.type_parameters {
+            assert!(std::ptr::eq(
+                declaration.type_parameter_named(&parameter.name).unwrap(),
+                parameter
+            ));
+        }
+    }
+
+    #[test]
+    fn parameter_lookup_requires_an_exact_name_match() {
+        let mut declaration = TypeDeclaration::new(Kind::Class);
+        declaration.type_parameters.push(TypeParameter {
+            name: "A".into(),
+            bounds: vec![],
+        });
+
+        for name in ["a", "B", ""] {
+            assert!(declaration.type_parameter_named(name).is_none());
         }
     }
 }
