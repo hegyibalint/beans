@@ -59,6 +59,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
+name = "core-engine"
+version = "0.0.1"
+
+[[package]]
 name = "core-model"
 version = "0.0.1"
 dependencies = [
@@ -116,6 +120,15 @@ name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+
+[[package]]
+name = "lang-java-engine"
+version = "0.0.1"
+dependencies = [
+ "core-engine",
+ "lang-java-model",
+ "lang-java-semantics",
+]
 
 [[package]]
 name = "lang-java-model"

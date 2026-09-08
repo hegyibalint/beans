@@ -1,0 +1,14 @@
+[package]
+name = "lang-java-engine"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+name = "beans_lang_java_engine"
+
+[dependencies]
+core-engine = { path = "../../../core/engine" }
+lang-java-model = { path = "../model" }
+lang-java-semantics = { path = "../semantics" }
