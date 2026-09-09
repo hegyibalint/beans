@@ -2,6 +2,7 @@ use beans_core_model as core_model;
 use beans_lang_java_model::{
     self as java_model, ScopeEntry,
     declarations::Declaration::Type,
+    imports::ImportType,
     references::TypeRef,
     scopes::{ScopeIndex, ScopeKind},
 };
@@ -136,6 +137,46 @@ impl<'a> ResolutionInstance<'a> {
         }
 
         ResolutionResult::NotFound
+    }
+
+    /// JLS §7.5.1, §7.5.3: single imports bind the imported member's simple name.
+    fn find_single_imported_type(&self, type_ref: &TypeRef) -> ResolutionResult {
+        let TypeRef::Named { segments } = type_ref else {
+            return ResolutionResult::NotFound;
+        };
+        let Some((first, _remaining)) = segments.split_first() else {
+            return ResolutionResult::NotFound;
+        };
+
+        let candidates: Vec<_> = self
+            .file
+            .imports
+            .iter()
+            .filter(|import| {
+                matches!(
+                    import.typ(),
+                    ImportType::SingleType | ImportType::SingleStaticType
+                )
+            })
+            .filter(|import| import.name().last() == Some(&first.name))
+            .collect();
+
+        if candidates.is_empty() {
+            return ResolutionResult::NotFound;
+        }
+
+        todo!(
+            "resolve each candidate according to its import kind, check accessibility/staticness, \
+             deduplicate targets, and return the unique starting type with one component consumed"
+        )
+    }
+
+    fn find_package_type(&self, _type_ref: &TypeRef) -> ResolutionResult {
+        todo!()
+    }
+
+    fn find_on_demand_imported_type(&self, _type_ref: &TypeRef) -> ResolutionResult {
+        todo!()
     }
 }
 

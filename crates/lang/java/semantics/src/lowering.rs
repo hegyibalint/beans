@@ -424,7 +424,7 @@ fn lower_import_declaration(content: &str, node: Node) -> Option<Import> {
             "static" => is_static = true,
             "asterisk" => is_on_demand = true,
             "identifier" | "scoped_identifier" => {
-                name = lower_identifier(content, child);
+                name = collect_name_components(content, child);
             }
             _ => {}
         }

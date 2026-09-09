@@ -1,3 +1,4 @@
+mod imported_type;
 mod scopes;
 mod simple_type;
 mod simple_type_declaration;

@@ -416,7 +416,7 @@ fn type_kind(kind: Kind) -> &'static str {
 }
 
 fn import_of(import: &Import) -> String {
-    format!("{} ({:?})", name(import.name()), import.typ())
+    format!("{} ({:?})", import.name().join("."), import.typ())
 }
 
 fn name(name: &NameRef) -> String {

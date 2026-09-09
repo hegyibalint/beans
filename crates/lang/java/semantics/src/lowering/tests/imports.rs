@@ -1,16 +1,11 @@
 use crate::lower_into;
-use beans_lang_java_model::{
-    imports::{Import, ImportType},
-    references::NameRef,
-};
+use beans_lang_java_model::imports::{Import, ImportType};
 
-fn qualified_name(components: &[&str]) -> NameRef {
-    NameRef::Qualified(
-        components
-            .iter()
-            .map(|component| (*component).to_owned())
-            .collect(),
-    )
+fn name(components: &[&str]) -> Vec<String> {
+    components
+        .iter()
+        .map(|component| (*component).to_owned())
+        .collect()
 }
 
 #[test]
@@ -20,7 +15,7 @@ fn one_import_is_preserved() {
     assert_eq!(
         file.imports,
         [Import::new(
-            qualified_name(&["example", "Item"]),
+            name(&["example", "Item"]),
             ImportType::SingleType,
         )]
     );
@@ -33,8 +28,8 @@ fn two_imports_preserve_source_order() {
     assert_eq!(
         file.imports,
         [
-            Import::new(qualified_name(&["first", "One"]), ImportType::SingleType,),
-            Import::new(qualified_name(&["second", "Two"]), ImportType::SingleType,),
+            Import::new(name(&["first", "One"]), ImportType::SingleType,),
+            Import::new(name(&["second", "Two"]), ImportType::SingleType,),
         ]
     );
 }
@@ -51,19 +46,13 @@ fn supported_import_kinds_are_distinguished() {
     assert_eq!(
         file.imports,
         [
-            Import::new(qualified_name(&["types", "Single"]), ImportType::SingleType,),
+            Import::new(name(&["types", "Single"]), ImportType::SingleType,),
+            Import::new(name(&["types"]), ImportType::OnDemandType,),
             Import::new(
-                NameRef::Simple("types".to_owned()),
-                ImportType::OnDemandType,
-            ),
-            Import::new(
-                qualified_name(&["members", "Owner", "VALUE"]),
+                name(&["members", "Owner", "VALUE"]),
                 ImportType::SingleStaticType,
             ),
-            Import::new(
-                qualified_name(&["members", "Owner"]),
-                ImportType::OnDemandStaticType,
-            ),
+            Import::new(name(&["members", "Owner"]), ImportType::OnDemandStaticType,),
         ]
     );
 }

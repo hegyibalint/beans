@@ -1,17 +1,15 @@
-use crate::references::NameRef;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Import {
-    name: NameRef,
+    name: Vec<String>,
     typ: ImportType,
 }
 
 impl Import {
-    pub fn new(name: NameRef, typ: ImportType) -> Self {
+    pub fn new(name: Vec<String>, typ: ImportType) -> Self {
         Self { name, typ }
     }
 
-    pub fn name(&self) -> &NameRef {
+    pub fn name(&self) -> &[String] {
         &self.name
     }
 
