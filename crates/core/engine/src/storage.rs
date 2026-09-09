@@ -2,6 +2,12 @@ use std::{collections::HashMap, hash::Hash};
 
 use crate::Revision;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RevisionEntry<K> {
+    pub revision: Revision,
+    pub key: K,
+}
+
 pub struct RevisionedStorage<K, V> {
     entries: HashMap<K, Vec<Version<V>>>,
 }
@@ -20,8 +26,12 @@ impl<K, V> Default for RevisionedStorage<K, V> {
 }
 
 impl<K: Eq + Hash, V> RevisionedStorage<K, V> {
-    pub fn put(&mut self, revision: Revision, key: K, value: V) {
-        self.write(revision, key, Some(value));
+    pub fn put(&mut self, revision: Revision, key: K, value: V) -> RevisionEntry<K>
+    where
+        K: Clone,
+    {
+        self.write(revision, key.clone(), Some(value));
+        RevisionEntry { revision, key }
     }
 
     pub fn get(&self, revision: Revision, key: &K) -> Option<&V> {
@@ -55,6 +65,17 @@ impl<K: Eq + Hash, V> RevisionedStorage<K, V> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn put_returns_an_owned_address_of_the_written_value() {
+        let mut storage = RevisionedStorage::default();
+        let entry = storage.put(Revision(2), String::from("A"), "first");
+        storage.put(Revision(5), String::from("A"), "second");
+
+        assert_eq!(entry.revision, Revision(2));
+        assert_eq!(entry.key, "A");
+        assert_eq!(storage.get(entry.revision, &entry.key), Some(&"first"));
+    }
 
     #[test]
     fn unknown_key_has_no_value() {
@@ -160,8 +181,8 @@ mod tests {
     }
 
     #[test]
-    fn keys_and_values_need_neither_default_nor_clone() {
-        #[derive(PartialEq, Eq, Hash)]
+    fn keys_need_no_default_and_values_need_neither_default_nor_clone() {
+        #[derive(Clone, PartialEq, Eq, Hash)]
         struct Key(u64);
         struct Value(u64);
 
