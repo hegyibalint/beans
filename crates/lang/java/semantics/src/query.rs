@@ -2,8 +2,7 @@ use beans_core_engine::{Revision, storage::RevisionedStorage};
 use beans_core_model::{classpath::Classpath, source::Source};
 use beans_lang_java_model::{
     File,
-    declarations::{Declaration, DeclarationIndex, types::TypeDeclaration},
-    references::NameRef,
+    declarations::{DeclarationIndex, types::TypeDeclaration},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -46,11 +45,9 @@ impl<'a> JavaQuery<'a> {
         self.files.get(self.revision, source)
     }
 
-    /// Finds top-level types by qualified name (JLS §6.7, §7.6), without access checks.
+    /// Finds declarations by canonical name (JLS §6.7) in visible source files.
+    /// Does not check accessibility or search inherited members.
     pub fn find_type(&self, name: &[String]) -> Vec<JavaTypeEntry<'a>> {
-        let Some((simple_name, package_name)) = name.split_last() else {
-            return Vec::new();
-        };
         let mut candidates = Vec::new();
 
         for (source, file) in self.files.iter(self.revision) {
@@ -60,27 +57,14 @@ impl<'a> JavaQuery<'a> {
             if !self.classpath.contains_source_file(path) {
                 continue;
             }
-            let package = match &file.package_name {
-                Some(NameRef::Simple(name)) => std::slice::from_ref(name),
-                Some(NameRef::Qualified(components)) => components.as_slice(),
-                None => &[],
-            };
-            if package != package_name {
-                continue;
-            }
 
-            for entry in file.iter_declarations_in_scope(File::ROOT_SCOPE_ID) {
-                let Declaration::Type(declaration) = entry.declaration else {
-                    continue;
-                };
-                if declaration.name.as_ref() == Some(simple_name) {
-                    candidates.push(JavaTypeEntry {
-                        source,
-                        file,
-                        declaration_index: entry.declaration_index,
-                        declaration,
-                    });
-                }
+            for (declaration_index, declaration) in file.find_type(name) {
+                candidates.push(JavaTypeEntry {
+                    source,
+                    file,
+                    declaration_index,
+                    declaration,
+                });
             }
         }
         candidates
@@ -91,15 +75,19 @@ impl<'a> JavaQuery<'a> {
 mod tests {
     use super::*;
     use beans_core_model::classpath::ClasspathElement;
+    use beans_lang_java_model::declarations::Declaration;
 
     fn name(name: &str) -> Vec<String> {
         name.split('.').map(str::to_owned).collect()
     }
 
     fn classpath(roots: &[&str]) -> Classpath {
-        Classpath::new(roots.iter().map(|root| {
-            ClasspathElement::new((*root).into(), [0; 32].into())
-        }).collect())
+        Classpath::new(
+            roots
+                .iter()
+                .map(|root| ClasspathElement::new((*root).into(), [0; 32].into()))
+                .collect(),
+        )
     }
 
     #[test]
@@ -129,34 +117,48 @@ mod tests {
     }
 
     #[test]
-    fn discovery_matches_declared_package_and_type_not_directory_layout() {
+    fn discovery_delegates_canonical_member_lookup_to_visible_files() {
         let mut files = RevisionedStorage::default();
-        let source = Source::SourceFile { path: "src/misplaced/Example.java".into() };
+        let source = Source::SourceFile {
+            path: "src/misplaced/Example.java".into(),
+        };
         let revision = Revision::new(1);
-        files.put(revision, source.clone(), crate::lower_into("package p.q; public class Example {}"));
+        files.put(
+            revision,
+            source.clone(),
+            crate::lower_into("package p.q; class Outer { private class Member {} }"),
+        );
         let classpath = classpath(&["src"]);
         let query = JavaQuery::new(&files, revision, &classpath);
-        let found = query.find_type(&name("p.q.Example"));
+        let found = query.find_type(&name("p.q.Outer.Member"));
 
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].source, &source);
-        let Declaration::Type(stored) = found[0].file.declaration(found[0].declaration_index).unwrap() else {
+        let Declaration::Type(stored) = found[0]
+            .file
+            .declaration(found[0].declaration_index)
+            .unwrap()
+        else {
             panic!("expected a type declaration");
         };
         assert!(std::ptr::eq(found[0].declaration, stored));
-        for missing in ["p.Example", "p.q.example", "p.q.Other", "misplaced.Example"] {
-            assert!(query.find_type(&name(missing)).is_empty());
-        }
-        assert!(query.find_type(&[]).is_empty());
+        assert_eq!(stored.name.as_deref(), Some("Member"));
     }
 
     #[test]
     fn discovery_retains_distinct_origins_without_duplicating_overlapping_roots() {
         let mut files = RevisionedStorage::default();
         let revision = Revision::new(1);
-        for path in ["src/a/Example.java", "src/b/Example.java", "other/Example.java"] {
-            files.put(revision, Source::SourceFile { path: path.into() },
-                crate::lower_into("package p; class Example {}"));
+        for path in [
+            "src/a/Example.java",
+            "src/b/Example.java",
+            "other/Example.java",
+        ] {
+            files.put(
+                revision,
+                Source::SourceFile { path: path.into() },
+                crate::lower_into("package p; class Example {}"),
+            );
         }
         let classpath = classpath(&["src", "src/a"]);
         let query = JavaQuery::new(&files, revision, &classpath);
@@ -169,20 +171,20 @@ mod tests {
     }
 
     #[test]
-    fn discovery_does_not_search_members_or_non_source_origins() {
+    fn discovery_excludes_non_source_origins() {
         let mut files = RevisionedStorage::default();
         let revision = Revision::new(1);
-        files.put(revision, Source::SourceFile { path: "src/Outer.java".into() },
-            crate::lower_into("package p; class Outer { class Inner {} }"));
-        files.put(revision, Source::ClassFile { path: "src/Example.class".into() },
-            crate::lower_into("package p; class Example {}"));
+        files.put(
+            revision,
+            Source::ClassFile {
+                path: "src/Example.class".into(),
+            },
+            crate::lower_into("package p; class Example {}"),
+        );
         let classpath = classpath(&["src"]);
         let query = JavaQuery::new(&files, revision, &classpath);
 
-        assert_eq!(query.find_type(&name("p.Outer")).len(), 1);
-        for missing in ["p.Inner", "p.Outer.Inner", "p.Example"] {
-            assert!(query.find_type(&name(missing)).is_empty());
-        }
+        assert!(query.find_type(&name("p.Example")).is_empty());
     }
 
     #[test]
@@ -190,8 +192,13 @@ mod tests {
         let mut files = RevisionedStorage::default();
         let revision = Revision::new(1);
         // Error recovery: duplicate top-level declarations remain distinct.
-        files.put(revision, Source::SourceFile { path: "src/Example.java".into() },
-            crate::lower_into("package p; class Example {} class Example {}"));
+        files.put(
+            revision,
+            Source::SourceFile {
+                path: "src/Example.java".into(),
+            },
+            crate::lower_into("package p; class Example {} class Example {}"),
+        );
         let classpath = classpath(&["src"]);
         let query = JavaQuery::new(&files, revision, &classpath);
         let found = query.find_type(&name("p.Example"));
@@ -204,9 +211,19 @@ mod tests {
     #[test]
     fn discovery_uses_the_bound_revision_after_replacement_and_deletion() {
         let mut files = RevisionedStorage::default();
-        let source = Source::SourceFile { path: "src/Example.java".into() };
-        files.put(Revision::new(1), source.clone(), crate::lower_into("package p; class Example {}"));
-        files.put(Revision::new(2), source.clone(), crate::lower_into("package p; class Other {}"));
+        let source = Source::SourceFile {
+            path: "src/Example.java".into(),
+        };
+        files.put(
+            Revision::new(1),
+            source.clone(),
+            crate::lower_into("package p; class Example {}"),
+        );
+        files.put(
+            Revision::new(2),
+            source.clone(),
+            crate::lower_into("package p; class Other {}"),
+        );
         files.remove(Revision::new(3), source);
         let classpath = classpath(&["src"]);
         let old = JavaQuery::new(&files, Revision::new(1), &classpath);

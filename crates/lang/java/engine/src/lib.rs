@@ -35,7 +35,7 @@ impl JavaEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use beans_lang_java_model::references::NameRef;
+    use beans_lang_java_model::names::Name;
 
     #[test]
     fn store_returns_the_address_of_the_supplied_model() {
@@ -45,13 +45,13 @@ mod tests {
             path: "Example.java".into(),
         };
         let mut model = File::new();
-        model.package_name = Some(NameRef::Simple("example".into()));
+        model.package_name = Name::new(vec!["example".into()]);
 
         let entry = engine.store(revision, model, source.clone());
 
         assert_eq!(entry.revision, revision);
         assert_eq!(entry.key, source);
         let stored = engine.files.get(entry.revision, &entry.key).unwrap();
-        assert_eq!(stored.package_name, Some(NameRef::Simple("example".into())));
+        assert_eq!(stored.package_name.as_slice(), ["example"]);
     }
 }

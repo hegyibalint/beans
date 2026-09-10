@@ -1,7 +1,10 @@
 use crate::lower_into;
-use beans_lang_java_model::imports::{Import, ImportType};
+use beans_lang_java_model::{
+    imports::{Import, ImportType},
+    names::Name,
+};
 
-fn name(components: &[&str]) -> Vec<String> {
+fn name(components: &[&str]) -> Name {
     components
         .iter()
         .map(|component| (*component).to_owned())

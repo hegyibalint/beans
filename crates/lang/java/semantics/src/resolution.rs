@@ -166,30 +166,26 @@ impl<'a> ResolutionInstance<'a> {
 
     /// JLS §7.5.1: ordinary single imports bind the imported type's simple name.
     fn find_single_imported_type(&self, type_ref: &TypeRef) -> ResolutionResult {
-        /// TODOs:
-        /// This method is partially complete. What is missing is
-        ///  - Accessibility checks
+        // TODO: Member/enclosing-type accessibility and module visibility.
         let TypeRef::Named { segments } = type_ref else {
             return ResolutionResult::NotFound;
         };
-        let Some((first, remaining)) = segments.split_first() else {
+        let Some((_, remaining)) = segments.split_first() else {
             return ResolutionResult::NotFound;
         };
-
-        
 
         let candidates = self
             .file
             .imports
             .iter()
-            .filter(|i| i.has_valid_name_shape())
+            .filter(|i| i.is_name_valid())
             .filter(|i| i.typ() == ImportType::SingleType)
             // When using inner classes like `Outer.Inner`, we cannot directly look for this.
             // What we will store is the types in the compilation unit, i.e. `Outer`
             // Resolving `Inner` is the returned type's job.
-            .filter(|i| i.name().last() == Some(&first.name))
+            .filter(|i| i.is_prefix(type_ref))
             // We resolve the typename by looking into the processed symbols
-            .flat_map(|i| self.query.finWhat d_type(i.name()))
+            .flat_map(|i| self.query.find_type(i.name().as_slice()))
             .filter(|t| self.is_accessible_top_level_type(t));
 
         let result = Self::select_unique_type(candidates)
@@ -204,6 +200,14 @@ impl<'a> ResolutionInstance<'a> {
 
     /// JLS §6.6.1: top-level access in the current non-modular compilation model.
     fn is_accessible_top_level_type(&self, target: &JavaTypeEntry<'_>) -> bool {
+        let is_top_level = target
+            .file
+            .iter_declarations_in_scope(java_model::File::ROOT_SCOPE_ID)
+            .any(|entry| entry.declaration_index == target.declaration_index);
+        if !is_top_level {
+            return false;
+        }
+
         if target.file.package_name == self.file.package_name {
             target.declaration.access.is_empty()
                 || target.declaration.access.contains(&AccessLevel::Public)

@@ -7,7 +7,8 @@ use beans_lang_java_model::{
         types::{AccessLevel, Kind as TypeKind, Modifier, TypeDeclaration, TypeParameter},
     },
     imports::{Import, ImportType},
-    references::{NameRef, PrimitiveType, TypeBound, TypeNameComponent, TypeRef},
+    names::Name,
+    references::{PrimitiveType, TypeBound, TypeNameComponent, TypeRef},
     scopes::{ScopeIndex, ScopeKind},
 };
 use tree_sitter::Node;
@@ -24,7 +25,7 @@ pub fn lower_into(content: &str) -> File {
     for node in root.named_children(&mut cursor) {
         match node.kind() {
             "package_declaration" => {
-                file.package_name = lower_package_declaration(content, node);
+                file.package_name = lower_package_declaration(content, node).unwrap_or_default();
             }
 
             "import_declaration" => {
@@ -399,7 +400,7 @@ fn node_text(node: Node, content: &str) -> Option<String> {
     node.utf8_text(content.as_bytes()).ok().map(str::to_owned)
 }
 
-fn lower_package_declaration(content: &str, node: Node) -> Option<NameRef> {
+fn lower_package_declaration(content: &str, node: Node) -> Option<Name> {
     debug_assert_eq!(node.kind(), "package_declaration");
 
     let mut cursor = node.walk();
@@ -408,7 +409,7 @@ fn lower_package_declaration(content: &str, node: Node) -> Option<NameRef> {
         .named_children(&mut cursor)
         .find(|child| matches!(child.kind(), "identifier" | "scoped_identifier"))?;
 
-    lower_identifier(content, name)
+    Some(Name::new(collect_name_components(content, name)?))
 }
 
 fn lower_import_declaration(content: &str, node: Node) -> Option<Import> {
@@ -437,17 +438,7 @@ fn lower_import_declaration(content: &str, node: Node) -> Option<Import> {
         (true, true) => ImportType::OnDemandStaticType,
     };
 
-    Some(Import::new(name?, typ))
-}
-
-fn lower_identifier(content: &str, node: Node) -> Option<NameRef> {
-    let mut components = collect_name_components(content, node)?;
-
-    match components.len() {
-        0 => None,
-        1 => Some(NameRef::Simple(components.pop()?)),
-        _ => Some(NameRef::Qualified(components)),
-    }
+    Some(Import::new(Name::new(name?), typ))
 }
 
 fn collect_name_components(content: &str, node: Node) -> Option<Vec<String>> {

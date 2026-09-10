@@ -1,10 +1,3 @@
-/// Represents a dot-separated name broken into its components
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NameRef {
-    Simple(String),
-    Qualified(Vec<String>),
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeRef {
     /// `java.util.Map<String, Integer>`

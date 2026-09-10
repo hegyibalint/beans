@@ -53,6 +53,18 @@ fn package_access_requires_the_importing_file_to_be_in_the_same_package() {
 }
 
 #[test]
+fn a_public_member_does_not_bypass_its_enclosing_types_access() {
+    let result = find(
+        "package app; import p.Outer.Member; class Use { Member target; }",
+        &[(
+            "src/p/Outer.java",
+            "package p; class Outer { public class Member {} }",
+        )],
+    );
+    assert!(matches!(result, ResolutionResult::NotFound));
+}
+
+#[test]
 fn repeated_imports_of_the_same_declaration_are_not_ambiguous() {
     assert!(matches!(find(
         "import p.Example; import p.Example; class Use { Example target; }",
@@ -133,18 +145,6 @@ fn lexical_hits_stop_before_conflicting_imports_during_error_recovery() {
 #[test]
 fn single_import_lookup_ignores_on_demand_imports() {
     for import in ["import p.*;", "import static p.Container.*;"] {
-        let source = format!("{import} class Use {{ Outer.Inner target; }}");
-        let result = lookup_field(&source, |instance, _| {
-            instance.find_single_imported_type(instance.type_ref)
-        });
-
-        assert!(matches!(result, ResolutionResult::NotFound));
-    }
-}
-
-#[test]
-fn single_imports_must_match_the_first_reference_component() {
-    for import in ["import p.Inner;", "import static p.Container.Inner;"] {
         let source = format!("{import} class Use {{ Outer.Inner target; }}");
         let result = lookup_field(&source, |instance, _| {
             instance.find_single_imported_type(instance.type_ref)

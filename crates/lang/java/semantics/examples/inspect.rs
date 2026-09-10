@@ -27,7 +27,7 @@ use beans_lang_java_model::{
         types::{AccessLevel, Kind, Modifier, TypeDeclaration},
     },
     imports::Import,
-    references::{NameRef, PrimitiveType, TypeBound, TypeNameComponent, TypeRef},
+    references::{PrimitiveType, TypeBound, TypeNameComponent, TypeRef},
     scopes::{ScopeIndex, ScopeKind},
 };
 use beans_lang_java_semantics::lower_into;
@@ -265,8 +265,8 @@ fn write_scope_structure(
             )
             .expect("writing to a string cannot fail");
 
-            if let Some(package) = &file.package_name {
-                writeln!(output, "{child_indentation}package: {}", name(package))
+            if !file.package_name.is_empty() {
+                writeln!(output, "{child_indentation}package: {}", file.package_name)
                     .expect("writing to a string cannot fail");
             }
             for import in &file.imports {
@@ -416,14 +416,7 @@ fn type_kind(kind: Kind) -> &'static str {
 }
 
 fn import_of(import: &Import) -> String {
-    format!("{} ({:?})", import.name().join("."), import.typ())
-}
-
-fn name(name: &NameRef) -> String {
-    match name {
-        NameRef::Simple(segment) => segment.clone(),
-        NameRef::Qualified(segments) => segments.join("."),
-    }
+    format!("{} ({:?})", import.name(), import.typ())
 }
 
 fn type_ref(reference: &TypeRef) -> String {
