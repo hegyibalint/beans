@@ -40,6 +40,12 @@ impl<K: Eq + Hash, V> RevisionedStorage<K, V> {
         versions[..end].last()?.value.as_ref()
     }
 
+    pub fn iter(&self, revision: Revision) -> impl Iterator<Item = (&K, &V)> {
+        self.entries
+            .keys()
+            .filter_map(move |key| self.get(revision, key).map(|value| (key, value)))
+    }
+
     pub fn remove(&mut self, revision: Revision, key: K) {
         if self.entries.contains_key(&key) {
             self.write(revision, key, None);
@@ -75,6 +81,28 @@ mod tests {
         assert_eq!(entry.revision, Revision(2));
         assert_eq!(entry.key, "A");
         assert_eq!(storage.get(entry.revision, &entry.key), Some(&"first"));
+    }
+
+    #[test]
+    fn iteration_yields_only_live_values_at_the_requested_revision() {
+        let mut storage = RevisionedStorage::default();
+        storage.put(Revision(2), "A", "first");
+        storage.put(Revision(3), "B", "other");
+        storage.put(Revision(4), "A", "second");
+        storage.remove(Revision(5), "B");
+
+        for (revision, expected) in [
+            (1, vec![]),
+            (2, vec![("A", "first")]),
+            (3, vec![("A", "first"), ("B", "other")]),
+            (4, vec![("A", "second"), ("B", "other")]),
+            (5, vec![("A", "second")]),
+            (9, vec![("A", "second")]),
+        ] {
+            let mut actual: Vec<_> = storage.iter(Revision(revision)).map(|(k, v)| (*k, *v)).collect();
+            actual.sort();
+            assert_eq!(actual, expected);
+        }
     }
 
     #[test]

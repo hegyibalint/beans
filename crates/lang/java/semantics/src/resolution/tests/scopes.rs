@@ -53,7 +53,7 @@ fn public_resolver_forwards_the_occurrence_context() {
                 instance.file,
                 instance.scope_index,
                 instance.type_ref,
-                instance.classpath,
+                instance.query,
             )
         },
     );

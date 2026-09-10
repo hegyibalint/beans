@@ -12,3 +12,4 @@ name = "beans_lang_java_engine"
 core-engine = { path = "../../../core/engine" }
 core-model = { path = "../../../core/model" }
 lang-java-model = { path = "../model" }
+lang-java-semantics = { path = "../semantics" }

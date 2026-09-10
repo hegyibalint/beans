@@ -128,6 +128,7 @@ dependencies = [
  "core-engine",
  "core-model",
  "lang-java-model",
+ "lang-java-semantics",
 ]
 
 [[package]]
@@ -141,6 +142,7 @@ dependencies = [
 name = "lang-java-semantics"
 version = "0.0.1"
 dependencies = [
+ "core-engine",
  "core-model",
  "lang-java-model",
  "tree-sitter",

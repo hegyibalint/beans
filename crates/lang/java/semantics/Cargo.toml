@@ -9,6 +9,7 @@ license.workspace = true
 name = "beans_lang_java_semantics"
 
 [dependencies]
+core-engine = { path = "../../../core/engine" }
 core-model = { path = "../../../core/model" }
 lang-java-model = { path = "../model" }
 tree-sitter.workspace = true

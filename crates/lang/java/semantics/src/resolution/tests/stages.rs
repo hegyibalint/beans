@@ -1,4 +1,6 @@
 use super::super::{ResolutionInstance, ResolutionResult, Resolver};
+use crate::query::JavaQuery;
+use beans_core_engine::{Revision, storage::RevisionedStorage};
 use beans_lang_java_model::{
     File, ScopeEntry,
     declarations::{
@@ -20,9 +22,11 @@ fn run_stages(
     let occurrence_scope = file.new_child_scope(File::ROOT_SCOPE_ID, ScopeKind::TypeBody { owner });
     let resolver = Resolver {};
     let classpath = beans_core_model::classpath::Classpath::default();
+    let files = RevisionedStorage::default();
+    let query = JavaQuery::new(&files, Revision::default(), &classpath);
     let type_ref = TypeRef::Void;
     let instance =
-        ResolutionInstance::new(&resolver, &file, occurrence_scope, &type_ref, &classpath);
+        ResolutionInstance::new(&resolver, &file, occurrence_scope, &type_ref, &query);
     let entry = file.iter_scopes_from(File::ROOT_SCOPE_ID).next().unwrap();
 
     instance.find_first(entry, "A", stages)

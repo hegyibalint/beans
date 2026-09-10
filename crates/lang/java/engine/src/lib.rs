@@ -4,8 +4,9 @@ use beans_core_engine::{
     Revision,
     storage::{RevisionEntry, RevisionedStorage},
 };
-use beans_core_model::source::Source;
+use beans_core_model::{classpath::Classpath, source::Source};
 use beans_lang_java_model::File;
+use beans_lang_java_semantics::query::JavaQuery;
 
 #[derive(Default)]
 pub struct JavaEngine {
@@ -22,7 +23,11 @@ impl JavaEngine {
         self.files.put(revision, source, model)
     }
 
-    pub fn analyse(&self, _entry: &RevisionEntry<Source>) {
+    pub fn query<'a>(&'a self, revision: Revision, classpath: &'a Classpath) -> JavaQuery<'a> {
+        JavaQuery::new(&self.files, revision, classpath)
+    }
+
+    pub fn analyse(&self, _entry: &RevisionEntry<Source>, _classpath: &Classpath) {
         todo!("analysis is not implemented")
     }
 }

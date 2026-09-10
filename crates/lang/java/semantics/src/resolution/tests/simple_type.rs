@@ -71,7 +71,7 @@ fn void_and_empty_named_references_do_not_enter_name_lookup() {
                 instance.file,
                 instance.scope_index,
                 &type_ref,
-                instance.classpath,
+                instance.query,
             )
             .lookup_simple_type(entry)
         });
