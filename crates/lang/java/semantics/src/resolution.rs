@@ -84,7 +84,7 @@ impl<'a> ResolutionInstance<'a> {
 
         match self.type_ref {
             TypeRef::Named { segments } if segments.len() == 1 => {
-                self.find_single_imported_type(self.type_ref)
+                self.lookup_single_imported_type(self.type_ref)
             }
             _ => ResolutionResult::NotFound,
         }
@@ -140,24 +140,8 @@ impl<'a> ResolutionInstance<'a> {
         }
     }
 
-    fn find_first(
-        &self,
-        entry: NodeEntry<'_>,
-        name: &str,
-        stages: &[fn(&Self, NodeEntry<'_>, &str) -> ResolutionResult],
-    ) -> ResolutionResult {
-        for lookup in stages {
-            match lookup(self, entry, name) {
-                ResolutionResult::NotFound => continue,
-                result => return result,
-            }
-        }
-
-        ResolutionResult::NotFound
-    }
-
     /// JLS §7.5.1: ordinary single imports bind the imported type's simple name.
-    fn find_single_imported_type(&self, type_ref: &TypeRef) -> ResolutionResult {
+    fn lookup_single_imported_type(&self, type_ref: &TypeRef) -> ResolutionResult {
         // TODO: Member/enclosing-type accessibility and module visibility.
         let TypeRef::Named { segments } = type_ref else {
             return ResolutionResult::NotFound;
@@ -221,12 +205,20 @@ impl<'a> ResolutionInstance<'a> {
         Ok(first)
     }
 
-    fn find_package_type(&self, _type_ref: &TypeRef) -> ResolutionResult {
-        todo!()
-    }
+    fn find_first(
+        &self,
+        entry: NodeEntry<'_>,
+        name: &str,
+        stages: &[fn(&Self, NodeEntry<'_>, &str) -> ResolutionResult],
+    ) -> ResolutionResult {
+        for lookup in stages {
+            match lookup(self, entry, name) {
+                ResolutionResult::NotFound => continue,
+                result => return result,
+            }
+        }
 
-    fn find_on_demand_imported_type(&self, _type_ref: &TypeRef) -> ResolutionResult {
-        todo!()
+        ResolutionResult::NotFound
     }
 }
 

@@ -118,6 +118,23 @@ fn duplicate_declarations_remain_distinct_at_every_depth() {
 }
 
 #[test]
+fn a_dead_end_branch_does_not_discard_matches_or_stop_later_branches() {
+    let mut file = File::new();
+    let first = add_type(&mut file, File::ROOT_NODE_ID, "Outer");
+    let first_member = add_type(&mut file, first, "Member");
+    add_type(&mut file, File::ROOT_NODE_ID, "Outer");
+    let last = add_type(&mut file, File::ROOT_NODE_ID, "Outer");
+    let last_member = add_type(&mut file, last, "Member");
+
+    let found: Vec<_> = file
+        .find_type(&name("Outer.Member"))
+        .iter()
+        .map(|(index, _)| *index)
+        .collect();
+    assert_eq!(found, [first_member, last_member]);
+}
+
+#[test]
 fn inherited_members_are_not_part_of_the_subclass_canonical_path() {
     let mut file = File::new();
     let base = add_type(&mut file, File::ROOT_NODE_ID, "Base");

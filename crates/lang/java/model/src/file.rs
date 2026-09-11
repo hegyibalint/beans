@@ -93,30 +93,35 @@ impl File {
             return Vec::new();
         };
 
-        let mut parents = vec![Self::ROOT_NODE_ID];
         let mut matches = Vec::new();
-
-        for component in type_path {
-            matches.clear();
-            let mut next_parents = Vec::new();
-            for parent in parents {
-                for entry in self.iter_children(parent) {
-                    let NodeKind::Type(declaration) = entry.node.kind() else {
-                        continue;
-                    };
-                    if declaration.name.as_ref() == Some(component) {
-                        matches.push((entry.index, declaration));
-                        next_parents.push(entry.index);
-                    }
-                }
-            }
-            if matches.is_empty() {
-                return matches;
-            }
-            parents = next_parents;
-        }
-
+        self.collect_type_matches(Self::ROOT_NODE_ID, type_path, &mut matches);
         matches
+    }
+
+    fn collect_type_matches<'a>(
+        &'a self,
+        parent: NodeIndex,
+        path: &[String],
+        matches: &mut Vec<(NodeIndex, &'a TypeDeclaration)>,
+    ) {
+        let Some((component, remaining)) = path.split_first() else {
+            return;
+        };
+
+        for entry in self.iter_children(parent) {
+            let NodeKind::Type(declaration) = entry.node.kind() else {
+                continue;
+            };
+            if declaration.name.as_ref() != Some(component) {
+                continue;
+            }
+
+            if remaining.is_empty() {
+                matches.push((entry.index, declaration));
+            } else {
+                self.collect_type_matches(entry.index, remaining, matches);
+            }
+        }
     }
 }
 
