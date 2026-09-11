@@ -1,37 +1,34 @@
 use crate::{
     File,
-    declarations::{
-        Declaration, DeclarationIndex,
+    names::Name,
+    nodes::{
+        NodeIndex, NodeKind,
         fields::FieldDeclaration,
         types::{AccessLevel, Kind, TypeDeclaration},
     },
-    names::Name,
     references::{PrimitiveType, TypeNameComponent, TypeRef},
-    scopes::{ScopeIndex, ScopeKind},
 };
 
-fn name(value: &str) -> Vec<String> {
+fn name(value: &str) -> Name {
     value.split('.').map(str::to_owned).collect()
 }
 
-fn add_type(file: &mut File, scope: ScopeIndex, name: &str) -> (DeclarationIndex, ScopeIndex) {
+fn add_type(file: &mut File, parent: NodeIndex, name: &str) -> NodeIndex {
     let mut declaration = TypeDeclaration::new(Kind::Class);
     declaration.name = Some(name.into());
-    let index = file.add_declaration(scope, Declaration::Type(declaration));
-    let body = file.new_child_scope(scope, ScopeKind::TypeBody { owner: index });
-    (index, body)
+    file.add_node(parent, NodeKind::Type(declaration))
 }
 
 #[test]
 fn package_and_member_components_lead_to_the_stored_declaration() {
     let mut file = File::new();
-    file.package_name = Name::new(name("a.b"));
-    let (outer, outer_body) = add_type(&mut file, File::ROOT_SCOPE_ID, "C");
-    let (member, member_body) = add_type(&mut file, outer_body, "D");
-    let (nested_member, _) = add_type(&mut file, member_body, "E");
-    let (_, sibling_body) = add_type(&mut file, File::ROOT_SCOPE_ID, "Sibling");
-    add_type(&mut file, sibling_body, "D");
-    add_type(&mut file, sibling_body, "OnlyInSibling");
+    file.package_name = name("a.b");
+    let outer = add_type(&mut file, File::ROOT_NODE_ID, "C");
+    let member = add_type(&mut file, outer, "D");
+    let nested_member = add_type(&mut file, member, "E");
+    let sibling = add_type(&mut file, File::ROOT_NODE_ID, "Sibling");
+    add_type(&mut file, sibling, "D");
+    add_type(&mut file, sibling, "OnlyInSibling");
 
     for (path, expected) in [
         ("a.b.C", outer),
@@ -41,12 +38,11 @@ fn package_and_member_components_lead_to_the_stored_declaration() {
         let found = file.find_type(&name(path));
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].0, expected);
-        let Declaration::Type(stored) = file.declaration(expected).unwrap() else {
+        let NodeKind::Type(stored) = file.node(expected).unwrap().kind() else {
             panic!("expected a type declaration");
         };
         assert!(std::ptr::eq(found[0].1, stored));
     }
-
     for missing in [
         "a",
         "a.b",
@@ -63,25 +59,22 @@ fn package_and_member_components_lead_to_the_stored_declaration() {
     ] {
         assert!(file.find_type(&name(missing)).is_empty(), "{missing}");
     }
-    assert!(file.find_type(&[]).is_empty());
+    assert!(file.find_type(&Name::default()).is_empty());
 }
 
 #[test]
 fn malformed_package_names_cannot_match_even_an_identical_prefix() {
     let mut file = File::new();
-    add_type(&mut file, File::ROOT_SCOPE_ID, "Example");
-
-    file.package_name = Name::new(name("p..q"));
-
+    add_type(&mut file, File::ROOT_NODE_ID, "Example");
+    file.package_name = name("p..q");
     assert!(file.find_type(&name("p..q.Example")).is_empty());
 }
 
 #[test]
 fn single_component_packages_are_matched_exactly() {
     let mut file = File::new();
-    file.package_name = Name::new(vec!["p".into()]);
-    let (expected, _) = add_type(&mut file, File::ROOT_SCOPE_ID, "Example");
-
+    file.package_name = name("p");
+    let expected = add_type(&mut file, File::ROOT_NODE_ID, "Example");
     assert_eq!(file.find_type(&name("p.Example"))[0].0, expected);
     for missing in ["Example", "pp.Example", "q.Example", "p"] {
         assert!(file.find_type(&name(missing)).is_empty());
@@ -91,24 +84,22 @@ fn single_component_packages_are_matched_exactly() {
 #[test]
 fn unnamed_packages_have_no_package_prefix() {
     let mut file = File::new();
-    let (outer, body) = add_type(&mut file, File::ROOT_SCOPE_ID, "Outer");
-    let (member, _) = add_type(&mut file, body, "Member");
-
+    let outer = add_type(&mut file, File::ROOT_NODE_ID, "Outer");
+    let member = add_type(&mut file, outer, "Member");
     assert_eq!(file.find_type(&name("Outer"))[0].0, outer);
     assert_eq!(file.find_type(&name("Outer.Member"))[0].0, member);
     assert!(file.find_type(&name("p.Outer")).is_empty());
-    assert!(file.find_type(&[]).is_empty());
+    assert!(file.find_type(&Name::default()).is_empty());
 }
 
 #[test]
 fn duplicate_declarations_remain_distinct_at_every_depth() {
     let mut file = File::new();
-    let (first, first_body) = add_type(&mut file, File::ROOT_SCOPE_ID, "Outer");
-    let (second, second_body) = add_type(&mut file, File::ROOT_SCOPE_ID, "Outer");
-    let (first_member, _) = add_type(&mut file, first_body, "Member");
-    let (duplicate_member, _) = add_type(&mut file, first_body, "Member");
-    let (second_member, _) = add_type(&mut file, second_body, "Member");
-
+    let first = add_type(&mut file, File::ROOT_NODE_ID, "Outer");
+    let second = add_type(&mut file, File::ROOT_NODE_ID, "Outer");
+    let first_member = add_type(&mut file, first, "Member");
+    let duplicate_member = add_type(&mut file, first, "Member");
+    let second_member = add_type(&mut file, second, "Member");
     let outer_indices: Vec<_> = file
         .find_type(&name("Outer"))
         .iter()
@@ -129,8 +120,8 @@ fn duplicate_declarations_remain_distinct_at_every_depth() {
 #[test]
 fn inherited_members_are_not_part_of_the_subclass_canonical_path() {
     let mut file = File::new();
-    let (_, base_body) = add_type(&mut file, File::ROOT_SCOPE_ID, "Base");
-    let (member, _) = add_type(&mut file, base_body, "Member");
+    let base = add_type(&mut file, File::ROOT_NODE_ID, "Base");
+    let member = add_type(&mut file, base, "Member");
     let mut subclass = TypeDeclaration::new(Kind::Class);
     subclass.name = Some("Subclass".into());
     subclass.declared_superclass = Some(TypeRef::Named {
@@ -139,8 +130,7 @@ fn inherited_members_are_not_part_of_the_subclass_canonical_path() {
             bounds: vec![],
         }],
     });
-    file.add_declaration(File::ROOT_SCOPE_ID, Declaration::Type(subclass));
-
+    file.add_node(File::ROOT_NODE_ID, NodeKind::Type(subclass));
     assert_eq!(file.find_type(&name("Base.Member"))[0].0, member);
     assert!(file.find_type(&name("Subclass.Member")).is_empty());
 }
@@ -148,34 +138,28 @@ fn inherited_members_are_not_part_of_the_subclass_canonical_path() {
 #[test]
 fn capitalization_does_not_determine_the_package_boundary() {
     let mut file = File::new();
-    file.package_name = Name::new(name("a.B"));
-    let (_, body) = add_type(&mut file, File::ROOT_SCOPE_ID, "c");
-    let (expected, _) = add_type(&mut file, body, "d");
-
+    file.package_name = name("a.B");
+    let outer = add_type(&mut file, File::ROOT_NODE_ID, "c");
+    let expected = add_type(&mut file, outer, "d");
     assert_eq!(file.find_type(&name("a.B.c.d"))[0].0, expected);
 }
 
 #[test]
 fn non_type_and_unnamed_declarations_do_not_match() {
     let mut file = File::new();
-    file.add_declaration(
-        File::ROOT_SCOPE_ID,
-        Declaration::Field(FieldDeclaration {
+    file.add_node(
+        File::ROOT_NODE_ID,
+        NodeKind::Field(FieldDeclaration {
             name: "Field".into(),
             declared_type: TypeRef::Primitive(PrimitiveType::Int),
         }),
     );
-    let anonymous = file.add_declaration(
-        File::ROOT_SCOPE_ID,
-        Declaration::Type(TypeDeclaration::new(Kind::Class)),
+    let anonymous = file.add_node(
+        File::ROOT_NODE_ID,
+        NodeKind::Type(TypeDeclaration::new(Kind::Class)),
     );
-    let body = file.new_child_scope(
-        File::ROOT_SCOPE_ID,
-        ScopeKind::TypeBody { owner: anonymous },
-    );
-    add_type(&mut file, body, "Hidden");
-    add_type(&mut file, File::ROOT_SCOPE_ID, "");
-
+    add_type(&mut file, anonymous, "Hidden");
+    add_type(&mut file, File::ROOT_NODE_ID, "");
     for missing in ["Field", "Hidden", "", ".Hidden"] {
         assert!(file.find_type(&name(missing)).is_empty());
     }
@@ -184,7 +168,7 @@ fn non_type_and_unnamed_declarations_do_not_match() {
 #[test]
 fn discovery_includes_inaccessible_types_of_every_kind() {
     let mut file = File::new();
-    let (_, body) = add_type(&mut file, File::ROOT_SCOPE_ID, "Outer");
+    let outer = add_type(&mut file, File::ROOT_NODE_ID, "Outer");
     for (kind, name) in [
         (Kind::Class, "MemberClass"),
         (Kind::Interface, "MemberInterface"),
@@ -195,9 +179,21 @@ fn discovery_includes_inaccessible_types_of_every_kind() {
         let mut declaration = TypeDeclaration::new(kind);
         declaration.name = Some(name.into());
         declaration.access.push(AccessLevel::Private);
-        let expected = file.add_declaration(body, Declaration::Type(declaration));
-        let found = file.find_type(&["Outer".into(), name.into()]);
+        let expected = file.add_node(outer, NodeKind::Type(declaration));
+        let found = file.find_type(&Name::new(vec!["Outer".into(), name.into()]));
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].0, expected);
+    }
+}
+
+#[test]
+fn block_contained_types_and_their_members_have_no_canonical_path() {
+    let mut file = File::new();
+    let outer = add_type(&mut file, File::ROOT_NODE_ID, "Outer");
+    let block = file.add_node(outer, NodeKind::Block);
+    let local = add_type(&mut file, block, "Local");
+    add_type(&mut file, local, "Member");
+    for missing in ["Local", "Outer.Local", "Outer.Local.Member"] {
+        assert!(file.find_type(&name(missing)).is_empty());
     }
 }

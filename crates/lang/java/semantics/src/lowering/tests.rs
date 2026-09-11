@@ -1,35 +1,32 @@
 use beans_lang_java_model::{
-    File, ScopeEntry,
-    declarations::{Declaration, DeclarationIndex, types::TypeDeclaration},
+    File,
+    nodes::{NodeIndex, NodeKind, types::TypeDeclaration},
     references::{TypeNameComponent, TypeRef},
-    scopes::{Scope, ScopeIndex, ScopeKind},
 };
 
-struct ScopedTypeDeclaration<'a> {
-    declaring_scope_id: ScopeIndex,
-    declaring_scope: &'a Scope,
-    declaration_id: DeclarationIndex,
+struct TypeEntry<'a> {
+    parent: NodeIndex,
+    index: NodeIndex,
     declaration: &'a TypeDeclaration,
 }
 
-fn find_type_declarations<'a>(file: &'a File, name: &str) -> Vec<ScopedTypeDeclaration<'a>> {
-    file.iter_declarations()
+fn find_type_declarations<'a>(file: &'a File, name: &str) -> Vec<TypeEntry<'a>> {
+    file.iter_nodes()
         .filter_map(|entry| {
-            let Declaration::Type(declaration) = entry.declaration else {
+            let NodeKind::Type(declaration) = entry.node.kind() else {
                 return None;
             };
 
-            (declaration.name.as_deref() == Some(name)).then_some(ScopedTypeDeclaration {
-                declaring_scope_id: entry.scope_index,
-                declaring_scope: entry.scope,
-                declaration_id: entry.declaration_index,
+            (declaration.name.as_deref() == Some(name)).then_some(TypeEntry {
+                parent: entry.node.parent().expect("type has a parent"),
+                index: entry.index,
                 declaration,
             })
         })
         .collect()
 }
 
-fn find_type_declaration<'a>(file: &'a File, name: &str) -> ScopedTypeDeclaration<'a> {
+fn find_type_declaration<'a>(file: &'a File, name: &str) -> TypeEntry<'a> {
     let mut findings = find_type_declarations(file, name);
 
     match findings.len() {
@@ -37,18 +34,6 @@ fn find_type_declaration<'a>(file: &'a File, name: &str) -> ScopedTypeDeclaratio
         0 => panic!("expected one type declaration named `{name}`, found none"),
         count => panic!("expected one type declaration named `{name}`, found {count}"),
     }
-}
-
-fn find_type_body_scope(file: &File, declaration_id: DeclarationIndex) -> ScopeEntry<'_> {
-    let mut findings = file.iter_scopes().filter(|entry| {
-        entry.scope.kind()
-            == ScopeKind::TypeBody {
-                owner: declaration_id,
-            }
-    });
-    let scope = findings.next().expect("expected a type body scope");
-    assert!(findings.next().is_none(), "expected one type body scope");
-    scope
 }
 
 fn raw_type(names: &[&str]) -> TypeRef {
@@ -86,7 +71,7 @@ fn named_segment(reference: &TypeRef) -> &TypeNameComponent {
 mod compilation_units;
 mod fields;
 mod imports;
-mod scopes;
+mod nodes;
 mod type_declarations;
 mod type_parameters;
 mod type_references;

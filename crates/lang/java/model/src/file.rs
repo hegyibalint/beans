@@ -1,8 +1,7 @@
 use crate::{
-    declarations::{self, Declaration, DeclarationIndex, types::TypeDeclaration},
-    imports,
+    imports::Import,
     names::Name,
-    scopes::{self, ScopeIndex, ScopeKind},
+    nodes::{Node, NodeIndex, NodeKind, types::TypeDeclaration},
 };
 
 /// Represents a whole `.java` file.
@@ -10,182 +9,111 @@ use crate::{
 pub struct File {
     /// Package components; empty for the unnamed package (JLS §7.4.2).
     pub package_name: Name,
-    pub imports: Vec<imports::Import>,
-
-    declarations: Vec<declarations::Declaration>,
-    scopes: Vec<scopes::Scope>,
+    pub imports: Vec<Import>,
+    nodes: Vec<Node>,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ScopeEntry<'a> {
-    pub scope_index: ScopeIndex,
-    pub scope: &'a scopes::Scope,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct DeclarationEntry<'a> {
-    pub scope_index: ScopeIndex,
-    pub scope: &'a scopes::Scope,
-    pub declaration_index: declarations::DeclarationIndex,
-    pub declaration: &'a declarations::Declaration,
+pub struct NodeEntry<'a> {
+    pub index: NodeIndex,
+    pub node: &'a Node,
 }
 
 impl File {
-    pub const ROOT_SCOPE_ID: ScopeIndex = ScopeIndex::new(0);
+    pub const ROOT_NODE_ID: NodeIndex = NodeIndex::new(0);
 
-    pub fn new() -> File {
+    pub fn new() -> Self {
         Self {
             package_name: Name::default(),
             imports: Vec::new(),
-
-            declarations: Vec::new(),
-            scopes: vec![scopes::Scope::new(ScopeKind::CompilationUnit, None)],
+            nodes: vec![Node::new(None, NodeKind::CompilationUnit)],
         }
     }
 
-    pub fn scope(&self, index: ScopeIndex) -> Option<&scopes::Scope> {
-        self.scopes.get(index.as_usize())
+    pub fn node(&self, index: NodeIndex) -> Option<&Node> {
+        self.nodes.get(index.as_usize())
     }
 
-    pub fn declaration(
-        &self,
-        index: declarations::DeclarationIndex,
-    ) -> Option<&declarations::Declaration> {
-        self.declarations.get(index.as_usize())
-    }
-
-    pub fn iter_scopes(&self) -> impl Iterator<Item = ScopeEntry<'_>> + '_ {
-        self.scopes.iter().enumerate().map(|entry| ScopeEntry {
-            scope_index: ScopeIndex::new(entry.0),
-            scope: entry.1,
-        })
-    }
-
-    pub fn iter_scopes_from(
-        &self,
-        scope_index: ScopeIndex,
-    ) -> impl Iterator<Item = ScopeEntry<'_>> + '_ {
-        std::iter::successors(Some(scope_index), |&index| {
-            self.scope(index)
-                .expect("invalid scope index")
-                .parent_scope()
-        })
-        .map(move |index| ScopeEntry {
-            scope_index: index,
-            scope: self.scope(index).expect("invalid scope index"),
-        })
-    }
-
-    pub fn iter_declarations(&self) -> impl Iterator<Item = DeclarationEntry<'_>> + '_ {
-        self.iter_scopes()
-            .flat_map(move |entry| self.iter_declarations_in_scope(entry.scope_index))
-    }
-
-    pub fn iter_declarations_from(
-        &self,
-        scope_index: ScopeIndex,
-    ) -> impl Iterator<Item = DeclarationEntry<'_>> + '_ {
-        self.iter_scopes_from(scope_index)
-            .flat_map(move |entry| self.iter_declarations_in_scope(entry.scope_index))
-    }
-
-    pub fn iter_declarations_in_scope(
-        &self,
-        scope_index: ScopeIndex,
-    ) -> impl Iterator<Item = DeclarationEntry<'_>> + '_ {
-        let scope = self.scope(scope_index).expect("invalid scope index");
-        scope
-            .iter_declaration_indices()
-            .map(move |entry| DeclarationEntry {
-                scope_index,
-                scope,
-                declaration_index: entry,
-                declaration: self
-                    .declaration(entry)
-                    .expect("scope contains an invalid declaration index"),
+    pub fn iter_nodes(&self) -> impl Iterator<Item = NodeEntry<'_>> + '_ {
+        self.nodes
+            .iter()
+            .enumerate()
+            .map(|(index, node)| NodeEntry {
+                index: NodeIndex::new(index),
+                node,
             })
     }
 
-    pub fn add_declaration(
-        &mut self,
-        scope: ScopeIndex,
-        declaration: declarations::Declaration,
-    ) -> declarations::DeclarationIndex {
-        let scope_index = scope.as_usize();
-        assert!(scope_index < self.scopes.len(), "invalid scope index");
-
-        let declaration_index = declarations::DeclarationIndex::new(self.declarations.len());
-        self.declarations.push(declaration);
-        self.scopes[scope_index].add_declaration(declaration_index);
-        declaration_index
+    /// Walks containment ancestors, including the starting node and compilation unit.
+    /// Containment alone does not determine visibility (JLS §6.3).
+    pub fn iter_ancestors(&self, index: NodeIndex) -> impl Iterator<Item = NodeEntry<'_>> + '_ {
+        std::iter::successors(Some(index), |&index| {
+            self.node(index).expect("invalid node index").parent()
+        })
+        .map(move |index| NodeEntry {
+            index,
+            node: self.node(index).expect("invalid node index"),
+        })
     }
 
-    pub fn new_child_scope(
-        &mut self,
-        parent_scope: ScopeIndex,
-        kind: ScopeKind,
-    ) -> scopes::ScopeIndex {
-        let parent_index = parent_scope.as_usize();
+    pub fn iter_children(&self, parent: NodeIndex) -> impl Iterator<Item = NodeEntry<'_>> + '_ {
+        self.node(parent)
+            .expect("invalid parent node index")
+            .iter_children()
+            .map(move |index| NodeEntry {
+                index,
+                node: self.node(index).expect("invalid child node index"),
+            })
+    }
+
+    pub fn add_node(&mut self, parent: NodeIndex, kind: NodeKind) -> NodeIndex {
         assert!(
-            parent_index < self.scopes.len(),
-            "invalid parent scope index"
+            parent.as_usize() < self.nodes.len(),
+            "invalid parent node index"
+        );
+        assert!(
+            !matches!(kind, NodeKind::CompilationUnit),
+            "compilation unit must be the root"
         );
 
-        let index = ScopeIndex::new(self.scopes.len());
-        self.scopes
-            .push(scopes::Scope::new(kind, Some(parent_scope)));
-        self.scopes[parent_index].add_child_scope(index);
+        let index = NodeIndex::new(self.nodes.len());
+        self.nodes.push(Node::new(Some(parent), kind));
+        self.nodes[parent.as_usize()].add_child(index);
         index
     }
 
     /// Finds declarations by canonical name (JLS §6.7), retaining duplicate declarations.
     /// Follows declared members only; does not check accessibility or search inherited members.
-    pub fn find_type(&self, name: &[String]) -> Vec<(DeclarationIndex, &TypeDeclaration)> {
-        if !self.package_name.is_valid() {
-            return Vec::new();
-        }
-        if name.is_empty() || name.iter().any(|component| component.is_empty()) {
+    pub fn find_type(&self, name: &Name) -> Vec<(NodeIndex, &TypeDeclaration)> {
+        if !self.package_name.is_valid() || !name.is_valid() {
             return Vec::new();
         }
 
-        let Some(type_path) = name.strip_prefix(self.package_name.as_slice()) else {
+        let Some(type_path) = name.as_slice().strip_prefix(self.package_name.as_slice()) else {
             return Vec::new();
         };
 
-        let mut search_scopes = vec![Self::ROOT_SCOPE_ID];
+        let mut parents = vec![Self::ROOT_NODE_ID];
         let mut matches = Vec::new();
 
         for component in type_path {
             matches.clear();
-            let mut member_scopes = Vec::new();
-
-            for scope_index in search_scopes {
-                for entry in self.iter_declarations_in_scope(scope_index) {
-                    let Declaration::Type(declaration) = entry.declaration else {
+            let mut next_parents = Vec::new();
+            for parent in parents {
+                for entry in self.iter_children(parent) {
+                    let NodeKind::Type(declaration) = entry.node.kind() else {
                         continue;
                     };
-                    if declaration.name.as_ref() != Some(component) {
-                        continue;
-                    }
-
-                    matches.push((entry.declaration_index, declaration));
-
-                    let body_kind = ScopeKind::TypeBody {
-                        owner: entry.declaration_index,
-                    };
-                    for child_index in entry.scope.iter_child_scopes() {
-                        let child = self.scope(child_index).expect("invalid child scope index");
-                        if child.kind() == body_kind {
-                            member_scopes.push(child_index);
-                        }
+                    if declaration.name.as_ref() == Some(component) {
+                        matches.push((entry.index, declaration));
+                        next_parents.push(entry.index);
                     }
                 }
             }
-
             if matches.is_empty() {
                 return matches;
             }
-            search_scopes = member_scopes;
+            parents = next_parents;
         }
 
         matches

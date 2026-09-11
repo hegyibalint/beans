@@ -2,60 +2,56 @@ use super::super::{ResolutionInstance, ResolutionResult, Resolver};
 use crate::query::JavaQuery;
 use beans_core_engine::{Revision, storage::RevisionedStorage};
 use beans_lang_java_model::{
-    File, ScopeEntry,
-    declarations::{
-        Declaration,
+    File, NodeEntry,
+    nodes::{
+        NodeKind,
         types::{Kind, TypeDeclaration},
     },
     references::TypeRef,
-    scopes::ScopeKind,
 };
 
 fn run_stages(
-    stages: &[fn(&ResolutionInstance<'_>, ScopeEntry<'_>, &str) -> ResolutionResult],
+    stages: &[fn(&ResolutionInstance<'_>, NodeEntry<'_>, &str) -> ResolutionResult],
 ) -> ResolutionResult {
     let mut file = File::new();
-    let owner = file.add_declaration(
-        File::ROOT_SCOPE_ID,
-        Declaration::Type(TypeDeclaration::new(Kind::Class)),
+    let owner = file.add_node(
+        File::ROOT_NODE_ID,
+        NodeKind::Type(TypeDeclaration::new(Kind::Class)),
     );
-    let occurrence_scope = file.new_child_scope(File::ROOT_SCOPE_ID, ScopeKind::TypeBody { owner });
     let resolver = Resolver {};
     let classpath = beans_core_model::classpath::Classpath::default();
     let files = RevisionedStorage::default();
     let query = JavaQuery::new(&files, Revision::default(), &classpath);
     let type_ref = TypeRef::Void;
-    let instance =
-        ResolutionInstance::new(&resolver, &file, occurrence_scope, &type_ref, &query);
-    let entry = file.iter_scopes_from(File::ROOT_SCOPE_ID).next().unwrap();
-
+    let instance = ResolutionInstance::new(&resolver, &file, owner, &type_ref, &query);
+    let entry = file.iter_ancestors(File::ROOT_NODE_ID).next().unwrap();
     instance.find_first(entry, "A", stages)
 }
 
-fn not_found(_: &ResolutionInstance<'_>, _: ScopeEntry<'_>, _: &str) -> ResolutionResult {
+fn not_found(_: &ResolutionInstance<'_>, _: NodeEntry<'_>, _: &str) -> ResolutionResult {
     ResolutionResult::NotFound
 }
 
 fn resolved(
     instance: &ResolutionInstance<'_>,
-    entry: ScopeEntry<'_>,
+    entry: NodeEntry<'_>,
     name: &str,
 ) -> ResolutionResult {
-    assert_eq!(entry.scope_index, File::ROOT_SCOPE_ID);
-    assert_ne!(entry.scope_index, instance.scope_index);
+    assert_eq!(entry.index, File::ROOT_NODE_ID);
+    assert_ne!(entry.index, instance.node_index);
     assert!(std::ptr::eq(
-        entry.scope,
-        instance.file.scope(File::ROOT_SCOPE_ID).unwrap()
+        entry.node,
+        instance.file.node(File::ROOT_NODE_ID).unwrap()
     ));
     assert_eq!(name, "A");
     ResolutionResult::Resolved
 }
 
-fn ambiguous(_: &ResolutionInstance<'_>, _: ScopeEntry<'_>, _: &str) -> ResolutionResult {
+fn ambiguous(_: &ResolutionInstance<'_>, _: NodeEntry<'_>, _: &str) -> ResolutionResult {
     ResolutionResult::Ambigous
 }
 
-fn must_not_run(_: &ResolutionInstance<'_>, _: ScopeEntry<'_>, _: &str) -> ResolutionResult {
+fn must_not_run(_: &ResolutionInstance<'_>, _: NodeEntry<'_>, _: &str) -> ResolutionResult {
     panic!("lookup should have stopped before this stage")
 }
 

@@ -22,13 +22,12 @@ use std::{
 
 use beans_lang_java_model::{
     File,
-    declarations::{
-        Declaration, DeclarationIndex,
+    imports::Import,
+    nodes::{
+        NodeIndex, NodeKind,
         types::{AccessLevel, Kind, Modifier, TypeDeclaration},
     },
-    imports::Import,
     references::{PrimitiveType, TypeBound, TypeNameComponent, TypeRef},
-    scopes::{ScopeIndex, ScopeKind},
 };
 use beans_lang_java_semantics::lower_into;
 use tree_sitter::{Node, Parser};
@@ -156,56 +155,7 @@ fn write_node(node: Node<'_>, field: Option<&str>, depth: usize, output: &mut St
     writeln!(output, "{indentation})").expect("writing to a string cannot fail");
 }
 
-struct InspectionIds {
-    scopes: HashMap<ScopeIndex, usize>,
-    declarations: HashMap<DeclarationIndex, usize>,
-}
-
-impl InspectionIds {
-    fn new(file: &File) -> Self {
-        let scopes = file
-            .iter_scopes()
-            .enumerate()
-            .map(|entry| {
-                let (number, scope_entry) = entry;
-                (scope_entry.scope_index, number)
-            })
-            .collect();
-        let mut declarations = HashMap::new();
-        assign_declaration_ids(file, File::ROOT_SCOPE_ID, &mut declarations);
-
-        Self {
-            scopes,
-            declarations,
-        }
-    }
-
-    fn scope_number(&self, index: ScopeIndex) -> usize {
-        *self.scopes.get(&index).expect("scope is in the file")
-    }
-
-    fn declaration_number(&self, index: DeclarationIndex) -> usize {
-        *self
-            .declarations
-            .get(&index)
-            .expect("declaration is in the file")
-    }
-}
-
-fn assign_declaration_ids(
-    file: &File,
-    scope_index: ScopeIndex,
-    ids: &mut HashMap<DeclarationIndex, usize>,
-) {
-    for entry in file.iter_declarations_in_scope(scope_index) {
-        let next = ids.len();
-        ids.entry(entry.declaration_index).or_insert(next);
-
-        if let Some(body) = body_scope(file, scope_index, entry.declaration_index) {
-            assign_declaration_ids(file, body, ids);
-        }
-    }
-}
+type InspectionIds = HashMap<NodeIndex, usize>;
 
 #[derive(Clone, Copy)]
 struct Styling {
@@ -226,45 +176,42 @@ impl Styling {
     }
 }
 
-fn scope_id(index: ScopeIndex, ids: &InspectionIds, styling: Styling) -> String {
-    styling.color(format_args!("S{}", ids.scope_number(index)), 36)
-}
-
-fn declaration_id(index: DeclarationIndex, ids: &InspectionIds, styling: Styling) -> String {
-    styling.color(format_args!("D{}", ids.declaration_number(index)), 33)
+fn node_id(index: NodeIndex, ids: &InspectionIds, styling: Styling) -> String {
+    styling.color(format_args!("N{}", ids[&index]), 36)
 }
 
 fn pretty_model(file: &File, styling: Styling) -> String {
-    let ids = InspectionIds::new(file);
+    let ids = file
+        .iter_nodes()
+        .enumerate()
+        .map(|(number, entry)| (entry.index, number))
+        .collect();
     let mut output = String::new();
-
-    write_scope_structure(file, File::ROOT_SCOPE_ID, 0, &ids, styling, &mut output);
+    write_node_structure(file, File::ROOT_NODE_ID, 0, &ids, styling, &mut output);
     output
 }
 
-fn write_scope_structure(
+fn write_node_structure(
     file: &File,
-    index: ScopeIndex,
+    index: NodeIndex,
     depth: usize,
     ids: &InspectionIds,
     styling: Styling,
     output: &mut String,
 ) {
-    let scope = file
-        .scope(index)
-        .expect("the scope index came from the file");
+    let node = file.node(index).expect("the node index came from the file");
     let indentation = "    ".repeat(depth);
     let child_indentation = "    ".repeat(depth + 1);
+    writeln!(
+        output,
+        "{indentation}{}: {}",
+        node_id(index, ids, styling),
+        node_header(node.kind())
+    )
+    .expect("writing to a string cannot fail");
 
-    match scope.kind() {
-        ScopeKind::CompilationUnit => {
-            writeln!(
-                output,
-                "{indentation}{}: compilation unit",
-                scope_id(index, ids, styling)
-            )
-            .expect("writing to a string cannot fail");
-
+    match node.kind() {
+        NodeKind::CompilationUnit => {
             if !file.package_name.is_empty() {
                 writeln!(output, "{child_indentation}package: {}", file.package_name)
                     .expect("writing to a string cannot fail");
@@ -274,56 +221,24 @@ fn write_scope_structure(
                     .expect("writing to a string cannot fail");
             }
         }
-        ScopeKind::TypeBody { owner } => {
-            let owner_name = match file.declaration(owner) {
-                Some(Declaration::Type(declaration)) => {
-                    declaration.name.as_deref().unwrap_or("<unnamed>")
-                }
-                _ => "<invalid owner>",
-            };
-            writeln!(
-                output,
-                "{indentation}{}: type body of {} {owner_name}",
-                scope_id(index, ids, styling),
-                declaration_id(owner, ids, styling)
-            )
-            .expect("writing to a string cannot fail");
-        }
+        NodeKind::Type(declaration) => write_type_relationships(declaration, depth + 1, output),
+        _ => {}
     }
 
-    for entry in file.iter_declarations_in_scope(index) {
-        writeln!(
-            output,
-            "{child_indentation}{}: {}",
-            declaration_id(entry.declaration_index, ids, styling),
-            declaration_header(entry.declaration)
-        )
-        .expect("writing to a string cannot fail");
-
-        if let Declaration::Type(type_declaration) = entry.declaration {
-            write_type_relationships(type_declaration, depth + 2, output);
-        }
-    }
-
-    for child in scope.iter_child_scopes() {
-        write_scope_structure(file, child, depth + 1, ids, styling, output);
+    for child in node.iter_children() {
+        write_node_structure(file, child, depth + 1, ids, styling, output);
     }
 }
 
-fn body_scope(file: &File, parent: ScopeIndex, owner: DeclarationIndex) -> Option<ScopeIndex> {
-    file.scope(parent)?.iter_child_scopes().find(|child| {
-        matches!(
-            file.scope(*child).map(|scope| scope.kind()),
-            Some(ScopeKind::TypeBody { owner: child_owner }) if child_owner == owner
-        )
-    })
-}
-
-fn declaration_header(declaration: &Declaration) -> String {
-    match declaration {
-        Declaration::Type(declaration) => type_declaration_header(declaration),
-        Declaration::Field(_) => "field".to_owned(),
-        Declaration::Method(_) => "method".to_owned(),
+fn node_header(kind: &NodeKind) -> String {
+    match kind {
+        NodeKind::CompilationUnit => "compilation unit".to_owned(),
+        NodeKind::Type(declaration) => type_declaration_header(declaration),
+        NodeKind::Field(field) => {
+            format!("field {}: {}", field.name, type_ref(&field.declared_type))
+        }
+        NodeKind::Method(_) => "method".to_owned(),
+        NodeKind::Block => "block".to_owned(),
     }
 }
 
@@ -366,7 +281,7 @@ fn type_declaration_header(declaration: &TypeDeclaration) -> String {
 }
 
 fn write_type_relationships(declaration: &TypeDeclaration, depth: usize, output: &mut String) {
-    let indentation = "  ".repeat(depth);
+    let indentation = "    ".repeat(depth);
 
     if let Some(superclass) = &declaration.declared_superclass {
         writeln!(output, "{indentation}extends {}", type_ref(superclass))

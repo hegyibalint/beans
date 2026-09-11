@@ -1,15 +1,14 @@
 use crate::parser;
 use beans_lang_java_model::{
     File,
-    declarations::{
-        Declaration, DeclarationIndex,
+    imports::{Import, ImportType},
+    names::Name,
+    nodes::{
+        NodeIndex, NodeKind,
         fields::FieldDeclaration,
         types::{AccessLevel, Kind as TypeKind, Modifier, TypeDeclaration, TypeParameter},
     },
-    imports::{Import, ImportType},
-    names::Name,
     references::{PrimitiveType, TypeBound, TypeNameComponent, TypeRef},
-    scopes::{ScopeIndex, ScopeKind},
 };
 use tree_sitter::Node;
 
@@ -39,7 +38,7 @@ pub fn lower_into(content: &str) -> File {
             | "enum_declaration"
             | "record_declaration"
             | "annotation_type_declaration" => {
-                let _ = lower_type_declaration(content, node, File::ROOT_SCOPE_ID, &mut file);
+                let _ = lower_type_declaration(content, node, File::ROOT_NODE_ID, &mut file);
             }
 
             _ => {}
@@ -52,9 +51,9 @@ pub fn lower_into(content: &str) -> File {
 fn lower_type_declaration(
     content: &str,
     node: Node,
-    current_scope: ScopeIndex,
+    parent: NodeIndex,
     file: &mut File,
-) -> Option<DeclarationIndex> {
+) -> Option<NodeIndex> {
     debug_assert!(
         matches!(
             node.kind(),
@@ -112,18 +111,16 @@ fn lower_type_declaration(
         }
     }
 
-    let declaration = file.add_declaration(current_scope, Declaration::Type(declaration));
-    let body_scope =
-        file.new_child_scope(current_scope, ScopeKind::TypeBody { owner: declaration });
+    let declaration = file.add_node(parent, NodeKind::Type(declaration));
 
     if let Some(body) = body {
-        lower_type_body(content, body, body_scope, file);
+        lower_type_body(content, body, declaration, file);
     }
 
     Some(declaration)
 }
 
-fn lower_type_body(content: &str, node: Node, current_scope: ScopeIndex, file: &mut File) {
+fn lower_type_body(content: &str, node: Node, parent: NodeIndex, file: &mut File) {
     let mut cursor = node.walk();
 
     for child in node.named_children(&mut cursor) {
@@ -133,16 +130,16 @@ fn lower_type_body(content: &str, node: Node, current_scope: ScopeIndex, file: &
             | "enum_declaration"
             | "record_declaration"
             | "annotation_type_declaration" => {
-                let _ = lower_type_declaration(content, child, current_scope, file);
+                let _ = lower_type_declaration(content, child, parent, file);
             }
-            "enum_body_declarations" => lower_type_body(content, child, current_scope, file),
-            "field_declaration" => lower_field_declaration(content, child, current_scope, file),
+            "enum_body_declarations" => lower_type_body(content, child, parent, file),
+            "field_declaration" => lower_field_declaration(content, child, parent, file),
             _ => {}
         }
     }
 }
 
-fn lower_field_declaration(content: &str, node: Node, current_scope: ScopeIndex, file: &mut File) {
+fn lower_field_declaration(content: &str, node: Node, parent: NodeIndex, file: &mut File) {
     debug_assert_eq!(node.kind(), "field_declaration");
 
     let Some(declared_type) = node
@@ -165,9 +162,9 @@ fn lower_field_declaration(content: &str, node: Node, current_scope: ScopeIndex,
             continue;
         };
 
-        file.add_declaration(
-            current_scope,
-            Declaration::Field(FieldDeclaration {
+        file.add_node(
+            parent,
+            NodeKind::Field(FieldDeclaration {
                 name,
                 declared_type: declared_type.clone(),
             }),

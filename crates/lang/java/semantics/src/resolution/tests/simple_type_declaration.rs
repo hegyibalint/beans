@@ -1,4 +1,4 @@
-use super::{lookup_field, ResolutionResult};
+use super::{ResolutionResult, lookup_field};
 use beans_lang_java_model::File;
 
 fn lookup(source: &str, name: &str) -> ResolutionResult {
@@ -76,7 +76,7 @@ fn supplied_root_scope_is_searched_instead_of_the_occurrence_scope() {
     let result = lookup_field("class A {} class Outer { int target; }", |instance, _| {
         let root = instance
             .file
-            .iter_scopes_from(File::ROOT_SCOPE_ID)
+            .iter_ancestors(File::ROOT_NODE_ID)
             .next()
             .unwrap();
         instance.lookup_simple_type_declaration(root, "A")

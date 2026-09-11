@@ -1,2 +1,2 @@
 mod discovery;
-mod scopes;
+mod nodes;

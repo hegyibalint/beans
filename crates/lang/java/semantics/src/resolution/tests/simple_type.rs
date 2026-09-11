@@ -1,4 +1,4 @@
-use super::{lookup_field, ResolutionResult};
+use super::{ResolutionResult, lookup_field};
 use crate::resolution::ResolutionInstance;
 use beans_lang_java_model::references::TypeRef;
 
@@ -69,7 +69,7 @@ fn void_and_empty_named_references_do_not_enter_name_lookup() {
             ResolutionInstance::new(
                 instance.resolver,
                 instance.file,
-                instance.scope_index,
+                instance.node_index,
                 &type_ref,
                 instance.query,
             )

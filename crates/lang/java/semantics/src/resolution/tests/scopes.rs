@@ -1,4 +1,4 @@
-use super::{lookup_field, ResolutionResult};
+use super::{ResolutionResult, lookup_field};
 
 fn resolve(source: &str) -> ResolutionResult {
     lookup_field(source, |instance, _| instance.resolve())
@@ -51,7 +51,7 @@ fn public_resolver_forwards_the_occurrence_context() {
         |instance, _| {
             instance.resolver.resolve(
                 instance.file,
-                instance.scope_index,
+                instance.node_index,
                 instance.type_ref,
                 instance.query,
             )

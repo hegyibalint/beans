@@ -1,8 +1,11 @@
 use super::{find_type_declaration, find_type_declarations, raw_type};
 use crate::lower_into;
-use beans_lang_java_model::declarations::{
-    Declaration,
-    types::{AccessLevel, Kind, Modifier},
+use beans_lang_java_model::{
+    File,
+    nodes::{
+        NodeKind,
+        types::{AccessLevel, Kind, Modifier},
+    },
 };
 
 #[test]
@@ -28,9 +31,9 @@ fn two_declarations_preserve_their_names_and_source_order() {
     let file = lower_into("class First {} interface Second {}");
 
     assert_eq!(
-        file.iter_declarations()
+        file.iter_children(File::ROOT_NODE_ID)
             .map(|entry| {
-                let Declaration::Type(declaration) = entry.declaration else {
+                let NodeKind::Type(declaration) = entry.node.kind() else {
                     panic!("expected a type declaration");
                 };
                 declaration.name.as_deref()
@@ -48,15 +51,15 @@ fn duplicate_declaration_names_remain_independently_findable() {
         panic!("expected two declarations named `Duplicate`");
     };
 
-    assert_eq!(first.declaring_scope_id, second.declaring_scope_id);
-    assert_ne!(first.declaration_id, second.declaration_id);
+    assert_eq!(first.parent, second.parent);
+    assert_ne!(first.index, second.index);
     assert!(
-        file.iter_declarations_in_scope(first.declaring_scope_id)
-            .any(|entry| entry.declaration_index == first.declaration_id)
+        file.iter_children(first.parent)
+            .any(|entry| entry.index == first.index)
     );
     assert!(
-        file.iter_declarations_in_scope(second.declaring_scope_id)
-            .any(|entry| entry.declaration_index == second.declaration_id)
+        file.iter_children(second.parent)
+            .any(|entry| entry.index == second.index)
     );
     assert_eq!(first.declaration.kind, Kind::Class);
     assert_eq!(second.declaration.kind, Kind::Interface);

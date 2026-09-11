@@ -1,10 +1,9 @@
 use crate::query::{JavaQuery, JavaTypeEntry};
 use beans_lang_java_model::{
-    self as java_model, ScopeEntry,
-    declarations::{Declaration::Type, types::AccessLevel},
+    self as java_model, NodeEntry,
     imports::ImportType,
+    nodes::{NodeIndex, NodeKind::Type, types::AccessLevel},
     references::{TypeNameComponent, TypeRef},
-    scopes::{ScopeIndex, ScopeKind},
 };
 
 /// The answer to what a `TypeRef` actually responds to, given the classpath
@@ -40,18 +39,18 @@ impl Resolver {
     pub fn resolve(
         &self,
         file: &java_model::File,
-        scope_index: ScopeIndex,
+        node_index: NodeIndex,
         type_ref: &TypeRef,
         query: &JavaQuery<'_>,
     ) -> ResolutionResult {
-        ResolutionInstance::new(self, file, scope_index, type_ref, query).resolve()
+        ResolutionInstance::new(self, file, node_index, type_ref, query).resolve()
     }
 }
 
 struct ResolutionInstance<'a> {
     resolver: &'a Resolver,
     file: &'a java_model::File,
-    scope_index: ScopeIndex,
+    node_index: NodeIndex,
     type_ref: &'a TypeRef,
     query: &'a JavaQuery<'a>,
 }
@@ -60,21 +59,21 @@ impl<'a> ResolutionInstance<'a> {
     fn new(
         resolver: &'a Resolver,
         file: &'a java_model::File,
-        scope_index: ScopeIndex,
+        node_index: NodeIndex,
         type_ref: &'a TypeRef,
         query: &'a JavaQuery<'a>,
     ) -> Self {
         Self {
             resolver,
             file,
-            scope_index,
+            node_index,
             type_ref,
             query,
         }
     }
 
     fn resolve(&self) -> ResolutionResult {
-        for entry in self.file.iter_scopes_from(self.scope_index) {
+        for entry in self.file.iter_ancestors(self.node_index) {
             let result = self.lookup_simple_type(entry);
 
             match result {
@@ -92,7 +91,7 @@ impl<'a> ResolutionInstance<'a> {
     }
 
     /// JLS §6.3, §6.4.1, §6.5.5.1.
-    fn lookup_simple_type(&self, entry: ScopeEntry<'_>) -> ResolutionResult {
+    fn lookup_simple_type(&self, entry: NodeEntry<'_>) -> ResolutionResult {
         // Not a name, we are not interested
         let TypeRef::Named { segments } = self.type_ref else {
             return ResolutionResult::NotFound;
@@ -113,18 +112,14 @@ impl<'a> ResolutionInstance<'a> {
     }
 
     /// JLS §6.3, §6.4.1.
-    fn lookup_simple_type_declaration(
-        &self,
-        entry: ScopeEntry<'_>,
-        name: &str,
-    ) -> ResolutionResult {
-        let mut matches = self
-            .file
-            .iter_declarations_in_scope(entry.scope_index)
-            .filter_map(|entry| match entry.declaration {
-                Type(typ) if typ.name.as_deref() == Some(name) => Some(typ),
-                _ => None,
-            });
+    fn lookup_simple_type_declaration(&self, entry: NodeEntry<'_>, name: &str) -> ResolutionResult {
+        let mut matches =
+            self.file
+                .iter_children(entry.index)
+                .filter_map(|entry| match entry.node.kind() {
+                    Type(typ) if typ.name.as_deref() == Some(name) => Some(typ),
+                    _ => None,
+                });
 
         match (matches.next(), matches.next()) {
             (None, _) => ResolutionResult::NotFound,
@@ -134,12 +129,9 @@ impl<'a> ResolutionInstance<'a> {
     }
 
     /// JLS §6.3: a class's type parameters are in scope in its own body.
-    fn lookup_simple_type_parameter(&self, entry: ScopeEntry<'_>, name: &str) -> ResolutionResult {
-        let ScopeKind::TypeBody { owner } = entry.scope.kind() else {
+    fn lookup_simple_type_parameter(&self, entry: NodeEntry<'_>, name: &str) -> ResolutionResult {
+        let Type(typ) = entry.node.kind() else {
             return ResolutionResult::NotFound;
-        };
-        let Type(typ) = self.file.declaration(owner).expect("invalid scope owner") else {
-            unreachable!("type-body scope must have a type owner");
         };
 
         match typ.type_parameter_named(name) {
@@ -150,9 +142,9 @@ impl<'a> ResolutionInstance<'a> {
 
     fn find_first(
         &self,
-        entry: ScopeEntry<'_>,
+        entry: NodeEntry<'_>,
         name: &str,
-        stages: &[fn(&Self, ScopeEntry<'_>, &str) -> ResolutionResult],
+        stages: &[fn(&Self, NodeEntry<'_>, &str) -> ResolutionResult],
     ) -> ResolutionResult {
         for lookup in stages {
             match lookup(self, entry, name) {
@@ -185,7 +177,7 @@ impl<'a> ResolutionInstance<'a> {
             // Resolving `Inner` is the returned type's job.
             .filter(|i| i.is_prefix(type_ref))
             // We resolve the typename by looking into the processed symbols
-            .flat_map(|i| self.query.find_type(i.name().as_slice()))
+            .flat_map(|i| self.query.find_type(i.name()))
             .filter(|t| self.is_accessible_top_level_type(t));
 
         let result = Self::select_unique_type(candidates)
@@ -202,8 +194,8 @@ impl<'a> ResolutionInstance<'a> {
     fn is_accessible_top_level_type(&self, target: &JavaTypeEntry<'_>) -> bool {
         let is_top_level = target
             .file
-            .iter_declarations_in_scope(java_model::File::ROOT_SCOPE_ID)
-            .any(|entry| entry.declaration_index == target.declaration_index);
+            .node(target.node_index)
+            .is_some_and(|node| node.parent() == Some(java_model::File::ROOT_NODE_ID));
         if !is_top_level {
             return false;
         }
@@ -222,9 +214,7 @@ impl<'a> ResolutionInstance<'a> {
     ) -> Result<JavaTypeEntry<'a>, TypeLookupError> {
         let first = candidates.next().ok_or(TypeLookupError::NotFound)?;
         for candidate in candidates {
-            if candidate.source != first.source
-                || candidate.declaration_index != first.declaration_index
-            {
+            if candidate.source != first.source || candidate.node_index != first.node_index {
                 return Err(TypeLookupError::Ambiguous);
             }
         }

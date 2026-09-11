@@ -2,14 +2,15 @@ use beans_core_engine::{Revision, storage::RevisionedStorage};
 use beans_core_model::{classpath::Classpath, source::Source};
 use beans_lang_java_model::{
     File,
-    declarations::{DeclarationIndex, types::TypeDeclaration},
+    names::Name,
+    nodes::{NodeIndex, types::TypeDeclaration},
 };
 
 #[derive(Debug, Clone, Copy)]
 pub struct JavaTypeEntry<'a> {
     pub source: &'a Source,
     pub file: &'a File,
-    pub declaration_index: DeclarationIndex,
+    pub node_index: NodeIndex,
     pub declaration: &'a TypeDeclaration,
 }
 
@@ -47,7 +48,7 @@ impl<'a> JavaQuery<'a> {
 
     /// Finds declarations by canonical name (JLS §6.7) in visible source files.
     /// Does not check accessibility or search inherited members.
-    pub fn find_type(&self, name: &[String]) -> Vec<JavaTypeEntry<'a>> {
+    pub fn find_type(&self, name: &Name) -> Vec<JavaTypeEntry<'a>> {
         let mut candidates = Vec::new();
 
         for (source, file) in self.files.iter(self.revision) {
@@ -58,11 +59,11 @@ impl<'a> JavaQuery<'a> {
                 continue;
             }
 
-            for (declaration_index, declaration) in file.find_type(name) {
+            for (node_index, declaration) in file.find_type(name) {
                 candidates.push(JavaTypeEntry {
                     source,
                     file,
-                    declaration_index,
+                    node_index,
                     declaration,
                 });
             }
@@ -75,9 +76,9 @@ impl<'a> JavaQuery<'a> {
 mod tests {
     use super::*;
     use beans_core_model::classpath::ClasspathElement;
-    use beans_lang_java_model::declarations::Declaration;
+    use beans_lang_java_model::nodes::NodeKind;
 
-    fn name(name: &str) -> Vec<String> {
+    fn name(name: &str) -> Name {
         name.split('.').map(str::to_owned).collect()
     }
 
@@ -134,11 +135,7 @@ mod tests {
 
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].source, &source);
-        let Declaration::Type(stored) = found[0]
-            .file
-            .declaration(found[0].declaration_index)
-            .unwrap()
-        else {
+        let NodeKind::Type(stored) = found[0].file.node(found[0].node_index).unwrap().kind() else {
             panic!("expected a type declaration");
         };
         assert!(std::ptr::eq(found[0].declaration, stored));
@@ -205,7 +202,7 @@ mod tests {
 
         assert_eq!(found.len(), 2);
         assert_eq!(found[0].source, found[1].source);
-        assert_ne!(found[0].declaration_index, found[1].declaration_index);
+        assert_ne!(found[0].node_index, found[1].node_index);
     }
 
     #[test]

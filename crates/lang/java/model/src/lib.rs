@@ -1,8 +1,7 @@
-pub mod declarations;
 mod file;
 pub mod imports;
 pub mod names;
+pub mod nodes;
 pub mod references;
-pub mod scopes;
 
-pub use file::{DeclarationEntry, File, ScopeEntry};
+pub use file::{File, NodeEntry};

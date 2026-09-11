@@ -1,4 +1,4 @@
-use super::{lookup_field, ResolutionResult};
+use super::{ResolutionResult, lookup_field};
 use beans_lang_java_model::File;
 
 fn lookup(source: &str, name: &str) -> ResolutionResult {
@@ -63,11 +63,7 @@ fn supplied_owner_is_used_instead_of_the_occurrence_owner() {
     let result = lookup_field(
         "class Outer<A> { class Inner<B> { int target; } }",
         |instance, entry| {
-            let outer = instance
-                .file
-                .iter_scopes_from(entry.scope_index)
-                .nth(1)
-                .unwrap();
+            let outer = instance.file.iter_ancestors(entry.index).nth(1).unwrap();
             instance.lookup_simple_type_parameter(outer, "A")
         },
     );
@@ -80,7 +76,7 @@ fn root_scope_has_no_owner_parameters_even_when_the_occurrence_does() {
     let result = lookup_field("class Outer<A> { int target; }", |instance, _| {
         let root = instance
             .file
-            .iter_scopes_from(File::ROOT_SCOPE_ID)
+            .iter_ancestors(File::ROOT_NODE_ID)
             .next()
             .unwrap();
         instance.lookup_simple_type_parameter(root, "A")

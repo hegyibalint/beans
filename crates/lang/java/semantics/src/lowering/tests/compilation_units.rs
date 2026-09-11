@@ -1,22 +1,17 @@
 use crate::lower_into;
-use beans_lang_java_model::File;
+use beans_lang_java_model::{File, nodes::NodeKind};
 
 #[test]
-fn empty_compilation_unit_has_only_the_root_scope() {
+fn empty_compilation_unit_has_only_the_root_node() {
     let file = lower_into("");
-    let root = file.scope(File::ROOT_SCOPE_ID).unwrap();
+    let root = file.node(File::ROOT_NODE_ID).unwrap();
 
     assert!(file.package_name.is_empty());
     assert!(file.imports.is_empty());
-    assert!(file.iter_declarations().next().is_none());
-    assert_eq!(file.iter_scopes().count(), 1);
-    assert_eq!(root.parent_scope(), None);
-    assert!(root.iter_child_scopes().next().is_none());
-    assert!(
-        file.iter_declarations_in_scope(File::ROOT_SCOPE_ID)
-            .next()
-            .is_none()
-    );
+    assert_eq!(file.iter_nodes().count(), 1);
+    assert!(matches!(root.kind(), NodeKind::CompilationUnit));
+    assert_eq!(root.parent(), None);
+    assert!(root.iter_children().next().is_none());
 }
 
 #[test]

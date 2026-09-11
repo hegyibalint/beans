@@ -9,11 +9,11 @@ mod stages;
 use super::{ResolutionInstance, ResolutionResult, Resolver};
 use crate::query::JavaQuery;
 use beans_core_engine::{Revision, storage::RevisionedStorage};
-use beans_lang_java_model::{declarations::Declaration, ScopeEntry};
+use beans_lang_java_model::{NodeEntry, nodes::NodeKind};
 
 fn lookup_field(
     source: &str,
-    lookup: impl FnOnce(&ResolutionInstance<'_>, ScopeEntry<'_>) -> ResolutionResult,
+    lookup: impl FnOnce(&ResolutionInstance<'_>, NodeEntry<'_>) -> ResolutionResult,
 ) -> ResolutionResult {
     let classpath = beans_core_model::classpath::Classpath::default();
     let files = RevisionedStorage::default();
@@ -24,30 +24,23 @@ fn lookup_field(
 fn lookup_field_with_query(
     source: &str,
     query: &JavaQuery<'_>,
-    lookup: impl FnOnce(&ResolutionInstance<'_>, ScopeEntry<'_>) -> ResolutionResult,
+    lookup: impl FnOnce(&ResolutionInstance<'_>, NodeEntry<'_>) -> ResolutionResult,
 ) -> ResolutionResult {
     let file = crate::lower_into(source);
-    let (entry, field) = file
-        .iter_declarations()
-        .find_map(|entry| match entry.declaration {
-            Declaration::Field(field) if field.name == "target" => Some((
-                ScopeEntry {
-                    scope_index: entry.scope_index,
-                    scope: entry.scope,
-                },
-                field,
-            )),
+    let (parent, field) = file
+        .iter_nodes()
+        .find_map(|entry| match entry.node.kind() {
+            NodeKind::Field(field) if field.name == "target" => {
+                Some((entry.node.parent().unwrap(), field))
+            }
             _ => None,
         })
         .expect("expected target field");
+    let entry = NodeEntry {
+        index: parent,
+        node: file.node(parent).unwrap(),
+    };
     let resolver = Resolver {};
-    let instance = ResolutionInstance::new(
-        &resolver,
-        &file,
-        entry.scope_index,
-        &field.declared_type,
-        query,
-    );
-
+    let instance = ResolutionInstance::new(&resolver, &file, parent, &field.declared_type, query);
     lookup(&instance, entry)
 }
