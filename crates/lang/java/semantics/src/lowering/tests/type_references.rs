@@ -56,9 +56,7 @@ fn zero_one_and_two_type_arguments_are_preserved() {
                 .declared_superinterfaces[0],
         )
         .bounds,
-        [TypeBound::Exact {
-            primary: raw_type(&["Value"]),
-        }]
+        [TypeBound::new_exact(raw_type(&["Value"]))]
     );
     assert_eq!(
         named_segment(
@@ -68,12 +66,8 @@ fn zero_one_and_two_type_arguments_are_preserved() {
         )
         .bounds,
         [
-            TypeBound::Exact {
-                primary: raw_type(&["First"]),
-            },
-            TypeBound::Exact {
-                primary: raw_type(&["Second"]),
-            },
+            TypeBound::new_exact(raw_type(&["First"])),
+            TypeBound::new_exact(raw_type(&["Second"])),
         ]
     );
 }
@@ -89,26 +83,19 @@ fn exact_and_wildcard_type_arguments_are_distinguished() {
 
     assert_eq!(
         first_superinterface_bound(&file, "Exact"),
-        &TypeBound::Exact {
-            primary: raw_type(&["Value"]),
-        }
+        &TypeBound::new_exact(raw_type(&["Value"]))
     );
     assert_eq!(
         first_superinterface_bound(&file, "Upper"),
-        &TypeBound::Extends {
-            primary: raw_type(&["Number"]),
-            additional: vec![],
-        }
+        &TypeBound::new_extends(raw_type(&["Number"]), vec![])
     );
     assert_eq!(
         first_superinterface_bound(&file, "Lower"),
-        &TypeBound::Super {
-            primary: raw_type(&["Number"]),
-        }
+        &TypeBound::new_super(raw_type(&["Number"]))
     );
     assert_eq!(
         first_superinterface_bound(&file, "Any"),
-        &TypeBound::Unbounded
+        &TypeBound::new_unbounded()
     );
 }
 
@@ -126,15 +113,11 @@ fn type_arguments_are_attached_to_their_name_component() {
         [
             TypeNameComponent {
                 name: "Outer".to_owned(),
-                bounds: vec![TypeBound::Exact {
-                    primary: raw_type(&["String"]),
-                }],
+                bounds: vec![TypeBound::new_exact(raw_type(&["String"]))],
             },
             TypeNameComponent {
                 name: "Inner".to_owned(),
-                bounds: vec![TypeBound::Exact {
-                    primary: raw_type(&["Integer"]),
-                }],
+                bounds: vec![TypeBound::new_exact(raw_type(&["Integer"]))],
             },
         ]
     );
@@ -152,19 +135,13 @@ fn nested_type_arguments_preserve_their_shape() {
     assert_eq!(
         segment.bounds,
         [
-            TypeBound::Exact {
-                primary: raw_type(&["String"]),
-            },
-            TypeBound::Exact {
-                primary: TypeRef::Named {
-                    segments: vec![TypeNameComponent {
-                        name: "List".to_owned(),
-                        bounds: vec![TypeBound::Exact {
-                            primary: raw_type(&["Integer"]),
-                        }],
-                    }],
-                },
-            },
+            TypeBound::new_exact(raw_type(&["String"])),
+            TypeBound::new_exact(TypeRef::Named {
+                segments: vec![TypeNameComponent {
+                    name: "List".to_owned(),
+                    bounds: vec![TypeBound::new_exact(raw_type(&["Integer"]))],
+                }],
+            }),
         ]
     );
 }
@@ -178,20 +155,16 @@ fn array_type_arguments_preserve_one_and_two_dimensions() {
 
     assert_eq!(
         first_superinterface_bound(&file, "One"),
-        &TypeBound::Exact {
-            primary: TypeRef::Array {
-                element: Box::new(raw_type(&["String"])),
-                dimensions: 1,
-            },
-        }
+        &TypeBound::new_exact(TypeRef::Array {
+            element: Box::new(raw_type(&["String"])),
+            dimensions: 1,
+        })
     );
     assert_eq!(
         first_superinterface_bound(&file, "Two"),
-        &TypeBound::Exact {
-            primary: TypeRef::Array {
-                element: Box::new(raw_type(&["String"])),
-                dimensions: 2,
-            },
-        }
+        &TypeBound::new_exact(TypeRef::Array {
+            element: Box::new(raw_type(&["String"])),
+            dimensions: 2,
+        })
     );
 }

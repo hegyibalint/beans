@@ -1,5 +1,6 @@
 use super::{ResolutionInstance, ResolutionResult, lookup_field, lookup_field_with_query};
 use crate::query::JavaQuery;
+use crate::resolution::ResolvedTypeParameter;
 use beans_core_engine::{Revision, storage::RevisionedStorage};
 use beans_core_model::{
     classpath::{Classpath, ClasspathElement},
@@ -23,9 +24,13 @@ fn with_dependencies(
             crate::lower_into(content),
         );
     }
+    let origin = Source::SourceFile {
+        path: "src/app/Use.java".into(),
+    };
+    files.put(revision, origin.clone(), crate::lower_into(source));
     let classpath = Classpath::new(vec![ClasspathElement::new("src".into(), [0; 32].into())]);
     let query = JavaQuery::new(&files, revision, &classpath);
-    lookup_field_with_query(source, &query, lookup)
+    lookup_field_with_query(&origin, &query, lookup)
 }
 
 fn find(source: &str, dependencies: &[(&str, &str)]) -> ResolutionResult {
@@ -36,13 +41,35 @@ fn find(source: &str, dependencies: &[(&str, &str)]) -> ResolutionResult {
 
 #[test]
 fn a_single_import_resolves_its_public_top_level_target() {
-    assert!(matches!(
-        find(
-            "package app; import p.Example; class Use { Example target; }",
-            &[("src/p/Example.java", "package p; public class Example {}")],
-        ),
-        ResolutionResult::Resolved
-    ));
+    with_dependencies(
+        "package app; import p.Example; class Use { Example target; }",
+        &[("src/p/Example.java", "package p; public class Example {}")],
+        |instance, _| {
+            let result = instance.lookup_single_imported_type(instance.type_ref);
+            let ResolutionResult::Resolved(ResolvedTypeParameter::Type(target)) = &result else {
+                panic!("expected one imported declaration");
+            };
+            let crate::resolution::ResolvedDeclarationHandle::Java(handle) = &target.declaration
+            else {
+                panic!("expected a Java declaration");
+            };
+            let found = instance.query.declaration(handle).unwrap();
+            assert_eq!(
+                found.source,
+                &Source::SourceFile {
+                    path: "src/p/Example.java".into()
+                }
+            );
+            assert_ne!(found.source, instance.source);
+            assert_eq!(found.declaration.name.as_deref(), Some("Example"));
+            assert!(std::ptr::eq(
+                found.file,
+                instance.query.file(found.source).unwrap()
+            ));
+            assert!(target.arguments.is_empty());
+            result
+        },
+    );
 }
 
 #[test]
@@ -64,7 +91,7 @@ fn package_access_requires_the_importing_file_to_be_in_the_same_package() {
             "package p; import p.Example; class Use { Example target; }",
             &dependencies,
         ),
-        ResolutionResult::Resolved
+        ResolutionResult::Resolved(_)
     ));
     assert!(matches!(
         find(
@@ -94,7 +121,7 @@ fn repeated_imports_of_the_same_declaration_are_not_ambiguous() {
             "import p.Example; import p.Example; class Use { Example target; }",
             &[("src/p/Example.java", "package p; public class Example {}")],
         ),
-        ResolutionResult::Resolved
+        ResolutionResult::Resolved(_)
     ));
 }
 
@@ -108,7 +135,7 @@ fn conflicting_imports_remain_ambiguous_during_error_recovery() {
                 ("src/q/Example.java", "package q; public class Example {}"),
             ],
         ),
-        ResolutionResult::Ambigous
+        ResolutionResult::Ambiguous(candidates) if candidates.len() == 2
     ));
 }
 
@@ -122,7 +149,7 @@ fn duplicate_origins_are_not_collapsed_by_qualified_name() {
                 ("src/b/Example.java", "package p; public class Example {}"),
             ],
         ),
-        ResolutionResult::Ambigous
+        ResolutionResult::Ambiguous(candidates) if candidates.len() == 2
     ));
 }
 
@@ -136,8 +163,49 @@ fn duplicate_declarations_are_not_collapsed_by_source() {
                 "package p; public class Example {} public class Example {}"
             )],
         ),
-        ResolutionResult::Ambigous
+        ResolutionResult::Ambiguous(candidates) if candidates.len() == 2
     ));
+}
+
+#[test]
+fn ambiguity_retains_every_distinct_target_once_despite_repeated_imports() {
+    with_dependencies(
+        "import p.Example; import q.Example; import p.Example; import q.Example; class Use { Example target; }",
+        &[
+            (
+                "src/p/Example.java",
+                "package p; public class Example {} public class Example {}",
+            ),
+            ("src/q/Example.java", "package q; public class Example {}"),
+        ],
+        |instance, _| {
+            let result = instance.lookup_single_imported_type(instance.type_ref);
+            let ResolutionResult::Ambiguous(candidates) = &result else {
+                panic!("expected all distinct imported declarations");
+            };
+            assert_eq!(candidates.len(), 3);
+            let actual: std::collections::HashSet<_> = candidates
+                .iter()
+                .map(|target| {
+                    assert!(target.arguments.is_empty());
+                    target.declaration.clone()
+                })
+                .collect();
+            let mut expected = std::collections::HashSet::new();
+            for spelling in ["p.Example", "q.Example"] {
+                let name = spelling.split('.').map(str::to_owned).collect();
+                for target in instance.query.find_type(&name) {
+                    expected.insert(crate::resolution::ResolvedDeclarationHandle::Java(
+                        instance
+                            .query
+                            .declaration_handle(target.source, target.node_index),
+                    ));
+                }
+            }
+            assert_eq!(actual, expected);
+            result
+        },
+    );
 }
 
 #[test]
@@ -174,7 +242,7 @@ fn conflicting_starting_types_are_rejected_before_member_lookup() {
                 ),
             ],
         ),
-        ResolutionResult::Ambigous
+        ResolutionResult::Ambiguous(candidates) if candidates.len() == 2
     ));
 }
 
@@ -188,7 +256,7 @@ fn lexical_hits_stop_before_conflicting_imports_during_error_recovery() {
         ],
         |instance, _| instance.resolve(),
     );
-    assert!(matches!(result, ResolutionResult::Resolved));
+    assert!(matches!(result, ResolutionResult::Resolved(_)));
 }
 
 #[test]

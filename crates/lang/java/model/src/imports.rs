@@ -154,7 +154,7 @@ mod tests {
         let TypeRef::Named { segments } = &mut reference else {
             unreachable!();
         };
-        segments[0].bounds.push(TypeBound::Unbounded);
+        segments[0].bounds.push(TypeBound::new_unbounded());
 
         assert!(import.is_prefix(&reference));
     }

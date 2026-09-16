@@ -64,24 +64,21 @@ fn omitted_and_intersection_bounds_preserve_their_shape() {
     assert_eq!(parameters[0].bounds, []);
     assert_eq!(
         parameters[1].bounds,
-        [TypeBound::Extends {
-            primary: raw_type(&["A"]),
-            additional: vec![],
-        }]
+        [TypeBound::new_extends(raw_type(&["A"]), vec![])]
     );
     assert_eq!(
         parameters[2].bounds,
-        [TypeBound::Extends {
-            primary: raw_type(&["A"]),
-            additional: vec![raw_type(&["B"])],
-        }]
+        [TypeBound::new_extends(
+            raw_type(&["A"]),
+            vec![raw_type(&["B"])]
+        )]
     );
     assert_eq!(
         parameters[3].bounds,
-        [TypeBound::Extends {
-            primary: raw_type(&["A"]),
-            additional: vec![raw_type(&["B"]), raw_type(&["C"])],
-        }]
+        [TypeBound::new_extends(
+            raw_type(&["A"]),
+            vec![raw_type(&["B"]), raw_type(&["C"])],
+        )]
     );
 }
 
@@ -94,9 +91,9 @@ fn annotations_do_not_obscure_a_type_parameter_bound() {
             .declaration
             .type_parameters[0]
             .bounds,
-        [TypeBound::Extends {
-            primary: raw_type(&["package", "Bound"]),
-            additional: vec![],
-        }]
+        [TypeBound::new_extends(
+            raw_type(&["package", "Bound"]),
+            vec![]
+        )]
     );
 }

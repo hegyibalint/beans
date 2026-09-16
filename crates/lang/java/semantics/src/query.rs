@@ -3,8 +3,16 @@ use beans_core_model::{classpath::Classpath, source::Source};
 use beans_lang_java_model::{
     File,
     names::Name,
-    nodes::{NodeIndex, types::TypeDeclaration},
+    nodes::{NodeIndex, NodeKind, types::TypeDeclaration},
 };
+
+/// An address in this vertical's storage, not a pinned snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct JavaDeclarationHandle {
+    revision: Revision,
+    source: Source,
+    node_index: NodeIndex,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct JavaTypeEntry<'a> {
@@ -44,6 +52,36 @@ impl<'a> JavaQuery<'a> {
     /// Reads a stored model at this revision, without applying classpath visibility.
     pub fn file(&self, source: &Source) -> Option<&'a File> {
         self.files.get(self.revision, source)
+    }
+
+    /// The caller supplies a declaration index from this source at the query's revision.
+    pub(crate) fn declaration_handle(
+        &self,
+        source: &Source,
+        node_index: NodeIndex,
+    ) -> JavaDeclarationHandle {
+        JavaDeclarationHandle {
+            revision: self.revision,
+            source: source.clone(),
+            node_index,
+        }
+    }
+
+    /// Reads a type at the handle's revision, without applying classpath visibility.
+    pub fn declaration<'b>(
+        &'b self,
+        handle: &'b JavaDeclarationHandle,
+    ) -> Option<JavaTypeEntry<'b>> {
+        let file = self.files.get(handle.revision, &handle.source)?;
+        let NodeKind::Type(declaration) = file.node(handle.node_index)?.kind() else {
+            return None;
+        };
+        Some(JavaTypeEntry {
+            source: &handle.source,
+            file,
+            node_index: handle.node_index,
+            declaration,
+        })
     }
 
     /// Finds declarations by canonical name (JLS §6.7) in visible source files.

@@ -1,5 +1,5 @@
 use super::{ResolutionResult, lookup_field};
-use crate::resolution::ResolutionInstance;
+use crate::resolution::{ResolutionInstance, ResolvedTypeParameter};
 use beans_lang_java_model::references::TypeRef;
 
 fn lookup(source: &str) -> ResolutionResult {
@@ -10,7 +10,7 @@ fn lookup(source: &str) -> ResolutionResult {
 fn declaration_stage_is_connected() {
     assert!(matches!(
         lookup("class Outer { class A {} A target; }"),
-        ResolutionResult::Resolved
+        ResolutionResult::Resolved(ResolvedTypeParameter::Type(_))
     ));
 }
 
@@ -18,7 +18,7 @@ fn declaration_stage_is_connected() {
 fn missing_declaration_falls_through_to_parameter_stage() {
     assert!(matches!(
         lookup("class Outer<A> { A target; }"),
-        ResolutionResult::Resolved
+        ResolutionResult::Resolved(ResolvedTypeParameter::Parameter { .. })
     ));
 }
 
@@ -34,7 +34,15 @@ fn missing_name_exhausts_both_stages() {
 fn declaration_ambiguity_is_not_rescued_by_a_parameter_during_error_recovery() {
     assert!(matches!(
         lookup("class Outer<A> { class A {} class A {} A target; }"),
-        ResolutionResult::Ambigous
+        ResolutionResult::Ambiguous(_)
+    ));
+}
+
+#[test]
+fn member_type_shadows_its_owners_same_named_parameter() {
+    assert!(matches!(
+        lookup("class Outer<A> { class A {} A target; }"),
+        ResolutionResult::Resolved(ResolvedTypeParameter::Type(_))
     ));
 }
 
@@ -68,6 +76,7 @@ fn void_and_empty_named_references_do_not_enter_name_lookup() {
         let result = lookup_field("class Outer { int target; }", |instance, entry| {
             ResolutionInstance::new(
                 instance.resolver,
+                instance.source,
                 instance.file,
                 instance.node_index,
                 &type_ref,

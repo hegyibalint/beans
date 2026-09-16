@@ -27,7 +27,7 @@ use beans_lang_java_model::{
         NodeIndex, NodeKind,
         types::{AccessLevel, Kind, Modifier, TypeDeclaration},
     },
-    references::{PrimitiveType, TypeBound, TypeNameComponent, TypeRef},
+    references::{BoundKind, PrimitiveType, TypeBound, TypeNameComponent, TypeRef},
 };
 use beans_lang_java_semantics::lower_into;
 use tree_sitter::{Node, Parser};
@@ -361,38 +361,24 @@ fn component(component: &TypeNameComponent) -> String {
 }
 
 fn type_argument(argument: &TypeBound) -> String {
-    match argument {
-        TypeBound::Exact { primary } => type_ref(primary),
-        TypeBound::Extends {
-            primary,
-            additional,
-        } => {
-            let mut rendered = format!("? extends {}", type_ref(primary));
-            for bound in additional {
-                write!(rendered, " & {}", type_ref(bound)).expect("writing cannot fail");
-            }
-            rendered
-        }
-        TypeBound::Super { primary } => format!("? super {}", type_ref(primary)),
-        TypeBound::Unbounded => "?".to_owned(),
+    match argument.kind() {
+        BoundKind::Extends | BoundKind::Super => format!("? {}", bound_of(argument)),
+        BoundKind::Exact | BoundKind::Unbounded => bound_of(argument),
     }
 }
 
 fn bound_of(bound: &TypeBound) -> String {
-    match bound {
-        TypeBound::Exact { primary } => type_ref(primary),
-        TypeBound::Extends {
-            primary,
-            additional,
-        } => {
-            let mut rendered = format!("extends {}", type_ref(primary));
-            for bound in additional {
-                write!(rendered, " & {}", type_ref(bound)).expect("writing cannot fail");
-            }
-            rendered
-        }
-        TypeBound::Super { primary } => format!("super {}", type_ref(primary)),
-        TypeBound::Unbounded => "?".to_owned(),
+    let types = bound
+        .types()
+        .iter()
+        .map(type_ref)
+        .collect::<Vec<_>>()
+        .join(" & ");
+    match bound.kind() {
+        BoundKind::Exact => types,
+        BoundKind::Extends => format!("extends {types}"),
+        BoundKind::Super => format!("super {types}"),
+        BoundKind::Unbounded => "?".to_owned(),
     }
 }
 

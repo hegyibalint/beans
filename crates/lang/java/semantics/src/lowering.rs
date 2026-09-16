@@ -244,10 +244,7 @@ fn lower_type_bound(content: &str, node: Node) -> Option<TypeBound> {
         .filter_map(|child| lower_type_ref(content, child));
     let primary = bounds.next()?;
 
-    Some(TypeBound::Extends {
-        primary,
-        additional: bounds.collect(),
-    })
+    Some(TypeBound::new_extends(primary, bounds.collect()))
 }
 
 fn lower_single_type_clause(content: &str, node: Node) -> Option<TypeRef> {
@@ -364,7 +361,7 @@ fn lower_type_arguments(content: &str, node: Node) -> Vec<TypeBound> {
     node.named_children(&mut cursor)
         .filter_map(|child| match child.kind() {
             "wildcard" => lower_wildcard(content, child),
-            _ => lower_type_ref(content, child).map(|primary| TypeBound::Exact { primary }),
+            _ => lower_type_ref(content, child).map(TypeBound::new_exact),
         })
         .collect()
 }
@@ -383,12 +380,9 @@ fn lower_wildcard(content: &str, node: Node) -> Option<TypeBound> {
         children.iter().find(|child| child.kind() == "super"),
         referenced_type,
     ) {
-        (Some(_), None, Some(primary)) => Some(TypeBound::Extends {
-            primary,
-            additional: Vec::new(),
-        }),
-        (None, Some(_), Some(primary)) => Some(TypeBound::Super { primary }),
-        (None, None, None) => Some(TypeBound::Unbounded),
+        (Some(_), None, Some(primary)) => Some(TypeBound::new_extends(primary, Vec::new())),
+        (None, Some(_), Some(primary)) => Some(TypeBound::new_super(primary)),
+        (None, None, None) => Some(TypeBound::new_unbounded()),
         _ => None,
     }
 }

@@ -7,7 +7,9 @@ use beans_lang_java_engine::JavaEngine;
 use beans_lang_java_model::nodes::NodeKind;
 use beans_lang_java_semantics::{
     lower_into,
-    resolution::{ResolutionResult, Resolver},
+    resolution::{
+        ReferenceLocation, ResolutionResult, ResolvedDeclaration, Resolver, ResolverContext,
+    },
 };
 
 #[test]
@@ -38,14 +40,34 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
         .iter_nodes()
         .find_map(|entry| match entry.node.kind() {
             NodeKind::Field(field) if field.name == "target" => {
-                Some((entry.node.parent().unwrap(), &field.declared_type))
+                Some((entry.index, &field.declared_type))
             }
             _ => None,
         })
         .expect("expected target field");
 
-    assert!(matches!(
-        Resolver {}.resolve(file, node_index, type_ref, &query),
-        ResolutionResult::Resolved
-    ));
+    let ctx = ResolverContext::new(
+        &entry.key,
+        node_index,
+        type_ref,
+        ReferenceLocation::Body,
+        &query,
+    );
+    let results = Resolver {}.resolve(&ctx);
+    let [ResolutionResult::Resolved(resolved)] = results.as_slice() else {
+        panic!("expected a resolved type: {results:?}");
+    };
+    let ResolvedDeclaration::Java { declaration } = &resolved.declaration else {
+        panic!("expected a Java declaration");
+    };
+    let target = query
+        .declaration(declaration)
+        .expect("expected a readable declaration handle");
+    assert_eq!(target.declaration.name.as_deref(), Some("Example"));
+    assert_eq!(
+        target.source,
+        &Source::SourceFile {
+            path: "src/p/Example.java".into()
+        }
+    );
 }
