@@ -7,7 +7,7 @@
 ## Java resolution prototype
 
 - [x] Resolve the three-file `examples/resolution` fixture using lexical scope, single imports, and inherited members.
-- [x] Preserve blocked supertype lookups; stop ambiguous branches, continue independent branches, and guard lookup cycles.
+- [x] Preserve incomplete supertype lookups as `ResolutionFailure`; stop ambiguous branches, continue independent branches, and guard lookup cycles.
 - [ ] Retain successful supertype-reference outcomes too, including failures inside their arguments; keep declaration validation separate from member selection.
 - [ ] Resolve package-prefixed references and static/on-demand/module imports.
 - [ ] Resolve member types through type-parameter bounds and implicit enum/record supertypes.

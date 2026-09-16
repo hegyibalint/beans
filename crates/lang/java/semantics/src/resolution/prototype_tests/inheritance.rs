@@ -40,7 +40,7 @@ fn distinct_inherited_members_are_ambiguous_regardless_of_interface_order() {
         );
         let fixture = Fixture::new(&[("src/Use.java", &text)]);
         let results = fixture.field("src/Use.java");
-        let ResolutionResult::Ambiguous(candidates) = &results[0] else {
+        let Ok(Resolution::Ambiguous(candidates)) = &results[0] else {
             panic!("expected ambiguity: {results:?}");
         };
         assert_eq!(candidates.len(), 2);
@@ -75,10 +75,10 @@ fn missing_supertype_blocks_fallback_to_a_top_level_name() {
         "class Bar {} class Use extends Missing { Bar target; }",
     )]);
     let results = fixture.field("src/Use.java");
-    let ResolutionResult::Blocked {
+    let Err(ResolutionFailure {
         candidates,
         problems,
-    } = &results[0]
+    }) = &results[0]
     else {
         panic!("expected blocked lookup: {results:?}");
     };
@@ -86,7 +86,7 @@ fn missing_supertype_blocks_fallback_to_a_top_level_name() {
     let [LookupProblem::Supertype { results, .. }] = problems.as_slice() else {
         panic!("expected supertype failure: {problems:?}");
     };
-    assert!(matches!(results.as_slice(), [ResolutionResult::NotFound]));
+    assert!(matches!(results.as_slice(), [Ok(Resolution::NotFound)]));
 }
 
 #[test]
@@ -106,10 +106,10 @@ fn ambiguous_supertype_is_not_explored_but_independent_interfaces_are() {
         ),
     ]);
     let results = fixture.field("src/Use.java");
-    let ResolutionResult::Blocked {
+    let Err(ResolutionFailure {
         candidates,
         problems,
-    } = &results[0]
+    }) = &results[0]
     else {
         panic!("expected blocked lookup: {results:?}");
     };
@@ -118,7 +118,7 @@ fn ambiguous_supertype_is_not_explored_but_independent_interfaces_are() {
     let [LookupProblem::Supertype { results, .. }] = problems.as_slice() else {
         panic!("expected failed superclass reference: {problems:?}");
     };
-    let [ResolutionResult::Ambiguous(bases)] = results.as_slice() else {
+    let [Ok(Resolution::Ambiguous(bases))] = results.as_slice() else {
         panic!("expected ambiguous Base: {results:?}");
     };
     assert_eq!(bases.len(), 2);
@@ -132,7 +132,7 @@ fn self_and_mutual_inheritance_cycles_are_preserved_without_recursing_forever() 
     ] {
         let fixture = Fixture::new(&[("src/Use.java", text)]);
         let results = fixture.field("src/Use.java");
-        let ResolutionResult::Blocked { problems, .. } = &results[0] else {
+        let Err(ResolutionFailure { problems, .. }) = &results[0] else {
             panic!("expected cycle: {results:?}");
         };
         assert!(
@@ -206,10 +206,10 @@ fn inaccessible_member_is_not_reported_as_missing_or_replaced_by_an_outer_name()
         "class Hidden {} class Outer { private class Hidden {} } class Use { Outer.Hidden target; }",
     )]);
     let results = fixture.field("src/Use.java");
-    let ResolutionResult::Blocked {
+    let Err(ResolutionFailure {
         candidates,
         problems,
-    } = &results[1]
+    }) = &results[1]
     else {
         panic!("expected inaccessible member: {results:?}");
     };

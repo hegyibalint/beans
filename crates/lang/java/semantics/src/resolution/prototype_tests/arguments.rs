@@ -88,7 +88,7 @@ fn argument_failure_does_not_prevent_resolving_the_outer_declaration_or_its_memb
             .primary()
             .unwrap()
             .as_slice(),
-        [ResolutionResult::NotFound]
+        [Ok(Resolution::NotFound)]
     ));
 }
 
@@ -101,7 +101,7 @@ fn argument_ambiguity_stays_inside_the_argument() {
     let results = fixture.field("src/Use.java");
     fixture.assert_type(&results[0], "src/Use.java", "Box");
     assert!(
-        matches!(resolved(&results[0]).arguments[0].primary().unwrap().as_slice(), [ResolutionResult::Ambiguous(candidates)] if candidates.len() == 2)
+        matches!(resolved(&results[0]).arguments[0].primary().unwrap().as_slice(), [Ok(Resolution::Ambiguous(candidates))] if candidates.len() == 2)
     );
 }
 

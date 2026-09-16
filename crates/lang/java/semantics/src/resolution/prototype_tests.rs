@@ -104,7 +104,7 @@ fn name(name: &str) -> Name {
 }
 
 fn resolved(result: &ResolutionResult) -> &ResolvedType {
-    let ResolutionResult::Resolved(resolved) = result else {
+    let Ok(Resolution::Resolved(resolved)) = result else {
         panic!("expected resolution, got {result:?}");
     };
     resolved

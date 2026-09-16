@@ -1,7 +1,8 @@
 use super::*;
 
 #[test]
-fn unavailable_occurrence_model_is_reported_without_panicking() {
+#[should_panic(expected = "resolver context source must exist at the query revision")]
+fn unavailable_occurrence_model_violates_the_resolver_context_invariant() {
     let fixture = Fixture::new(&[]);
     let query = fixture.query();
     let reference = TypeRef::Named {
@@ -11,17 +12,13 @@ fn unavailable_occurrence_model_is_reported_without_panicking() {
         }],
     };
     let source = source("src/Missing.java");
-    let results = Resolver {}.resolve(&ResolverContext::new(
+    Resolver {}.resolve(&ResolverContext::new(
         &source,
         File::ROOT_NODE_ID,
         &reference,
         ReferenceLocation::Body,
         &query,
     ));
-    assert!(
-        matches!(results.as_slice(), [ResolutionResult::Blocked { problems, .. }]
-        if matches!(problems.as_slice(), [LookupProblem::UnavailableModel]))
-    );
 }
 
 #[test]
@@ -35,7 +32,7 @@ fn unsupported_import_forms_are_not_silently_treated_as_absent() {
         let fixture = Fixture::new(&[("src/Use.java", &text)]);
         let results = fixture.field("src/Use.java");
         assert!(
-            matches!(&results[0], ResolutionResult::Blocked { problems, .. }
+            matches!(&results[0], Err(ResolutionFailure { problems, .. })
             if problems.iter().any(|problem| matches!(problem, LookupProblem::Unsupported(_))))
         );
     }
@@ -61,10 +58,10 @@ fn cross_package_protected_access_keeps_the_candidate_until_the_rule_is_implemen
         ),
     ]);
     let results = fixture.field("src/Use.java");
-    let ResolutionResult::Blocked {
+    let Err(ResolutionFailure {
         candidates,
         problems,
-    } = &results[0]
+    }) = &results[0]
     else {
         panic!("expected explicit unsupported access: {results:?}");
     };
@@ -101,7 +98,7 @@ fn supertype_name_collision_with_an_owner_parameter_is_not_silently_rebound() {
     )]);
     let results = fixture.superclass("src/Use.java", "Use");
     assert!(
-        matches!(&results[0], ResolutionResult::Blocked { problems, .. }
+        matches!(&results[0], Err(ResolutionFailure { problems, .. })
         if matches!(problems.as_slice(), [LookupProblem::Unsupported(_)]))
     );
 }
@@ -113,10 +110,10 @@ fn unknown_implicit_supertype_does_not_disappear_beside_a_known_interface_member
         "interface I { class Bar {} } enum Use implements I { VALUE; Bar target; }",
     )]);
     let results = fixture.field("src/Use.java");
-    let ResolutionResult::Blocked {
+    let Err(ResolutionFailure {
         candidates,
         problems,
-    } = &results[0]
+    }) = &results[0]
     else {
         panic!("expected unresolved implicit supertype: {results:?}");
     };

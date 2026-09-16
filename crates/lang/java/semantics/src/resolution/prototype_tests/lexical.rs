@@ -71,15 +71,50 @@ fn compilation_unit_and_same_package_are_distinct_lookup_layers() {
 }
 
 #[test]
-fn qualified_member_lookup_does_not_fall_back_to_enclosing_scopes() {
-    let fixture = Fixture::new(&[(
-        "src/Use.java",
-        "class Use { class Bar {} class Outer {} Outer.Bar target; }",
-    )]);
+fn qualified_member_lookup_does_not_retry_an_import_after_binding_its_prefix() {
+    let fixture = Fixture::new(&[
+        (
+            "src/Use.java",
+            "import p.Outer; class Use { class Outer {} Outer.Inner target; }",
+        ),
+        (
+            "src/p/Outer.java",
+            "package p; public class Outer { public static class Inner {} }",
+        ),
+    ]);
     let results = fixture.field("src/Use.java");
     assert_eq!(results.len(), 2);
     fixture.assert_type(&results[0], "src/Use.java", "Use.Outer");
-    assert!(matches!(results[1], ResolutionResult::NotFound));
+    assert!(matches!(results[1], Ok(Resolution::NotFound)));
+}
+
+#[test]
+fn prefix_source_imports_do_not_introduce_member_types() {
+    let fixture = Fixture::new(&[
+        ("src/Use.java", "class Use { OtherFile.Inner target; }"),
+        (
+            "src/OtherFile.java",
+            "import p.Inner; class OtherFile { Inner field; }",
+        ),
+        ("src/p/Inner.java", "package p; public class Inner {}"),
+    ]);
+    let results = fixture.field("src/Use.java");
+    assert_eq!(results.len(), 2);
+    fixture.assert_type(&results[0], "src/OtherFile.java", "OtherFile");
+    assert!(matches!(results[1], Ok(Resolution::NotFound)));
+}
+
+#[test]
+fn qualified_lookup_follows_each_member_component_in_order() {
+    let fixture = Fixture::new(&[(
+        "src/Use.java",
+        "class Outer { class Middle { class Inner {} } } class Use { Outer.Middle.Inner target; }",
+    )]);
+    let results = fixture.field("src/Use.java");
+    assert_eq!(results.len(), 3);
+    fixture.assert_type(&results[0], "src/Use.java", "Outer");
+    fixture.assert_type(&results[1], "src/Use.java", "Outer.Middle");
+    fixture.assert_type(&results[2], "src/Use.java", "Outer.Middle.Inner");
 }
 
 #[test]
@@ -90,7 +125,7 @@ fn a_type_parameter_is_not_a_member_of_its_owner() {
     )]);
     let results = fixture.field("src/Use.java");
     assert_eq!(results.len(), 2);
-    assert!(matches!(results[1], ResolutionResult::NotFound));
+    assert!(matches!(results[1], Ok(Resolution::NotFound)));
 }
 
 #[test]
@@ -101,7 +136,7 @@ fn duplicate_member_declarations_remain_distinct_and_stop_the_qualified_chain() 
     )]);
     let results = fixture.field("src/Use.java");
     assert_eq!(results.len(), 2);
-    let ResolutionResult::Ambiguous(candidates) = &results[1] else {
+    let Ok(Resolution::Ambiguous(candidates)) = &results[1] else {
         panic!("expected ambiguity: {results:?}");
     };
     assert_eq!(candidates.len(), 2);

@@ -36,16 +36,19 @@ pub struct ResolvedType {
     pub arguments: Vec<ResolvedTypeArgument>,
 }
 
+pub type ResolutionResult = Result<Resolution, ResolutionFailure>;
+
 #[derive(Debug, Clone)]
-pub enum ResolutionResult {
+pub enum Resolution {
     Resolved(ResolvedType),
     Ambiguous(Vec<ResolvedType>),
     NotFound,
-    /// Known candidates are retained, but lookup could not establish a usable binding.
-    Blocked {
-        candidates: Vec<ResolvedType>,
-        problems: Vec<LookupProblem>,
-    },
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolutionFailure {
+    pub candidates: Vec<ResolvedType>,
+    pub problems: Vec<LookupProblem>,
 }
 
 #[derive(Debug, Clone)]
@@ -61,7 +64,6 @@ pub enum LookupProblem {
     },
     Inaccessible(DeclarationHandle),
     InvalidImport(Name),
-    UnavailableModel,
     Unsupported(&'static str),
 }
 
@@ -74,6 +76,17 @@ struct TypeLookup {
 impl TypeLookup {
     fn is_empty(&self) -> bool {
         self.declarations.is_empty() && self.problems.is_empty()
+    }
+
+    fn continuation_base(&self) -> Option<&DeclarationHandle> {
+        if !self.problems.is_empty() {
+            return None;
+        }
+        match self.declarations.as_slice() {
+            [ResolvedDeclaration::Java { declaration }] => Some(declaration),
+            [base] => panic!("member lookup is not implemented for {base:?}"),
+            _ => None,
+        }
     }
 
     fn blocked(problem: LookupProblem) -> Self {
@@ -138,79 +151,15 @@ impl Resolver {
             return vec![];
         };
 
-        let mut results = Vec::with_capacity(segments.len());
-        // Qualified types like `OtherFile.Inner` can escape our current file
-        // This state keeps track which file, which declaration we resolved our last component, so we can continue
-        let mut resolution_base = None;
-
-        // We take each segment of a (possibly) complex type like `Outer<String>.Inner<T>`, and progressively resolve them from left to right
-        for segment in segments {
-            let member_base = match resolution_base.as_ref() {
-                Some(ResolvedDeclaration::Java { declaration }) => Some(declaration),
-                Some(base) => panic!("member lookup is not implemented for {base:?}"),
-                None => None,
-            };
-
-            // We resolve the type arguments first
-            // Note that argument resolution is not moving based on `resolution_base`. It's bound to the starting declaration
-            let arguments = self.resolve_type_arguments(ctx, segment, active);
-
-            // The big one: we go, and find all declarations matching the name we are on
-            let lookup = match member_base {
-                Some(base) => {
-                    let members = self.lookup_member_types(ctx, base, &segment.name, active);
-                    self.check_access(ctx, members)
-                }
-                None => self.resolve_type_declarations(ctx, &segment.name, active),
-            };
-            let TypeLookup {
-                declarations: mut candidates,
-                problems,
-            } = lookup;
-
-            let result = if !problems.is_empty() {
-                ResolutionResult::Blocked {
-                    candidates: candidates
-                        .into_iter()
-                        .map(|declaration| ResolvedType {
-                            declaration,
-                            arguments: arguments.clone(),
-                        })
-                        .collect(),
-                    problems,
-                }
-            } else {
-                match candidates.len() {
-                    0 => ResolutionResult::NotFound,
-                    1 => ResolutionResult::Resolved(ResolvedType {
-                        declaration: candidates.pop().expect("exactly one candidate"),
-                        arguments,
-                    }),
-                    _ => ResolutionResult::Ambiguous(
-                        candidates
-                            .into_iter()
-                            .map(|declaration| ResolvedType {
-                                declaration,
-                                arguments: arguments.clone(),
-                            })
-                            .collect(),
-                    ),
-                }
-            };
-
-            match result {
-                ResolutionResult::Resolved(resolved) => {
-                    resolution_base = Some(resolved.declaration.clone());
-                    results.push(ResolutionResult::Resolved(resolved));
-                }
-                failure => {
-                    results.push(failure);
-                    break;
-                }
-            }
-        }
-
-        results
+        let lookups = self.resolve_type_declarations(ctx, segments, active);
+        segments
+            .iter()
+            .zip(lookups)
+            .map(|(segment, lookup)| {
+                let arguments = self.resolve_type_arguments(ctx, segment, active);
+                Self::resolution_result(lookup, arguments)
+            })
+            .collect()
     }
 
     /// JLS §4.5.1: retain the argument shape; resolve its references at the use site.
@@ -237,28 +186,72 @@ impl Resolver {
             .collect()
     }
 
-    /// JLS §6.5.5.1: resolves an unqualified type component from its use site.
+    fn resolution_result(
+        lookup: TypeLookup,
+        arguments: Vec<ResolvedTypeArgument>,
+    ) -> ResolutionResult {
+        let TypeLookup {
+            declarations: mut candidates,
+            problems,
+        } = lookup;
+        if !problems.is_empty() {
+            return Err(ResolutionFailure {
+                candidates: candidates
+                    .into_iter()
+                    .map(|declaration| ResolvedType {
+                        declaration,
+                        arguments: arguments.clone(),
+                    })
+                    .collect(),
+                problems,
+            });
+        }
+
+        Ok(match candidates.len() {
+            0 => Resolution::NotFound,
+            1 => Resolution::Resolved(ResolvedType {
+                declaration: candidates.pop().expect("exactly one candidate"),
+                arguments,
+            }),
+            _ => Resolution::Ambiguous(
+                candidates
+                    .into_iter()
+                    .map(|declaration| ResolvedType {
+                        declaration,
+                        arguments: arguments.clone(),
+                    })
+                    .collect(),
+            ),
+        })
+    }
+
+    /// JLS §6.5.5.1–2: bind the first component, then follow member types only.
     fn resolve_type_declarations(
         &self,
         ctx: &ResolverContext<'_>,
-        name: &str,
+        segments: &[TypeNameComponent],
         active: &mut ActiveLookups,
-    ) -> TypeLookup {
-        let lookup = self.lookup_lexical_types(ctx, name, active);
+    ) -> Vec<TypeLookup> {
+        let Some((first, remaining)) = segments.split_first() else {
+            return Vec::new();
+        };
+
+        let lookup = self.lookup_lexical_types(ctx, &first.name, active);
         if !lookup.is_empty() {
-            return lookup;
+            return self.follow_member_types(ctx, lookup, remaining, active);
         }
-        let lookup = self.lookup_imported_types(ctx, name);
+        let lookup = self.lookup_imported_types(ctx, &first.name);
         if !lookup.is_empty() {
-            return lookup;
+            return self.follow_member_types(ctx, lookup, remaining, active);
         }
 
-        let Some(file) = ctx.query.file(ctx.source) else {
-            return TypeLookup::blocked(LookupProblem::UnavailableModel);
-        };
-        let lookup = self.lookup_package_type(ctx, &file.package_name, name);
+        let file = ctx
+            .query
+            .file(ctx.source)
+            .expect("resolver context source must exist at the query revision");
+        let lookup = self.lookup_package_type(ctx, &file.package_name, &first.name);
         if !lookup.is_empty() {
-            return lookup;
+            return self.follow_member_types(ctx, lookup, remaining, active);
         }
         if file.imports.iter().any(|import| {
             matches!(
@@ -268,11 +261,70 @@ impl Resolver {
                     | ImportType::SingleModule
             )
         }) {
-            return TypeLookup::blocked(LookupProblem::Unsupported(
+            return vec![TypeLookup::blocked(LookupProblem::Unsupported(
                 "On-demand and module imports are not implemented",
-            ));
+            ))];
         }
-        self.lookup_package_type(ctx, &Name::new(vec!["java".into(), "lang".into()]), name)
+
+        let lookup = self.lookup_package_type(
+            ctx,
+            &Name::new(vec!["java".into(), "lang".into()]),
+            &first.name,
+        );
+        self.follow_member_types(ctx, lookup, remaining, active)
+    }
+
+    fn follow_member_types(
+        &self,
+        ctx: &ResolverContext<'_>,
+        first: TypeLookup,
+        remaining: &[TypeNameComponent],
+        active: &mut ActiveLookups,
+    ) -> Vec<TypeLookup> {
+        if remaining.is_empty() {
+            return vec![first];
+        }
+
+        let base = first.continuation_base().cloned();
+        let mut lookups = Vec::with_capacity(remaining.len() + 1);
+        lookups.push(first);
+        if let Some(base) = base {
+            lookups.extend(self.lookup_member_types(ctx, &base, remaining, active));
+        }
+        lookups
+    }
+
+    /// JLS §6.5.5.2: every suffix is a member of the type denoted by its prefix.
+    fn lookup_member_types(
+        &self,
+        ctx: &ResolverContext<'_>,
+        owner: &DeclarationHandle,
+        segments: &[TypeNameComponent],
+        active: &mut ActiveLookups,
+    ) -> Vec<TypeLookup> {
+        let mut lookups = Vec::with_capacity(segments.len());
+        let mut owner = owner.clone();
+
+        for (index, segment) in segments.iter().enumerate() {
+            let members = self.lookup_member_type(ctx, &owner, &segment.name, active);
+            let members = self.check_access(ctx, members);
+            let has_remaining = index + 1 < segments.len();
+            let next_owner = if has_remaining {
+                members.continuation_base().cloned()
+            } else {
+                None
+            };
+            lookups.push(members);
+
+            if has_remaining {
+                let Some(next_owner) = next_owner else {
+                    break;
+                };
+                owner = next_owner;
+            }
+        }
+
+        lookups
     }
 
     /// JLS §6.3–§6.4.1: scope depends on the reference's location, not containment alone.
@@ -282,12 +334,12 @@ impl Resolver {
         name: &str,
         active: &mut ActiveLookups,
     ) -> TypeLookup {
-        let Some(file) = ctx.query.file(ctx.source) else {
-            return TypeLookup::blocked(LookupProblem::UnavailableModel);
-        };
-        if file.node(ctx.node_index).is_none() {
-            return TypeLookup::blocked(LookupProblem::UnavailableModel);
-        }
+        let file = ctx
+            .query
+            .file(ctx.source)
+            .expect("resolver context source must exist at the query revision");
+        file.node(ctx.node_index)
+            .expect("resolver context node must exist in its source model");
 
         for entry in file.iter_ancestors(ctx.node_index) {
             match entry.node.kind() {
@@ -322,7 +374,7 @@ impl Resolver {
                         };
                     }
                     if inside_body {
-                        let lookup = self.lookup_member_types(ctx, &owner, name, active);
+                        let lookup = self.lookup_member_type(ctx, &owner, name, active);
                         if !lookup.is_empty() {
                             return self.check_access(ctx, lookup);
                         }
@@ -374,16 +426,17 @@ impl Resolver {
     }
 
     /// JLS §8.5, §9.5: declared members hide inherited members of the same name.
-    fn lookup_member_types(
+    fn lookup_member_type(
         &self,
         ctx: &ResolverContext<'_>,
         owner: &DeclarationHandle,
         name: &str,
         active: &mut ActiveLookups,
     ) -> TypeLookup {
-        let Some(entry) = ctx.query.declaration(owner) else {
-            return TypeLookup::blocked(LookupProblem::UnavailableModel);
-        };
+        let entry = ctx
+            .query
+            .declaration(owner)
+            .expect("declaration handle must resolve to a type declaration");
         let declarations =
             self.find_declared_types(ctx, entry.file, entry.source, entry.node_index, name);
         if !declarations.is_empty() {
@@ -432,7 +485,7 @@ impl Resolver {
                 ctx.query,
             );
             let results = self.resolve_reference(&supertype_ctx, active);
-            let Some(ResolutionResult::Resolved(resolved)) = results.last() else {
+            let Some(Ok(Resolution::Resolved(resolved))) = results.last() else {
                 lookup.problems.push(LookupProblem::Supertype {
                     owner: owner.clone(),
                     reference: reference.clone(),
@@ -447,20 +500,16 @@ impl Resolver {
                 continue;
             };
 
-            let inherited = self.lookup_member_types(ctx, declaration, name, active);
+            let inherited = self.lookup_member_type(ctx, declaration, name, active);
             lookup.problems.extend(inherited.problems);
             for candidate in inherited.declarations {
                 let ResolvedDeclaration::Java { declaration } = &candidate else {
                     unreachable!("member lookup only produces class/interface declarations");
                 };
-                match access::is_inheritable(ctx.query, declaration, entry) {
-                    Ok(true) => {
-                        if !lookup.declarations.contains(&candidate) {
-                            lookup.declarations.push(candidate);
-                        }
-                    }
-                    Ok(false) => {}
-                    Err(problem) => lookup.problems.push(problem),
+                if access::is_inheritable(ctx.query, declaration, entry)
+                    && !lookup.declarations.contains(&candidate)
+                {
+                    lookup.declarations.push(candidate);
                 }
             }
         }
@@ -475,9 +524,10 @@ impl Resolver {
 
     /// JLS §7.5.1: repeated imports of one declaration do not introduce ambiguity.
     fn lookup_imported_types(&self, ctx: &ResolverContext<'_>, name: &str) -> TypeLookup {
-        let Some(file) = ctx.query.file(ctx.source) else {
-            return TypeLookup::blocked(LookupProblem::UnavailableModel);
-        };
+        let file = ctx
+            .query
+            .file(ctx.source)
+            .expect("resolver context source must exist at the query revision");
         let mut lookup = TypeLookup::default();
         for import in &file.imports {
             if !import.is_name_valid()

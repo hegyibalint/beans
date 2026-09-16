@@ -13,8 +13,18 @@ fn access_level(entry: JavaTypeEntry<'_>) -> Option<AccessLevel> {
     if let Some(access) = entry.declaration.access.first() {
         return Some(*access);
     }
-    let parent = entry.file.node(entry.node_index)?.parent()?;
-    match entry.file.node(parent)?.kind() {
+    let parent = entry
+        .file
+        .node(entry.node_index)
+        .expect("declaration entry must reference an existing node")
+        .parent()
+        .expect("a type declaration must have a parent node");
+    match entry
+        .file
+        .node(parent)
+        .expect("a type declaration must have an existing parent node")
+        .kind()
+    {
         NodeKind::Type(owner)
             if matches!(owner.kind, Kind::Interface | Kind::AnnotationInterface) =>
         {
@@ -29,15 +39,15 @@ pub(super) fn is_inheritable(
     query: &JavaQuery<'_>,
     candidate: &DeclarationHandle,
     into: JavaTypeEntry<'_>,
-) -> Result<bool, LookupProblem> {
+) -> bool {
     let entry = query
         .declaration(candidate)
-        .ok_or(LookupProblem::UnavailableModel)?;
-    Ok(match access_level(entry) {
+        .expect("declaration handle must resolve to a type declaration");
+    match access_level(entry) {
         Some(AccessLevel::Public | AccessLevel::Protected) => true,
         Some(AccessLevel::Private) => false,
         None => entry.file.package_name == into.file.package_name,
-    })
+    }
 }
 
 /// JLS §6.6.1. Cross-package protected access needs a separate subclass check.
@@ -48,11 +58,11 @@ pub(super) fn is_accessible(
     let entry = ctx
         .query
         .declaration(candidate)
-        .ok_or(LookupProblem::UnavailableModel)?;
+        .expect("declaration handle must resolve to a type declaration");
     let use_file = ctx
         .query
         .file(ctx.source)
-        .ok_or(LookupProblem::UnavailableModel)?;
+        .expect("resolver context source must exist at the query revision");
     match access_level(entry) {
         Some(AccessLevel::Public) => Ok(true),
         Some(AccessLevel::Private) => {

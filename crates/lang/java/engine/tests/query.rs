@@ -7,9 +7,7 @@ use beans_lang_java_engine::JavaEngine;
 use beans_lang_java_model::nodes::NodeKind;
 use beans_lang_java_semantics::{
     lower_into,
-    resolution::{
-        ReferenceLocation, ResolutionResult, ResolvedDeclaration, Resolver, ResolverContext,
-    },
+    resolution::{ReferenceLocation, Resolution, ResolvedDeclaration, Resolver, ResolverContext},
 };
 
 #[test]
@@ -54,7 +52,7 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
         &query,
     );
     let results = Resolver {}.resolve(&ctx);
-    let [ResolutionResult::Resolved(resolved)] = results.as_slice() else {
+    let [Ok(Resolution::Resolved(resolved))] = results.as_slice() else {
         panic!("expected a resolved type: {results:?}");
     };
     let ResolvedDeclaration::Java { declaration } = &resolved.declaration else {

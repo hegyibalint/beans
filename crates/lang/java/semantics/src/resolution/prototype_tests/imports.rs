@@ -28,7 +28,7 @@ fn equal_canonical_names_from_distinct_origins_remain_ambiguous() {
         ("src/two/Bar.java", "package p; public class Bar {}"),
     ]);
     let results = fixture.field("src/Use.java");
-    let ResolutionResult::Ambiguous(candidates) = &results[0] else {
+    let Ok(Resolution::Ambiguous(candidates)) = &results[0] else {
         panic!("expected ambiguity: {results:?}");
     };
     assert_eq!(candidates.len(), 2);
@@ -45,10 +45,10 @@ fn broken_single_import_does_not_fall_back_to_a_same_package_type() {
         ("src/app/Bar.java", "package app; class Bar {}"),
     ]);
     let results = fixture.field("src/app/Use.java");
-    let ResolutionResult::Blocked {
+    let Err(ResolutionFailure {
         candidates,
         problems,
-    } = &results[0]
+    }) = &results[0]
     else {
         panic!("expected broken import: {results:?}");
     };
@@ -72,10 +72,10 @@ fn canonical_member_import_checks_enclosing_type_accessibility() {
         ),
     ]);
     let results = fixture.field("src/Use.java");
-    let ResolutionResult::Blocked {
+    let Err(ResolutionFailure {
         candidates,
         problems,
-    } = &results[0]
+    }) = &results[0]
     else {
         panic!("expected inaccessible enclosing type: {results:?}");
     };
@@ -98,7 +98,7 @@ fn package_access_depends_on_the_use_site_package() {
         if accessible {
             fixture.assert_type(&results[0], "src/p/Bar.java", "p.Bar");
         } else {
-            assert!(matches!(results[0], ResolutionResult::Blocked { .. }));
+            assert!(matches!(results[0], Err(_)));
         }
     }
 }
@@ -110,7 +110,7 @@ fn imports_cannot_discover_sources_outside_the_classpath() {
         ("hidden/Bar.java", "package p; public class Bar {}"),
     ]);
     let results = fixture.field("src/Use.java");
-    assert!(matches!(results[0], ResolutionResult::Blocked { .. }));
+    assert!(matches!(results[0], Err(_)));
 }
 
 #[test]
