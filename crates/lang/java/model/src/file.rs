@@ -109,7 +109,7 @@ impl File {
         };
 
         for entry in self.iter_children(parent) {
-            let NodeKind::Type(declaration) = entry.node.kind() else {
+            let Some(declaration) = entry.node.kind().as_type() else {
                 continue;
             };
             if declaration.name.as_ref() != Some(component) {

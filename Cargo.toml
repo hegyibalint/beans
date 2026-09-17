@@ -7,6 +7,8 @@ members = [
     "crates/lang/java/model",
     "crates/lang/java/semantics",
     "crates/lang/java/server",
+    "crates/platform/engine",
+    "crates/platform/model",
 ]
 
 [workspace.package]

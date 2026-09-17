@@ -1,7 +1,6 @@
 use super::{ResolutionResult, lookup_field};
 use crate::resolution::{ResolvedDeclarationHandle, ResolvedTypeParameter};
 use beans_lang_java_model::File;
-use beans_lang_java_model::nodes::NodeKind;
 
 fn lookup(source: &str, name: &str) -> ResolutionResult {
     lookup_field(source, |instance, entry| {
@@ -119,10 +118,22 @@ fn duplicate_declarations_produce_ambiguity_during_error_recovery() {
                 let ResolutionResult::Ambiguous(targets) = &result else {
                     panic!("expected all ambiguous declarations");
                 };
-                let expected: Vec<_> = instance.file.iter_children(entry.index)
-                .filter(|child| matches!(child.node.kind(), NodeKind::Type(typ) if typ.name.as_deref() == Some("A")))
-                .map(|child| instance.query.declaration_handle(instance.source, child.index))
-                .collect();
+                let expected: Vec<_> = instance
+                    .file
+                    .iter_children(entry.index)
+                    .filter(|child| {
+                        child
+                            .node
+                            .kind()
+                            .as_type()
+                            .is_some_and(|typ| typ.name.as_deref() == Some("A"))
+                    })
+                    .map(|child| {
+                        instance
+                            .query
+                            .declaration_handle(instance.source, child.index)
+                    })
+                    .collect();
                 assert_eq!(targets.len(), expected.len());
                 for (target, expected) in targets.iter().zip(expected) {
                     assert_eq!(

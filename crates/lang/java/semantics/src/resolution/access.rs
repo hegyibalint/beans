@@ -1,9 +1,9 @@
-use super::{DeclarationHandle, LookupProblem, ReferenceLocation, ResolverContext};
+use super::{DeclarationHandle, ReferenceLocation, ResolutionError, ResolverContext};
 use crate::query::{JavaQuery, JavaTypeEntry};
 use beans_lang_java_model::{
     File,
     nodes::{
-        NodeIndex, NodeKind,
+        NodeIndex,
         types::{AccessLevel, Kind},
     },
 };
@@ -19,18 +19,17 @@ fn access_level(entry: JavaTypeEntry<'_>) -> Option<AccessLevel> {
         .expect("declaration entry must reference an existing node")
         .parent()
         .expect("a type declaration must have a parent node");
-    match entry
+    let owner = entry
         .file
         .node(parent)
         .expect("a type declaration must have an existing parent node")
         .kind()
+        .as_type();
+    if owner.is_some_and(|owner| matches!(owner.kind, Kind::Interface | Kind::AnnotationInterface))
     {
-        NodeKind::Type(owner)
-            if matches!(owner.kind, Kind::Interface | Kind::AnnotationInterface) =>
-        {
-            Some(AccessLevel::Public)
-        }
-        _ => None,
+        Some(AccessLevel::Public)
+    } else {
+        None
     }
 }
 
@@ -54,7 +53,7 @@ pub(super) fn is_inheritable(
 pub(super) fn is_accessible(
     ctx: &ResolverContext<'_>,
     candidate: &DeclarationHandle,
-) -> Result<bool, LookupProblem> {
+) -> Result<bool, ResolutionError> {
     let entry = ctx
         .query
         .declaration(candidate)
@@ -73,7 +72,7 @@ pub(super) fn is_accessible(
             Ok(entry.source == ctx.source && owner.is_some() && owner == use_owner && in_body)
         }
         Some(AccessLevel::Protected) if entry.file.package_name != use_file.package_name => Err(
-            LookupProblem::Unsupported("Cross-package protected access is not implemented"),
+            ResolutionError::Unsupported("Cross-package protected access is not implemented"),
         ),
         _ => Ok(entry.file.package_name == use_file.package_name),
     }
@@ -81,7 +80,7 @@ pub(super) fn is_accessible(
 
 fn top_level_type(file: &File, node: NodeIndex) -> Option<NodeIndex> {
     file.iter_ancestors(node)
-        .filter(|entry| matches!(entry.node.kind(), NodeKind::Type(_)))
+        .filter(|entry| entry.node.kind().as_type().is_some())
         .last()
         .map(|entry| entry.index)
 }

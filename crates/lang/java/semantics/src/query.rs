@@ -3,7 +3,7 @@ use beans_core_model::{classpath::Classpath, source::Source};
 use beans_lang_java_model::{
     File,
     names::Name,
-    nodes::{NodeIndex, NodeKind, types::TypeDeclaration},
+    nodes::{NodeIndex, types::TypeDeclaration},
 };
 
 /// An address in this vertical's storage, not a pinned snapshot.
@@ -73,9 +73,7 @@ impl<'a> JavaQuery<'a> {
         handle: &'b JavaDeclarationHandle,
     ) -> Option<JavaTypeEntry<'b>> {
         let file = self.files.get(handle.revision, &handle.source)?;
-        let NodeKind::Type(declaration) = file.node(handle.node_index)?.kind() else {
-            return None;
-        };
+        let declaration = file.node(handle.node_index)?.kind().as_type()?;
         Some(JavaTypeEntry {
             source: &handle.source,
             file,
@@ -114,7 +112,6 @@ impl<'a> JavaQuery<'a> {
 mod tests {
     use super::*;
     use beans_core_model::classpath::ClasspathElement;
-    use beans_lang_java_model::nodes::NodeKind;
 
     fn name(name: &str) -> Name {
         name.split('.').map(str::to_owned).collect()
@@ -173,9 +170,13 @@ mod tests {
 
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].source, &source);
-        let NodeKind::Type(stored) = found[0].file.node(found[0].node_index).unwrap().kind() else {
-            panic!("expected a type declaration");
-        };
+        let stored = found[0]
+            .file
+            .node(found[0].node_index)
+            .unwrap()
+            .kind()
+            .as_type()
+            .expect("expected a type declaration");
         assert!(std::ptr::eq(found[0].declaration, stored));
         assert_eq!(stored.name.as_deref(), Some("Member"));
     }

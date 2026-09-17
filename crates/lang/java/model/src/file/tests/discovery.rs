@@ -38,9 +38,12 @@ fn package_and_member_components_lead_to_the_stored_declaration() {
         let found = file.find_type(&name(path));
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].0, expected);
-        let NodeKind::Type(stored) = file.node(expected).unwrap().kind() else {
-            panic!("expected a type declaration");
-        };
+        let stored = file
+            .node(expected)
+            .unwrap()
+            .kind()
+            .as_type()
+            .expect("expected a type declaration");
         assert!(std::ptr::eq(found[0].1, stored));
     }
     for missing in [

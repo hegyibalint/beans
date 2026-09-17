@@ -2,10 +2,7 @@ use super::{find_type_declaration, find_type_declarations, raw_type};
 use crate::lower_into;
 use beans_lang_java_model::{
     File,
-    nodes::{
-        NodeKind,
-        types::{AccessLevel, Kind, Modifier},
-    },
+    nodes::types::{AccessLevel, Kind, Modifier},
 };
 
 #[test]
@@ -33,10 +30,13 @@ fn two_declarations_preserve_their_names_and_source_order() {
     assert_eq!(
         file.iter_children(File::ROOT_NODE_ID)
             .map(|entry| {
-                let NodeKind::Type(declaration) = entry.node.kind() else {
-                    panic!("expected a type declaration");
-                };
-                declaration.name.as_deref()
+                entry
+                    .node
+                    .kind()
+                    .as_type()
+                    .expect("expected a type declaration")
+                    .name
+                    .as_deref()
             })
             .collect::<Vec<_>>(),
         [Some("First"), Some("Second")]

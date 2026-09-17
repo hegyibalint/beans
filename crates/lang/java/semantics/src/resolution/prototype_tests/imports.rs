@@ -45,17 +45,9 @@ fn broken_single_import_does_not_fall_back_to_a_same_package_type() {
         ("src/app/Bar.java", "package app; class Bar {}"),
     ]);
     let results = fixture.field("src/app/Use.java");
-    let Err(ResolutionFailure {
-        candidates,
-        problems,
-    }) = &results[0]
-    else {
-        panic!("expected broken import: {results:?}");
-    };
-    assert!(candidates.is_empty());
     assert!(matches!(
-        problems.as_slice(),
-        [LookupProblem::InvalidImport(_)]
+        &results[0],
+        Err(ResolutionError::InvalidImport(_))
     ));
 }
 
@@ -72,18 +64,7 @@ fn canonical_member_import_checks_enclosing_type_accessibility() {
         ),
     ]);
     let results = fixture.field("src/Use.java");
-    let Err(ResolutionFailure {
-        candidates,
-        problems,
-    }) = &results[0]
-    else {
-        panic!("expected inaccessible enclosing type: {results:?}");
-    };
-    assert_eq!(candidates.len(), 1);
-    assert!(matches!(
-        problems.as_slice(),
-        [LookupProblem::Inaccessible(_)]
-    ));
+    assert!(matches!(&results[0], Err(ResolutionError::Inaccessible(_))));
 }
 
 #[test]

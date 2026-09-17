@@ -1,6 +1,6 @@
 use beans_lang_java_model::{
     File,
-    nodes::{NodeIndex, NodeKind, types::TypeDeclaration},
+    nodes::{NodeIndex, types::TypeDeclaration},
     references::{TypeNameComponent, TypeRef},
 };
 
@@ -13,9 +13,7 @@ struct TypeEntry<'a> {
 fn find_type_declarations<'a>(file: &'a File, name: &str) -> Vec<TypeEntry<'a>> {
     file.iter_nodes()
         .filter_map(|entry| {
-            let NodeKind::Type(declaration) = entry.node.kind() else {
-                return None;
-            };
+            let declaration = entry.node.kind().as_type()?;
 
             (declaration.name.as_deref() == Some(name)).then_some(TypeEntry {
                 parent: entry.node.parent().expect("type has a parent"),

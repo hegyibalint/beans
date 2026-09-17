@@ -31,10 +31,7 @@ fn unsupported_import_forms_are_not_silently_treated_as_absent() {
         let text = format!("{import} class Use {{ Bar target; }}");
         let fixture = Fixture::new(&[("src/Use.java", &text)]);
         let results = fixture.field("src/Use.java");
-        assert!(
-            matches!(&results[0], Err(ResolutionFailure { problems, .. })
-            if problems.iter().any(|problem| matches!(problem, LookupProblem::Unsupported(_))))
-        );
+        assert!(matches!(&results[0], Err(ResolutionError::Unsupported(_))));
     }
 }
 
@@ -58,18 +55,7 @@ fn cross_package_protected_access_keeps_the_candidate_until_the_rule_is_implemen
         ),
     ]);
     let results = fixture.field("src/Use.java");
-    let Err(ResolutionFailure {
-        candidates,
-        problems,
-    }) = &results[0]
-    else {
-        panic!("expected explicit unsupported access: {results:?}");
-    };
-    assert_eq!(candidates.len(), 1);
-    assert!(matches!(
-        problems.as_slice(),
-        [LookupProblem::Unsupported(_)]
-    ));
+    assert!(matches!(&results[0], Err(ResolutionError::Unsupported(_))));
 }
 
 #[test]
@@ -97,10 +83,7 @@ fn supertype_name_collision_with_an_owner_parameter_is_not_silently_rebound() {
         "class Base {} class Use<Base> extends Base {}",
     )]);
     let results = fixture.superclass("src/Use.java", "Use");
-    assert!(
-        matches!(&results[0], Err(ResolutionFailure { problems, .. })
-        if matches!(problems.as_slice(), [LookupProblem::Unsupported(_)]))
-    );
+    assert!(matches!(&results[0], Err(ResolutionError::Unsupported(_))));
 }
 
 #[test]
@@ -110,18 +93,7 @@ fn unknown_implicit_supertype_does_not_disappear_beside_a_known_interface_member
         "interface I { class Bar {} } enum Use implements I { VALUE; Bar target; }",
     )]);
     let results = fixture.field("src/Use.java");
-    let Err(ResolutionFailure {
-        candidates,
-        problems,
-    }) = &results[0]
-    else {
-        panic!("expected unresolved implicit supertype: {results:?}");
-    };
-    assert_eq!(candidates.len(), 1);
-    assert!(matches!(
-        problems.as_slice(),
-        [LookupProblem::Unsupported(_)]
-    ));
+    assert!(matches!(&results[0], Err(ResolutionError::Unsupported(_))));
 }
 
 #[test]

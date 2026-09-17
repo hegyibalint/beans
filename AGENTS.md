@@ -14,7 +14,9 @@ Use these docs to drive the implementation, and provide citations to _why_ somet
 
 # Code style
 
-Comments should be used very sparingly; this is an experimental project, things move, and I would like to add most of the comments strenthening my understanding.
+Comments should be used sparingly to explain common logic.
+However, write them if they make a method/statement clearer why the JLS/JVMS (or any other spec) needs that particular thing.
+
 I am not a Rust expert; be very critical of my code and suggest better ways to do things. I want to learn idiomatic Rust and best practices. 
 I want to avoid cargo culting, so please explain why a change is better than what I have.
 
@@ -27,3 +29,5 @@ Read the dedicated `docs/TESTING.md` to learn more about our testing policy.
 The project is not yet using GH Issues as development is mostly single person and local.
 For simplicity, there is a `TODO.md` file.
 Make sure the file is maintained after a feature there is developed.
+
+## Behavior

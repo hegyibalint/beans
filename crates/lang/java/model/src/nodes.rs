@@ -26,6 +26,15 @@ pub enum NodeKind {
     Block,
 }
 
+impl NodeKind {
+    pub fn as_type(&self) -> Option<&TypeDeclaration> {
+        match self {
+            Self::Type(declaration) => Some(declaration),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Node {
     parent: Option<NodeIndex>,

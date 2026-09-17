@@ -57,14 +57,14 @@ impl Fixture {
         let file = query.file(&source).unwrap();
         let (node, reference) = file
             .iter_nodes()
-            .find_map(|entry| match entry.node.kind() {
-                NodeKind::Type(declaration) if declaration.name.as_deref() == Some(owner) => {
-                    Some((
+            .find_map(|entry| {
+                let declaration = entry.node.kind().as_type()?;
+                (declaration.name.as_deref() == Some(owner)).then(|| {
+                    (
                         entry.index,
                         declaration.declared_superclass.as_ref().unwrap(),
-                    ))
-                }
-                _ => None,
+                    )
+                })
             })
             .expect("expected superclass reference");
         Resolver {}.resolve(&ResolverContext::new(

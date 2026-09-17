@@ -1,6 +1,6 @@
 use crate::query::JavaTypeEntry;
 use beans_core_model::source::Source;
-use beans_lang_java_model::{File, nodes::NodeKind};
+use beans_lang_java_model::File;
 
 #[test]
 fn an_empty_member_path_returns_the_starting_target_unchanged() {
@@ -9,9 +9,11 @@ fn an_empty_member_path_returns_the_starting_target_unchanged() {
         path: "Outer.java".into(),
     };
     let entry = file.iter_children(File::ROOT_NODE_ID).next().unwrap();
-    let NodeKind::Type(declaration) = entry.node.kind() else {
-        panic!("expected a type declaration");
-    };
+    let declaration = entry
+        .node
+        .kind()
+        .as_type()
+        .expect("expected a type declaration");
     let target = JavaTypeEntry {
         source: &source,
         file: &file,

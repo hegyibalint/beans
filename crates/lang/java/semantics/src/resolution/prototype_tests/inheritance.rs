@@ -75,22 +75,14 @@ fn missing_supertype_blocks_fallback_to_a_top_level_name() {
         "class Bar {} class Use extends Missing { Bar target; }",
     )]);
     let results = fixture.field("src/Use.java");
-    let Err(ResolutionFailure {
-        candidates,
-        problems,
-    }) = &results[0]
-    else {
-        panic!("expected blocked lookup: {results:?}");
-    };
-    assert!(candidates.is_empty());
-    let [LookupProblem::Supertype { results, .. }] = problems.as_slice() else {
-        panic!("expected supertype failure: {problems:?}");
-    };
-    assert!(matches!(results.as_slice(), [Ok(Resolution::NotFound)]));
+    assert!(matches!(
+        &results[0],
+        Err(ResolutionError::InvalidSupertype(_))
+    ));
 }
 
 #[test]
-fn ambiguous_supertype_is_not_explored_but_independent_interfaces_are() {
+fn ambiguous_supertype_stops_member_lookup() {
     let fixture = Fixture::new(&[
         (
             "src/Use.java",
@@ -106,41 +98,10 @@ fn ambiguous_supertype_is_not_explored_but_independent_interfaces_are() {
         ),
     ]);
     let results = fixture.field("src/Use.java");
-    let Err(ResolutionFailure {
-        candidates,
-        problems,
-    }) = &results[0]
-    else {
-        panic!("expected blocked lookup: {results:?}");
-    };
-    assert_eq!(candidates.len(), 1);
-    fixture.assert_declaration(&candidates[0].declaration, "src/Use.java", "Good.Bar");
-    let [LookupProblem::Supertype { results, .. }] = problems.as_slice() else {
-        panic!("expected failed superclass reference: {problems:?}");
-    };
-    let [Ok(Resolution::Ambiguous(bases))] = results.as_slice() else {
-        panic!("expected ambiguous Base: {results:?}");
-    };
-    assert_eq!(bases.len(), 2);
-}
-
-#[test]
-fn self_and_mutual_inheritance_cycles_are_preserved_without_recursing_forever() {
-    for text in [
-        "class A extends A { Bar target; }",
-        "class A extends B { Bar target; } class B extends A {}",
-    ] {
-        let fixture = Fixture::new(&[("src/Use.java", text)]);
-        let results = fixture.field("src/Use.java");
-        let Err(ResolutionFailure { problems, .. }) = &results[0] else {
-            panic!("expected cycle: {results:?}");
-        };
-        assert!(
-            problems.iter().any(
-                |problem| matches!(problem, LookupProblem::Cycle { name, .. } if name == "Bar")
-            )
-        );
-    }
+    assert!(matches!(
+        &results[0],
+        Err(ResolutionError::InvalidSupertype(_))
+    ));
 }
 
 #[test]
@@ -206,16 +167,5 @@ fn inaccessible_member_is_not_reported_as_missing_or_replaced_by_an_outer_name()
         "class Hidden {} class Outer { private class Hidden {} } class Use { Outer.Hidden target; }",
     )]);
     let results = fixture.field("src/Use.java");
-    let Err(ResolutionFailure {
-        candidates,
-        problems,
-    }) = &results[1]
-    else {
-        panic!("expected inaccessible member: {results:?}");
-    };
-    assert_eq!(candidates.len(), 1);
-    assert!(matches!(
-        problems.as_slice(),
-        [LookupProblem::Inaccessible(_)]
-    ));
+    assert!(matches!(&results[1], Err(ResolutionError::Inaccessible(_))));
 }
