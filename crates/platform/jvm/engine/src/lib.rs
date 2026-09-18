@@ -3,14 +3,15 @@ use beans_core_engine::{
     storage::{RevisionEntry, RevisionedStorage},
 };
 use beans_core_model::source::Source;
-use beans_platform_model::Class;
+use beans_platform_jvm_model::classes::Class;
+use beans_platform_jvm_semantics::query::JvmQuery;
 
 #[derive(Default)]
-pub struct PlatformEngine {
+pub struct JvmEngine {
     classes: RevisionedStorage<Source, Vec<Class>>,
 }
 
-impl PlatformEngine {
+impl JvmEngine {
     pub fn store(
         &mut self,
         revision: Revision,
@@ -19,12 +20,19 @@ impl PlatformEngine {
     ) -> RevisionEntry<Source> {
         self.classes.put(revision, source, classes)
     }
+
+    pub fn query(&self, revision: Revision) -> JvmQuery<'_> {
+        JvmQuery::new(&self.classes, revision)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use beans_platform_model::{AccessLevel, BinaryName, ClassKind};
+    use beans_platform_jvm_model::{
+        classes::{AccessLevel, ClassKind},
+        names::BinaryName,
+    };
 
     fn source(path: &str) -> Source {
         Source::SourceFile { path: path.into() }
@@ -40,7 +48,7 @@ mod tests {
 
     #[test]
     fn a_source_contributes_all_of_its_classes_together() {
-        let mut engine = PlatformEngine::default();
+        let mut engine = JvmEngine::default();
         let revision = Revision::new(1);
         let source = source("src/example/Outer.java");
 
@@ -62,7 +70,7 @@ mod tests {
 
     #[test]
     fn replacing_a_source_replaces_its_contribution_without_erasing_history() {
-        let mut engine = PlatformEngine::default();
+        let mut engine = JvmEngine::default();
         let source = source("src/example/Example.java");
         engine.store(
             Revision::new(1),
@@ -92,7 +100,7 @@ mod tests {
 
     #[test]
     fn distinct_sources_can_contribute_the_same_binary_name() {
-        let mut engine = PlatformEngine::default();
+        let mut engine = JvmEngine::default();
         let revision = Revision::new(1);
         for path in [
             "first/example/Duplicate.java",
@@ -112,5 +120,24 @@ mod tests {
             .count();
 
         assert_eq!(found, 2);
+    }
+
+    #[test]
+    fn queries_read_the_engines_revisioned_classes() {
+        let mut engine = JvmEngine::default();
+        let revision = Revision::new(1);
+        engine.store(
+            revision,
+            vec![class("example.Example")],
+            source("src/example/Example.java"),
+        );
+
+        let query = engine.query(revision);
+        let found: Vec<_> = query
+            .find_class(&BinaryName::new("example.Example"))
+            .collect();
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].class.binary_name.as_str(), "example.Example");
     }
 }

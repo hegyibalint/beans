@@ -184,17 +184,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 
 [[package]]
-name = "platform-engine"
+name = "platform-jvm-engine"
 version = "0.0.1"
 dependencies = [
  "core-engine",
  "core-model",
- "platform-model",
+ "platform-jvm-model",
+ "platform-jvm-semantics",
 ]
 
 [[package]]
-name = "platform-model"
+name = "platform-jvm-model"
 version = "0.0.1"
+
+[[package]]
+name = "platform-jvm-semantics"
+version = "0.0.1"
+dependencies = [
+ "core-engine",
+ "core-model",
+ "platform-jvm-model",
+]
 
 [[package]]
 name = "proc-macro2"

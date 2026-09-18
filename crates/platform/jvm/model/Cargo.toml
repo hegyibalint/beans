@@ -1,9 +1,9 @@
 [package]
-name = "platform-model"
+name = "platform-jvm-model"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [lib]
-name = "beans_platform_model"
+name = "beans_platform_jvm_model"
