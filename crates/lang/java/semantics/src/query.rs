@@ -8,10 +8,52 @@ use beans_lang_java_model::{
 
 /// An address in this vertical's storage, not a pinned snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct JavaDeclarationHandle {
+pub struct DeclarationHandle {
     revision: Revision,
     source: Source,
     node_index: NodeIndex,
+}
+
+impl DeclarationHandle {
+    pub(crate) fn new(revision: Revision, source: Source, node_index: NodeIndex) -> Self {
+        Self {
+            revision,
+            source,
+            node_index,
+        }
+    }
+
+    pub(crate) fn revision(&self) -> Revision {
+        self.revision
+    }
+
+    pub(crate) fn source(&self) -> &Source {
+        &self.source
+    }
+
+    pub(crate) fn node_index(&self) -> NodeIndex {
+        self.node_index
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TypeParameterHandle {
+    owner: DeclarationHandle,
+    index: usize,
+}
+
+impl TypeParameterHandle {
+    pub(crate) fn new(owner: DeclarationHandle, index: usize) -> Self {
+        Self { owner, index }
+    }
+
+    pub(crate) fn owner(&self) -> &DeclarationHandle {
+        &self.owner
+    }
+
+    pub(crate) fn index(&self) -> usize {
+        self.index
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -59,19 +101,12 @@ impl<'a> JavaQuery<'a> {
         &self,
         source: &Source,
         node_index: NodeIndex,
-    ) -> JavaDeclarationHandle {
-        JavaDeclarationHandle {
-            revision: self.revision,
-            source: source.clone(),
-            node_index,
-        }
+    ) -> DeclarationHandle {
+        DeclarationHandle::new(self.revision, source.clone(), node_index)
     }
 
     /// Reads a type at the handle's revision, without applying classpath visibility.
-    pub fn declaration<'b>(
-        &'b self,
-        handle: &'b JavaDeclarationHandle,
-    ) -> Option<JavaTypeEntry<'b>> {
+    pub fn declaration<'b>(&'b self, handle: &'b DeclarationHandle) -> Option<JavaTypeEntry<'b>> {
         let file = self.files.get(handle.revision, &handle.source)?;
         let declaration = file.node(handle.node_index)?.kind().as_type()?;
         Some(JavaTypeEntry {

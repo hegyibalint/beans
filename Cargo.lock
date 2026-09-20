@@ -145,6 +145,7 @@ dependencies = [
  "core-engine",
  "core-model",
  "lang-java-model",
+ "platform-jvm-semantics",
  "tree-sitter",
  "tree-sitter-java",
 ]

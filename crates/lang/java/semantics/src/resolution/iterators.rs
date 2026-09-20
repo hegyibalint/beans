@@ -1,46 +1,122 @@
-use beans_lang_java_model::{File, NodeEntry, nodes::NodeIndex};
+use beans_lang_java_model::NodeEntry;
 
-use super::{ResolutionFailure, model::TypeCandidate};
+use super::{
+    JavaTypeCandidate, ResolutionFailure, ResolutionSuccess, Resolver, ResolverContext,
+    TypeCandidate,
+};
+use crate::query::{DeclarationHandle, TypeParameterHandle};
 
-pub(super) fn iter_enclosing_types(
-    file: &File,
-    node: NodeIndex,
-) -> impl Iterator<Item = TypeCandidate<'_>> + '_ {
-    file.iter_ancestors(node).filter_map(type_candidate)
+pub(super) fn iter_enclosing_types<'ctx>(
+    ctx: &'ctx ResolverContext<'_>,
+) -> impl Iterator<Item = TypeCandidate> + 'ctx {
+    ctx.file
+        .iter_ancestors(ctx.node_index)
+        .filter_map(move |entry| type_candidate(ctx, entry))
 }
 
-pub(super) fn iter_declared_member_types(
-    file: &File,
-    owner: NodeIndex,
-) -> impl Iterator<Item = TypeCandidate<'_>> + '_ {
-    let owner_node = file.node(owner).expect("member type owner must exist");
-    assert!(
-        owner_node.kind().as_type().is_some(),
-        "member type owner must be a type declaration"
-    );
+pub(super) fn iter_direct_supertypes<'ctx>(
+    ctx: &'ctx ResolverContext<'_>,
+    owner: &TypeCandidate,
+) -> impl Iterator<Item = Result<ResolutionSuccess, ResolutionFailure>> + 'ctx {
+    let owner = local_declaration_handle(ctx, owner);
+    let owner_index = owner.map(DeclarationHandle::node_index);
+    let supertypes = owner
+        .and_then(|owner| ctx.file.node(owner.node_index()))
+        .and_then(|node| node.kind().as_type())
+        .map(|declaration| {
+            declaration
+                .declared_superclass
+                .iter()
+                .chain(&declaration.declared_superinterfaces)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
-    file.iter_children(owner).filter_map(type_candidate)
+    supertypes.into_iter().map(move |type_ref| {
+        let supertype_ctx = ResolverContext::new(
+            ctx.revision,
+            ctx.source,
+            ctx.file,
+            owner_index.expect("supertype owner must exist"),
+            type_ref,
+        );
+        Resolver::resolve(&supertype_ctx)
+    })
 }
 
-/// This is the semantic entry point for member type traversal.
+pub(super) fn iter_type_parameters(
+    ctx: &ResolverContext<'_>,
+    owner: &TypeCandidate,
+) -> impl Iterator<Item = TypeCandidate> {
+    let Some(owner) = local_declaration_handle(ctx, owner).cloned() else {
+        return Vec::new().into_iter();
+    };
+    let Some(declaration) = ctx
+        .file
+        .node(owner.node_index())
+        .and_then(|node| node.kind().as_type())
+    else {
+        return Vec::new().into_iter();
+    };
+
+    declaration
+        .type_parameters
+        .iter()
+        .enumerate()
+        .map(|(index, _)| {
+            TypeCandidate::Java(JavaTypeCandidate::TypeParameter(TypeParameterHandle::new(
+                owner.clone(),
+                index,
+            )))
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+}
+
+/// Iterates over the member types exposed by `owner`.
 ///
-/// JLS §§8.5 and 9.5 also include inherited member types. Until supertypes can
-/// be resolved to `TypeCandidate`s, this iterator exposes declared members only.
-pub(super) fn iter_member_types(
-    file: &File,
-    owner: NodeIndex,
-) -> impl Iterator<Item = Result<TypeCandidate<'_>, ResolutionFailure>> + '_ {
-    iter_declared_member_types(file, owner).map(Ok)
+/// Inherited and JVM member types are not available yet.
+pub(super) fn iter_member_types<'ctx>(
+    ctx: &'ctx ResolverContext<'_>,
+    owner: &TypeCandidate,
+) -> impl Iterator<Item = TypeCandidate> + 'ctx {
+    iter_declared_member_types(ctx, owner)
 }
 
-fn type_candidate(entry: NodeEntry<'_>) -> Option<TypeCandidate<'_>> {
-    let declaration = entry.node.kind().as_type()?;
-    Some(TypeCandidate::new(entry.index, declaration))
+pub(super) fn iter_declared_member_types<'ctx>(
+    ctx: &'ctx ResolverContext<'_>,
+    owner: &TypeCandidate,
+) -> impl Iterator<Item = TypeCandidate> + 'ctx {
+    let owner = local_declaration_handle(ctx, owner).map(DeclarationHandle::node_index);
+
+    owner
+        .into_iter()
+        .flat_map(move |owner| ctx.file.iter_children(owner))
+        .filter_map(move |entry| type_candidate(ctx, entry))
+}
+
+fn local_declaration_handle<'a>(
+    ctx: &ResolverContext<'_>,
+    candidate: &'a TypeCandidate,
+) -> Option<&'a DeclarationHandle> {
+    let TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) = candidate else {
+        return None;
+    };
+    (handle.revision() == ctx.revision && handle.source() == ctx.source).then_some(handle)
+}
+
+fn type_candidate(ctx: &ResolverContext<'_>, entry: NodeEntry<'_>) -> Option<TypeCandidate> {
+    entry.node.kind().as_type()?;
+    Some(TypeCandidate::Java(JavaTypeCandidate::Declaration(
+        DeclarationHandle::new(ctx.revision, ctx.source.clone(), entry.index),
+    )))
 }
 
 #[cfg(test)]
 mod tests {
-    use beans_lang_java_model::{names::Name, nodes::NodeKind};
+    use beans_core_engine::Revision;
+    use beans_core_model::source::Source;
+    use beans_lang_java_model::{File, names::Name, nodes::NodeIndex};
 
     use super::*;
 
@@ -56,53 +132,75 @@ mod tests {
         matches[0].0
     }
 
-    #[test]
-    fn enclosing_types_are_nearest_first() {
-        let file = crate::lower_into(
-            "class Outer { class Inner { class Deep { int value; } } class Sibling {} }",
-        );
-        let deep = type_index(&file, &["Outer", "Inner", "Deep"]);
-        let field = file
-            .iter_children(deep)
-            .find(|entry| matches!(entry.node.kind(), NodeKind::Field(_)))
-            .expect("expected a field");
-
-        let names: Vec<_> = iter_enclosing_types(&file, field.index)
-            .map(|candidate| candidate.declaration().name.as_deref())
-            .collect();
-
-        assert_eq!(names, [Some("Deep"), Some("Inner"), Some("Outer")]);
+    fn candidate(revision: Revision, source: &Source, index: NodeIndex) -> TypeCandidate {
+        TypeCandidate::Java(JavaTypeCandidate::Declaration(DeclarationHandle::new(
+            revision,
+            source.clone(),
+            index,
+        )))
     }
 
     #[test]
-    fn declared_member_types_are_direct_and_ordered() {
+    fn direct_supertypes_are_resolved_in_declaration_order() {
         let file = crate::lower_into(
-            "class Outer { class First {} interface Second {} int ignored; class Branch { class Deep {} } }",
+            "class Outer { class Base {} interface Contract {} class Child extends Base implements Contract {} }",
         );
-        let outer = type_index(&file, &["Outer"]);
+        let source = Source::SourceFile {
+            path: "Test.java".into(),
+        };
+        let revision = Revision::new(1);
+        let child = type_index(&file, &["Outer", "Child"]);
+        let child_declaration = file.node(child).unwrap().kind().as_type().unwrap();
+        let ctx = ResolverContext::new(
+            revision,
+            &source,
+            &file,
+            child,
+            child_declaration.declared_superclass.as_ref().unwrap(),
+        );
 
-        let members: Vec<_> = iter_declared_member_types(&file, outer)
-            .map(|candidate| {
-                (
-                    candidate.node_index(),
-                    candidate.declaration().name.as_deref(),
-                )
+        let resolved: Vec<_> = iter_direct_supertypes(&ctx, &candidate(revision, &source, child))
+            .map(|result| match result.unwrap() {
+                ResolutionSuccess::Single(TypeCandidate::Java(JavaTypeCandidate::Declaration(
+                    handle,
+                ))) => handle.node_index(),
+                result => panic!("expected one Java declaration, got {result:?}"),
             })
             .collect();
 
-        assert_eq!(members.len(), 3);
         assert_eq!(
-            members.iter().map(|(_, name)| *name).collect::<Vec<_>>(),
-            [Some("First"), Some("Second"), Some("Branch")]
+            resolved,
+            [
+                type_index(&file, &["Outer", "Base"]),
+                type_index(&file, &["Outer", "Contract"]),
+            ]
         );
-        assert!(members.iter().all(|(index, _)| *index != outer));
     }
 
     #[test]
-    #[should_panic(expected = "member type owner must be a type declaration")]
-    fn declared_member_types_reject_a_non_type_owner() {
-        let file = crate::lower_into("class Example {}");
+    fn direct_supertype_failures_do_not_hide_later_results() {
+        let file = crate::lower_into(
+            "class Outer { interface Contract {} class Child extends Missing implements Contract {} }",
+        );
+        let source = Source::SourceFile {
+            path: "Test.java".into(),
+        };
+        let revision = Revision::new(1);
+        let child = type_index(&file, &["Outer", "Child"]);
+        let child_declaration = file.node(child).unwrap().kind().as_type().unwrap();
+        let ctx = ResolverContext::new(
+            revision,
+            &source,
+            &file,
+            child,
+            child_declaration.declared_superclass.as_ref().unwrap(),
+        );
 
-        let _ = iter_declared_member_types(&file, File::ROOT_NODE_ID).next();
+        let results: Vec<_> =
+            iter_direct_supertypes(&ctx, &candidate(revision, &source, child)).collect();
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0], Err(ResolutionFailure::NotFound));
+        assert!(matches!(results[1], Ok(ResolutionSuccess::Single(_))));
     }
 }

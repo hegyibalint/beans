@@ -12,5 +12,6 @@ name = "beans_lang_java_semantics"
 core-engine = { path = "../../../core/engine" }
 core-model = { path = "../../../core/model" }
 lang-java-model = { path = "../model" }
+platform-jvm-semantics = { path = "../../../platform/jvm/semantics" }
 tree-sitter.workspace = true
 tree-sitter-java.workspace = true
