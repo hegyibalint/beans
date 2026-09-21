@@ -1,8 +1,7 @@
 use beans_core_engine::{Revision, storage::RevisionedStorage};
-use beans_core_model::{classpath::Classpath, source::Source};
+use beans_core_model::{classpath::Classpath, names::Name, source::Source};
 use beans_lang_java_model::{
     File,
-    names::Name,
     nodes::{NodeIndex, types::TypeDeclaration},
 };
 
@@ -15,7 +14,7 @@ pub struct DeclarationHandle {
 }
 
 impl DeclarationHandle {
-    pub(crate) fn new(revision: Revision, source: Source, node_index: NodeIndex) -> Self {
+    pub fn new(revision: Revision, source: Source, node_index: NodeIndex) -> Self {
         Self {
             revision,
             source,
@@ -23,36 +22,16 @@ impl DeclarationHandle {
         }
     }
 
-    pub(crate) fn revision(&self) -> Revision {
+    pub fn revision(&self) -> Revision {
         self.revision
     }
 
-    pub(crate) fn source(&self) -> &Source {
+    pub fn source(&self) -> &Source {
         &self.source
     }
 
-    pub(crate) fn node_index(&self) -> NodeIndex {
+    pub fn node_index(&self) -> NodeIndex {
         self.node_index
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TypeParameterHandle {
-    owner: DeclarationHandle,
-    index: usize,
-}
-
-impl TypeParameterHandle {
-    pub(crate) fn new(owner: DeclarationHandle, index: usize) -> Self {
-        Self { owner, index }
-    }
-
-    pub(crate) fn owner(&self) -> &DeclarationHandle {
-        &self.owner
-    }
-
-    pub(crate) fn index(&self) -> usize {
-        self.index
     }
 }
 
@@ -97,11 +76,7 @@ impl<'a> JavaQuery<'a> {
     }
 
     /// The caller supplies a declaration index from this source at the query's revision.
-    pub(crate) fn declaration_handle(
-        &self,
-        source: &Source,
-        node_index: NodeIndex,
-    ) -> DeclarationHandle {
+    pub fn declaration_handle(&self, source: &Source, node_index: NodeIndex) -> DeclarationHandle {
         DeclarationHandle::new(self.revision, source.clone(), node_index)
     }
 

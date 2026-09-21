@@ -1,12 +1,12 @@
 [package]
-name = "lang-java-engine"
+name = "lang-java-resolution"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [lib]
-name = "beans_lang_java_engine"
+name = "beans_lang_java_resolution"
 
 [dependencies]
 core-engine = { path = "../../../core/engine" }
@@ -14,3 +14,5 @@ core-model = { path = "../../../core/model" }
 core-resolution = { path = "../../../core/resolution" }
 lang-java-model = { path = "../model" }
 lang-java-semantics = { path = "../semantics" }
+platform-jvm-model = { path = "../../../platform/jvm/model" }
+platform-jvm-semantics = { path = "../../../platform/jvm/semantics" }

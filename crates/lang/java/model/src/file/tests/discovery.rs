@@ -1,6 +1,7 @@
+use beans_core_model::names::Name;
+
 use crate::{
     File,
-    names::Name,
     nodes::{
         NodeIndex, NodeKind,
         fields::FieldDeclaration,

@@ -2,9 +2,10 @@ use beans_core_engine::{
     Revision,
     storage::{RevisionEntry, RevisionedStorage},
 };
-use beans_core_model::source::Source;
+use beans_core_model::{names::Name, source::Source};
+use beans_core_resolution::query::TypeDefinitionQuery;
 use beans_platform_jvm_model::classes::Class;
-use beans_platform_jvm_semantics::query::JvmQuery;
+use beans_platform_jvm_semantics::query::{ClassHandle, JvmQuery};
 
 #[derive(Default)]
 pub struct JvmEngine {
@@ -23,6 +24,15 @@ impl JvmEngine {
 
     pub fn query(&self, revision: Revision) -> JvmQuery<'_> {
         JvmQuery::new(&self.classes, revision)
+    }
+}
+
+impl TypeDefinitionQuery<ClassHandle> for JvmEngine {
+    fn find_types<'query>(
+        &'query self,
+        _name: &'query Name,
+    ) -> impl Iterator<Item = ClassHandle> + 'query {
+        Vec::new().into_iter()
     }
 }
 

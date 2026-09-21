@@ -1,16 +1,12 @@
 use beans_core_engine::Revision;
-use beans_core_model::source::Source;
+use beans_core_model::{names::Name, source::Source};
 use beans_lang_java_model::{
     File,
-    names::Name,
     nodes::{NodeIndex, NodeKind},
     references::TypeRef,
 };
 
-use super::{
-    JavaTypeCandidate, ResolutionFailure, ResolutionSuccess, Resolver, ResolverContext,
-    TypeCandidate,
-};
+use crate::{JavaTypeCandidate, ResolutionFailure, Resolver, ResolverContext, TypeCandidate};
 
 fn type_index(file: &File, components: &[&str]) -> NodeIndex {
     let name = Name::new(
@@ -24,7 +20,7 @@ fn type_index(file: &File, components: &[&str]) -> NodeIndex {
     matches[0].0
 }
 
-fn resolve_field(file: &File, field_name: &str) -> Result<ResolutionSuccess, ResolutionFailure> {
+fn resolve_field(file: &File, field_name: &str) -> Result<TypeCandidate, ResolutionFailure> {
     let field = file
         .iter_nodes()
         .find_map(|entry| match entry.node.kind() {
@@ -46,10 +42,8 @@ fn resolve_field(file: &File, field_name: &str) -> Result<ResolutionSuccess, Res
     Resolver::resolve(&ctx)
 }
 
-fn resolved_java_index(result: ResolutionSuccess) -> NodeIndex {
-    let ResolutionSuccess::Single(TypeCandidate::Java(JavaTypeCandidate::Declaration(handle))) =
-        result
-    else {
+fn resolved_java_index(result: TypeCandidate) -> NodeIndex {
+    let TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) = result else {
         panic!("expected one Java declaration");
     };
     handle.node_index()
@@ -84,13 +78,11 @@ fn class_type_parameter_is_a_java_candidate() {
 
     let resolved = resolve_field(&file, "value").unwrap();
 
-    let ResolutionSuccess::Single(TypeCandidate::Java(JavaTypeCandidate::TypeParameter(handle))) =
-        resolved
-    else {
+    let TypeCandidate::Java(JavaTypeCandidate::TypeParameter(handle)) = resolved else {
         panic!("expected one Java type parameter");
     };
     assert_eq!(handle.owner().node_index(), outer);
-    assert_eq!(handle.index(), 0);
+    assert_eq!(handle.parameter(&file).unwrap().name, "T");
 }
 
 #[test]
@@ -110,9 +102,7 @@ fn nearer_type_parameter_wins_over_an_outer_member() {
 
     let resolved = resolve_field(&file, "value").unwrap();
 
-    let ResolutionSuccess::Single(TypeCandidate::Java(JavaTypeCandidate::TypeParameter(handle))) =
-        resolved
-    else {
+    let TypeCandidate::Java(JavaTypeCandidate::TypeParameter(handle)) = resolved else {
         panic!("expected one Java type parameter");
     };
     assert_eq!(handle.owner().node_index(), inner);
@@ -122,10 +112,10 @@ fn nearer_type_parameter_wins_over_an_outer_member() {
 fn duplicate_type_parameters_are_ambiguous() {
     let file = crate::lower_into("class Outer<T, T> { T value; }");
 
-    let resolved = resolve_field(&file, "value").unwrap();
+    let result = resolve_field(&file, "value");
 
-    let ResolutionSuccess::Ambiguous(candidates) = resolved else {
-        panic!("expected ambiguity");
+    let Err(ResolutionFailure::Ambiguous(candidates)) = result else {
+        panic!("expected ambiguity, got {result:?}");
     };
     assert_eq!(candidates.len(), 2);
     assert!(candidates.iter().all(|candidate| matches!(
@@ -160,10 +150,10 @@ fn a_missing_suffix_does_not_retry_an_outer_prefix() {
 fn duplicate_members_are_ambiguous() {
     let file = crate::lower_into("class Outer { class Member {} class Member {} Member value; }");
 
-    let result = resolve_field(&file, "value").unwrap();
+    let result = resolve_field(&file, "value");
 
-    let ResolutionSuccess::Ambiguous(candidates) = result else {
-        panic!("expected ambiguity");
+    let Err(ResolutionFailure::Ambiguous(candidates)) = result else {
+        panic!("expected ambiguity, got {result:?}");
     };
     assert_eq!(candidates.len(), 2);
     assert!(

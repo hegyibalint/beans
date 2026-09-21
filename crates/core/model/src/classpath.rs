@@ -12,7 +12,10 @@ impl Classpath {
 
     /// Tests source-root membership, not artifact selection. Paths use the same base.
     pub fn contains_source_file(&self, path: &Path) -> bool {
-        if path.components().any(|component| component == Component::ParentDir) {
+        if path
+            .components()
+            .any(|component| component == Component::ParentDir)
+        {
             return false;
         }
         self.elements.iter().any(|element| {

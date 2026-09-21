@@ -1,0 +1,12 @@
+[package]
+name = "core-resolution"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+name = "beans_core_resolution"
+
+[dependencies]
+core-model = { path = "../model" }

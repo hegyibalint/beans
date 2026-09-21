@@ -1,4 +1,6 @@
-use crate::{names::Name, references::TypeRef};
+use beans_core_model::names::Name;
+
+use crate::references::TypeRef;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Import {
@@ -76,11 +78,10 @@ pub enum ImportType {
 
 #[cfg(test)]
 mod tests {
+    use beans_core_model::names::Name;
+
     use super::{Import, ImportType::*};
-    use crate::{
-        names::Name,
-        references::{PrimitiveType, TypeBound, TypeNameComponent, TypeRef},
-    };
+    use crate::references::{PrimitiveType, TypeBound, TypeNameComponent, TypeRef};
 
     fn named(value: &str) -> TypeRef {
         TypeRef::Named {

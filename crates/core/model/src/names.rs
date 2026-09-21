@@ -23,7 +23,6 @@ impl Name {
     }
 
     /// Checks for nonempty components, not identifier syntax or target validity.
-    /// An empty name is allowed to represent the unnamed package (JLS §7.4.2).
     pub fn is_valid(&self) -> bool {
         self.components
             .iter()

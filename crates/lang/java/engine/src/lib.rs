@@ -4,9 +4,10 @@ use beans_core_engine::{
     Revision,
     storage::{RevisionEntry, RevisionedStorage},
 };
-use beans_core_model::{classpath::Classpath, source::Source};
+use beans_core_model::{classpath::Classpath, names::Name, source::Source};
+use beans_core_resolution::query::TypeDefinitionQuery;
 use beans_lang_java_model::File;
-use beans_lang_java_semantics::query::JavaQuery;
+use beans_lang_java_semantics::query::{DeclarationHandle, JavaQuery};
 
 #[derive(Default)]
 pub struct JavaEngine {
@@ -32,10 +33,19 @@ impl JavaEngine {
     }
 }
 
+impl TypeDefinitionQuery<DeclarationHandle> for JavaEngine {
+    fn find_types<'query>(
+        &'query self,
+        _name: &'query Name,
+    ) -> impl Iterator<Item = DeclarationHandle> + 'query {
+        Vec::new().into_iter()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use beans_lang_java_model::names::Name;
+    use beans_core_model::names::Name;
 
     #[test]
     fn store_returns_the_address_of_the_supplied_model() {

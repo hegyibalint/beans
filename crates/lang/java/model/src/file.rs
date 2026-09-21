@@ -1,6 +1,7 @@
+use beans_core_model::names::Name;
+
 use crate::{
     imports::Import,
-    names::Name,
     nodes::{Node, NodeIndex, NodeKind, types::TypeDeclaration},
 };
 
@@ -32,6 +33,11 @@ impl File {
 
     pub fn node(&self, index: NodeIndex) -> Option<&Node> {
         self.nodes.get(index.as_usize())
+    }
+
+    pub fn is_top_level(&self, index: NodeIndex) -> bool {
+        self.node(index)
+            .is_some_and(|node| node.parent() == Some(Self::ROOT_NODE_ID))
     }
 
     pub fn iter_nodes(&self) -> impl Iterator<Item = NodeEntry<'_>> + '_ {

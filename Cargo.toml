@@ -3,8 +3,10 @@ resolver = "3"
 members = [
     "crates/core/engine",
     "crates/core/model",
+    "crates/core/resolution",
     "crates/lang/java/engine",
     "crates/lang/java/model",
+    "crates/lang/java/resolution",
     "crates/lang/java/semantics",
     "crates/lang/java/server",
     "crates/platform/jvm/engine",

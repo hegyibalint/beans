@@ -70,6 +70,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "core-resolution"
+version = "0.0.1"
+dependencies = [
+ "core-model",
+]
+
+[[package]]
 name = "cpufeatures"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -127,6 +134,7 @@ version = "0.0.1"
 dependencies = [
  "core-engine",
  "core-model",
+ "core-resolution",
  "lang-java-model",
  "lang-java-semantics",
 ]
@@ -139,13 +147,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "lang-java-resolution"
+version = "0.0.1"
+dependencies = [
+ "core-engine",
+ "core-model",
+ "core-resolution",
+ "lang-java-model",
+ "lang-java-semantics",
+ "platform-jvm-model",
+ "platform-jvm-semantics",
+]
+
+[[package]]
 name = "lang-java-semantics"
 version = "0.0.1"
 dependencies = [
  "core-engine",
  "core-model",
  "lang-java-model",
- "platform-jvm-semantics",
  "tree-sitter",
  "tree-sitter-java",
 ]
@@ -190,6 +210,7 @@ version = "0.0.1"
 dependencies = [
  "core-engine",
  "core-model",
+ "core-resolution",
  "platform-jvm-model",
  "platform-jvm-semantics",
 ]

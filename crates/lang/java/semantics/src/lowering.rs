@@ -1,8 +1,8 @@
 use crate::parser;
+use beans_core_model::names::Name;
 use beans_lang_java_model::{
     File,
     imports::{Import, ImportType},
-    names::Name,
     nodes::{
         NodeIndex, NodeKind,
         fields::FieldDeclaration,

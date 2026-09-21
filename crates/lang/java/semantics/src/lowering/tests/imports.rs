@@ -1,8 +1,6 @@
 use crate::lower_into;
-use beans_lang_java_model::{
-    imports::{Import, ImportType},
-    names::Name,
-};
+use beans_core_model::names::Name;
+use beans_lang_java_model::imports::{Import, ImportType};
 
 fn name(components: &[&str]) -> Name {
     components

@@ -21,6 +21,18 @@ fn an_empty_file_has_one_parentless_compilation_unit() {
 }
 
 #[test]
+fn top_level_nodes_are_direct_children_of_the_compilation_unit() {
+    let mut file = File::new();
+    let top_level = file.add_node(File::ROOT_NODE_ID, NodeKind::Block);
+    let nested = file.add_node(top_level, NodeKind::Block);
+
+    assert!(!file.is_top_level(File::ROOT_NODE_ID));
+    assert!(file.is_top_level(top_level));
+    assert!(!file.is_top_level(nested));
+    assert!(!file.is_top_level(NodeIndex::new(10)));
+}
+
+#[test]
 fn insertion_preserves_payloads_and_links_in_both_directions() {
     let mut file = File::new();
     let typ = file.add_node(
