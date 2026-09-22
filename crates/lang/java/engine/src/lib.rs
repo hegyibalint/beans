@@ -6,7 +6,11 @@ use beans_core_engine::{
     Revision,
     storage::{RevisionEntry, RevisionedStorage},
 };
-use beans_core_model::{classpath::Classpath, names::Name, source::Source};
+use beans_core_model::{
+    classpath::Classpath,
+    names::Name,
+    source::{Source, SourceLocation},
+};
 use beans_core_resolution::query::TypeDefinitionQuery;
 use beans_lang_java_model::File;
 use beans_lang_java_semantics::{
@@ -27,6 +31,15 @@ impl JavaEngine {
 
     pub fn process(&self, contents: &str) -> File {
         lower_into(contents)
+    }
+
+    pub fn find_declaration(
+        &self,
+        _revision: Revision,
+        _source: &Source,
+        _offset: usize,
+    ) -> Option<SourceLocation> {
+        None
     }
 
     pub fn store(

@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use beans_core_engine::Revision;
-use beans_core_model::source::Source;
+use beans_core_model::source::{Source, SourceLocation};
 use beans_lang_java_engine::JavaEngine;
 use beans_platform_jvm_engine::JvmEngine;
 
@@ -15,6 +15,18 @@ pub struct Engine {
 }
 
 impl Engine {
+    pub fn find_declaration(&self, source: &Source, offset: usize) -> Option<SourceLocation> {
+        let Source::SourceFile { path } = source else {
+            return None;
+        };
+
+        if self.java.accept(path) {
+            return self.java.find_declaration(self.revision, source, offset);
+        }
+
+        None
+    }
+
     pub fn process(&mut self, path: impl Into<PathBuf>, contents: &str) {
         let path = path.into();
 

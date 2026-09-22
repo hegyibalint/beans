@@ -5,6 +5,11 @@ Ingress:
   models file-backed sources; LSP clients may open documents with non-file URI
   schemes.
 
+Navigation:
+
+- Preserve byte ranges for Java declarations and references so
+  `JavaEngine::find_declaration` can map an occurrence to its target.
+
 Resolution:
 
 - Add direct-import, current-package, on-demand-import, module-import, and as-written qualified-name tiers after upward/root lookup.

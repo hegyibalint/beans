@@ -22,6 +22,19 @@ pub enum Source {
     },
 }
 
+/// A byte position in a source known to the engine.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SourceLocation {
+    pub source: Source,
+    pub offset: usize,
+}
+
+impl SourceLocation {
+    pub fn new(source: Source, offset: usize) -> Self {
+        Self { source, offset }
+    }
+}
+
 impl Source {
     pub fn source_file(path: impl Into<PathBuf>) -> Self {
         Self::SourceFile { path: path.into() }
@@ -55,7 +68,7 @@ impl Source {
 
 #[cfg(test)]
 mod tests {
-    use super::Source;
+    use super::{Source, SourceLocation};
 
     #[test]
     fn constructors_assign_paths_to_their_explicit_source_kinds() {
@@ -77,6 +90,16 @@ mod tests {
                 jar_path: "library.jar".into(),
                 entry_path: "p/Example.class".into(),
             }
+        );
+    }
+
+    #[test]
+    fn locations_pair_a_source_with_a_byte_offset() {
+        let source = Source::source_file("Example.java");
+
+        assert_eq!(
+            SourceLocation::new(source.clone(), 17),
+            SourceLocation { source, offset: 17 }
         );
     }
 }
