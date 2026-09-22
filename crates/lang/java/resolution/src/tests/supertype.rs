@@ -2,7 +2,7 @@ use beans_core_engine::Revision;
 use beans_core_model::{names::Name, source::Source};
 use beans_lang_java_model::{File, nodes::NodeIndex};
 
-use crate::{JavaTypeCandidate, Resolver, ResolverContext, TypeCandidate};
+use crate::{Context, JavaTypeCandidate, TypeCandidate, resolve_supertype};
 
 fn type_index(file: &File, components: &[&str]) -> NodeIndex {
     let name = Name::new(
@@ -21,7 +21,7 @@ fn resolve_declared_superclass(file: &File, owner: NodeIndex) -> TypeCandidate {
     let source = Source::SourceFile {
         path: "Test.java".into(),
     };
-    let ctx = ResolverContext::new(
+    let ctx = Context::new(
         Revision::new(1),
         &source,
         file,
@@ -29,7 +29,7 @@ fn resolve_declared_superclass(file: &File, owner: NodeIndex) -> TypeCandidate {
         declaration.declared_superclass.as_ref().unwrap(),
     );
 
-    Resolver::resolve_supertype(&ctx).unwrap()
+    resolve_supertype(&ctx).unwrap()
 }
 
 #[test]

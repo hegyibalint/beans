@@ -2,19 +2,19 @@
 //!
 //! # Resolution pipeline
 //!
-//! A named type reference is resolved component by component. The first component is
-//! occurrence-relative; after a type prefix is selected, every remaining component is looked up
-//! only as a member type of that selected owner. A failed suffix never restarts lookup in another
-//! lexical scope. These rules follow the distinction between simple and qualified type names in
-//! JLS §6.5.5.1 and §6.5.5.2.
+//! A named type reference is resolved component by component. `lookup_upward` resolves the first
+//! component relative to the occurrence. After selecting a type prefix, `lookup_downward` resolves
+//! every remaining component only below that selected owner. A failed suffix never restarts lookup
+//! in another lexical scope. These rules follow the distinction between simple and qualified type
+//! names in JLS §6.5.5.1 and §6.5.5.2.
 //!
 //! The stages below are the semantic contract for this module. Some compilation-unit stages are
-//! not wired into `Resolver` yet.
+//! not wired into `resolve` yet.
 //!
 //! ## 1. Validate the reference
 //!
-//! `Resolver` currently accepts a nonempty `TypeRef::Named`. Other reference shapes are resolved
-//! by their respective type rules rather than by type-name lookup.
+//! `resolve` currently accepts a nonempty `TypeRef::Named`. Other reference shapes are resolved by
+//! their respective type rules rather than by type-name lookup.
 //!
 //! ## 2. Resolve the first component in a type body
 //!
@@ -37,7 +37,7 @@
 //!
 //! ## 3. Resolve the first component in a supertype clause
 //!
-//! `Resolver::resolve_supertype` uses a different first scope:
+//! `resolve_supertype` uses a different first scope:
 //!
 //! 1. type parameters of the type being declared;
 //! 2. skip that type's declared and inherited members;
@@ -49,9 +49,10 @@
 //!
 //! ## 4. Resolve compilation-unit names
 //!
-//! After lexical scopes are exhausted, simple names use declarations and imports from the
-//! compilation unit. This stage is not wired yet. Subject to the declaration-conflict rules in JLS
-//! §7.5.1 and §7.5.3, the shadowing tiers are:
+//! After upward lookup is exhausted, downward lookup from the compilation-unit root resolves
+//! top-level types declared in the current file. Package and import lookup are not wired yet.
+//! Subject to the declaration-conflict rules in JLS §7.5.1 and §7.5.3, the remaining shadowing
+//! tiers are:
 //!
 //! 1. single-type and single-static type imports;
 //! 2. top-level types in the current package;
@@ -68,18 +69,20 @@
 //! Fully qualified names and names expanded from imports are discovered through
 //! `TypeDefinitionQuery`; package/type boundaries are not inferred from capitalization.
 //!
-//! ## 5. Resolve qualified suffixes
+//! ## 5. Resolve qualified suffixes downward
 //!
 //! Once the first component selects a single type candidate, each remaining component is resolved
-//! relative to that owner:
+//! below that owner:
 //!
 //! 1. directly declared member types;
 //! 2. inherited member types;
 //! 3. otherwise the reference is only partially resolved.
 //!
-//! Type parameters are not member types and are therefore not considered for suffixes. Member
-//! accessibility and the requirement for exactly one accessible member are specified by JLS
-//! §6.5.5.2 and §6.6.1.
+//! Downward lookup never considers type-parameter declarations. When upward lookup selects a type
+//! parameter with a remaining suffix, it substitutes each bound at the parameter's declaration
+//! point and recursively resolves the resulting path. This follows the intersection-type member
+//! rule in JLS §4.4. Member accessibility and the requirement for exactly one accessible member are
+//! specified by JLS §6.5.5.2 and §6.6.1.
 //!
 //! ## 6. Inherited member types
 //!
@@ -122,12 +125,15 @@ mod tests;
 #[cfg(test)]
 use beans_lang_java_semantics::lower_into;
 
-pub use self::result::{JavaTypeCandidate, ResolutionFailure, TypeCandidate, TypeParameterHandle};
+pub use self::{
+    resolution::{resolve, resolve_supertype},
+    result::{JavaTypeCandidate, ResolutionFailure, TypeCandidate, TypeParameterHandle},
+};
 use beans_core_engine::Revision;
 use beans_core_model::source::Source;
 use beans_lang_java_model::{File, nodes::NodeIndex, references::TypeRef};
 
-pub struct ResolverContext<'a> {
+pub struct Context<'a> {
     revision: Revision,
     source: &'a Source,
     file: &'a File,
@@ -135,7 +141,7 @@ pub struct ResolverContext<'a> {
     type_ref: &'a TypeRef,
 }
 
-impl<'a> ResolverContext<'a> {
+impl<'a> Context<'a> {
     pub fn new(
         revision: Revision,
         source: &'a Source,
@@ -152,5 +158,3 @@ impl<'a> ResolverContext<'a> {
         }
     }
 }
-
-pub struct Resolver {}

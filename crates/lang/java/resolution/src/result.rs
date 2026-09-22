@@ -34,6 +34,7 @@ pub enum ResolutionFailure {
     InvalidTypeRef,
     Ambiguous(Vec<TypeCandidate>),
     IllegalTypeParameterUse(TypeParameterHandle),
+    CircularTypeParameterBound(TypeParameterHandle),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -46,4 +47,28 @@ pub enum TypeCandidate {
 pub enum JavaTypeCandidate {
     Declaration(DeclarationHandle),
     TypeParameter(TypeParameterHandle),
+}
+
+pub(crate) fn classify_candidates(
+    mut candidates: impl Iterator<Item = TypeCandidate>,
+) -> Result<Option<TypeCandidate>, ResolutionFailure> {
+    let Some(first) = candidates.next() else {
+        return Ok(None);
+    };
+    let Some(second) = candidates.next() else {
+        return Ok(Some(first));
+    };
+
+    Err(ResolutionFailure::Ambiguous(
+        std::iter::once(first)
+            .chain(std::iter::once(second))
+            .chain(candidates)
+            .collect(),
+    ))
+}
+
+pub(crate) fn push_unique_candidate(candidates: &mut Vec<TypeCandidate>, candidate: TypeCandidate) {
+    if !candidates.contains(&candidate) {
+        candidates.push(candidate);
+    }
 }

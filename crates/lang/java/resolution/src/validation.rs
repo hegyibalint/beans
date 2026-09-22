@@ -3,20 +3,25 @@ use beans_lang_java_model::nodes::{
     types::{Kind, Modifier},
 };
 
-use crate::{
-    JavaTypeCandidate, ResolutionFailure, ResolverContext, TypeCandidate, TypeParameterHandle,
-};
+use crate::{Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, TypeParameterHandle};
 
 pub(super) fn validate_resolution(
-    ctx: &ResolverContext<'_>,
+    ctx: &Context<'_>,
     resolution: TypeCandidate,
 ) -> Result<TypeCandidate, ResolutionFailure> {
-    validate_type_parameter_usage(ctx, &resolution)?;
+    validate_candidate_use(ctx, &resolution)?;
     Ok(resolution)
 }
 
+pub(super) fn validate_candidate_use(
+    ctx: &Context<'_>,
+    candidate: &TypeCandidate,
+) -> Result<(), ResolutionFailure> {
+    validate_type_parameter_usage(ctx, candidate)
+}
+
 fn validate_type_parameter_usage(
-    ctx: &ResolverContext<'_>,
+    ctx: &Context<'_>,
     resolution: &TypeCandidate,
 ) -> Result<(), ResolutionFailure> {
     let TypeCandidate::Java(JavaTypeCandidate::TypeParameter(parameter)) = resolution else {
@@ -32,7 +37,7 @@ fn validate_type_parameter_usage(
     }
 }
 
-fn type_parameter_is_usable(ctx: &ResolverContext<'_>, parameter: &TypeParameterHandle) -> bool {
+fn type_parameter_is_usable(ctx: &Context<'_>, parameter: &TypeParameterHandle) -> bool {
     let enclosing_types = enclosing_type_indices(ctx);
     let Some(owner_position) = enclosing_types
         .iter()
@@ -46,24 +51,14 @@ fn type_parameter_is_usable(ctx: &ResolverContext<'_>, parameter: &TypeParameter
         .all(|edge| is_direct_inner_class(ctx, edge[0], edge[1]))
 }
 
-fn enclosing_type_indices(ctx: &ResolverContext<'_>) -> Vec<NodeIndex> {
-    let current_type = ctx
-        .file
-        .node(ctx.node_index)
-        .and_then(|node| node.kind().as_type())
-        .map(|_| ctx.node_index);
-
-    current_type
-        .into_iter()
-        .chain(
-            ctx.file
-                .iter_ancestors(ctx.node_index)
-                .filter_map(|entry| entry.node.kind().as_type().map(|_| entry.index)),
-        )
+fn enclosing_type_indices(ctx: &Context<'_>) -> Vec<NodeIndex> {
+    ctx.file
+        .iter_ancestors(ctx.node_index)
+        .filter_map(|entry| entry.node.kind().as_type().map(|_| entry.index))
         .collect()
 }
 
-fn is_direct_inner_class(ctx: &ResolverContext<'_>, child: NodeIndex, parent: NodeIndex) -> bool {
+fn is_direct_inner_class(ctx: &Context<'_>, child: NodeIndex, parent: NodeIndex) -> bool {
     let Some(child) = ctx.file.node(child).and_then(|node| node.kind().as_type()) else {
         return false;
     };

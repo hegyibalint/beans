@@ -5,7 +5,7 @@ use beans_lang_java_model::{
     nodes::{NodeIndex, NodeKind},
 };
 
-use crate::{JavaTypeCandidate, ResolutionFailure, Resolver, ResolverContext, TypeCandidate};
+use crate::{Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, resolve};
 
 fn type_index(file: &File, components: &[&str]) -> NodeIndex {
     let name = Name::new(
@@ -30,7 +30,7 @@ fn resolve_field(file: &File, field_name: &str) -> Result<TypeCandidate, Resolut
     let source = Source::SourceFile {
         path: "Test.java".into(),
     };
-    let ctx = ResolverContext::new(
+    let ctx = Context::new(
         Revision::new(1),
         &source,
         file,
@@ -38,7 +38,7 @@ fn resolve_field(file: &File, field_name: &str) -> Result<TypeCandidate, Resolut
         &field.declared_type,
     );
 
-    Resolver::resolve(&ctx)
+    resolve(&ctx)
 }
 
 #[test]

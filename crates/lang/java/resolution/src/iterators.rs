@@ -1,19 +1,19 @@
-use beans_lang_java_model::{NodeEntry, references::TypeRef};
+use beans_lang_java_model::{nodes::NodeIndex, references::TypeRef};
 use beans_lang_java_semantics::query::DeclarationHandle;
 
-use super::{JavaTypeCandidate, ResolverContext, TypeCandidate};
+use super::{Context, JavaTypeCandidate, TypeCandidate};
 use crate::TypeParameterHandle;
 
 pub(super) fn iter_enclosing_types<'ctx>(
-    ctx: &'ctx ResolverContext<'_>,
+    ctx: &'ctx Context<'_>,
 ) -> impl Iterator<Item = TypeCandidate> + 'ctx {
     ctx.file
         .iter_ancestors(ctx.node_index)
-        .filter_map(move |entry| type_candidate(ctx, entry))
+        .filter_map(move |entry| local_type_candidate(ctx, entry.index))
 }
 
 pub(super) fn iter_direct_supertype_refs<'ctx>(
-    ctx: &'ctx ResolverContext<'_>,
+    ctx: &'ctx Context<'_>,
     owner: &TypeCandidate,
 ) -> impl Iterator<Item = &'ctx TypeRef> + 'ctx {
     local_declaration_handle(ctx, owner)
@@ -29,7 +29,7 @@ pub(super) fn iter_direct_supertype_refs<'ctx>(
 }
 
 pub(super) fn iter_type_parameters(
-    ctx: &ResolverContext<'_>,
+    ctx: &Context<'_>,
     owner: &TypeCandidate,
 ) -> impl Iterator<Item = TypeCandidate> {
     let Some(owner) = local_declaration_handle(ctx, owner).cloned() else {
@@ -57,20 +57,27 @@ pub(super) fn iter_type_parameters(
         .into_iter()
 }
 
+pub(super) fn iter_types_below<'ctx>(
+    ctx: &'ctx Context<'_>,
+    parent: NodeIndex,
+) -> impl Iterator<Item = TypeCandidate> + 'ctx {
+    ctx.file
+        .iter_children(parent)
+        .filter_map(move |entry| local_type_candidate(ctx, entry.index))
+}
+
 pub(super) fn iter_declared_member_types<'ctx>(
-    ctx: &'ctx ResolverContext<'_>,
+    ctx: &'ctx Context<'_>,
     owner: &TypeCandidate,
 ) -> impl Iterator<Item = TypeCandidate> + 'ctx {
-    let owner = local_declaration_handle(ctx, owner).map(DeclarationHandle::node_index);
-
-    owner
+    local_declaration_handle(ctx, owner)
+        .map(DeclarationHandle::node_index)
         .into_iter()
-        .flat_map(move |owner| ctx.file.iter_children(owner))
-        .filter_map(move |entry| type_candidate(ctx, entry))
+        .flat_map(move |owner| iter_types_below(ctx, owner))
 }
 
 pub(super) fn local_declaration_handle<'a>(
-    ctx: &ResolverContext<'_>,
+    ctx: &Context<'_>,
     candidate: &'a TypeCandidate,
 ) -> Option<&'a DeclarationHandle> {
     let TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) = candidate else {
@@ -79,10 +86,10 @@ pub(super) fn local_declaration_handle<'a>(
     (handle.revision() == ctx.revision && handle.source() == ctx.source).then_some(handle)
 }
 
-fn type_candidate(ctx: &ResolverContext<'_>, entry: NodeEntry<'_>) -> Option<TypeCandidate> {
-    entry.node.kind().as_type()?;
+pub(super) fn local_type_candidate(ctx: &Context<'_>, index: NodeIndex) -> Option<TypeCandidate> {
+    ctx.file.node(index)?.kind().as_type()?;
     Some(TypeCandidate::Java(JavaTypeCandidate::Declaration(
-        DeclarationHandle::new(ctx.revision, ctx.source.clone(), entry.index),
+        DeclarationHandle::new(ctx.revision, ctx.source.clone(), index),
     )))
 }
 
@@ -117,7 +124,7 @@ mod tests {
         let revision = Revision::new(1);
         let child = type_index(&file, &["Outer", "Child"]);
         let declaration = file.node(child).unwrap().kind().as_type().unwrap();
-        let ctx = ResolverContext::new(
+        let ctx = Context::new(
             revision,
             &source,
             &file,

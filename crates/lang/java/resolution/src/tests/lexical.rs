@@ -6,7 +6,7 @@ use beans_lang_java_model::{
     references::TypeRef,
 };
 
-use crate::{JavaTypeCandidate, ResolutionFailure, Resolver, ResolverContext, TypeCandidate};
+use crate::{Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, resolve};
 
 fn type_index(file: &File, components: &[&str]) -> NodeIndex {
     let name = Name::new(
@@ -31,7 +31,7 @@ fn resolve_field(file: &File, field_name: &str) -> Result<TypeCandidate, Resolut
     let source = Source::SourceFile {
         path: "Test.java".into(),
     };
-    let ctx = ResolverContext::new(
+    let ctx = Context::new(
         Revision::new(1),
         &source,
         file,
@@ -39,7 +39,7 @@ fn resolve_field(file: &File, field_name: &str) -> Result<TypeCandidate, Resolut
         &field.1.declared_type,
     );
 
-    Resolver::resolve(&ctx)
+    resolve(&ctx)
 }
 
 fn resolved_java_index(result: TypeCandidate) -> NodeIndex {
@@ -190,7 +190,7 @@ fn an_empty_named_reference_is_invalid() {
     let type_ref = TypeRef::Named {
         segments: Vec::new(),
     };
-    let ctx = ResolverContext::new(
+    let ctx = Context::new(
         Revision::new(1),
         &source,
         &file,
@@ -198,8 +198,5 @@ fn an_empty_named_reference_is_invalid() {
         &type_ref,
     );
 
-    assert_eq!(
-        Resolver::resolve(&ctx),
-        Err(ResolutionFailure::InvalidTypeRef)
-    );
+    assert_eq!(resolve(&ctx), Err(ResolutionFailure::InvalidTypeRef));
 }
