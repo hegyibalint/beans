@@ -9,6 +9,5 @@ license.workspace = true
 name = "beans_lang_java_server"
 
 [dependencies]
-lang-java-model = { path = "../model" }
-lang-java-semantics = { path = "../semantics" }
+lang-java-engine = { path = "../engine" }
 lsp-types.workspace = true

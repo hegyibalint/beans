@@ -9,6 +9,7 @@ members = [
     "crates/lang/java/resolution",
     "crates/lang/java/semantics",
     "crates/lang/java/server",
+    "crates/lsp/server",
     "crates/platform/jvm/engine",
     "crates/platform/jvm/model",
     "crates/platform/jvm/semantics",

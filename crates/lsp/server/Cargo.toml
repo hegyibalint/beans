@@ -1,0 +1,19 @@
+[package]
+name = "beans-lsp-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+name = "beans_lsp_server"
+
+[[bin]]
+name = "beans-lsp"
+path = "src/main.rs"
+
+[dependencies]
+lang-java-server = { path = "../../lang/java/server" }
+lsp-server.workspace = true
+lsp-types.workspace = true
+serde_json.workspace = true
