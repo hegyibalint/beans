@@ -5,28 +5,17 @@ use beans_core_model::{
 };
 use beans_lang_java_engine::JavaEngine;
 use beans_lang_java_model::nodes::NodeKind;
-use beans_lang_java_semantics::{
-    lower_into,
-    resolution::{ReferenceLocation, Resolution, ResolvedDeclaration, Resolver, ResolverContext},
-};
+use beans_lang_java_resolution::{Context, JavaTypeCandidate, TypeCandidate, resolve};
+use beans_lang_java_semantics::lower_into;
 
 #[test]
 fn stored_models_can_be_resolved_using_the_engines_query() {
     let mut engine = JavaEngine::default();
     let revision = Revision::new(3);
-    engine.store(
-        revision,
-        lower_into("package p; public class Example {}"),
-        Source::SourceFile {
-            path: "src/p/Example.java".into(),
-        },
-    );
     let entry = engine.store(
         revision,
-        lower_into("package app; import p.Example; class Use { Example target; }"),
-        Source::SourceFile {
-            path: "src/app/Use.java".into(),
-        },
+        lower_into("package app; class Target {} class Use { Target target; }"),
+        Source::source_file("src/app/Use.java"),
     );
     let classpath = Classpath::new(vec![ClasspathElement::new("src".into(), [0; 32].into())]);
     let query = engine.query(entry.revision, &classpath);
@@ -44,28 +33,15 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
         })
         .expect("expected target field");
 
-    let ctx = ResolverContext::new(
-        &entry.key,
-        node_index,
-        type_ref,
-        ReferenceLocation::Body,
-        &query,
-    );
-    let results = Resolver {}.resolve(&ctx);
-    let [Ok(Resolution::Resolved(resolved))] = results.as_slice() else {
-        panic!("expected a resolved type: {results:?}");
-    };
-    let ResolvedDeclaration::Java { declaration } = &resolved.declaration else {
+    let ctx = Context::new(revision, &entry.key, file, node_index, type_ref);
+    let TypeCandidate::Java(JavaTypeCandidate::Declaration(declaration)) = resolve(&ctx).unwrap()
+    else {
         panic!("expected a Java declaration");
     };
     let target = query
-        .declaration(declaration)
+        .declaration(&declaration)
         .expect("expected a readable declaration handle");
-    assert_eq!(target.declaration.name.as_deref(), Some("Example"));
-    assert_eq!(
-        target.source,
-        &Source::SourceFile {
-            path: "src/p/Example.java".into()
-        }
-    );
+
+    assert_eq!(target.declaration.name.as_deref(), Some("Target"));
+    assert_eq!(target.source, &entry.key);
 }

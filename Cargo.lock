@@ -18,10 +18,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
+name = "beans-engine"
+version = "0.0.1"
+dependencies = [
+ "core-engine",
+ "core-model",
+ "lang-java-engine",
+ "platform-jvm-engine",
+]
+
+[[package]]
 name = "beans-lsp-server"
 version = "0.0.1"
 dependencies = [
- "lang-java-server",
+ "beans-engine",
+ "lsp-models",
  "lsp-server",
  "lsp-types",
  "serde_json",
@@ -47,6 +58,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cafebabe"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9dc1dc4d3a0a7a314b5dcaad4077be139cfa3fcaa8d237218dedc6b71835872"
+dependencies = [
+ "bitflags",
+ "cesu8",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -55,6 +76,12 @@ dependencies = [
  "find-msvc-tools",
  "shlex",
 ]
+
+[[package]]
+name = "cesu8"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d43a04d8753f35258c91f8ec639f792891f748a1edbd759cf1dcea3382ad83c"
 
 [[package]]
 name = "cfg-if"
@@ -161,6 +188,7 @@ dependencies = [
  "core-model",
  "core-resolution",
  "lang-java-model",
+ "lang-java-resolution",
  "lang-java-semantics",
 ]
 
@@ -200,7 +228,6 @@ name = "lang-java-server"
 version = "0.0.1"
 dependencies = [
  "lang-java-engine",
- "lsp-types",
 ]
 
 [[package]]
@@ -214,6 +241,13 @@ name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
+
+[[package]]
+name = "lsp-models"
+version = "0.0.1"
+dependencies = [
+ "lsp-types",
+]
 
 [[package]]
 name = "lsp-server"
@@ -266,6 +300,7 @@ version = "0.0.1"
 name = "platform-jvm-semantics"
 version = "0.0.1"
 dependencies = [
+ "cafebabe",
  "core-engine",
  "core-model",
  "platform-jvm-model",

@@ -1,3 +1,10 @@
+Ingress:
+
+- Represent virtual document identities without coercing them into filesystem paths.
+  `Engine::process` currently accepts a `PathBuf`, and `core-model::Source` only
+  models file-backed sources; LSP clients may open documents with non-file URI
+  schemes.
+
 Resolution:
 
 - Add direct-import, current-package, on-demand-import, module-import, and as-written qualified-name tiers after upward/root lookup.

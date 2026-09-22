@@ -99,7 +99,10 @@ mod tests {
             (5, vec![("A", "second")]),
             (9, vec![("A", "second")]),
         ] {
-            let mut actual: Vec<_> = storage.iter(Revision(revision)).map(|(k, v)| (*k, *v)).collect();
+            let mut actual: Vec<_> = storage
+                .iter(Revision(revision))
+                .map(|(k, v)| (*k, *v))
+                .collect();
             actual.sort();
             assert_eq!(actual, expected);
         }

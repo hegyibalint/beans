@@ -1,10 +1,16 @@
-//! LSP lifecycle, request dispatch, and language-vertical composition.
+//! LSP lifecycle and protocol dispatch around the Beans engine.
 
-use std::io;
+mod features;
 
-pub use beans_lang_java_server::JavaServer;
-use lsp_server::{Connection, ErrorCode, Message, Request, Response};
-use lsp_types::{InitializeParams, InitializeResult, ServerInfo};
+use std::{collections::HashMap, io};
+
+use beans_engine::Engine;
+use beans_lsp_models::OpenDocument;
+use lsp_server::{Connection, ErrorCode, Message, Notification, Request, Response};
+use lsp_types::{
+    InitializeParams, InitializeResult, ServerCapabilities, ServerInfo, TextDocumentSyncOptions,
+    notification::{DidCloseTextDocument, DidOpenTextDocument, Notification as _},
+};
 
 #[derive(Default)]
 enum Lifecycle {
@@ -14,21 +20,15 @@ enum Lifecycle {
     Shutdown,
 }
 
-/// The LSP transport and the language verticals it serves.
+/// The LSP transport and the application engine it serves.
 #[derive(Default)]
 pub struct Server {
     lifecycle: Lifecycle,
-    java: JavaServer,
+    engine: Engine,
+    open_documents: HashMap<String, OpenDocument>,
 }
 
 impl Server {
-    pub fn new(java: JavaServer) -> Self {
-        Self {
-            lifecycle: Lifecycle::default(),
-            java,
-        }
-    }
-
     /// Serves a connection until `exit`.
     ///
     /// An exit without shutdown, a disconnected client, or a failed send is an error.
@@ -50,9 +50,9 @@ impl Server {
                         _ => Err(io::Error::other("exit received before shutdown")),
                     };
                 }
-                // Unknown notifications (including $/ methods) are ignored. There are
-                // no outgoing requests, so responses need no dispatch yet.
-                Message::Notification(_) | Message::Response(_) => {}
+                Message::Notification(notification) => self.notify(notification),
+                // There are no outgoing requests, so responses need no dispatch yet.
+                Message::Response(_) => {}
             }
         }
         Err(io::Error::new(
@@ -70,7 +70,16 @@ impl Server {
                         return Response::new_ok(
                             request.id,
                             InitializeResult {
-                                capabilities: self.java.capabilities(),
+                                capabilities: ServerCapabilities {
+                                    text_document_sync: Some(
+                                        TextDocumentSyncOptions {
+                                            open_close: Some(true),
+                                            ..TextDocumentSyncOptions::default()
+                                        }
+                                        .into(),
+                                    ),
+                                    ..ServerCapabilities::default()
+                                },
                                 server_info: Some(ServerInfo {
                                     name: "beans".into(),
                                     version: Some(env!("CARGO_PKG_VERSION").into()),
@@ -96,13 +105,6 @@ impl Server {
                 (ErrorCode::InvalidRequest, "server is already initialized")
             }
             (Lifecycle::Running, "shutdown") => {
-                if !request.params.is_null() {
-                    return Response::new_err(
-                        request.id,
-                        ErrorCode::InvalidParams as i32,
-                        "shutdown takes no parameters".into(),
-                    );
-                }
                 self.lifecycle = Lifecycle::Shutdown;
                 return Response::new_ok(request.id, ());
             }
@@ -110,10 +112,34 @@ impl Server {
         };
         Response::new_err(request.id, error.0 as i32, error.1.into())
     }
+
+    fn notify(&mut self, notification: Notification) {
+        match notification.method.as_str() {
+            DidOpenTextDocument::METHOD => {
+                if let Ok(params) = notification.extract(DidOpenTextDocument::METHOD) {
+                    features::text_document::did_open(
+                        &mut self.engine,
+                        &mut self.open_documents,
+                        params,
+                    );
+                }
+            }
+            DidCloseTextDocument::METHOD => {
+                if let Ok(params) = notification.extract(DidCloseTextDocument::METHOD) {
+                    features::text_document::did_close(
+                        &mut self.engine,
+                        &mut self.open_documents,
+                        params,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
-pub fn run(connection: Connection, java: JavaServer) -> io::Result<()> {
-    Server::new(java).run(connection)
+pub fn run(connection: Connection) -> io::Result<()> {
+    Server::default().run(connection)
 }
 
 #[cfg(test)]
@@ -125,7 +151,7 @@ mod tests {
     fn server(lifecycle: Lifecycle) -> Server {
         Server {
             lifecycle,
-            java: JavaServer::default(),
+            ..Server::default()
         }
     }
 
@@ -141,15 +167,18 @@ mod tests {
     }
 
     #[test]
-    fn initialization_advertises_the_java_verticals_capabilities() {
+    fn initialization_advertises_open_and_close_synchronization() {
         let response = request(
-            &mut Server::new(JavaServer::default()),
+            &mut Server::default(),
             "initialize",
             json!({"capabilities": {}}),
         );
         assert!(response.error.is_none());
         let result = response.result.unwrap();
-        assert_eq!(result["capabilities"], json!({}));
+        assert_eq!(
+            result["capabilities"],
+            json!({"textDocumentSync": {"openClose": true}})
+        );
         assert_eq!(result["serverInfo"]["name"], "beans");
     }
 
@@ -210,13 +239,12 @@ mod tests {
     }
 
     #[test]
-    fn invalid_shutdown_does_not_stop_the_server() {
+    fn shutdown_ignores_parameters() {
         let mut server = server(Lifecycle::Running);
-        assert_error(
-            request(&mut server, "shutdown", json!({})),
-            ErrorCode::InvalidParams,
-        );
-        assert!(matches!(server.lifecycle, Lifecycle::Running));
+        let response = request(&mut server, "shutdown", json!({"ignored": true}));
+
+        assert!(response.error.is_none());
+        assert!(matches!(server.lifecycle, Lifecycle::Shutdown));
     }
 
     #[test]
@@ -226,7 +254,7 @@ mod tests {
             .sender
             .send(Notification::new("exit".into(), ()).into())
             .unwrap();
-        assert!(run(server, JavaServer::default()).is_err());
+        assert!(run(server).is_err());
     }
 
     #[test]
@@ -234,7 +262,7 @@ mod tests {
         let (server, client) = Connection::memory();
         drop(client);
         assert_eq!(
-            run(server, JavaServer::default()).unwrap_err().kind(),
+            run(server).unwrap_err().kind(),
             io::ErrorKind::UnexpectedEof
         );
     }

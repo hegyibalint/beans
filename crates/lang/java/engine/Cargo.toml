@@ -14,3 +14,6 @@ core-model = { path = "../../../core/model" }
 core-resolution = { path = "../../../core/resolution" }
 lang-java-model = { path = "../model" }
 lang-java-semantics = { path = "../semantics" }
+
+[dev-dependencies]
+lang-java-resolution = { path = "../resolution" }

@@ -1,0 +1,15 @@
+[package]
+name = "beans-engine"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+name = "beans_engine"
+
+[dependencies]
+core-engine = { path = "../core/engine" }
+core-model = { path = "../core/model" }
+lang-java-engine = { path = "../lang/java/engine" }
+platform-jvm-engine = { path = "../platform/jvm/engine" }

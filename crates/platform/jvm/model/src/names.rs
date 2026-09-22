@@ -20,9 +20,28 @@ impl fmt::Display for BinaryName {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ModuleName(String);
+
+impl ModuleName {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self(name.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ModuleName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::BinaryName;
+    use super::{BinaryName, ModuleName};
 
     #[test]
     fn binary_names_use_the_jls_external_form() {
@@ -32,5 +51,13 @@ mod tests {
             assert_eq!(binary_name.as_str(), name);
             assert_eq!(binary_name.to_string(), name);
         }
+    }
+
+    #[test]
+    fn module_names_preserve_their_external_form() {
+        let name = ModuleName::new("example.application");
+
+        assert_eq!(name.as_str(), "example.application");
+        assert_eq!(name.to_string(), "example.application");
     }
 }

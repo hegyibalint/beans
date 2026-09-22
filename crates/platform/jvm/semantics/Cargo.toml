@@ -9,6 +9,7 @@ license.workspace = true
 name = "beans_platform_jvm_semantics"
 
 [dependencies]
+cafebabe.workspace = true
 core-engine = { path = "../../../core/engine" }
 core-model = { path = "../../../core/model" }
 platform-jvm-model = { path = "../model" }

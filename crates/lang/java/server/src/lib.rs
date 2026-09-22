@@ -1,7 +1,6 @@
 //! Java's language-server-facing state.
 
 use beans_lang_java_engine::JavaEngine;
-use lsp_types::ServerCapabilities;
 
 /// The top of the Java vertical consumed by protocol frontends.
 #[derive(Default)]
@@ -20,10 +19,5 @@ impl JavaServer {
 
     pub fn engine_mut(&mut self) -> &mut JavaEngine {
         &mut self.engine
-    }
-
-    /// Capabilities are owned by the language adapter rather than the LSP transport.
-    pub fn capabilities(&self) -> ServerCapabilities {
-        ServerCapabilities::default()
     }
 }

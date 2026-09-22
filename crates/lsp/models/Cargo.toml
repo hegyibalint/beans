@@ -1,12 +1,12 @@
 [package]
-name = "lang-java-server"
+name = "lsp-models"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [lib]
-name = "beans_lang_java_server"
+name = "beans_lsp_models"
 
 [dependencies]
-lang-java-engine = { path = "../engine" }
+lsp-types.workspace = true

@@ -36,6 +36,23 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
             assert_eq!(response.result.unwrap()["serverInfo"]["name"], "beans");
             Message::Notification(Notification::new("initialized".into(), json!({})))
                 .write(&mut stdin)?;
+            Message::Notification(Notification::new(
+                "textDocument/didOpen".into(),
+                json!({
+                    "textDocument": {
+                        "uri": "file:///Example.java",
+                        "languageId": "java",
+                        "version": 1,
+                        "text": "class Example {}"
+                    }
+                }),
+            ))
+            .write(&mut stdin)?;
+            Message::Notification(Notification::new(
+                "textDocument/didClose".into(),
+                json!({"textDocument": {"uri": "file:///Example.java"}}),
+            ))
+            .write(&mut stdin)?;
             Message::Notification(Notification::new("$/unknown".into(), ())).write(&mut stdin)?;
             Message::Request(Request::new(2.into(), "shutdown".into(), ())).write(&mut stdin)?;
             let Some(Message::Response(response)) = Message::read(&mut stdout)? else {
