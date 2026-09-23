@@ -1,3 +1,4 @@
+use beans_core_model::ranges::Spanned;
 use beans_lang_java_model::{
     nodes::{NodeIndex, types::AccessLevel},
     references::TypeNameComponent,
@@ -65,13 +66,14 @@ pub(super) fn lookup_upward_from_type_header(
 pub(super) fn lookup_downward(
     ctx: &Context<'_>,
     parent: NodeIndex,
-    segments: &[TypeNameComponent],
+    segments: &[Spanned<TypeNameComponent>],
     state: &mut State,
 ) -> Result<Option<TypeCandidate>, ResolutionFailure> {
     let Some((first, remaining)) = segments.split_first() else {
         return Err(ResolutionFailure::InvalidTypeRef);
     };
 
+    let first = first.value();
     let declared = iter_types_below(ctx, parent)
         .filter(|candidate| candidate_name(ctx, candidate) == Some(first.name.as_str()));
     let candidate = match classify_candidates(declared)? {
@@ -218,13 +220,9 @@ fn candidate_name<'a>(ctx: &'a Context<'_>, candidate: &TypeCandidate) -> Option
     }
 
     match candidate {
-        JavaTypeCandidate::Declaration(handle) => ctx
-            .file
-            .node(handle.node_index())?
-            .kind()
-            .as_type()?
-            .name
-            .as_deref(),
+        JavaTypeCandidate::Declaration(handle) => {
+            ctx.file.node(handle.node_index())?.kind().as_type()?.name()
+        }
         JavaTypeCandidate::TypeParameter(handle) => handle
             .parameter(ctx.file)
             .map(|parameter| parameter.name.as_str()),

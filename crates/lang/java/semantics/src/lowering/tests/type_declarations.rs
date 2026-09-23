@@ -1,5 +1,6 @@
 use super::{find_type_declaration, find_type_declarations, raw_type};
 use crate::lower_into;
+use beans_core_model::ranges::ByteRange;
 use beans_lang_java_model::{
     File,
     nodes::types::{AccessLevel, Kind, Modifier},
@@ -35,11 +36,34 @@ fn two_declarations_preserve_their_names_and_source_order() {
                     .kind()
                     .as_type()
                     .expect("expected a type declaration")
-                    .name
-                    .as_deref()
+                    .name()
             })
             .collect::<Vec<_>>(),
         [Some("First"), Some("Second")]
+    );
+}
+
+#[test]
+fn declaration_names_preserve_their_byte_ranges() {
+    let file = lower_into("class First {} interface Second {}");
+
+    assert_eq!(
+        find_type_declaration(&file, "First")
+            .declaration
+            .name
+            .as_ref()
+            .unwrap()
+            .range(),
+        ByteRange::new(6, 11)
+    );
+    assert_eq!(
+        find_type_declaration(&file, "Second")
+            .declaration
+            .name
+            .as_ref()
+            .unwrap()
+            .range(),
+        ByteRange::new(25, 31)
     );
 }
 

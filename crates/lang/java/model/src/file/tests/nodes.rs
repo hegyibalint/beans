@@ -1,3 +1,5 @@
+use beans_core_model::ranges::{ByteRange, Spanned};
+
 use crate::{
     File,
     nodes::{
@@ -8,6 +10,10 @@ use crate::{
     },
     references::{PrimitiveType, TypeRef},
 };
+
+fn span<T>(value: T) -> Spanned<T> {
+    Spanned::new(value, ByteRange::new(0, 0))
+}
 
 #[test]
 fn an_empty_file_has_one_parentless_compilation_unit() {
@@ -43,7 +49,7 @@ fn insertion_preserves_payloads_and_links_in_both_directions() {
         typ,
         NodeKind::Field(FieldDeclaration {
             name: "value".into(),
-            declared_type: TypeRef::Primitive(PrimitiveType::Int),
+            declared_type: span(TypeRef::Primitive(PrimitiveType::Int)),
         }),
     );
     let method = file.add_node(typ, NodeKind::Method(MethodDeclaration {}));
@@ -70,7 +76,7 @@ fn insertion_preserves_payloads_and_links_in_both_directions() {
     assert_eq!(payload.name, "value");
     assert_eq!(
         payload.declared_type,
-        TypeRef::Primitive(PrimitiveType::Int)
+        span(TypeRef::Primitive(PrimitiveType::Int))
     );
     assert!(matches!(
         file.node(method).unwrap().kind(),

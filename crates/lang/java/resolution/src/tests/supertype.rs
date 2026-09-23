@@ -26,7 +26,7 @@ fn resolve_declared_superclass(file: &File, owner: NodeIndex) -> TypeCandidate {
         &source,
         file,
         owner,
-        declaration.declared_superclass.as_ref().unwrap(),
+        declaration.declared_superclass.as_ref().unwrap().value(),
     );
 
     resolve_supertype(&ctx).unwrap()

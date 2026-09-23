@@ -188,7 +188,7 @@ mod tests {
             .as_type()
             .expect("expected a type declaration");
         assert!(std::ptr::eq(found[0].declaration, stored));
-        assert_eq!(stored.name.as_deref(), Some("Member"));
+        assert_eq!(stored.name(), Some("Member"));
     }
 
     #[test]

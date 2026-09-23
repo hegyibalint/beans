@@ -1,4 +1,7 @@
-use beans_core_model::names::Name;
+use beans_core_model::{
+    names::Name,
+    ranges::{ByteRange, Spanned},
+};
 
 use crate::{
     File,
@@ -14,9 +17,13 @@ fn name(value: &str) -> Name {
     value.split('.').map(str::to_owned).collect()
 }
 
+fn span<T>(value: T) -> Spanned<T> {
+    Spanned::new(value, ByteRange::new(0, 0))
+}
+
 fn add_type(file: &mut File, parent: NodeIndex, name: &str) -> NodeIndex {
     let mut declaration = TypeDeclaration::new(Kind::Class);
-    declaration.name = Some(name.into());
+    declaration.name = Some(span(name.into()));
     file.add_node(parent, NodeKind::Type(declaration))
 }
 
@@ -144,13 +151,13 @@ fn inherited_members_are_not_part_of_the_subclass_canonical_path() {
     let base = add_type(&mut file, File::ROOT_NODE_ID, "Base");
     let member = add_type(&mut file, base, "Member");
     let mut subclass = TypeDeclaration::new(Kind::Class);
-    subclass.name = Some("Subclass".into());
-    subclass.declared_superclass = Some(TypeRef::Named {
-        segments: vec![TypeNameComponent {
+    subclass.name = Some(span("Subclass".into()));
+    subclass.declared_superclass = Some(span(TypeRef::Named {
+        segments: vec![span(TypeNameComponent {
             name: "Base".into(),
             bounds: vec![],
-        }],
-    });
+        })],
+    }));
     file.add_node(File::ROOT_NODE_ID, NodeKind::Type(subclass));
     assert_eq!(file.find_type(&name("Base.Member"))[0].0, member);
     assert!(file.find_type(&name("Subclass.Member")).is_empty());
@@ -172,7 +179,7 @@ fn non_type_and_unnamed_declarations_do_not_match() {
         File::ROOT_NODE_ID,
         NodeKind::Field(FieldDeclaration {
             name: "Field".into(),
-            declared_type: TypeRef::Primitive(PrimitiveType::Int),
+            declared_type: span(TypeRef::Primitive(PrimitiveType::Int)),
         }),
     );
     let anonymous = file.add_node(
@@ -198,7 +205,7 @@ fn discovery_includes_inaccessible_types_of_every_kind() {
         (Kind::Record, "MemberRecord"),
     ] {
         let mut declaration = TypeDeclaration::new(kind);
-        declaration.name = Some(name.into());
+        declaration.name = Some(span(name.into()));
         declaration.access.push(AccessLevel::Private);
         let expected = file.add_node(outer, NodeKind::Type(declaration));
         let found = file.find_type(&Name::new(vec!["Outer".into(), name.into()]));

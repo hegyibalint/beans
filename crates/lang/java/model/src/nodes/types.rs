@@ -1,3 +1,5 @@
+use beans_core_model::ranges::Spanned;
+
 use crate::references::{self, TypeRef};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,11 +41,11 @@ pub struct TypeParameter {
 
 #[derive(Debug)]
 pub struct TypeDeclaration {
-    pub name: Option<String>,
+    pub name: Option<Spanned<String>>,
     pub type_parameters: Vec<TypeParameter>,
     pub kind: Kind,
-    pub declared_superclass: Option<TypeRef>,
-    pub declared_superinterfaces: Vec<TypeRef>,
+    pub declared_superclass: Option<Spanned<TypeRef>>,
+    pub declared_superinterfaces: Vec<Spanned<TypeRef>>,
 
     /// Plural, as nobody stops somebody writing `public public private class A`
     /// By storing multiple ones, we can diagnose and fix these cases
@@ -54,6 +56,10 @@ pub struct TypeDeclaration {
 }
 
 impl TypeDeclaration {
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_ref().map(|name| name.value().as_str())
+    }
+
     pub fn type_parameter_named(&self, name: &str) -> Option<&TypeParameter> {
         self.type_parameters
             .iter()

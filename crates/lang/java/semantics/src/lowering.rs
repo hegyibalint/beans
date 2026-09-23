@@ -1,5 +1,8 @@
 use crate::parser;
-use beans_core_model::names::Name;
+use beans_core_model::{
+    names::Name,
+    ranges::{ByteRange, Spanned},
+};
 use beans_lang_java_model::{
     File,
     imports::{Import, ImportType},
@@ -88,7 +91,10 @@ fn lower_type_declaration(
                 }
             }
             "class" | "enum" | "record" | "interface" | "@interface" => {}
-            "identifier" => declaration.name = node_text(child, content),
+            "identifier" => {
+                declaration.name =
+                    node_text(child, content).map(|name| Spanned::new(name, byte_range(child)));
+            }
             "type_parameters" => {
                 declaration
                     .type_parameters
@@ -247,13 +253,13 @@ fn lower_type_bound(content: &str, node: Node) -> Option<TypeBound> {
     Some(TypeBound::new_extends(primary, bounds.collect()))
 }
 
-fn lower_single_type_clause(content: &str, node: Node) -> Option<TypeRef> {
+fn lower_single_type_clause(content: &str, node: Node) -> Option<Spanned<TypeRef>> {
     let mut cursor = node.walk();
     node.named_children(&mut cursor)
         .find_map(|child| lower_type_ref(content, child))
 }
 
-fn lower_type_list_clause(content: &str, node: Node) -> Vec<TypeRef> {
+fn lower_type_list_clause(content: &str, node: Node) -> Vec<Spanned<TypeRef>> {
     let mut clause_cursor = node.walk();
     let Some(type_list) = node
         .named_children(&mut clause_cursor)
@@ -269,11 +275,11 @@ fn lower_type_list_clause(content: &str, node: Node) -> Vec<TypeRef> {
         .collect()
 }
 
-fn lower_type_ref(content: &str, node: Node) -> Option<TypeRef> {
-    match node.kind() {
-        "type_identifier" | "scoped_type_identifier" | "generic_type" => Some(TypeRef::Named {
+fn lower_type_ref(content: &str, node: Node) -> Option<Spanned<TypeRef>> {
+    let reference = match node.kind() {
+        "type_identifier" | "scoped_type_identifier" | "generic_type" => TypeRef::Named {
             segments: lower_type_name_segments(content, node)?,
-        }),
+        },
         "integral_type" | "floating_point_type" | "boolean_type" => {
             let primitive = match node_text(node, content)?.as_str() {
                 "byte" => PrimitiveType::Byte,
@@ -286,7 +292,7 @@ fn lower_type_ref(content: &str, node: Node) -> Option<TypeRef> {
                 "boolean" => PrimitiveType::Boolean,
                 _ => return None,
             };
-            Some(TypeRef::Primitive(primitive))
+            TypeRef::Primitive(primitive)
         }
         "array_type" => {
             let element = lower_type_ref(content, node.child_by_field_name("element")?)?;
@@ -297,27 +303,33 @@ fn lower_type_ref(content: &str, node: Node) -> Option<TypeRef> {
                 .filter(|child| child.kind() == "[")
                 .count();
 
-            Some(TypeRef::Array {
+            TypeRef::Array {
                 element: Box::new(element),
                 dimensions,
-            })
+            }
         }
         "annotated_type" => {
             let mut cursor = node.walk();
-            node.named_children(&mut cursor)
-                .find_map(|child| lower_type_ref(content, child))
+            return node
+                .named_children(&mut cursor)
+                .find_map(|child| lower_type_ref(content, child));
         }
-        "void_type" => Some(TypeRef::Void),
-        _ => None,
-    }
+        "void_type" => TypeRef::Void,
+        _ => return None,
+    };
+
+    Some(Spanned::new(reference, byte_range(node)))
 }
 
-fn lower_type_name_segments(content: &str, node: Node) -> Option<Vec<TypeNameComponent>> {
+fn lower_type_name_segments(content: &str, node: Node) -> Option<Vec<Spanned<TypeNameComponent>>> {
     match node.kind() {
-        "type_identifier" => Some(vec![TypeNameComponent {
-            name: node_text(node, content)?,
-            bounds: Vec::new(),
-        }]),
+        "type_identifier" => Some(vec![Spanned::new(
+            TypeNameComponent {
+                name: node_text(node, content)?,
+                bounds: Vec::new(),
+            },
+            byte_range(node),
+        )]),
         "scoped_type_identifier" => {
             let mut segments = Vec::new();
             let mut cursor = node.walk();
@@ -342,7 +354,7 @@ fn lower_type_name_segments(content: &str, node: Node) -> Option<Vec<TypeNameCom
                 .find(|child| child.kind() == "type_arguments")
                 .map(|arguments| lower_type_arguments(content, *arguments))
                 .unwrap_or_default();
-            segments.last_mut()?.bounds = arguments;
+            segments.last_mut()?.value_mut().bounds = arguments;
             Some(segments)
         }
         "annotated_type" => {
@@ -385,6 +397,10 @@ fn lower_wildcard(content: &str, node: Node) -> Option<TypeBound> {
         (None, None, None) => Some(TypeBound::new_unbounded()),
         _ => None,
     }
+}
+
+fn byte_range(node: Node<'_>) -> ByteRange {
+    ByteRange::new(node.start_byte(), node.end_byte())
 }
 
 fn node_text(node: Node, content: &str) -> Option<String> {

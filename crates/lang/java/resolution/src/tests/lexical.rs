@@ -36,7 +36,7 @@ fn resolve_field(file: &File, field_name: &str) -> Result<TypeCandidate, Resolut
         &source,
         file,
         field.0,
-        &field.1.declared_type,
+        field.1.declared_type.value(),
     );
 
     resolve(&ctx)

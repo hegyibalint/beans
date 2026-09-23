@@ -1,12 +1,16 @@
+use beans_core_model::ranges::Spanned;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeRef {
     /// `java.util.Map<String, Integer>`
-    Named { segments: Vec<TypeNameComponent> },
+    Named {
+        segments: Vec<Spanned<TypeNameComponent>>,
+    },
     /// `int`
     Primitive(PrimitiveType),
     /// `String[][]`
     Array {
-        element: Box<TypeRef>,
+        element: Box<Spanned<TypeRef>>,
         dimensions: usize,
     },
     /// `void`
@@ -42,7 +46,7 @@ pub enum BoundKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeBound<T = TypeRef> {
+pub struct TypeBound<T = Spanned<TypeRef>> {
     kind: BoundKind,
     types: Vec<T>,
 }

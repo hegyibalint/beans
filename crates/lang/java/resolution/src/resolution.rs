@@ -1,3 +1,4 @@
+use beans_core_model::ranges::Spanned;
 use beans_lang_java_model::{
     File,
     references::{TypeNameComponent, TypeRef},
@@ -31,7 +32,7 @@ fn resolve_with_state(
     let segments = named_segments(ctx)?;
     let (first, remaining) = segments.split_first().expect("segments must not be empty");
 
-    if let Some(candidate) = lookup_upward(ctx, first, state)? {
+    if let Some(candidate) = lookup_upward(ctx, first.value(), state)? {
         let candidate = resolve_remaining_segments(ctx, candidate, remaining, state)?;
         return validate_resolution(ctx, candidate);
     }
@@ -53,7 +54,7 @@ pub(super) fn resolve_supertype_with_state(
     let segments = named_segments(ctx)?;
     let (first, remaining) = segments.split_first().expect("segments must not be empty");
 
-    if let Some(candidate) = lookup_upward_from_type_header(ctx, first, state)? {
+    if let Some(candidate) = lookup_upward_from_type_header(ctx, first.value(), state)? {
         let candidate = resolve_remaining_segments(ctx, candidate, remaining, state)?;
         return validate_resolution(ctx, candidate);
     }
@@ -71,7 +72,7 @@ pub(super) fn resolve_supertype_with_state(
 fn resolve_remaining_segments(
     ctx: &Context<'_>,
     candidate_segment: TypeCandidate,
-    remaining_segments: &[TypeNameComponent],
+    remaining_segments: &[Spanned<TypeNameComponent>],
     state: &mut State,
 ) -> Result<TypeCandidate, ResolutionFailure> {
     if remaining_segments.is_empty() {
@@ -92,7 +93,7 @@ fn resolve_remaining_segments(
 fn resolve_through_type_parameter(
     ctx: &Context<'_>,
     parameter: &TypeParameterHandle,
-    remaining: &[TypeNameComponent],
+    remaining: &[Spanned<TypeNameComponent>],
     state: &mut State,
 ) -> Result<TypeCandidate, ResolutionFailure> {
     if state.visiting_type_parameters.contains(parameter) {
@@ -113,7 +114,7 @@ fn resolve_through_type_parameter(
             .iter()
             .flat_map(|bound| bound.types())
         {
-            let TypeRef::Named { segments } = bound else {
+            let TypeRef::Named { segments } = bound.value() else {
                 return Err(ResolutionFailure::InvalidTypeRef);
             };
             let substituted = TypeRef::Named {
@@ -141,7 +142,9 @@ fn resolve_through_type_parameter(
     result
 }
 
-fn named_segments<'a>(ctx: &'a Context<'_>) -> Result<&'a [TypeNameComponent], ResolutionFailure> {
+fn named_segments<'a>(
+    ctx: &'a Context<'_>,
+) -> Result<&'a [Spanned<TypeNameComponent>], ResolutionFailure> {
     let TypeRef::Named { segments } = ctx.type_ref else {
         return Err(ResolutionFailure::InvalidTypeRef);
     };

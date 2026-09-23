@@ -7,8 +7,10 @@ Ingress:
 
 Navigation:
 
-- Preserve byte ranges for Java declarations and references so
-  `JavaEngine::find_declaration` can map an occurrence to its target.
+- Use the preserved Java type-declaration and named-reference byte ranges to
+  implement `JavaEngine::find_declaration`.
+- Preserve progressively finer byte ranges as navigation expands to more Java
+  declarations and reference kinds.
 
 Resolution:
 

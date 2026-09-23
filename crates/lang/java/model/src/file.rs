@@ -118,7 +118,7 @@ impl File {
             let Some(declaration) = entry.node.kind().as_type() else {
                 continue;
             };
-            if declaration.name.as_ref() != Some(component) {
+            if declaration.name() != Some(component.as_str()) {
                 continue;
             }
 

@@ -1,3 +1,4 @@
+use beans_core_model::ranges::{ByteRange, Spanned};
 use beans_lang_java_model::{
     File,
     nodes::{NodeIndex, types::TypeDeclaration},
@@ -15,7 +16,7 @@ fn find_type_declarations<'a>(file: &'a File, name: &str) -> Vec<TypeEntry<'a>> 
         .filter_map(|entry| {
             let declaration = entry.node.kind().as_type()?;
 
-            (declaration.name.as_deref() == Some(name)).then_some(TypeEntry {
+            (declaration.name() == Some(name)).then_some(TypeEntry {
                 parent: entry.node.parent().expect("type has a parent"),
                 index: entry.index,
                 declaration,
@@ -34,27 +35,33 @@ fn find_type_declaration<'a>(file: &'a File, name: &str) -> TypeEntry<'a> {
     }
 }
 
-fn raw_type(names: &[&str]) -> TypeRef {
-    TypeRef::Named {
-        segments: names
-            .iter()
-            .map(|name| TypeNameComponent {
-                name: (*name).to_owned(),
-                bounds: Vec::new(),
-            })
-            .collect(),
-    }
+fn span<T>(value: T) -> Spanned<T> {
+    Spanned::new(value, ByteRange::new(0, 0))
 }
 
-fn named_segments(reference: &TypeRef) -> &[TypeNameComponent] {
-    let TypeRef::Named { segments } = reference else {
+fn raw_type(names: &[&str]) -> Spanned<TypeRef> {
+    span(TypeRef::Named {
+        segments: names
+            .iter()
+            .map(|name| {
+                span(TypeNameComponent {
+                    name: (*name).to_owned(),
+                    bounds: Vec::new(),
+                })
+            })
+            .collect(),
+    })
+}
+
+fn named_segments(reference: &Spanned<TypeRef>) -> &[Spanned<TypeNameComponent>] {
+    let TypeRef::Named { segments } = reference.value() else {
         panic!("expected a named type reference");
     };
 
     segments
 }
 
-fn named_segment(reference: &TypeRef) -> &TypeNameComponent {
+fn named_segment(reference: &Spanned<TypeRef>) -> &TypeNameComponent {
     let segments = named_segments(reference);
     let [segment] = segments else {
         panic!(
@@ -63,7 +70,7 @@ fn named_segment(reference: &TypeRef) -> &TypeNameComponent {
         );
     };
 
-    segment
+    segment.value()
 }
 
 mod compilation_units;

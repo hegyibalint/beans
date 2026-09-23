@@ -25,6 +25,7 @@ pub(super) fn iter_direct_supertype_refs<'ctx>(
                 .declared_superclass
                 .iter()
                 .chain(&declaration.declared_superinterfaces)
+                .map(|reference| reference.value())
         })
 }
 
@@ -129,7 +130,7 @@ mod tests {
             &source,
             &file,
             child,
-            declaration.declared_superclass.as_ref().unwrap(),
+            declaration.declared_superclass.as_ref().unwrap().value(),
         );
         let owner = TypeCandidate::Java(JavaTypeCandidate::Declaration(DeclarationHandle::new(
             revision,
@@ -142,15 +143,15 @@ mod tests {
         assert_eq!(supertypes.len(), 3);
         assert!(std::ptr::eq(
             supertypes[0],
-            declaration.declared_superclass.as_ref().unwrap()
+            declaration.declared_superclass.as_ref().unwrap().value()
         ));
         assert!(std::ptr::eq(
             supertypes[1],
-            &declaration.declared_superinterfaces[0]
+            declaration.declared_superinterfaces[0].value()
         ));
         assert!(std::ptr::eq(
             supertypes[2],
-            &declaration.declared_superinterfaces[1]
+            declaration.declared_superinterfaces[1].value()
         ));
     }
 }

@@ -1,5 +1,6 @@
-use super::{find_type_declaration, named_segment, named_segments, raw_type};
+use super::{find_type_declaration, named_segment, named_segments, raw_type, span};
 use crate::lower_into;
+use beans_core_model::ranges::ByteRange;
 use beans_lang_java_model::references::{TypeBound, TypeNameComponent, TypeRef};
 
 fn first_superinterface_bound<'a>(
@@ -30,6 +31,26 @@ fn simple_and_qualified_type_names_preserve_their_segments() {
             .declared_superclass,
         Some(raw_type(&["outer", "Base"]))
     );
+}
+
+#[test]
+fn qualified_names_preserve_parent_and_component_byte_ranges() {
+    let file = lower_into("class C implements Outer<String>.Inner<Integer> {}");
+    let reference = &find_type_declaration(&file, "C")
+        .declaration
+        .declared_superinterfaces[0];
+    let TypeRef::Named { segments } = reference.value() else {
+        panic!("expected a named type reference");
+    };
+
+    assert_eq!(reference.range(), ByteRange::new(19, 47));
+    assert_eq!(segments[0].range(), ByteRange::new(19, 24));
+    assert_eq!(segments[1].range(), ByteRange::new(33, 38));
+    assert!(reference.range().contains_range(segments[0].range()));
+    assert!(reference.range().contains_range(segments[1].range()));
+    assert!(reference.range().contains(32));
+    assert!(!segments[0].range().contains(32));
+    assert!(!segments[1].range().contains(32));
 }
 
 #[test]
@@ -111,14 +132,14 @@ fn type_arguments_are_attached_to_their_name_component() {
     assert_eq!(
         segments,
         [
-            TypeNameComponent {
+            span(TypeNameComponent {
                 name: "Outer".to_owned(),
                 bounds: vec![TypeBound::new_exact(raw_type(&["String"]))],
-            },
-            TypeNameComponent {
+            }),
+            span(TypeNameComponent {
                 name: "Inner".to_owned(),
                 bounds: vec![TypeBound::new_exact(raw_type(&["Integer"]))],
-            },
+            }),
         ]
     );
 }
@@ -136,12 +157,12 @@ fn nested_type_arguments_preserve_their_shape() {
         segment.bounds,
         [
             TypeBound::new_exact(raw_type(&["String"])),
-            TypeBound::new_exact(TypeRef::Named {
-                segments: vec![TypeNameComponent {
+            TypeBound::new_exact(span(TypeRef::Named {
+                segments: vec![span(TypeNameComponent {
                     name: "List".to_owned(),
                     bounds: vec![TypeBound::new_exact(raw_type(&["Integer"]))],
-                }],
-            }),
+                })],
+            })),
         ]
     );
 }
@@ -155,16 +176,16 @@ fn array_type_arguments_preserve_one_and_two_dimensions() {
 
     assert_eq!(
         first_superinterface_bound(&file, "One"),
-        &TypeBound::new_exact(TypeRef::Array {
+        &TypeBound::new_exact(span(TypeRef::Array {
             element: Box::new(raw_type(&["String"])),
             dimensions: 1,
-        })
+        }))
     );
     assert_eq!(
         first_superinterface_bound(&file, "Two"),
-        &TypeBound::new_exact(TypeRef::Array {
+        &TypeBound::new_exact(span(TypeRef::Array {
             element: Box::new(raw_type(&["String"])),
             dimensions: 2,
-        })
+        }))
     );
 }

@@ -37,7 +37,7 @@ impl Import {
             return false;
         };
 
-        !imported_name.is_empty() && imported_name == &first.name
+        !imported_name.is_empty() && imported_name == &first.value().name
     }
 
     /// Checks required, nonempty name components (JLS §7.5.1–§7.5.5), not target validity.
@@ -78,18 +78,27 @@ pub enum ImportType {
 
 #[cfg(test)]
 mod tests {
-    use beans_core_model::names::Name;
+    use beans_core_model::{
+        names::Name,
+        ranges::{ByteRange, Spanned},
+    };
 
     use super::{Import, ImportType::*};
     use crate::references::{PrimitiveType, TypeBound, TypeNameComponent, TypeRef};
+
+    fn span<T>(value: T) -> Spanned<T> {
+        Spanned::new(value, ByteRange::new(0, 0))
+    }
 
     fn named(value: &str) -> TypeRef {
         TypeRef::Named {
             segments: value
                 .split('.')
-                .map(|name| TypeNameComponent {
-                    name: name.into(),
-                    bounds: vec![],
+                .map(|name| {
+                    span(TypeNameComponent {
+                        name: name.into(),
+                        bounds: vec![],
+                    })
                 })
                 .collect(),
         }
@@ -135,7 +144,7 @@ mod tests {
             TypeRef::Primitive(PrimitiveType::Int),
             TypeRef::Void,
             TypeRef::Array {
-                element: Box::new(named("Outer")),
+                element: Box::new(span(named("Outer"))),
                 dimensions: 1,
             },
         ] {
@@ -155,7 +164,10 @@ mod tests {
         let TypeRef::Named { segments } = &mut reference else {
             unreachable!();
         };
-        segments[0].bounds.push(TypeBound::new_unbounded());
+        segments[0]
+            .value_mut()
+            .bounds
+            .push(TypeBound::new_unbounded());
 
         assert!(import.is_prefix(&reference));
     }

@@ -33,7 +33,7 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
         })
         .expect("expected target field");
 
-    let ctx = Context::new(revision, &entry.key, file, node_index, type_ref);
+    let ctx = Context::new(revision, &entry.key, file, node_index, type_ref.value());
     let TypeCandidate::Java(JavaTypeCandidate::Declaration(declaration)) = resolve(&ctx).unwrap()
     else {
         panic!("expected a Java declaration");
@@ -42,6 +42,6 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
         .declaration(&declaration)
         .expect("expected a readable declaration handle");
 
-    assert_eq!(target.declaration.name.as_deref(), Some("Target"));
+    assert_eq!(target.declaration.name(), Some("Target"));
     assert_eq!(target.source, &entry.key);
 }
