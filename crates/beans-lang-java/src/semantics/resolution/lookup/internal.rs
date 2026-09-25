@@ -4,7 +4,7 @@ use crate::model::{
 };
 use beans_core::model::ranges::Spanned;
 
-use super::{
+use super::super::{
     Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate,
     iterators::{
         iter_declared_member_types, iter_direct_supertype_refs, iter_enclosing_types,
@@ -18,7 +18,7 @@ use super::{
 ///
 /// Each enclosing type is one lexical tier: declared member types, type parameters, then
 /// inherited member types. The caller commits to the first candidate this lookup returns.
-pub(super) fn lookup_upward(
+pub(in crate::semantics::resolution) fn lookup_upward(
     ctx: &Context<'_>,
     component: &TypeNameComponent,
     state: &mut State,
@@ -36,7 +36,7 @@ pub(super) fn lookup_upward(
 ///
 /// The declaring type's parameters are visible, but its members are not in scope in its header.
 /// Enclosing types use normal type-body precedence (JLS §6.3).
-pub(super) fn lookup_upward_from_type_header(
+pub(in crate::semantics::resolution) fn lookup_upward_from_type_header(
     ctx: &Context<'_>,
     segment: &TypeNameComponent,
     state: &mut State,
@@ -63,7 +63,7 @@ pub(super) fn lookup_upward_from_type_header(
 /// The parent itself is never a candidate. Type parameters are not searched. Directly declared
 /// types take precedence over inherited member types; after selecting a component, lookup proceeds
 /// only below that selected type.
-pub(super) fn lookup_downward(
+pub(in crate::semantics::resolution) fn lookup_downward(
     ctx: &Context<'_>,
     parent: NodeIndex,
     segments: &[Spanned<TypeNameComponent>],
