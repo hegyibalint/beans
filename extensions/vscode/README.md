@@ -9,8 +9,8 @@ The extension activates on `.java` files and launches the `beans-lsp` binary
 
 From the repository root, run `scripts/dev-vscode.sh`. It builds the Rust
 server, installs client dependencies if needed, compiles the extension, and
-opens `examples/hover-playground/src/demo/Showcase.java` in an extension-development host.
-See the [playground README](../../examples/hover-playground/README.md) for hover targets.
+opens `examples/playground/src/demo/Example.java` in an extension-development host.
+See the [playground README](../../examples/playground/README.md) for the current demos.
 
 Pass another project directory to open it instead:
 
