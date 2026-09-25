@@ -1,0 +1,10 @@
+[package]
+name = "beans-platform-jvm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+beans-core.workspace = true
+cafebabe.workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "beans-lsp"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "beans-lsp"
+path = "src/main.rs"
+
+[dependencies]
+beans-core.workspace = true
+beans-engine.workspace = true
+lsp-server.workspace = true
+lsp-types.workspace = true
+serde_json.workspace = true

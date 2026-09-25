@@ -7,14 +7,17 @@ The extension activates on `.java` files and launches the `beans-lsp` binary
 
 ## Development
 
-One-time setup: run `npm install` in this directory.
+From the repository root, run `scripts/dev-vscode.sh`. It builds the Rust
+server, installs client dependencies if needed, compiles the extension, and
+opens `examples/beans/src/demo/Example.java` in an extension-development host.
+See the [playground README](../../examples/beans/README.md) for hover targets.
 
-## Demo VSCode
-
-The `scripts/dev-vscode.sh` script builds the server and client and opens the extension dev host on `examples/beans`, which is a simple project showing testcasing Beans. See its README for what to try.
-
-The script can open any directory; just pass the dir after the script:
+Pass another project directory to open it instead:
 
 ```sh
-scripts/dev-vscode.sh extensions/vscode/sample
+scripts/dev-vscode.sh /path/to/project
 ```
+
+Check **Output → Beans** and **Help → Toggle Developer Tools** if the extension
+fails to start. The server currently shows the type as written in source on hover, not
+resolved type information.

@@ -17,14 +17,14 @@ Beans follows the classical testing vocabulary:
 
 Test a rule where the code decides it. Higher up, test only that the pieces are connected, not the rule again.
 
-Java says a member type wins over a single-type import (JLS §6.4.1). The `crates/lang-java/src/resolution.rs` is the code that decides it, so that is where the cases belong: the member type alone, the import alone, both together, and the import written first and written last. That module is the only one that has to be exhaustive.
+Java says a member type wins over a single-type import (JLS §6.4.1). The `crates/beans-lang-java/src/semantics/resolution/mod.rs` module decides it, so that is where the cases belong: the member type alone, the import alone, both together, and the import written first and written last. That module is the only one that has to be exhaustive.
 
 The levels above it can still be wired wrong, so each of them gets one test; not another case, just the connection:
 
 | Test | What it establishes |
 |---|---|
-| `resolution/tests/shadowing.rs` | every case: which declaration wins |
-| `lang-java/tests/type_resolution/shadowing.rs` | one: the answer survives the crate's public API |
+| `semantics/resolution/tests/shadowing.rs` | every case: which declaration wins |
+| `beans-lang-java/tests/type_resolution/shadowing.rs` | one: the answer survives the crate's public API |
 | `acceptance/.../type_resolution/shadowing.rs` | one: the answer reaches a user of Beans |
 
 Without this, tests drift upward. The level furthest from the code is the most comfortable one to write in; the fixture is nice, the setup is familiar, and nothing stops one more case from going there. The result is that the top restates rules the bottom already owns, and a single broken rule fails in three places at once, without telling us which one is wrong.
@@ -70,13 +70,13 @@ When to split is subjective:
  - when the testing starts to become cumbersome
  - when there are multiple concepts mixing in the same file
  - when it is _expected_ that multiple concepts will mix
-    - e.g. it's obvious that `resolution.rs` will contain a complex, multi-faceted codebase; we can start with the split structure right away.
+    - e.g. it's obvious that `semantics/resolution` will contain a complex, multi-faceted codebase; we can start with the split structure right away.
 
 ### Unit tests
 
 Unit tests live with the module they exercise, but not necessarily in the same file. They have two shapes, and which one we are in decides how much of the test the path can carry.
 
-We follow the same fact through both shapes: a member type wins over a single-type import. The `crates/lang-java/src/resolution.rs` decides it, so this is where its cases belong.
+We follow the same fact through both shapes: a member type wins over a single-type import. The `crates/beans-lang-java/src/semantics/resolution/mod.rs` module decides it, so this is where its cases belong.
 
 #### Embedded
 
@@ -103,7 +103,7 @@ Only the claim has anywhere to go:
 | Claim | `member_type_shadows_single_type_import` |
 
 ```text
-resolution.rs::tests::member_type_shadows_single_type_import
+semantics::resolution::tests::member_type_shadows_single_type_import
 ```
 
 Grouping the cases into child modules buys back the premise without moving a single file, giving `resolution::tests::shadowing::member_type_shadows_single_type_import`. That only holds while the whole block is still comfortable to read.
@@ -112,21 +112,22 @@ Grouping the cases into child modules buys back the premise without moving a sin
 
 When the block gets uncomfortable, it moves out into a `tests.rs` index plus a `tests/` directory holding one file per premise. What never happens is the middle state where `tests.rs` collects the test functions itself: that file is an index, never a container.
 
-`resolution.rs`'s tests fall into five premises: resolution through lexical scope, through the same package, through an import, at an occurrence in a body, and where two declarations compete for one name. They get five files:
+`semantics::resolution`'s tests fall into five premises: resolution through lexical scope, through the same package, through an import, at an occurrence in a body, and where two declarations compete for one name. They get five files:
 
 ```text
-resolution.rs
-resolution/
-├── tests.rs
-└── tests/
-    ├── lexical.rs
-    ├── same_package.rs
-    ├── imports.rs
-    ├── occurrence.rs
-    └── shadowing.rs
+semantics/
+└── resolution/
+    ├── mod.rs
+    ├── tests.rs
+    └── tests/
+        ├── lexical.rs
+        ├── same_package.rs
+        ├── imports.rs
+        ├── occurrence.rs
+        └── shadowing.rs
 ```
 
-Then the `resolution.rs` declares `tests` as a testing-only module:
+Then `semantics/resolution/mod.rs` declares `tests` as a testing-only module:
 
 ```rust
 #[cfg(test)]
@@ -156,7 +157,7 @@ Now the premise has a file to live in, so it leaves the function name:
 | Claim | `member_type_shadows_single_type_import` |
 
 ```text
-resolution/tests/shadowing.rs::member_type_shadows_single_type_import
+semantics/resolution/tests/shadowing.rs::member_type_shadows_single_type_import
 ```
 
 Nothing above premise shows up in either shape. A unit test already sits in one module of one crate, so a capability directory would just repeat what the module path says. That is a different kind of absence: the premise was missing until it grew, but the capability stays missing however large the file gets.
@@ -167,12 +168,12 @@ Integration tests sit in a crate's `tests/` directory, next to its `src/`. Cargo
 
 ```text
 crates/
-└── lang-java/
+└── beans-lang-java/
     ├── src/
     │   ├── lib.rs
-    │   ├── model.rs
-    │   ├── parser.rs
-    │   └── resolution.rs
+    │   ├── model/
+    │   ├── lowering/
+    │   └── semantics/
     └── tests/
         └── navigation.rs
 ```
@@ -183,7 +184,7 @@ Splitting works the same as everywhere else, only the index is a `main.rs`, beca
 
 ```text
 crates/
-└── lang-java/
+└── beans-lang-java/
     ├── src/
     │   └── ...
     └── tests/
@@ -194,11 +195,11 @@ crates/
             └── shadowing.rs
 ```
 
-An integration test necessarily composes things from the outside: for example, `navigation.rs` builds a `PlatformJvm` and drives revisions through `core`. What makes it an integration test is where the attention is: if the assertions focus on establishing the behavior of `lang-java`, and the external components are just there to make things work, it can be considered an integration test.
+An integration test necessarily composes things from the outside: for example, `navigation.rs` builds a `PlatformJvm` and drives revisions through `core`. What makes it an integration test is where the attention is: if the assertions focus on establishing the behavior of `beans-lang-java`, and the external components are just there to make things work, it can be considered an integration test.
 
 If the attention is on the overall system behaving, i.e. the assertions spread around, the test is an acceptance test rather than an integration test.
 
-The same fact gets one test here, checking that `lang-java`'s public API still gives the right answer. It is not a second copy of the cases; those stay with the code that decides them. The test spans modules, so the group needs a name that isn't a module name, and that is the capability:
+The same fact gets one test here, checking that `beans-lang-java`'s public API still gives the right answer. It is not a second copy of the cases; those stay with the code that decides them. The test spans modules, so the group needs a name that isn't a module name, and that is the capability:
 
 | Level | Value |
 |---|---|
@@ -209,7 +210,7 @@ The same fact gets one test here, checking that `lang-java`'s public API still g
 | Claim | `member_type_shadows_single_type_import` |
 
 ```text
-lang-java/tests/type_resolution/shadowing.rs::member_type_shadows_single_type_import
+beans-lang-java/tests/type_resolution/shadowing.rs::member_type_shadows_single_type_import
 ```
 
 There is nothing to name above capability here. The crate directory already says the domain and the subject, so putting them inside `tests/` would say it twice.

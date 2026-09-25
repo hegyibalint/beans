@@ -1,14 +1,16 @@
 Ingress:
 
-- Represent virtual document identities without coercing them into filesystem paths.
-  `Engine::process` currently accepts a `PathBuf`, and `core-model::Source` only
-  models file-backed sources; LSP clients may open documents with non-file URI
-  schemes.
+- Reconcile open-document overlays with source-file storage and classpath
+  visibility. Disk-ingested source and an open document with the same `file:`
+  URI now share an identity, but closing the document removes its model rather
+  than restoring the on-disk version.
 
 Navigation:
 
+- Expand hover beyond modeled type positions and show resolved information
+  rather than just echoing the type as written in source.
 - Use the preserved Java type-declaration and named-reference byte ranges to
-  implement `JavaEngine::find_declaration`.
+  implement `beans_lang_java::lsp::find_declaration` and dispatch it through `beans-engine`.
 - Preserve progressively finer byte ranges as navigation expands to more Java
   declarations and reference kinds.
 

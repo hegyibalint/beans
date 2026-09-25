@@ -1,0 +1,49 @@
+use beans_core::engine::Revision;
+use beans_core::model::{
+    classpath::{Classpath, ClasspathElement},
+    source::Source,
+};
+use beans_lang_java::{
+    engine::JavaEngine,
+    lowering::lower_into,
+    model::nodes::NodeKind,
+    semantics::resolution::{Context, JavaTypeCandidate, TypeCandidate, resolve},
+};
+
+#[test]
+fn stored_models_can_be_resolved_using_the_engines_query() {
+    let mut engine = JavaEngine::default();
+    let revision = Revision::new(3);
+    let entry = engine.store(
+        revision,
+        lower_into("package app; class Target {} class Use { Target target; }"),
+        Source::uri("file:///src/app/Use.java"),
+    );
+    let classpath = Classpath::new(vec![ClasspathElement::new("src".into(), [0; 32].into())]);
+    let query = engine.query(entry.revision, &classpath);
+
+    assert_eq!(query.revision(), revision);
+    assert!(std::ptr::eq(query.classpath(), &classpath));
+    let file = query.file(&entry.key).expect("expected the stored model");
+    let (node_index, type_ref) = file
+        .iter_nodes()
+        .find_map(|entry| match entry.node.kind() {
+            NodeKind::Field(field) if field.name == "target" => {
+                Some((entry.index, &field.declared_type))
+            }
+            _ => None,
+        })
+        .expect("expected target field");
+
+    let ctx = Context::new(revision, &entry.key, file, node_index, type_ref.value());
+    let TypeCandidate::Java(JavaTypeCandidate::Declaration(declaration)) = resolve(&ctx).unwrap()
+    else {
+        panic!("expected a Java declaration");
+    };
+    let target = query
+        .declaration(&declaration)
+        .expect("expected a readable declaration handle");
+
+    assert_eq!(target.declaration.name(), Some("Target"));
+    assert_eq!(target.source, &entry.key);
+}

@@ -1,20 +1,12 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/core/engine",
-    "crates/core/model",
-    "crates/core/resolution",
-    "crates/engine",
-    "crates/lang/java/engine",
-    "crates/lang/java/model",
-    "crates/lang/java/resolution",
-    "crates/lang/java/semantics",
-    "crates/lang/java/server",
-    "crates/lsp/models",
-    "crates/lsp/server",
-    "crates/platform/jvm/engine",
-    "crates/platform/jvm/model",
-    "crates/platform/jvm/semantics",
+    "crates/beans-core",
+    "crates/beans-engine",
+    "crates/beans-lang-java",
+    "crates/beans-lsp",
+    "crates/beans-platform-jvm",
+    "crates/beans-testing",
 ]
 
 [workspace.package]
@@ -24,6 +16,10 @@ authors = ["Bálint Hegyi <me@blnt.dev>"]
 license = "Apache-2.0"
 
 [workspace.dependencies]
+beans-core = { path = "crates/beans-core" }
+beans-engine = { path = "crates/beans-engine" }
+beans-lang-java = { path = "crates/beans-lang-java" }
+beans-platform-jvm = { path = "crates/beans-platform-jvm" }
 blake3 = "1"
 cafebabe = { version = "0.9", default-features = false }
 lsp-server = "0.8"
@@ -33,3 +29,4 @@ serde_json = "1"
 toml = "0.9"
 tree-sitter = "0.25"
 tree-sitter-java = "0.23"
+url = "2"
