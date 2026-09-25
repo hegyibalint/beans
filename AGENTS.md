@@ -23,8 +23,6 @@ I want to avoid cargo culting, so please explain why a change is better than wha
 
 ## Git and Commit style
 
-You should use git worktrees to separate units of work.
-In each worktree, commit often.
 Commit messages should not be complex: unless really necessary, the ~80-column single line commit message is preferred.
 
 ## Testing
