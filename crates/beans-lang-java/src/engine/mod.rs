@@ -2,14 +2,13 @@
 
 use std::path::Path;
 
-use self::query::{DeclarationHandle, JavaQuery};
+use self::query::JavaQuery;
 use crate::{lowering::lower_into, model::File};
 use beans_core::engine::{
     Revision,
     storage::{RevisionEntry, RevisionedStorage},
 };
-use beans_core::model::{classpath::Classpath, names::Name, source::Source};
-use beans_core::resolution::query::TypeDefinitionQuery;
+use beans_core::model::{classpath::Classpath, source::Source};
 use url::Url;
 
 pub mod query;
@@ -64,15 +63,6 @@ impl JavaEngine {
 
     pub fn analyse(&self, _entry: &RevisionEntry<Source>, _classpath: &Classpath) {
         todo!("analysis is not implemented")
-    }
-}
-
-impl TypeDefinitionQuery<DeclarationHandle> for JavaEngine {
-    fn find_types<'query>(
-        &'query self,
-        _name: &'query Name,
-    ) -> impl Iterator<Item = DeclarationHandle> + 'query {
-        Vec::new().into_iter()
     }
 }
 

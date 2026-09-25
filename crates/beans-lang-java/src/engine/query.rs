@@ -5,6 +5,7 @@ use crate::model::{
 pub use crate::semantics::DeclarationHandle;
 use beans_core::engine::{Revision, storage::RevisionedStorage};
 use beans_core::model::{classpath::Classpath, names::Name, source::Source};
+use beans_core::resolution::query::TypeDefinitionQuery;
 use url::Url;
 
 #[derive(Debug, Clone, Copy)]
@@ -96,6 +97,17 @@ impl<'a> JavaQuery<'a> {
             }
         }
         candidates
+    }
+}
+
+impl TypeDefinitionQuery<DeclarationHandle> for JavaQuery<'_> {
+    fn find_types<'query>(
+        &'query self,
+        name: &'query Name,
+    ) -> impl Iterator<Item = DeclarationHandle> + 'query {
+        self.find_type(name)
+            .into_iter()
+            .map(|entry| self.declaration_handle(entry.source, entry.node_index))
     }
 }
 

@@ -166,7 +166,7 @@ fn lookup_inherited_member_types(
     };
 
     for type_ref in iter_direct_supertype_refs(ctx, owner) {
-        let supertype_ctx = Context::new(ctx.revision, ctx.source, ctx.file, owner_index, type_ref);
+        let supertype_ctx = ctx.for_type_ref(owner_index, type_ref);
         let supertype = match resolve_supertype_with_state(&supertype_ctx, state) {
             Ok(candidate) => candidate,
             Err(_) => continue,

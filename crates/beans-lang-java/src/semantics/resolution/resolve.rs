@@ -70,6 +70,10 @@ pub(super) fn resolve_supertype_with_state(
         return validate_resolution(ctx, candidate);
     }
 
+    if let Some(candidate) = lookup_external(ctx, segments)? {
+        return validate_resolution(ctx, candidate);
+    }
+
     Err(ResolutionFailure::NotFound)
 }
 
@@ -124,13 +128,7 @@ fn resolve_through_type_parameter(
             let substituted = TypeRef::Named {
                 segments: segments.iter().chain(remaining).cloned().collect(),
             };
-            let bound_ctx = Context::new(
-                ctx.revision,
-                ctx.source,
-                ctx.file,
-                parameter.owner().node_index(),
-                &substituted,
-            );
+            let bound_ctx = ctx.for_type_ref(parameter.owner().node_index(), &substituted);
 
             match resolve_supertype_with_state(&bound_ctx, state) {
                 Ok(candidate) => push_unique_candidate(&mut candidates, candidate),

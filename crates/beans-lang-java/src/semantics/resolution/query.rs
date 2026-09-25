@@ -5,6 +5,12 @@ use beans_platform_jvm::engine::query::ClassHandle;
 
 use super::{JavaTypeCandidate, TypeCandidate};
 
+/// Object-safe view of the combined query for a resolver context. `TypeDefinitionQuery`
+/// returns an opaque iterator, so it cannot be borrowed as a trait object.
+pub trait TypeCandidateQuery {
+    fn candidates(&self, name: &Name) -> Vec<TypeCandidate>;
+}
+
 pub struct ResolutionQuery<'a, Java, Jvm> {
     java: &'a Java,
     jvm: &'a Jvm,
@@ -32,6 +38,16 @@ where
         let jvm = self.jvm.find_types(name).map(TypeCandidate::Jvm);
 
         java.chain(jvm)
+    }
+}
+
+impl<Java, Jvm> TypeCandidateQuery for ResolutionQuery<'_, Java, Jvm>
+where
+    Java: TypeDefinitionQuery<DeclarationHandle>,
+    Jvm: TypeDefinitionQuery<ClassHandle>,
+{
+    fn candidates(&self, name: &Name) -> Vec<TypeCandidate> {
+        TypeDefinitionQuery::find_types(self, name).collect()
     }
 }
 

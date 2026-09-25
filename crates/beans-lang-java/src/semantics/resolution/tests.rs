@@ -1,4 +1,5 @@
 mod compilation_unit;
+mod external;
 mod inheritance;
 mod lexical;
 mod supertype;

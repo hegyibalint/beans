@@ -8,8 +8,8 @@
 //! in another lexical scope. These rules follow the distinction between simple and qualified type
 //! names in JLS §6.5.5.1 and §6.5.5.2.
 //!
-//! The stages below are the semantic contract for this module. Some compilation-unit stages are
-//! not wired into `resolve` yet.
+//! The stages below are the semantic contract for this module. Some compilation-unit stages
+//! remain unimplemented.
 //!
 //! ## 1. Validate the reference
 //!
@@ -50,9 +50,9 @@
 //! ## 4. Resolve compilation-unit names
 //!
 //! After upward lookup is exhausted, downward lookup from the compilation-unit root resolves
-//! top-level types declared in the current file. Package and import lookup are not wired yet.
-//! Subject to the declaration-conflict rules in JLS §7.5.1 and §7.5.3, the remaining shadowing
-//! tiers are:
+//! top-level types declared in the current file. `lookup_external` then searches the visible
+//! Java and JVM definitions. Subject to the declaration-conflict rules in JLS §7.5.1 and §7.5.3,
+//! the compilation-unit shadowing tiers are:
 //!
 //! 1. single-type and single-static type imports;
 //! 2. top-level types in the current package;
@@ -66,8 +66,11 @@
 //! shadowing rules are in JLS §6.4.1; import forms and their conflict rules are in JLS §7.5.1–§7.5.5.
 //! Top-level type scope is defined by JLS §6.3 and §7.6.
 //!
-//! Fully qualified names and names expanded from imports are discovered through
-//! `TypeDefinitionQuery`; package/type boundaries are not inferred from capitalization.
+//! Single-type imports, current-package types, type-on-demand imports, and as-written canonical
+//! names are wired through `ResolutionQuery`. Static and module imports, accessibility checks,
+//! and inherited members from other files remain to be implemented. A caller must supply a
+//! classpath-aware query to look beyond the current file; package/type boundaries are not inferred
+//! from capitalization.
 //!
 //! ## 5. Resolve qualified suffixes downward
 //!
@@ -131,6 +134,7 @@ use beans_core::engine::Revision;
 use beans_core::model::source::Source;
 
 pub struct Context<'a> {
+    definitions: Option<&'a dyn query::TypeCandidateQuery>,
     revision: Revision,
     source: &'a Source,
     file: &'a File,
@@ -147,9 +151,27 @@ impl<'a> Context<'a> {
         type_ref: &'a TypeRef,
     ) -> Self {
         Self {
+            definitions: None,
             revision,
             source,
             file,
+            node_index,
+            type_ref,
+        }
+    }
+
+    /// Supplies the visible Java and JVM definitions for compilation-unit lookup.
+    pub fn with_definitions(mut self, definitions: &'a dyn query::TypeCandidateQuery) -> Self {
+        self.definitions = Some(definitions);
+        self
+    }
+
+    fn for_type_ref<'b>(&'b self, node_index: NodeIndex, type_ref: &'b TypeRef) -> Context<'b> {
+        Context {
+            definitions: self.definitions,
+            revision: self.revision,
+            source: self.source,
+            file: self.file,
             node_index,
             type_ref,
         }
