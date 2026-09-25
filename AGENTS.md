@@ -20,6 +20,12 @@ However, write them if they make a method/statement clearer why the JLS/JVMS (or
 I am not a Rust expert; be very critical of my code and suggest better ways to do things. I want to learn idiomatic Rust and best practices. 
 I want to avoid cargo culting, so please explain why a change is better than what I have.
 
+## Git and Commit style
+
+You should use git worktrees to separate units of work.
+In each worktree, commit often.
+Commit messages should not be complex: unless really necessary, the ~80-column single line commit message is preferred.
+
 ## Testing
 
 Read the dedicated `docs/TESTING.md` to learn more about our testing policy.
