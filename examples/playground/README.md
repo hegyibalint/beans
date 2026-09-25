@@ -31,3 +31,18 @@ should not produce a Beans hover.
 The nested parameterized type and wildcard are legal Java type forms (JLS §4.5
 and §4.5.1); `int[]` is an array type (JLS §10.1). The JDK types in this
 example do not require extra dependencies; Beans does not yet resolve them.
+
+## Go to Definition
+
+In the same `Example.java` file, Cmd-click these *field type uses* (Ctrl-click
+on Windows/Linux):
+
+- `Destination` in `Destination next` jumps to `class Destination`.
+- `Box` in `Box<? extends Number> numbers` jumps to `class Box`.
+- `Box` and `Slot` in `Box<String>.Slot<Integer> nested` jump to their
+  respective declarations.
+
+Click the type name, not `next`, `numbers`, or `nested`. Beans currently
+navigates field type names only; type arguments such as `String` and `Integer`,
+type parameter `T`, and the `Box` in the `extends` clause are not navigation
+examples yet. Cross-file navigation is not configured in the VS Code playground.
