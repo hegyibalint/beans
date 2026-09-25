@@ -9,6 +9,7 @@ Before writing language-specific code, all relevant specification pages should b
 For copyright reasons, we don't commit MD-ified versions of the specifications, but executing `scripts/specs/update.py` provides access to:
 - `docs/lang-specs/jls/se26/`, containing the JLS 26 in Markdown
 - `docs/lang-specs/jvms/se26/`, containing the JVMS 26 in Markdown
+- `docs/lang-specs/lsp/3.17/`, containing the LSP 3.17 specification in Markdown
 
 Use these docs to drive the implementation, and provide citations to _why_ something is happening.
 

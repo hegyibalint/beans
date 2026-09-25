@@ -1,8 +1,8 @@
 """Shared pipeline for fetching a spec and converting it to Markdown.
 
-Each language spec has its own entry script (jls.py, jvms.py, ...) holding
-the edition pin and chapter table; this module owns the mechanics:
-download -> pandoc (html -> gfm) -> cleanup -> versioned output dir.
+The JLS and JVMS entry scripts pin their editions and chapter tables;
+this module owns their download -> pandoc (html -> gfm) -> cleanup pipeline.
+The LSP entry script reuses fetching and conversion for its single rendered page.
 """
 
 import re
