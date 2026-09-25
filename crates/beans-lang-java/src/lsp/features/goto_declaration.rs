@@ -6,7 +6,9 @@ use beans_core::{
 use crate::{
     engine::JavaEngine,
     model::{File, nodes::NodeKind, references::TypeRef},
-    semantics::resolution::{Context, ResolutionFailure, TypeCandidate, resolve},
+    semantics::resolution::{
+        Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, resolve,
+    },
 };
 
 impl JavaEngine {
@@ -18,8 +20,19 @@ impl JavaEngine {
         offset: usize,
     ) -> Option<SourceSpan> {
         let file = self.file(revision, source)?;
-        let _candidate = resolve_field_type_at(file, revision, source, offset)?.ok()?;
-        todo!("Project a resolved Java type to its declaration location")
+        let candidate = resolve_field_type_at(file, revision, source, offset)?.ok()?;
+        let TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) = candidate else {
+            return None;
+        };
+        let declaration = self
+            .file(handle.revision(), handle.source())?
+            .node(handle.node_index())?
+            .kind()
+            .as_type()?;
+        Some(SourceSpan::new(
+            handle.source().clone(),
+            declaration.name.as_ref()?.range(),
+        ))
     }
 }
 
@@ -56,11 +69,8 @@ fn resolve_field_type_at(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        lowering::lower_into,
-        semantics::resolution::{JavaTypeCandidate, ResolutionFailure},
-    };
-    use beans_core::model::names::Name;
+    use crate::{lowering::lower_into, semantics::resolution::ResolutionFailure};
+    use beans_core::model::{names::Name, ranges::ByteRange};
 
     fn at<'a>(
         file: &'a File,
@@ -92,6 +102,38 @@ mod tests {
         assert_eq!(handle.revision(), Revision::new(1));
         assert_eq!(handle.source(), &source);
         assert_eq!(handle.node_index(), member_index);
+    }
+
+    #[test]
+    fn resolved_field_type_projects_to_its_declaration_name() {
+        let text = "class Outer { class Member {} Member field; }";
+        let revision = Revision::new(1);
+        let source = Source::uri("untitled:Example.java");
+        let mut java = JavaEngine::default();
+        java.store(revision, lower_into(text), source.clone());
+        let name_start = text.find("Member").unwrap();
+
+        assert_eq!(
+            java.goto_declaration(revision, &source, text.rfind("Member").unwrap()),
+            Some(SourceSpan::new(
+                source,
+                ByteRange::new(name_start, name_start + "Member".len()),
+            ))
+        );
+    }
+
+    #[test]
+    fn type_parameters_without_name_spans_do_not_produce_a_location() {
+        let text = "class Box<T> { T field; }";
+        let revision = Revision::new(1);
+        let source = Source::uri("untitled:Example.java");
+        let mut java = JavaEngine::default();
+        java.store(revision, lower_into(text), source.clone());
+
+        assert_eq!(
+            java.goto_declaration(revision, &source, text.rfind('T').unwrap()),
+            None
+        );
     }
 
     #[test]

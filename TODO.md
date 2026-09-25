@@ -9,10 +9,11 @@ Navigation:
 
 - Expand hover beyond modeled type positions and show resolved information
   rather than just echoing the type as written in source.
-- Use the preserved Java type-declaration and named-reference byte ranges to
-  implement `beans_lang_java::lsp::find_declaration` and dispatch it through `beans-engine`.
-- Preserve progressively finer byte ranges as navigation expands to more Java
-  declarations and reference kinds.
+- Expand `goto_declaration` beyond simple named field type uses to type parameters
+  (including declaration-name spans), qualified segments, nested type arguments,
+  supertype clauses, array elements, and other reference kinds.
+- Provide revision-consistent target text for unopened source files so LSP can
+  convert cross-file byte ranges; JVM-only candidates also need source mapping.
 
 Resolution:
 

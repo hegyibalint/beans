@@ -1,7 +1,7 @@
 use lsp_server::{ErrorCode, Request, Response};
 use lsp_types::{
-    HoverParams, InitializeParams, InitializeResult, ServerCapabilities, ServerInfo,
-    TextDocumentSyncKind, TextDocumentSyncOptions,
+    DeclarationCapability, HoverParams, InitializeParams, InitializeResult, ServerCapabilities,
+    ServerInfo, TextDocumentSyncKind, TextDocumentSyncOptions,
     request::{GotoDeclaration, GotoDeclarationParams, HoverRequest, Request as _},
 };
 
@@ -18,7 +18,7 @@ impl Server {
                             request.id,
                             InitializeResult {
                                 capabilities: ServerCapabilities {
-                                    // Do not advertise goto declaration until Java's handler is implemented.
+                                    declaration_provider: Some(DeclarationCapability::Simple(true)),
                                     hover_provider: Some(true.into()),
                                     text_document_sync: Some(
                                         TextDocumentSyncOptions {

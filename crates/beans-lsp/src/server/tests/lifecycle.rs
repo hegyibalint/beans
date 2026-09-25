@@ -14,7 +14,8 @@ fn initialization_advertises_open_and_close_synchronization() {
     let result = response.result.unwrap();
     assert_eq!(
         result["capabilities"],
-        json!({"hoverProvider": true, "textDocumentSync": {"openClose": true, "change": 1}})
+        json!({"declarationProvider": true, "hoverProvider": true,
+               "textDocumentSync": {"openClose": true, "change": 1}})
     );
     assert_eq!(result["serverInfo"]["name"], "beans");
 }
