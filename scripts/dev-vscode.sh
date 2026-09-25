@@ -3,7 +3,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-PROJECT="${1:-examples/beans}"
+PROJECT="${1:-examples/hover-playground}"
 case "$PROJECT" in
   /*) ;;
   *) PROJECT="$PWD/$PROJECT" ;;
@@ -15,10 +15,10 @@ if [ ! -d extensions/vscode/node_modules ]; then
 fi
 npm --prefix extensions/vscode run compile
 
-if [ "$PROJECT" = "$PWD/examples/beans" ]; then
+if [ "$PROJECT" = "$PWD/examples/hover-playground" ]; then
   code --new-window --disable-extensions \
     --extensionDevelopmentPath="$PWD/extensions/vscode" \
-    "$PROJECT" "$PROJECT/src/demo/Example.java"
+    "$PROJECT" "$PROJECT/src/demo/Showcase.java"
 else
   code --new-window --disable-extensions \
     --extensionDevelopmentPath="$PWD/extensions/vscode" "$PROJECT"
