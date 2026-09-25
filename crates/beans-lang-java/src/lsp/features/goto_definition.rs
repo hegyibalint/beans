@@ -44,25 +44,27 @@ fn resolve_field_type_at(
     offset: usize,
 ) -> Option<Result<TypeCandidate, ResolutionFailure>> {
     // JLS §8.3: a field declares a type separately from its variable name.
-    let (index, field) = file
-        .iter_nodes()
-        .filter_map(|entry| match entry.node.kind() {
-            NodeKind::Field(field) => Some((entry.index, field)),
-            _ => None,
-        })
-        .find(|(_, field)| {
-            let TypeRef::Named { segments } = field.declared_type.value() else {
-                return false;
-            };
-            matches!(segments.as_slice(), [segment] if segment.range().contains(offset))
-        })?;
+    let (index, prefix) = file.iter_nodes().find_map(|entry| {
+        let NodeKind::Field(field) = entry.node.kind() else {
+            return None;
+        };
+        let TypeRef::Named { segments } = field.declared_type.value() else {
+            return None;
+        };
+        let selected = segments
+            .iter()
+            .position(|segment| segment.range().contains(offset))?;
+        // JLS §6.5.5.2: resolve through the clicked component, not a later member type.
+        Some((
+            entry.index,
+            TypeRef::Named {
+                segments: segments[..=selected].to_vec(),
+            },
+        ))
+    })?;
 
     Some(resolve(&Context::new(
-        revision,
-        source,
-        file,
-        index,
-        field.declared_type.value(),
+        revision, source, file, index, &prefix,
     )))
 }
 
@@ -119,6 +121,36 @@ mod tests {
                 source,
                 ByteRange::new(name_start, name_start + "Member".len()),
             ))
+        );
+    }
+
+    #[test]
+    fn qualified_field_type_navigates_each_component_to_its_own_declaration() {
+        let text = "class Box<T> { class Slot<U> {} } class Example { Box<String>.Slot<Integer> nested; Box<? extends Number> numbers; }";
+        let revision = Revision::new(1);
+        let source = Source::uri("untitled:Example.java");
+        let mut java = JavaEngine::default();
+        java.store(revision, lower_into(text), source.clone());
+        let box_name = text.find("class Box").unwrap() + "class ".len();
+        let slot_name = text.find("class Slot").unwrap() + "class ".len();
+
+        for (use_offset, target_offset, name) in [
+            (text.find("Box<String>").unwrap(), box_name, "Box"),
+            (text.find("Slot<Integer>").unwrap(), slot_name, "Slot"),
+            (text.find("Box<?").unwrap(), box_name, "Box"),
+        ] {
+            assert_eq!(
+                java.goto_definition(revision, &source, use_offset),
+                Some(SourceSpan::new(
+                    source.clone(),
+                    ByteRange::new(target_offset, target_offset + name.len()),
+                )),
+                "{name} at {use_offset}"
+            );
+        }
+        assert_eq!(
+            java.goto_definition(revision, &source, text.find(".Slot").unwrap()),
+            None
         );
     }
 
