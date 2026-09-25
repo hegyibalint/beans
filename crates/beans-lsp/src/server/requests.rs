@@ -1,8 +1,8 @@
 use lsp_server::{ErrorCode, Request, Response};
 use lsp_types::{
-    DeclarationCapability, HoverParams, InitializeParams, InitializeResult, ServerCapabilities,
-    ServerInfo, TextDocumentSyncKind, TextDocumentSyncOptions,
-    request::{GotoDeclaration, GotoDeclarationParams, HoverRequest, Request as _},
+    GotoDefinitionParams, HoverParams, InitializeParams, InitializeResult, OneOf,
+    ServerCapabilities, ServerInfo, TextDocumentSyncKind, TextDocumentSyncOptions,
+    request::{GotoDefinition, HoverRequest, Request as _},
 };
 
 use super::{Lifecycle, Server};
@@ -18,7 +18,7 @@ impl Server {
                             request.id,
                             InitializeResult {
                                 capabilities: ServerCapabilities {
-                                    declaration_provider: Some(DeclarationCapability::Simple(true)),
+                                    definition_provider: Some(OneOf::Left(true)),
                                     hover_provider: Some(true.into()),
                                     text_document_sync: Some(
                                         TextDocumentSyncOptions {
@@ -58,10 +58,10 @@ impl Server {
                 self.lifecycle = Lifecycle::Shutdown;
                 return Response::new_ok(request.id, ());
             }
-            (Lifecycle::Running, GotoDeclaration::METHOD) => {
-                return match serde_json::from_value::<GotoDeclarationParams>(request.params) {
+            (Lifecycle::Running, GotoDefinition::METHOD) => {
+                return match serde_json::from_value::<GotoDefinitionParams>(request.params) {
                     Ok(params) => {
-                        Response::new_ok(request.id, self.features.goto_declaration(params))
+                        Response::new_ok(request.id, self.features.goto_definition(params))
                     }
                     Err(error) => Response::new_err(
                         request.id,

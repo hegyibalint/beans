@@ -14,7 +14,7 @@ fn initialization_advertises_open_and_close_synchronization() {
     let result = response.result.unwrap();
     assert_eq!(
         result["capabilities"],
-        json!({"declarationProvider": true, "hoverProvider": true,
+        json!({"definitionProvider": true, "hoverProvider": true,
                "textDocumentSync": {"openClose": true, "change": 1}})
     );
     assert_eq!(result["serverInfo"]["name"], "beans");
@@ -54,7 +54,7 @@ fn initialization_cannot_be_repeated() {
 
 #[test]
 fn unsupported_requests_receive_method_not_found() {
-    for method in ["textDocument/definition", "$/unknown"] {
+    for method in ["textDocument/declaration", "$/unknown"] {
         assert_error(
             request(&mut server(Lifecycle::Running), method, Value::Null),
             ErrorCode::MethodNotFound,

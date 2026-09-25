@@ -9,7 +9,7 @@ Navigation:
 
 - Expand hover beyond modeled type positions and show resolved information
   rather than just echoing the type as written in source.
-- Expand `goto_declaration` beyond simple named field type uses to type parameters
+- Expand `goto_definition` beyond simple named field type uses to type parameters
   (including declaration-name spans), qualified segments, nested type arguments,
   supertype clauses, array elements, and other reference kinds.
 - Provide revision-consistent target text for unopened source files so LSP can

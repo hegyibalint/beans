@@ -12,8 +12,8 @@ use crate::{
 };
 
 impl JavaEngine {
-    /// Finds a declaration from a Java source position in the current revision.
-    pub fn goto_declaration(
+    /// Finds the type definition at a Java source position in the current revision.
+    pub fn goto_definition(
         &self,
         revision: Revision,
         source: &Source,
@@ -114,7 +114,7 @@ mod tests {
         let name_start = text.find("Member").unwrap();
 
         assert_eq!(
-            java.goto_declaration(revision, &source, text.rfind("Member").unwrap()),
+            java.goto_definition(revision, &source, text.rfind("Member").unwrap()),
             Some(SourceSpan::new(
                 source,
                 ByteRange::new(name_start, name_start + "Member".len()),
@@ -131,7 +131,7 @@ mod tests {
         java.store(revision, lower_into(text), source.clone());
 
         assert_eq!(
-            java.goto_declaration(revision, &source, text.rfind('T').unwrap()),
+            java.goto_definition(revision, &source, text.rfind('T').unwrap()),
             None
         );
     }

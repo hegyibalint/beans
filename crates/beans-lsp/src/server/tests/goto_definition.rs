@@ -19,7 +19,7 @@ fn field_type_navigates_to_its_declaration_with_utf16_positions() {
 
     let response = request(
         &mut server,
-        "textDocument/declaration",
+        "textDocument/definition",
         json!({"textDocument": {"uri": uri},
                "position": {"line": 0, "character": use_position}}),
     );
@@ -37,10 +37,10 @@ fn field_type_navigates_to_its_declaration_with_utf16_positions() {
 }
 
 #[test]
-fn goto_declaration_without_an_open_document_returns_null() {
+fn goto_definition_without_an_open_document_returns_null() {
     let response = request(
         &mut server(Lifecycle::Running),
-        "textDocument/declaration",
+        "textDocument/definition",
         json!({"textDocument": {"uri": "untitled:Example.java"},
                "position": {"line": 0, "character": 0}}),
     );
@@ -49,11 +49,11 @@ fn goto_declaration_without_an_open_document_returns_null() {
 }
 
 #[test]
-fn invalid_goto_declaration_parameters_are_rejected() {
+fn invalid_goto_definition_parameters_are_rejected() {
     assert_error(
         request(
             &mut server(Lifecycle::Running),
-            "textDocument/declaration",
+            "textDocument/definition",
             Value::Null,
         ),
         ErrorCode::InvalidParams,

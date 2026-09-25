@@ -46,8 +46,8 @@ impl Engine {
         self.java.remove(revision, Source::uri(uri));
     }
 
-    pub fn goto_declaration(&self, source: &Source, offset: usize) -> Option<SourceSpan> {
-        self.java.goto_declaration(self.revision, source, offset)
+    pub fn goto_definition(&self, source: &Source, offset: usize) -> Option<SourceSpan> {
+        self.java.goto_definition(self.revision, source, offset)
     }
 
     pub fn process(&mut self, uri: &str, contents: &str) {
