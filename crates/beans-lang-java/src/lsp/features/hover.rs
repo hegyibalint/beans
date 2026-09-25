@@ -1,49 +1,48 @@
 use beans_core::{
     engine::Revision,
-    model::{lsp::features::hover::HoverResponse, ranges::ByteRange, source::Source},
+    model::lsp::features::hover::{HoverProvider, HoverRequest, HoverResponse},
 };
 
 use crate::engine::JavaEngine;
 
 use super::super::operations::type_reference_at;
 
-struct Hover {
-    contents: String,
-    range: ByteRange,
-}
-
-impl HoverResponse for Hover {
-    fn contents(&self) -> &str {
-        &self.contents
-    }
-
-    fn range(&self) -> ByteRange {
-        self.range
-    }
-}
-
 /// Shows the complete type as written at a modeled position; resolution is not wired yet.
-pub fn hover(
-    engine: &JavaEngine,
-    revision: Revision,
-    source: &Source,
-    contents: &str,
-    offset: usize,
-) -> Option<Box<dyn HoverResponse>> {
-    let file = engine.file(revision, source)?;
-    let occurrence = type_reference_at(file, offset)?;
-    Some(Box::new(Hover {
-        contents: contents
-            .get(occurrence.type_range.start()..occurrence.type_range.end())?
-            .into(),
-        range: occurrence.range,
-    }))
+impl HoverProvider for JavaEngine {
+    fn hover(&self, revision: Revision, request: &HoverRequest<'_>) -> Option<HoverResponse> {
+        let file = self.file(revision, request.source)?;
+        let occurrence = type_reference_at(file, request.offset)?;
+        Some(HoverResponse::new(
+            request
+                .contents
+                .get(occurrence.type_range.start()..occurrence.type_range.end())?,
+            occurrence.range,
+        ))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::lowering::lower_into;
+    use beans_core::model::source::Source;
+
+    fn hover(
+        engine: &JavaEngine,
+        revision: Revision,
+        source: &Source,
+        contents: &str,
+        offset: usize,
+    ) -> Option<HoverResponse> {
+        engine.hover(
+            revision,
+            &HoverRequest {
+                source,
+                contents,
+                offset,
+            },
+        )
+    }
 
     #[test]
     fn nested_type_argument_has_its_own_hover() {

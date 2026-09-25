@@ -1,4 +1,4 @@
-use beans_core::model::source::Source;
+use beans_core::model::{lsp::features::hover::HoverRequest, source::Source};
 use lsp_types::{Hover, HoverContents, HoverParams, MarkupContent, MarkupKind, Range};
 
 use super::super::Features;
@@ -11,7 +11,11 @@ impl Features {
             .get(position.text_document.uri.as_str())?;
         let offset = document.byte_offset(position.position)?;
         let source = Source::uri(document.uri.as_str());
-        let response = self.engine.hover(&source, &document.text, offset)?;
+        let response = self.engine.hover(&HoverRequest {
+            source: &source,
+            contents: &document.text,
+            offset,
+        })?;
         let range = response.range();
 
         Some(Hover {

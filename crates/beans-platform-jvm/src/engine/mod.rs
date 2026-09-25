@@ -4,7 +4,11 @@ use beans_core::engine::{
     Revision,
     storage::{RevisionEntry, RevisionedStorage},
 };
-use beans_core::model::{names::Name, source::Source};
+use beans_core::model::{
+    lsp::features::hover::{HoverProvider, HoverRequest, HoverResponse},
+    names::Name,
+    source::Source,
+};
 use beans_core::resolution::query::TypeDefinitionQuery;
 
 pub mod query;
@@ -26,6 +30,13 @@ impl JvmEngine {
 
     pub fn query(&self, revision: Revision) -> JvmQuery<'_> {
         JvmQuery::new(&self.classes, revision)
+    }
+}
+
+impl HoverProvider for JvmEngine {
+    fn hover(&self, _revision: Revision, _request: &HoverRequest<'_>) -> Option<HoverResponse> {
+        // Class files do not currently carry source positions for hover.
+        None
     }
 }
 

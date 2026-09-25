@@ -2,7 +2,7 @@
 
 use beans_core::engine::Revision;
 use beans_core::model::{
-    lsp::features::hover::HoverResponse,
+    lsp::features::hover::{HoverProvider, HoverRequest, HoverResponse},
     ranges::ByteRange,
     source::{Source, SourceLocation},
 };
@@ -17,14 +17,12 @@ pub struct Engine {
 }
 
 impl Engine {
-    /// Gets language-provided hover content for the modeled source at the current revision.
-    pub fn hover(
-        &self,
-        source: &Source,
-        contents: &str,
-        offset: usize,
-    ) -> Option<Box<dyn HoverResponse>> {
-        beans_lang_java::lsp::features::hover(&self.java, self.revision, source, contents, offset)
+    /// Asks each vertical for hover content at the current revision, in priority order.
+    pub fn hover(&self, request: &HoverRequest<'_>) -> Option<HoverResponse> {
+        let providers: [&dyn HoverProvider; 2] = [&self.java, &self.jvm];
+        providers
+            .into_iter()
+            .find_map(|provider| provider.hover(self.revision, request))
     }
 
     /// Finds a modeled Java type identifier, without resolving its declaration.
@@ -85,7 +83,9 @@ impl Engine {
 mod tests {
     use super::Engine;
     use beans_core::engine::Revision;
-    use beans_core::model::{classpath::Classpath, source::Source};
+    use beans_core::model::{
+        classpath::Classpath, lsp::features::hover::HoverRequest, source::Source,
+    };
 
     #[test]
     fn the_default_engine_starts_at_the_default_revision() {
@@ -150,14 +150,24 @@ mod tests {
         let source = Source::uri(uri);
         engine.process_document(uri, "java", contents);
 
-        let info = engine.hover(&source, contents, 16).unwrap();
+        let info = engine
+            .hover(&HoverRequest {
+                source: &source,
+                contents,
+                offset: 16,
+            })
+            .unwrap();
 
         assert_eq!(info.contents(), "Target");
         let range = info.range();
         assert_eq!(&contents[range.start()..range.end()], "Target");
         assert!(
             engine
-                .hover(&Source::uri("file:///README.md"), contents, 16)
+                .hover(&HoverRequest {
+                    source: &Source::uri("file:///README.md"),
+                    contents,
+                    offset: 16
+                })
                 .is_none()
         );
     }
