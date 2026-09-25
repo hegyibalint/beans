@@ -1,5 +1,7 @@
 //! Application-level composition of language and platform engines.
 
+use std::path::Path;
+
 use beans_core::engine::Revision;
 use beans_core::model::{
     classpath::Classpath,
@@ -60,6 +62,11 @@ impl Engine {
         self.classpath = classpath;
     }
 
+    /// Whether any vertical can ingest this file.
+    pub fn accept(&self, path: &Path) -> bool {
+        self.java.accept(path) || self.jvm.accept(path)
+    }
+
     pub fn process(&mut self, uri: &str, contents: &str) {
         if self.java.accept_uri(uri) {
             let model = self.java.process(contents);
@@ -91,6 +98,8 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::Engine;
     use beans_core::engine::Revision;
     use beans_core::model::{
@@ -107,6 +116,15 @@ mod tests {
         assert_eq!(engine.revision(), Revision::default());
         let _ = engine.java();
         let _ = engine.jvm();
+    }
+
+    #[test]
+    fn accepts_only_files_a_vertical_can_ingest() {
+        let engine = Engine::default();
+
+        assert!(engine.accept(Path::new("src/Example.java")));
+        assert!(!engine.accept(Path::new("README.md")));
+        assert!(!engine.accept(Path::new("lib/Example.class")));
     }
 
     #[test]

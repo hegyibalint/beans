@@ -61,7 +61,7 @@ fn imported_field_type_navigates_to_an_unopened_workspace_source_file() {
     }
     let _cleanup = Cleanup(root.clone());
     let sources = root.join("src");
-    let target_path = sources.join("library/Widget.java");
+    let target_path = root.join("library/Widget.java");
     fs::create_dir_all(target_path.parent().unwrap()).unwrap();
     let target = Template::parse("package library;\npublic class <span>Widget</span> {}");
     fs::write(&target_path, &target.content).unwrap();

@@ -9,21 +9,28 @@ use url::Url;
 use super::{Features, OpenDocument};
 
 impl Features {
-    pub(crate) fn index_workspace(&mut self, params: &InitializeParams) {
+    pub(crate) fn ingest_workspace(&mut self, params: &InitializeParams) {
         let mut roots = Vec::new();
         if let Some(folders) = &params.workspace_folders {
-            roots.extend(folders.iter().filter_map(|folder| source_root(&folder.uri)));
+            roots.extend(
+                folders
+                    .iter()
+                    .filter_map(|folder| workspace_path(&folder.uri)),
+            );
         }
         if roots.is_empty() {
             // LSP 3.17: rootUri is a deprecated fallback for workspaceFolders.
             #[allow(deprecated)]
-            if let Some(root) = params.root_uri.as_ref().and_then(source_root) {
+            if let Some(root) = params.root_uri.as_ref().and_then(workspace_path) {
                 roots.push(root);
             }
         }
 
         for root in &roots {
-            for path in java_files(root) {
+            for path in workspace_files(root) {
+                if !self.engine.accept(&path) {
+                    continue;
+                }
                 let Ok(text) = fs::read_to_string(&path) else {
                     continue;
                 };
@@ -43,16 +50,11 @@ impl Features {
     }
 }
 
-fn source_root(workspace_uri: &Uri) -> Option<PathBuf> {
-    let root = Url::parse(workspace_uri.as_str())
-        .ok()?
-        .to_file_path()
-        .ok()?;
-    let sources = root.join("src");
-    sources.is_dir().then_some(sources)
+fn workspace_path(workspace_uri: &Uri) -> Option<PathBuf> {
+    Url::parse(workspace_uri.as_str()).ok()?.to_file_path().ok()
 }
 
-fn java_files(root: &Path) -> Vec<PathBuf> {
+fn workspace_files(root: &Path) -> Vec<PathBuf> {
     let mut pending = vec![root.to_path_buf()];
     let mut files = Vec::new();
     while let Some(directory) = pending.pop() {
@@ -66,11 +68,7 @@ fn java_files(root: &Path) -> Vec<PathBuf> {
             };
             if kind.is_dir() {
                 pending.push(path);
-            } else if kind.is_file()
-                && path
-                    .extension()
-                    .is_some_and(|extension| extension == "java")
-            {
+            } else if kind.is_file() {
                 files.push(path);
             }
         }

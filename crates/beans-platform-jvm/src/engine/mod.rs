@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use self::query::{ClassHandle, JvmQuery};
 use crate::model::classes::Class;
 use beans_core::engine::{
@@ -19,6 +21,11 @@ pub struct JvmEngine {
 }
 
 impl JvmEngine {
+    /// Class-file ingestion is not wired yet, so no workspace file is accepted.
+    pub fn accept(&self, _path: &Path) -> bool {
+        false
+    }
+
     pub fn store(
         &mut self,
         revision: Revision,

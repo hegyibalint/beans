@@ -1,11 +1,9 @@
 Ingress:
 
-- Reconcile open-document overlays with disk changes. LSP indexes `src/` at
-  initialization and restores that snapshot on close, but does not pick up
-  subsequent file changes outside the editor or refresh saved files on close.
-- Discover source roots from project configuration instead of assuming the
-  workspace's `src/` directory. Until then, no classpath means every ingested
-  source is eligible; an explicitly empty classpath excludes them.
+- Add a project import subsystem that recognizes Maven, Gradle, SBT, etc.,
+  offers an import choice through LSP, and supplies the resulting classpath.
+  Until then, ingest accepted files across the workspace with no classpath.
+- Respect gitignored files during the fallback workspace walk when needed.
 
 Navigation:
 
