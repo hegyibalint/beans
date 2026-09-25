@@ -7,7 +7,7 @@ use beans_core::model::ranges::Spanned;
 use super::{
     Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, TypeParameterHandle,
     iterators::local_declaration_handle,
-    lookup::{lookup_downward, lookup_upward, lookup_upward_from_type_header},
+    lookup::{lookup_downward, lookup_external, lookup_upward, lookup_upward_from_type_header},
     result::{classify_candidates, push_unique_candidate},
     validation::{validate_candidate_use, validate_resolution},
 };
@@ -41,6 +41,10 @@ fn resolve_with_state(
         lookup_downward(ctx, File::ROOT_NODE_ID, std::slice::from_ref(first), state)?
     {
         let candidate = resolve_remaining_segments(ctx, candidate, remaining, state)?;
+        return validate_resolution(ctx, candidate);
+    }
+
+    if let Some(candidate) = lookup_external(ctx, segments)? {
         return validate_resolution(ctx, candidate);
     }
 

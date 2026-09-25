@@ -17,7 +17,8 @@ Navigation:
 
 Resolution:
 
-- Add direct-import, current-package, on-demand-import, module-import, and as-written qualified-name tiers after upward/root lookup.
+- Implement `lookup_external` for direct-import, current-package, on-demand-import,
+  module-import, and as-written qualified-name tiers, including supertype lookup.
 - Resolve an omitted type-parameter bound as `java.lang.Object` once platform-backed lookup is wired.
 - Preserve static field and method context in the Java model, then extend type-parameter usage validation to JLS §6.5.5.1's static-context rule.
 - Preserve recoverable hierarchy-branch failures, including unresolved type-parameter bounds and circular inheritance, alongside candidates found through other branches.
