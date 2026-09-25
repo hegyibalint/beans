@@ -63,7 +63,7 @@ fn imported_field_type_navigates_to_an_unopened_workspace_source_file() {
     let sources = root.join("src");
     let target_path = root.join("library/Widget.java");
     fs::create_dir_all(target_path.parent().unwrap()).unwrap();
-    let target = Template::parse("package library;\npublic class <span>Widget</span> {}");
+    let target = Template::parse("package library;\n/* 😀 */ public class <span>Widget</span> {}");
     fs::write(&target_path, &target.content).unwrap();
 
     let mut server = Server::default();
@@ -95,16 +95,15 @@ fn imported_field_type_navigates_to_an_unopened_workspace_source_file() {
                "position": use_position}),
     );
 
-    assert_eq!(
-        response.result,
-        Some(json!({
-            "uri": Url::from_file_path(target_path).unwrap().to_string(),
-            "range": {
-                "start": position(&target, target.spans[0].start),
-                "end": position(&target, target.spans[0].end)
-            }
-        }))
-    );
+    let target_uri = Url::from_file_path(&target_path).unwrap().to_string();
+    let expected = json!({
+        "uri": target_uri,
+        "range": {
+            "start": position(&target, target.spans[0].start),
+            "end": position(&target, target.spans[0].end)
+        }
+    });
+    assert_eq!(response.result, Some(expected));
 }
 
 #[test]

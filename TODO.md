@@ -12,8 +12,10 @@ Navigation:
 - Expand `goto_definition` beyond named field type components to type parameters
   (including declaration-name spans), nested type arguments, supertype clauses,
   array elements, package-qualified names, and other reference kinds.
-- Supply revision-consistent target text beyond workspace-indexed source files;
-  JVM-only candidates also need source mapping.
+- Keep target text tied to the model used for navigation. When LSP lacks a text
+  snapshot, it currently reads the file from disk for coordinate conversion;
+  that text may differ from the already-parsed model. JVM-only candidates also
+  need source mapping.
 
 Resolution:
 

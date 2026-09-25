@@ -41,19 +41,23 @@ impl OpenDocument {
 
     /// Converts a byte offset into an LSP position with a UTF-16 character offset.
     pub fn position(&self, offset: usize) -> Option<Position> {
-        if offset > self.text.len() || !self.text.is_char_boundary(offset) {
+        Self::position_in(&self.text, offset)
+    }
+
+    pub(crate) fn position_in(text: &str, offset: usize) -> Option<Position> {
+        if offset > text.len() || !text.is_char_boundary(offset) {
             return None;
         }
 
-        let bytes = self.text.as_bytes();
+        let bytes = text.as_bytes();
         if offset < bytes.len() && offset > 0 && bytes[offset - 1..=offset] == *b"\r\n" {
             return None;
         }
 
-        let before = &self.text[..offset];
+        let before = &text[..offset];
         let line = before.bytes().filter(|byte| *byte == b'\n').count();
         let line_start = before.rfind('\n').map_or(0, |newline| newline + 1);
-        let character = self.text[line_start..offset].encode_utf16().count();
+        let character = text[line_start..offset].encode_utf16().count();
 
         Some(Position {
             line: line.try_into().ok()?,

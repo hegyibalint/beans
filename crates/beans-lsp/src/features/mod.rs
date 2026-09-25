@@ -6,6 +6,7 @@ use crate::model::open_document::OpenDocument;
 
 mod document_synchronization;
 mod language_features;
+mod source_locations;
 mod workspace;
 
 /// Feature handlers share an engine and the client's open-document overlays.
