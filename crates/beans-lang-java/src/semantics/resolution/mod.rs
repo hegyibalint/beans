@@ -69,8 +69,8 @@
 //! Single-type imports, current-package types, type-on-demand imports, and as-written canonical
 //! names are wired through `ResolutionQuery`. Static and module imports, accessibility checks,
 //! and inherited members from other files remain to be implemented. A caller must supply a
-//! classpath-aware query to look beyond the current file; package/type boundaries are not inferred
-//! from capitalization.
+//! combined query to look beyond the current file; without a configured classpath it searches all
+//! ingested Java sources. Package/type boundaries are not inferred from capitalization.
 //!
 //! ## 5. Resolve qualified suffixes downward
 //!

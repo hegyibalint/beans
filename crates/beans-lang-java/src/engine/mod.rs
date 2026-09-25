@@ -57,11 +57,15 @@ impl JavaEngine {
         self.files.put(revision, source, model)
     }
 
-    pub fn query<'a>(&'a self, revision: Revision, classpath: &'a Classpath) -> JavaQuery<'a> {
+    pub fn query<'a>(
+        &'a self,
+        revision: Revision,
+        classpath: Option<&'a Classpath>,
+    ) -> JavaQuery<'a> {
         JavaQuery::new(&self.files, revision, classpath)
     }
 
-    pub fn analyse(&self, _entry: &RevisionEntry<Source>, _classpath: &Classpath) {
+    pub fn analyse(&self, _entry: &RevisionEntry<Source>, _classpath: Option<&Classpath>) {
         todo!("analysis is not implemented")
     }
 }

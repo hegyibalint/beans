@@ -19,14 +19,14 @@ pub struct JavaTypeEntry<'a> {
 pub struct JavaQuery<'a> {
     files: &'a RevisionedStorage<Source, File>,
     revision: Revision,
-    classpath: &'a Classpath,
+    classpath: Option<&'a Classpath>,
 }
 
 impl<'a> JavaQuery<'a> {
     pub fn new(
         files: &'a RevisionedStorage<Source, File>,
         revision: Revision,
-        classpath: &'a Classpath,
+        classpath: Option<&'a Classpath>,
     ) -> Self {
         Self {
             files,
@@ -39,7 +39,7 @@ impl<'a> JavaQuery<'a> {
         self.revision
     }
 
-    pub fn classpath(&self) -> &'a Classpath {
+    pub fn classpath(&self) -> Option<&'a Classpath> {
         self.classpath
     }
 
@@ -65,8 +65,9 @@ impl<'a> JavaQuery<'a> {
         })
     }
 
-    /// Finds declarations by canonical name (JLS §6.7) in visible source files.
-    /// Does not check accessibility or search inherited members.
+    /// Finds declarations by canonical name (JLS §6.7) in stored source files.
+    /// Without a classpath, every stored source is eligible. Does not check Java
+    /// accessibility or search inherited members.
     pub fn find_type(&self, name: &Name) -> Vec<JavaTypeEntry<'a>> {
         let mut candidates = Vec::new();
 
@@ -74,17 +75,16 @@ impl<'a> JavaQuery<'a> {
             let Source::Source { uri } = source else {
                 continue;
             };
-            let Ok(url) = Url::parse(uri) else {
-                continue;
-            };
-            if url.scheme() != "file" {
-                continue;
-            }
-            let Ok(path) = url.to_file_path() else {
-                continue;
-            };
-            if !self.classpath.contains_source_file(&path) {
-                continue;
+            if let Some(classpath) = self.classpath {
+                let Ok(url) = Url::parse(uri) else {
+                    continue;
+                };
+                let Ok(path) = url.to_file_path() else {
+                    continue;
+                };
+                if !classpath.contains_source_file(&path) {
+                    continue;
+                }
             }
 
             for (node_index, declaration) in file.find_type(name) {
@@ -147,7 +147,7 @@ mod tests {
         files.put(revision, other.clone(), File::new());
         files.put(Revision::new(5), source.clone(), File::new());
         let classpath = Classpath::default();
-        let query = JavaQuery::new(&files, revision, &classpath);
+        let query = JavaQuery::new(&files, revision, Some(&classpath));
 
         let expected = files.get(revision, &source).unwrap();
         let actual = query.file(&source).unwrap();
@@ -170,7 +170,7 @@ mod tests {
             crate::lower_into("package p.q; class Outer { private class Member {} }"),
         );
         let classpath = classpath(&["src"]);
-        let query = JavaQuery::new(&files, revision, &classpath);
+        let query = JavaQuery::new(&files, revision, Some(&classpath));
         let found = query.find_type(&name("p.q.Outer.Member"));
 
         assert_eq!(found.len(), 1);
@@ -202,7 +202,7 @@ mod tests {
             );
         }
         let classpath = classpath(&["src", "src/a"]);
-        let query = JavaQuery::new(&files, revision, &classpath);
+        let query = JavaQuery::new(&files, revision, Some(&classpath));
         let found = query.find_type(&name("p.Example"));
 
         assert_eq!(found.len(), 2);
@@ -224,7 +224,7 @@ mod tests {
             crate::lower_into("package p; class Example {}"),
         );
         let classpath = classpath(&["src"]);
-        let query = JavaQuery::new(&files, revision, &classpath);
+        let query = JavaQuery::new(&files, revision, Some(&classpath));
 
         assert!(query.find_type(&name("p.Example")).is_empty());
     }
@@ -240,7 +240,7 @@ mod tests {
             crate::lower_into("package p; class Example {} class Example {}"),
         );
         let classpath = classpath(&["src"]);
-        let query = JavaQuery::new(&files, revision, &classpath);
+        let query = JavaQuery::new(&files, revision, Some(&classpath));
         let found = query.find_type(&name("p.Example"));
 
         assert_eq!(found.len(), 2);
@@ -264,8 +264,8 @@ mod tests {
         );
         files.remove(Revision::new(3), source);
         let classpath = classpath(&["src"]);
-        let old = JavaQuery::new(&files, Revision::new(1), &classpath);
-        let deleted = JavaQuery::new(&files, Revision::new(3), &classpath);
+        let old = JavaQuery::new(&files, Revision::new(1), Some(&classpath));
+        let deleted = JavaQuery::new(&files, Revision::new(3), Some(&classpath));
 
         assert_eq!(old.find_type(&name("p.Example")).len(), 1);
         assert!(deleted.find_type(&name("p.Example")).is_empty());
@@ -273,13 +273,41 @@ mod tests {
     }
 
     #[test]
+    fn absent_classpath_sees_all_stored_sources_but_explicit_roots_filter_them() {
+        let mut files = RevisionedStorage::default();
+        let revision = Revision::new(1);
+        for source in [
+            source_at("src/Target.java"),
+            source_at("elsewhere/Target.java"),
+            Source::uri("untitled:Target.java"),
+            Source::class_file("src/Target.class"),
+        ] {
+            files.put(
+                revision,
+                source,
+                crate::lower_into("package p; class Target {}"),
+            );
+        }
+
+        let unrestricted = JavaQuery::new(&files, revision, None);
+        let roots = classpath(&["src"]);
+        let restricted = JavaQuery::new(&files, revision, Some(&roots));
+        let empty = Classpath::default();
+        let excluded = JavaQuery::new(&files, revision, Some(&empty));
+
+        assert_eq!(unrestricted.find_type(&name("p.Target")).len(), 3);
+        assert_eq!(restricted.find_type(&name("p.Target")).len(), 1);
+        assert!(excluded.find_type(&name("p.Target")).is_empty());
+    }
+
+    #[test]
     fn context_retains_the_supplied_revision_and_classpath() {
         let files = RevisionedStorage::default();
         let revision = Revision::new(7);
         let classpath = Classpath::default();
-        let query = JavaQuery::new(&files, revision, &classpath);
+        let query = JavaQuery::new(&files, revision, Some(&classpath));
 
         assert_eq!(query.revision(), revision);
-        assert!(std::ptr::eq(query.classpath(), &classpath));
+        assert!(std::ptr::eq(query.classpath().unwrap(), &classpath));
     }
 }

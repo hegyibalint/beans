@@ -74,7 +74,7 @@ impl Fixture {
         jvm: &JvmDefinitions,
         occurrence: Occurrence,
     ) -> Result<TypeCandidate, ResolutionFailure> {
-        let java = self.java.query(Revision::new(1), &self.classpath);
+        let java = self.java.query(Revision::new(1), Some(&self.classpath));
         let definitions = ResolutionQuery::new(&java, jvm);
         let file = java.file(&self.source).unwrap();
         let (index, reference) = file
@@ -103,7 +103,7 @@ impl Fixture {
     }
 
     fn expected(&self, name: &str) -> TypeCandidate {
-        let query = self.java.query(Revision::new(1), &self.classpath);
+        let query = self.java.query(Revision::new(1), Some(&self.classpath));
         let entry = query
             .find_type(&name.split('.').map(str::to_owned).collect())
             .into_iter()

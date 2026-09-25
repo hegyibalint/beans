@@ -23,10 +23,10 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
         Source::uri("file:///src/app/Use.java"),
     );
     let classpath = Classpath::new(vec![ClasspathElement::new("src".into(), [0; 32].into())]);
-    let query = engine.query(entry.revision, &classpath);
+    let query = engine.query(entry.revision, Some(&classpath));
 
     assert_eq!(query.revision(), revision);
-    assert!(std::ptr::eq(query.classpath(), &classpath));
+    assert!(std::ptr::eq(query.classpath().unwrap(), &classpath));
     let file = query.file(&entry.key).expect("expected the stored model");
     let (node_index, type_ref) = file
         .iter_nodes()
@@ -68,7 +68,7 @@ fn an_imported_type_resolves_to_another_stored_source_file() {
         target_source.clone(),
     );
     let classpath = Classpath::new(vec![ClasspathElement::new("/src".into(), [0; 32].into())]);
-    let java = engine.query(revision, &classpath);
+    let java = engine.query(revision, Some(&classpath));
     let jvm = JvmEngine::default();
     let definitions = ResolutionQuery::new(&java, &jvm);
     let file = java.file(&use_source).unwrap();
