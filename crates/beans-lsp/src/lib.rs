@@ -1,7 +1,7 @@
 //! LSP lifecycle and protocol dispatch around the Beans engine.
 
-mod open_document;
+mod features;
+mod model;
 mod server;
-mod session;
 
 pub use server::{Server, run};

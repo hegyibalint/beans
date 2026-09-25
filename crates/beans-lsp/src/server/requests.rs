@@ -59,7 +59,7 @@ impl Server {
             }
             (Lifecycle::Running, HoverRequest::METHOD) => {
                 return match serde_json::from_value::<HoverParams>(request.params) {
-                    Ok(params) => Response::new_ok(request.id, self.session.hover(params)),
+                    Ok(params) => Response::new_ok(request.id, self.features.hover(params)),
                     Err(error) => Response::new_err(
                         request.id,
                         ErrorCode::InvalidParams as i32,

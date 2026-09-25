@@ -2,10 +2,10 @@ use lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
 };
 
-use super::Session;
-use crate::open_document::OpenDocument;
+use super::Features;
+use crate::model::open_document::OpenDocument;
 
-impl Session {
+impl Features {
     pub(crate) fn did_open(&mut self, params: DidOpenTextDocumentParams) {
         let document = OpenDocument::from(params.text_document);
         self.engine
@@ -57,7 +57,7 @@ mod tests {
     #[test]
     fn full_changes_replace_the_document_and_stale_versions_do_not() {
         let uri: Uri = "untitled:Example.java".parse().unwrap();
-        let mut session = Session::default();
+        let mut session = Features::default();
         session.did_open(DidOpenTextDocumentParams {
             text_document: TextDocumentItem::new(
                 uri.clone(),
@@ -91,7 +91,7 @@ mod tests {
     #[test]
     fn opening_and_closing_tracks_the_document() {
         let uri: Uri = "file:///Example.java".parse().unwrap();
-        let mut session = Session::default();
+        let mut session = Features::default();
 
         session.did_open(DidOpenTextDocumentParams {
             text_document: TextDocumentItem::new(

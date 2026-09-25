@@ -2,7 +2,7 @@ use std::io;
 
 use lsp_server::{Connection, Message};
 
-use crate::session::Session;
+use crate::features::Features;
 
 mod notifications;
 mod requests;
@@ -18,11 +18,11 @@ enum Lifecycle {
     Shutdown,
 }
 
-/// The LSP transport and the application session it serves.
+/// The LSP transport and the feature handlers it serves.
 #[derive(Default)]
 pub struct Server {
     lifecycle: Lifecycle,
-    session: Session,
+    features: Features,
 }
 
 impl Server {

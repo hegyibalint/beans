@@ -10,17 +10,17 @@ impl Server {
         match notification.method.as_str() {
             DidOpenTextDocument::METHOD => {
                 if let Ok(params) = notification.extract(DidOpenTextDocument::METHOD) {
-                    self.session.did_open(params);
+                    self.features.did_open(params);
                 }
             }
             DidChangeTextDocument::METHOD => {
                 if let Ok(params) = notification.extract(DidChangeTextDocument::METHOD) {
-                    self.session.did_change(params);
+                    self.features.did_change(params);
                 }
             }
             DidCloseTextDocument::METHOD => {
                 if let Ok(params) = notification.extract(DidCloseTextDocument::METHOD) {
-                    self.session.did_close(params);
+                    self.features.did_close(params);
                 }
             }
             _ => {}
