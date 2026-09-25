@@ -15,6 +15,13 @@ pub(crate) struct TypeReferenceOccurrence<'a> {
 }
 
 /// Only modeled type positions are searched; this does not resolve the reference.
+impl File {
+    /// Finds a modeled type identifier at a byte without resolving it.
+    pub fn type_reference_at(&self, offset: usize) -> Option<ByteRange> {
+        type_reference_at(self, offset).map(|occurrence| occurrence.range)
+    }
+}
+
 pub(crate) fn type_reference_at(file: &File, offset: usize) -> Option<TypeReferenceOccurrence<'_>> {
     file.iter_nodes().find_map(|entry| match entry.node.kind() {
         NodeKind::Type(declaration) => declaration

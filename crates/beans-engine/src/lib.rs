@@ -4,7 +4,7 @@ use beans_core::engine::Revision;
 use beans_core::model::{
     lsp::features::hover::{HoverProvider, HoverRequest, HoverResponse},
     ranges::ByteRange,
-    source::{Source, SourceLocation},
+    source::{Source, SourceSpan},
 };
 use beans_lang_java::engine::JavaEngine;
 use beans_platform_jvm::engine::JvmEngine;
@@ -28,7 +28,7 @@ impl Engine {
     /// Finds a modeled Java type identifier, without resolving its declaration.
     pub fn type_reference_at(&self, source: &Source, offset: usize) -> Option<ByteRange> {
         let file = self.java.file(self.revision, source)?;
-        beans_lang_java::lsp::type_reference_at(file, offset)
+        file.type_reference_at(offset)
     }
 
     /// Ingests an open document under the URI identity provided by the client.
@@ -46,8 +46,8 @@ impl Engine {
         self.java.remove(revision, Source::uri(uri));
     }
 
-    pub fn find_declaration(&self, _source: &Source, _offset: usize) -> Option<SourceLocation> {
-        None
+    pub fn goto_declaration(&self, source: &Source, offset: usize) -> Option<SourceSpan> {
+        self.java.goto_declaration(self.revision, source, offset)
     }
 
     pub fn process(&mut self, uri: &str, contents: &str) {

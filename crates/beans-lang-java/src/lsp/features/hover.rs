@@ -5,7 +5,7 @@ use beans_core::{
 
 use crate::engine::JavaEngine;
 
-use super::super::operations::type_reference_at;
+use crate::model::type_references::type_reference_at;
 
 /// Shows the complete type as written at a modeled position; resolution is not wired yet.
 impl HoverProvider for JavaEngine {

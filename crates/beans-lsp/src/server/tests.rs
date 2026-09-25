@@ -1,3 +1,4 @@
+mod goto_declaration;
 mod hover;
 mod lifecycle;
 

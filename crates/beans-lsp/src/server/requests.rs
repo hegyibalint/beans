@@ -2,7 +2,7 @@ use lsp_server::{ErrorCode, Request, Response};
 use lsp_types::{
     HoverParams, InitializeParams, InitializeResult, ServerCapabilities, ServerInfo,
     TextDocumentSyncKind, TextDocumentSyncOptions,
-    request::{HoverRequest, Request as _},
+    request::{GotoDeclaration, GotoDeclarationParams, HoverRequest, Request as _},
 };
 
 use super::{Lifecycle, Server};
@@ -18,6 +18,7 @@ impl Server {
                             request.id,
                             InitializeResult {
                                 capabilities: ServerCapabilities {
+                                    // Do not advertise goto declaration until Java's handler is implemented.
                                     hover_provider: Some(true.into()),
                                     text_document_sync: Some(
                                         TextDocumentSyncOptions {
@@ -56,6 +57,18 @@ impl Server {
             (Lifecycle::Running, "shutdown") => {
                 self.lifecycle = Lifecycle::Shutdown;
                 return Response::new_ok(request.id, ());
+            }
+            (Lifecycle::Running, GotoDeclaration::METHOD) => {
+                return match serde_json::from_value::<GotoDeclarationParams>(request.params) {
+                    Ok(params) => {
+                        Response::new_ok(request.id, self.features.goto_declaration(params))
+                    }
+                    Err(error) => Response::new_err(
+                        request.id,
+                        ErrorCode::InvalidParams as i32,
+                        error.to_string(),
+                    ),
+                };
             }
             (Lifecycle::Running, HoverRequest::METHOD) => {
                 return match serde_json::from_value::<HoverParams>(request.params) {

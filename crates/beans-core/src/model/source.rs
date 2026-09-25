@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use super::ranges::ByteRange;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Source {
     Source {
@@ -32,6 +34,19 @@ pub struct SourceLocation {
 impl SourceLocation {
     pub fn new(source: Source, offset: usize) -> Self {
         Self { source, offset }
+    }
+}
+
+/// A byte range in a source known to the engine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceSpan {
+    pub source: Source,
+    pub range: ByteRange,
+}
+
+impl SourceSpan {
+    pub fn new(source: Source, range: ByteRange) -> Self {
+        Self { source, range }
     }
 }
 
