@@ -50,9 +50,11 @@ version = "0.0.1"
 dependencies = [
  "beans-core",
  "beans-engine",
+ "beans-testing",
  "lsp-server",
  "lsp-types",
  "serde_json",
+ "url",
 ]
 
 [[package]]

@@ -40,8 +40,19 @@ impl Features {
             .remove(params.text_document.uri.as_str())
             .is_some_and(|document| document.language_id == "java")
         {
-            self.engine
-                .close_document(params.text_document.uri.as_str());
+            if let Some(indexed) = self
+                .workspace_documents
+                .get(params.text_document.uri.as_str())
+            {
+                self.engine.process_document(
+                    indexed.uri.as_str(),
+                    &indexed.language_id,
+                    &indexed.text,
+                );
+            } else {
+                self.engine
+                    .close_document(params.text_document.uri.as_str());
+            }
         }
     }
 }

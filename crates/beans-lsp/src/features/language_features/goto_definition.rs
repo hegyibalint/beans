@@ -16,7 +16,10 @@ impl Features {
         let Source::Source { uri } = target.source else {
             return None;
         };
-        let target_document = self.open_documents.get(&uri)?;
+        let target_document = self
+            .open_documents
+            .get(&uri)
+            .or_else(|| self.workspace_documents.get(&uri))?;
         Some(Location::new(
             uri.parse().ok()?,
             Range::new(

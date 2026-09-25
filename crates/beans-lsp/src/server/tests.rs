@@ -3,8 +3,20 @@ mod hover;
 mod lifecycle;
 
 use super::{Lifecycle, Server};
+use beans_testing::template::Template;
 use lsp_server::{ErrorCode, Request, Response};
-use serde_json::Value;
+use serde_json::{Value, json};
+
+fn position(fixture: &Template, offset: usize) -> Value {
+    let before = &fixture.content[..offset];
+    let line = before.bytes().filter(|byte| *byte == b'\n').count();
+    let character = before
+        .rsplit_once('\n')
+        .map_or(before, |(_, current_line)| current_line)
+        .encode_utf16()
+        .count();
+    json!({"line": line, "character": character})
+}
 
 fn server(lifecycle: Lifecycle) -> Server {
     Server {

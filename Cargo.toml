@@ -20,6 +20,7 @@ beans-core = { path = "crates/beans-core" }
 beans-engine = { path = "crates/beans-engine" }
 beans-lang-java = { path = "crates/beans-lang-java" }
 beans-platform-jvm = { path = "crates/beans-platform-jvm" }
+beans-testing = { path = "crates/beans-testing" }
 blake3 = "1"
 cafebabe = { version = "0.9", default-features = false }
 lsp-server = "0.8"

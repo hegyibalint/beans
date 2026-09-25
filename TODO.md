@@ -1,11 +1,11 @@
 Ingress:
 
-- Reconcile open-document overlays with source-file storage and classpath
-  visibility. Disk-ingested source and an open document with the same `file:`
-  URI now share an identity, but closing the document removes its model rather
-  than restoring the on-disk version.
-- Configure source roots for the application/LSP; an empty classpath deliberately
-  excludes other files from external lookup.
+- Reconcile open-document overlays with disk changes. LSP indexes `src/` at
+  initialization and restores that snapshot on close, but does not pick up
+  subsequent file changes outside the editor or refresh saved files on close.
+- Discover source roots from project configuration instead of assuming the
+  workspace's `src/` directory. Until then, no classpath means every ingested
+  source is eligible; an explicitly empty classpath excludes them.
 
 Navigation:
 
@@ -14,8 +14,8 @@ Navigation:
 - Expand `goto_definition` beyond named field type components to type parameters
   (including declaration-name spans), nested type arguments, supertype clauses,
   array elements, package-qualified names, and other reference kinds.
-- Provide revision-consistent target text for unopened source files so LSP can
-  convert cross-file byte ranges; JVM-only candidates also need source mapping.
+- Supply revision-consistent target text beyond workspace-indexed source files;
+  JVM-only candidates also need source mapping.
 
 Resolution:
 

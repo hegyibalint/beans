@@ -12,7 +12,8 @@ impl Server {
         let error = match (&self.lifecycle, request.method.as_str()) {
             (Lifecycle::Uninitialized, "initialize") => {
                 match serde_json::from_value::<InitializeParams>(request.params) {
-                    Ok(_) => {
+                    Ok(params) => {
+                        self.features.index_workspace(&params);
                         self.lifecycle = Lifecycle::Running;
                         return Response::new_ok(
                             request.id,
