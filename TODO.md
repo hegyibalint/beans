@@ -4,6 +4,8 @@ Ingress:
   visibility. Disk-ingested source and an open document with the same `file:`
   URI now share an identity, but closing the document removes its model rather
   than restoring the on-disk version.
+- Configure source roots for the application/LSP; an empty classpath deliberately
+  excludes other files from external lookup.
 
 Navigation:
 
@@ -17,8 +19,11 @@ Navigation:
 
 Resolution:
 
-- Implement `lookup_external` for direct-import, current-package, on-demand-import,
-  module-import, and as-written qualified-name tiers, including supertype lookup.
+- Complete `lookup_external` with single-static and static-on-demand type imports,
+  module imports, import-conflict and accessibility checks, and inherited member
+  types across files. Refine package/type-boundary handling for qualified names.
+- Map JVM candidate names to canonical Java names and provide classpath-aware JVM
+  lookup when that vertical has data.
 - Resolve an omitted type-parameter bound as `java.lang.Object` once platform-backed lookup is wired.
 - Preserve static field and method context in the Java model, then extend type-parameter usage validation to JLS §6.5.5.1's static-context rule.
 - Preserve recoverable hierarchy-branch failures, including unresolved type-parameter bounds and circular inheritance, alongside candidates found through other branches.

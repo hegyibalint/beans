@@ -2,16 +2,18 @@
 
 use beans_core::engine::Revision;
 use beans_core::model::{
+    classpath::Classpath,
     lsp::features::hover::{HoverProvider, HoverRequest, HoverResponse},
     ranges::ByteRange,
     source::{Source, SourceSpan},
 };
-use beans_lang_java::engine::JavaEngine;
+use beans_lang_java::{engine::JavaEngine, semantics::resolution::query::ResolutionQuery};
 use beans_platform_jvm::engine::JvmEngine;
 
 #[derive(Default)]
 pub struct Engine {
     revision: Revision,
+    classpath: Classpath,
     java: JavaEngine,
     jvm: JvmEngine,
 }
@@ -47,7 +49,14 @@ impl Engine {
     }
 
     pub fn goto_definition(&self, source: &Source, offset: usize) -> Option<SourceSpan> {
-        self.java.goto_definition(self.revision, source, offset)
+        let java = self.java.query(self.revision, &self.classpath);
+        let definitions = ResolutionQuery::new(&java, &self.jvm);
+        self.java
+            .goto_definition_with_query(self.revision, source, offset, &definitions)
+    }
+
+    pub fn set_classpath(&mut self, classpath: Classpath) {
+        self.classpath = classpath;
     }
 
     pub fn process(&mut self, uri: &str, contents: &str) {
@@ -84,7 +93,10 @@ mod tests {
     use super::Engine;
     use beans_core::engine::Revision;
     use beans_core::model::{
-        classpath::Classpath, lsp::features::hover::HoverRequest, source::Source,
+        classpath::{Classpath, ClasspathElement},
+        lsp::features::hover::HoverRequest,
+        ranges::ByteRange,
+        source::{Source, SourceSpan},
     };
 
     #[test]
@@ -140,6 +152,30 @@ mod tests {
         );
         engine.close_document(uri);
         assert_eq!(engine.type_reference_at(&source, 16), None);
+    }
+
+    #[test]
+    fn an_imported_type_in_another_stored_file_reaches_navigation() {
+        let mut engine = Engine::default();
+        engine.set_classpath(Classpath::new(vec![ClasspathElement::new(
+            "/src".into(),
+            [0; 32].into(),
+        )]));
+        let use_uri = "file:///src/p/Use.java";
+        let target_uri = "file:///src/q/Target.java";
+        let use_text = "package p; import q.Target; class Use { Target field; }";
+        let target_text = "package q; public class Target {}";
+        engine.process_document(use_uri, "java", use_text);
+        engine.process_document(target_uri, "java", target_text);
+        let name_start = target_text.find("Target").unwrap();
+
+        assert_eq!(
+            engine.goto_definition(&Source::uri(use_uri), use_text.rfind("Target").unwrap()),
+            Some(SourceSpan::new(
+                Source::uri(target_uri),
+                ByteRange::new(name_start, name_start + "Target".len()),
+            ))
+        );
     }
 
     #[test]

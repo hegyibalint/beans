@@ -7,7 +7,8 @@ use crate::{
     engine::JavaEngine,
     model::{File, nodes::NodeKind, references::TypeRef},
     semantics::resolution::{
-        Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, resolve,
+        Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, query::TypeCandidateQuery,
+        resolve,
     },
 };
 
@@ -19,8 +20,28 @@ impl JavaEngine {
         source: &Source,
         offset: usize,
     ) -> Option<SourceSpan> {
+        self.goto_definition_using(revision, source, offset, None)
+    }
+
+    pub fn goto_definition_with_query(
+        &self,
+        revision: Revision,
+        source: &Source,
+        offset: usize,
+        definitions: &dyn TypeCandidateQuery,
+    ) -> Option<SourceSpan> {
+        self.goto_definition_using(revision, source, offset, Some(definitions))
+    }
+
+    fn goto_definition_using(
+        &self,
+        revision: Revision,
+        source: &Source,
+        offset: usize,
+        definitions: Option<&dyn TypeCandidateQuery>,
+    ) -> Option<SourceSpan> {
         let file = self.file(revision, source)?;
-        let candidate = resolve_field_type_at(file, revision, source, offset)?.ok()?;
+        let candidate = resolve_field_type_at(file, revision, source, offset, definitions)?.ok()?;
         let TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) = candidate else {
             return None;
         };
@@ -42,6 +63,7 @@ fn resolve_field_type_at(
     revision: Revision,
     source: &Source,
     offset: usize,
+    definitions: Option<&dyn TypeCandidateQuery>,
 ) -> Option<Result<TypeCandidate, ResolutionFailure>> {
     // JLS §8.3: a field declares a type separately from its variable name.
     let (index, prefix) = file.iter_nodes().find_map(|entry| {
@@ -63,9 +85,11 @@ fn resolve_field_type_at(
         ))
     })?;
 
-    Some(resolve(&Context::new(
-        revision, source, file, index, &prefix,
-    )))
+    let mut ctx = Context::new(revision, source, file, index, &prefix);
+    if let Some(definitions) = definitions {
+        ctx = ctx.with_definitions(definitions);
+    }
+    Some(resolve(&ctx))
 }
 
 #[cfg(test)]
@@ -85,6 +109,7 @@ mod tests {
             Revision::new(1),
             source,
             text.rfind(type_name).unwrap(),
+            None,
         )
     }
 
@@ -173,7 +198,8 @@ mod tests {
         let text = "class Outer { class Member {} Member field; int count; }";
         let file = lower_into(text);
         let source = Source::uri("untitled:Example.java");
-        let at_offset = |offset| resolve_field_type_at(&file, Revision::new(1), &source, offset);
+        let at_offset =
+            |offset| resolve_field_type_at(&file, Revision::new(1), &source, offset, None);
 
         for offset in [
             text.find("class").unwrap(),
