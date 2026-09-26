@@ -9,7 +9,7 @@ use beans_core::model::{
     ranges::ByteRange,
     source::{Source, SourceSpan},
 };
-use beans_lang_java::{engine::JavaEngine, semantics::resolution::query::ResolutionQuery};
+use beans_lang_java::engine::JavaEngine;
 use beans_platform_jvm::engine::JvmEngine;
 
 #[derive(Default)]
@@ -51,10 +51,13 @@ impl Engine {
     }
 
     pub fn goto_definition(&self, source: &Source, offset: usize) -> Option<SourceSpan> {
-        let java = self.java.query(self.revision, self.classpath.as_ref());
-        let definitions = ResolutionQuery::new(&java, &self.jvm);
-        self.java
-            .goto_definition_with_query(self.revision, source, offset, &definitions)
+        self.java.goto_definition(
+            self.revision,
+            source,
+            offset,
+            self.classpath.as_ref(),
+            &self.jvm,
+        )
     }
 
     /// None makes all stored source models eligible; Some restricts discovery to its roots.

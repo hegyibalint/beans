@@ -134,6 +134,7 @@ use beans_core::engine::Revision;
 use beans_core::model::source::Source;
 
 pub struct Context<'a> {
+    /// Borrowed query over visible Java and JVM types; `None` limits lookup to this file.
     definitions: Option<&'a dyn query::TypeCandidateQuery>,
     revision: Revision,
     source: &'a Source,

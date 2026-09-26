@@ -1,47 +1,37 @@
 use beans_core::{
     engine::Revision,
-    model::source::{Source, SourceSpan},
+    model::{
+        classpath::Classpath,
+        source::{Source, SourceSpan},
+    },
 };
+use beans_platform_jvm::engine::JvmEngine;
 
 use crate::{
     engine::JavaEngine,
     model::{File, nodes::NodeKind, references::TypeRef},
     semantics::resolution::{
-        Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, query::TypeCandidateQuery,
+        Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate,
+        query::{ResolutionQuery, TypeCandidateQuery},
         resolve,
     },
 };
 
 impl JavaEngine {
-    /// Finds the type definition at a Java source position in the current revision.
+    /// Finds a type definition at a Java source position using the visible Java and JVM types.
     pub fn goto_definition(
         &self,
         revision: Revision,
         source: &Source,
         offset: usize,
+        classpath: Option<&Classpath>,
+        jvm: &JvmEngine,
     ) -> Option<SourceSpan> {
-        self.goto_definition_using(revision, source, offset, None)
-    }
-
-    pub fn goto_definition_with_query(
-        &self,
-        revision: Revision,
-        source: &Source,
-        offset: usize,
-        definitions: &dyn TypeCandidateQuery,
-    ) -> Option<SourceSpan> {
-        self.goto_definition_using(revision, source, offset, Some(definitions))
-    }
-
-    fn goto_definition_using(
-        &self,
-        revision: Revision,
-        source: &Source,
-        offset: usize,
-        definitions: Option<&dyn TypeCandidateQuery>,
-    ) -> Option<SourceSpan> {
+        let java = self.query(revision, classpath);
+        let definitions = ResolutionQuery::new(&java, jvm);
         let file = self.file(revision, source)?;
-        let candidate = resolve_field_type_at(file, revision, source, offset, definitions)?.ok()?;
+        let candidate =
+            resolve_field_type_at(file, revision, source, offset, Some(&definitions))?.ok()?;
         let TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) = candidate else {
             return None;
         };
@@ -98,6 +88,15 @@ mod tests {
     use crate::{lowering::lower_into, semantics::resolution::ResolutionFailure};
     use beans_core::model::{names::Name, ranges::ByteRange};
 
+    fn definition_at(
+        java: &JavaEngine,
+        revision: Revision,
+        source: &Source,
+        offset: usize,
+    ) -> Option<SourceSpan> {
+        java.goto_definition(revision, source, offset, None, &JvmEngine::default())
+    }
+
     fn at<'a>(
         file: &'a File,
         source: &'a Source,
@@ -141,7 +140,7 @@ mod tests {
         let name_start = text.find("Member").unwrap();
 
         assert_eq!(
-            java.goto_definition(revision, &source, text.rfind("Member").unwrap()),
+            definition_at(&java, revision, &source, text.rfind("Member").unwrap()),
             Some(SourceSpan::new(
                 source,
                 ByteRange::new(name_start, name_start + "Member".len()),
@@ -165,7 +164,7 @@ mod tests {
             (text.find("Box<?").unwrap(), box_name, "Box"),
         ] {
             assert_eq!(
-                java.goto_definition(revision, &source, use_offset),
+                definition_at(&java, revision, &source, use_offset),
                 Some(SourceSpan::new(
                     source.clone(),
                     ByteRange::new(target_offset, target_offset + name.len()),
@@ -174,7 +173,7 @@ mod tests {
             );
         }
         assert_eq!(
-            java.goto_definition(revision, &source, text.find(".Slot").unwrap()),
+            definition_at(&java, revision, &source, text.find(".Slot").unwrap()),
             None
         );
     }
@@ -188,7 +187,7 @@ mod tests {
         java.store(revision, lower_into(text), source.clone());
 
         assert_eq!(
-            java.goto_definition(revision, &source, text.rfind('T').unwrap()),
+            definition_at(&java, revision, &source, text.rfind('T').unwrap()),
             None
         );
     }
