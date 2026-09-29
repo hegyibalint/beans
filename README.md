@@ -31,3 +31,9 @@ To support this, persistence is a key feature in Beans; with persisted models, t
 Beans is not primarily a language server. It is a language processing and indexing engine that also implements an LSP as a facet. Beans is designed to be reusable as a library and embeddable in binaries. Tools using the library can share the persisted models. This could allow interesting use cases like building CLI tools that have an immediate snapshot of your project when you use them.
 
 The idea is to allow a community to form around Beans by making it convenient for third-party tools or libraries to consume its knowledge.
+
+### Debugging the language server
+
+Set `BEANS_LSP_LOG_PATH=/path/to/beans-lsp.jsonl` in the **language server process's** environment, then restart the server. Beans appends one JSON object per line for every incoming LSP request/notification/response and every outgoing response. Each entry includes a Unix `time_ms`, `pid`, `direction`, and the decoded `message`, including request IDs, parameters, results, and errors. Leave the variable unset to disable logging. The parent directory must already exist; an unwritable path prevents the server from starting.
+
+**The log contains document contents and potentially other private client data.** Keep it in a private location and remove or redact it before sharing. Logging does not write to stdout, which is reserved for the LSP transport.

@@ -5,7 +5,10 @@ use lsp_server::{Connection, Message};
 use crate::features::Features;
 
 mod notifications;
+mod request_log;
 mod requests;
+
+use request_log::RequestLog;
 
 #[cfg(test)]
 mod tests;
@@ -31,14 +34,14 @@ impl Server {
     /// An exit without shutdown, a disconnected client, or a failed send is an error.
     /// Lifecycle rules: <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize>.
     pub fn run(mut self, connection: Connection) -> io::Result<()> {
+        let mut log = RequestLog::from_env()?;
         for message in &connection.receiver {
+            log.record("incoming", &message)?;
             match message {
                 Message::Request(request) => {
-                    let response = self.respond(request);
-                    connection
-                        .sender
-                        .send(response.into())
-                        .map_err(io::Error::other)?;
+                    let response: Message = self.respond(request).into();
+                    log.record("outgoing", &response)?;
+                    connection.sender.send(response).map_err(io::Error::other)?;
                 }
                 Message::Notification(notification) if notification.method == "exit" => {
                     // LSP #exit requires failure unless shutdown was received first.

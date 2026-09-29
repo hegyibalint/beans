@@ -10,6 +10,10 @@ case "$PROJECT" in
 esac
 
 cargo build -p beans-lsp
+# target/ is ignored by git; the server log contains full document contents.
+BEANS_LSP_LOG_PATH="${BEANS_LSP_LOG_PATH:-$PWD/target/beans-lsp.jsonl}"
+export BEANS_LSP_LOG_PATH
+printf 'Beans LSP traffic log: %s\n' "$BEANS_LSP_LOG_PATH"
 if [ ! -d extensions/vscode/node_modules ]; then
   npm --prefix extensions/vscode ci
 fi

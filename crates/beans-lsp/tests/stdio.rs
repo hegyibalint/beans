@@ -1,9 +1,10 @@
 use std::{
+    fs,
     io::BufReader,
     process::{Command, Stdio},
     sync::mpsc,
     thread,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use lsp_server::{Message, Notification, Request};
@@ -11,7 +12,16 @@ use serde_json::json;
 
 #[test]
 fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
+    let log_path = std::env::temp_dir().join(format!(
+        "beans-lsp-{}-{}.jsonl",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
     let mut child = Command::new(env!("CARGO_BIN_EXE_beans-lsp"))
+        .env("BEANS_LSP_LOG_PATH", &log_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -48,6 +58,13 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
                 }),
             ))
             .write(&mut stdin)?;
+            Message::Request(Request::new(4.into(), "unknown/method".into(), ()))
+                .write(&mut stdin)?;
+            let Some(Message::Response(response)) = Message::read(&mut stdout)? else {
+                panic!("expected error response");
+            };
+            assert_eq!(response.id, 4.into());
+            assert_eq!(response.error.unwrap().code, -32601);
             Message::Notification(Notification::new(
                 "textDocument/didClose".into(),
                 json!({"textDocument": {"uri": "file:///Example.java"}}),
@@ -76,4 +93,22 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
         panic!("stdio session failed: {result:?}");
     }
     assert!(child.wait().unwrap().success());
+    let lines = fs::read_to_string(&log_path).unwrap();
+    fs::remove_file(log_path).unwrap();
+    let entries: Vec<serde_json::Value> = lines
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert!(entries.iter().any(|entry| entry["direction"] == "incoming"
+        && entry["message"]["method"] == "textDocument/didOpen"
+        && entry["message"]["params"]["textDocument"]["text"] == "class Example {}"));
+    assert!(entries.iter().any(|entry| entry["direction"] == "outgoing"
+        && entry["message"]["id"] == 1
+        && entry["message"]["result"]["serverInfo"]["name"] == "beans"));
+    assert!(entries.iter().any(|entry| entry["direction"] == "incoming"
+        && entry["message"]["method"] == "unknown/method"
+        && entry["message"]["id"] == 4));
+    assert!(entries.iter().any(|entry| entry["direction"] == "outgoing"
+        && entry["message"]["id"] == 4
+        && entry["message"]["error"]["code"] == -32601));
 }
