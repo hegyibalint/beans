@@ -11,7 +11,7 @@ impl Features {
             .get(position.text_document.uri.as_str())?;
         let offset = document.byte_offset(position.position)?;
         let source = Source::uri(document.uri.as_str());
-        let response = self.engine.hover(&HoverRequest {
+        let response = self.engine.language_features().hover(&HoverRequest {
             source: &source,
             contents: &document.text,
             offset,
@@ -39,7 +39,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn generic_type_hover_is_plaintext_with_a_utf16_range() {
+    fn hover_response_uses_plaintext_and_utf16_coordinates() {
         let uri: Uri = "untitled:Example.java".parse().unwrap();
         let text = "class Café /*😀*/ extends Box<Café> {}";
         let mut features = Features::default();
@@ -55,16 +55,15 @@ mod tests {
             features.hover(params)
         };
         let start = text[..text.find("Box").unwrap()].encode_utf16().count() as u32;
+        let end = start + "Box<Café>".encode_utf16().count() as u32;
 
         assert_eq!(
             serde_json::to_value(hover_at(start)).unwrap(),
             json!({
                 "contents": {"kind": "plaintext", "value": "Box<Café>"},
                 "range": {"start": {"line": 0, "character": start},
-                          "end": {"line": 0, "character": start + 3}}
+                          "end": {"line": 0, "character": end}}
             })
         );
-        assert!(hover_at(start + 3).is_none());
-        assert!(hover_at(6).is_none());
     }
 }

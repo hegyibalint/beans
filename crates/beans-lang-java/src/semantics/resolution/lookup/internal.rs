@@ -225,6 +225,6 @@ fn candidate_name<'a>(ctx: &'a Context<'_>, candidate: &TypeCandidate) -> Option
         }
         JavaTypeCandidate::TypeParameter(handle) => handle
             .parameter(ctx.file)
-            .map(|parameter| parameter.name.as_str()),
+            .map(|parameter| parameter.name.value().as_str()),
     }
 }

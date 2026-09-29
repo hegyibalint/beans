@@ -56,5 +56,5 @@ fn owner_type_parameters_are_in_supertype_scope() {
         panic!("expected one Java type parameter, got {result:?}");
     };
     assert_eq!(handle.owner().node_index(), child);
-    assert_eq!(handle.parameter(&file).unwrap().name, "Base");
+    assert_eq!(handle.parameter(&file).unwrap().name.value(), "Base");
 }

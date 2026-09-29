@@ -9,9 +9,9 @@ Navigation:
 
 - Expand hover beyond modeled type positions and show resolved information
   rather than just echoing the type as written in source.
-- Expand `goto_definition` beyond named field type components to type parameters
-  (including declaration-name spans), nested type arguments, supertype clauses,
-  array elements, package-qualified names, and other reference kinds.
+- Expand `goto_definition` beyond named field type components (including nested
+  type arguments and field uses of type parameters) to supertype clauses,
+  package-qualified names, and other reference kinds.
 - Keep target text tied to the model used for navigation. When LSP lacks a text
   snapshot, it currently reads the file from disk for coordinate conversion;
   that text may differ from the already-parsed model. JVM-only candidates also

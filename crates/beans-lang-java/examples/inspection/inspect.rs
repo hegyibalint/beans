@@ -270,7 +270,7 @@ fn type_declaration_header(declaration: &TypeDeclaration) -> String {
             .type_parameters
             .iter()
             .map(|parameter| {
-                let mut rendered = parameter.name.clone();
+                let mut rendered = parameter.name.value().clone();
                 for bound in &parameter.bounds {
                     write!(rendered, " {}", bound_of(bound))
                         .expect("writing to a string cannot fail");

@@ -34,7 +34,7 @@ pub enum Modifier {
 pub struct TypeParameter {
     /// The name of the placeholder.
     /// Often used ones are `T`, `A`, etc...
-    pub name: String,
+    pub name: Spanned<String>,
     /// What bounds the `name` abides to
     pub bounds: Vec<references::TypeBound>,
 }
@@ -63,7 +63,7 @@ impl TypeDeclaration {
     pub fn type_parameter_named(&self, name: &str) -> Option<&TypeParameter> {
         self.type_parameters
             .iter()
-            .find(|parameter| parameter.name == name)
+            .find(|parameter| parameter.name.value() == name)
     }
 
     pub fn new(kind: Kind) -> Self {
@@ -82,6 +82,7 @@ impl TypeDeclaration {
 #[cfg(test)]
 mod tests {
     use super::{Kind, TypeDeclaration, TypeParameter};
+    use beans_core::model::ranges::{ByteRange, Spanned};
 
     #[test]
     fn parameter_lookup_without_parameters_returns_none() {
@@ -94,14 +95,16 @@ mod tests {
         let mut declaration = TypeDeclaration::new(Kind::Class);
         for name in ["A", "B"] {
             declaration.type_parameters.push(TypeParameter {
-                name: name.into(),
+                name: Spanned::new(name.into(), ByteRange::new(0, 1)),
                 bounds: vec![],
             });
         }
 
         for parameter in &declaration.type_parameters {
             assert!(std::ptr::eq(
-                declaration.type_parameter_named(&parameter.name).unwrap(),
+                declaration
+                    .type_parameter_named(parameter.name.value())
+                    .unwrap(),
                 parameter
             ));
         }
@@ -111,7 +114,7 @@ mod tests {
     fn parameter_lookup_requires_an_exact_name_match() {
         let mut declaration = TypeDeclaration::new(Kind::Class);
         declaration.type_parameters.push(TypeParameter {
-            name: "A".into(),
+            name: Spanned::new("A".into(), ByteRange::new(0, 1)),
             bounds: vec![],
         });
 

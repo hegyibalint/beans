@@ -85,18 +85,17 @@ mod tests {
                 text: text.into(),
             }],
         };
+        let opened_revision = session.engine.revision();
         session.did_change(change(2, "class C extends New {}"));
+        let updated_revision = session.engine.revision();
         session.did_change(change(1, "class C extends Stale {}"));
 
         assert_eq!(
             session.open_documents.get(uri.as_str()).unwrap().text,
             "class C extends New {}"
         );
-        let source = beans_core::model::source::Source::uri(uri.as_str());
-        assert_eq!(
-            session.engine.type_reference_at(&source, 16).unwrap().len(),
-            3
-        );
+        assert!(updated_revision > opened_revision);
+        assert_eq!(session.engine.revision(), updated_revision);
     }
 
     #[test]

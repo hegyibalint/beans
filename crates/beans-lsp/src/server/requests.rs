@@ -13,7 +13,7 @@ impl Server {
             (Lifecycle::Uninitialized, "initialize") => {
                 match serde_json::from_value::<InitializeParams>(request.params) {
                     Ok(params) => {
-                        self.features.ingest_workspace(&params);
+                        self.features.initialize(&params);
                         self.lifecycle = Lifecycle::Running;
                         return Response::new_ok(
                             request.id,

@@ -9,7 +9,18 @@ use url::Url;
 use super::{Features, OpenDocument};
 
 impl Features {
-    pub(crate) fn ingest_workspace(&mut self, params: &InitializeParams) {
+    pub(crate) fn initialize(&mut self, params: &InitializeParams) {
+        self.definition_link_support = params
+            .capabilities
+            .text_document
+            .as_ref()
+            .and_then(|documents| documents.definition.as_ref())
+            .and_then(|definition| definition.link_support)
+            .unwrap_or(false);
+        self.ingest_workspace(params);
+    }
+
+    fn ingest_workspace(&mut self, params: &InitializeParams) {
         let mut roots = Vec::new();
         if let Some(folders) = &params.workspace_folders {
             roots.extend(

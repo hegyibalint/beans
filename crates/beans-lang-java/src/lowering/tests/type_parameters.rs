@@ -17,7 +17,7 @@ fn zero_one_and_two_type_parameters_are_preserved() {
             .declaration
             .type_parameters
             .iter()
-            .map(|parameter| parameter.name.as_str())
+            .map(|parameter| parameter.name.value().as_str())
             .collect::<Vec<_>>(),
         ["T"]
     );
@@ -26,10 +26,27 @@ fn zero_one_and_two_type_parameters_are_preserved() {
             .declaration
             .type_parameters
             .iter()
-            .map(|parameter| parameter.name.as_str())
+            .map(|parameter| parameter.name.value().as_str())
             .collect::<Vec<_>>(),
         ["T", "U"]
     );
+}
+
+#[test]
+fn type_parameter_names_preserve_their_identifier_spans() {
+    use beans_core::model::ranges::ByteRange;
+
+    let text = "class Example<T extends Labelled, U> {}";
+    let file = lower_into(text);
+    let parameters = &find_type_declaration(&file, "Example")
+        .declaration
+        .type_parameters;
+
+    assert_eq!(parameters.len(), 2);
+    for (parameter, marker) in parameters.iter().zip(["<T", ", U"]) {
+        let start = text.find(marker).unwrap() + marker.len() - 1;
+        assert_eq!(parameter.name.range(), ByteRange::new(start, start + 1));
+    }
 }
 
 #[test]
@@ -41,7 +58,7 @@ fn duplicate_type_parameter_names_are_preserved() {
             .declaration
             .type_parameters
             .iter()
-            .map(|parameter| parameter.name.as_str())
+            .map(|parameter| parameter.name.value().as_str())
             .collect::<Vec<_>>(),
         ["T", "T", "T"]
     );

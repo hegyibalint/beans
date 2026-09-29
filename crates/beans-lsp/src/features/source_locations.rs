@@ -52,7 +52,7 @@ mod tests {
     #[test]
     fn missing_text_snapshot_is_read_from_disk_for_coordinates() {
         let path = std::env::temp_dir().join(format!(
-            "beans-location-{}-{}.java",
+            "beans-location-{}-{}.txt",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -66,7 +66,7 @@ mod tests {
             }
         }
         let _cleanup = Cleanup(path.clone());
-        let fixture = Template::parse("/* 😀 */ class <span>Widget</span> {}");
+        let fixture = Template::parse("/* 😀 */ <span>target</span>");
         fs::write(&path, &fixture.content).unwrap();
         let uri = Url::from_file_path(&path).unwrap().to_string();
         let target = &fixture.spans[0];
@@ -81,7 +81,7 @@ mod tests {
         assert_eq!(location.uri.as_str(), uri);
         assert_eq!(
             location.range,
-            Range::new(Position::new(0, 15), Position::new(0, 21))
+            Range::new(Position::new(0, 9), Position::new(0, 15))
         );
     }
 }

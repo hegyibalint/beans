@@ -50,6 +50,13 @@ impl SourceSpan {
     }
 }
 
+/// A destination and the selected range in the source being queried.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NavigationResult {
+    pub origin_range: ByteRange,
+    pub target: SourceSpan,
+}
+
 impl Source {
     pub fn uri(uri: impl Into<String>) -> Self {
         Self::Source { uri: uri.into() }

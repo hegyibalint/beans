@@ -92,7 +92,7 @@ mod tests {
         assert_eq!(response.contents(), "Simple<Whatever>");
         assert_eq!(
             &contents[response.range().start()..response.range().end()],
-            "Simple"
+            "Simple<Whatever>"
         );
     }
 
@@ -104,7 +104,7 @@ mod tests {
         let source = Source::uri("untitled:Example.java");
         engine.store(revision, lower_into(contents), source.clone());
 
-        for name in ["Qualified", "Type"] {
+        for (name, component) in [("Qualified", "Qualified<Asd>"), ("Type", "Type<Asd2>")] {
             let response = hover(
                 &engine,
                 revision,
@@ -116,7 +116,7 @@ mod tests {
             assert_eq!(response.contents(), "Qualified<Asd>.Type<Asd2>");
             assert_eq!(
                 &contents[response.range().start()..response.range().end()],
-                name
+                component
             );
         }
         let nested = hover(
@@ -138,10 +138,10 @@ mod tests {
         let source = Source::uri("untitled:Example.java");
         engine.store(revision, lower_into(contents), source.clone());
 
-        for (name, expected) in [
-            ("int", "int[]"),
-            ("Simple", "Simple<Whatever>[]"),
-            ("Whatever", "Whatever"),
+        for (name, expected, component) in [
+            ("int", "int[]", "int"),
+            ("Simple", "Simple<Whatever>[]", "Simple<Whatever>"),
+            ("Whatever", "Whatever", "Whatever"),
         ] {
             let response = hover(
                 &engine,
@@ -154,7 +154,7 @@ mod tests {
             assert_eq!(response.contents(), expected);
             assert_eq!(
                 &contents[response.range().start()..response.range().end()],
-                name
+                component
             );
         }
     }

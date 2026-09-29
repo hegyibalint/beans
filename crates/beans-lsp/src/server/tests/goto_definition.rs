@@ -10,7 +10,7 @@ use std::{
 use url::Url;
 
 #[test]
-fn field_type_navigates_to_its_declaration_with_utf16_positions() {
+fn definition_request_returns_a_utf16_target_location() {
     let mut server = server(Lifecycle::Running);
     let uri = "untitled:Example.java";
     let fixture =
@@ -44,7 +44,52 @@ fn field_type_navigates_to_its_declaration_with_utf16_positions() {
 }
 
 #[test]
-fn imported_field_type_navigates_to_an_unopened_workspace_source_file() {
+fn definition_link_uses_the_source_range_when_the_client_supports_it() {
+    let mut server = Server::default();
+    let initialized = request(
+        &mut server,
+        "initialize",
+        json!({"capabilities": {"textDocument": {"definition": {"linkSupport": true}}}}),
+    );
+    assert!(initialized.error.is_none());
+
+    let uri = "untitled:Example.java";
+    let fixture = Template::parse(
+        "class Café /*😀*/ { class <span>Box</span><T> {} <span>Box<cur><String></span> field; }",
+    );
+    server.notify(Notification::new(
+        "textDocument/didOpen".into(),
+        json!({"textDocument": {
+            "uri": uri, "languageId": "java", "version": 1, "text": fixture.content
+        }}),
+    ));
+
+    let response = request(
+        &mut server,
+        "textDocument/definition",
+        json!({"textDocument": {"uri": uri},
+               "position": position(&fixture, fixture.cursors[0].offset)}),
+    );
+    let range = |index: usize| {
+        let span = &fixture.spans[index];
+        json!({
+            "start": position(&fixture, span.start),
+            "end": position(&fixture, span.end)
+        })
+    };
+    assert_eq!(
+        response.result,
+        Some(json!([{
+            "originSelectionRange": range(1),
+            "targetUri": uri,
+            "targetRange": range(0),
+            "targetSelectionRange": range(0)
+        }]))
+    );
+}
+
+#[test]
+fn definition_location_uses_unopened_workspace_file_text() {
     let root = std::env::temp_dir().join(format!(
         "beans-definition-{}-{}",
         std::process::id(),

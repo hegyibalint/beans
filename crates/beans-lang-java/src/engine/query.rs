@@ -3,7 +3,7 @@ use crate::model::{
     nodes::{NodeIndex, types::TypeDeclaration},
 };
 pub use crate::semantics::DeclarationHandle;
-use beans_core::engine::{Revision, storage::RevisionedStorage};
+use beans_core::engine::{QueryEnvironment, Revision, storage::RevisionedStorage};
 use beans_core::model::{classpath::Classpath, names::Name, source::Source};
 use beans_core::resolution::query::TypeDefinitionQuery;
 use url::Url;
@@ -18,39 +18,33 @@ pub struct JavaTypeEntry<'a> {
 
 pub struct JavaQuery<'a> {
     files: &'a RevisionedStorage<Source, File>,
-    revision: Revision,
-    classpath: Option<&'a Classpath>,
+    environment: QueryEnvironment<'a>,
 }
 
 impl<'a> JavaQuery<'a> {
     pub fn new(
         files: &'a RevisionedStorage<Source, File>,
-        revision: Revision,
-        classpath: Option<&'a Classpath>,
+        environment: QueryEnvironment<'a>,
     ) -> Self {
-        Self {
-            files,
-            revision,
-            classpath,
-        }
+        Self { files, environment }
     }
 
     pub fn revision(&self) -> Revision {
-        self.revision
+        self.environment.revision()
     }
 
     pub fn classpath(&self) -> Option<&'a Classpath> {
-        self.classpath
+        self.environment.classpath()
     }
 
     /// Reads a stored model at this revision, without applying classpath visibility.
     pub fn file(&self, source: &Source) -> Option<&'a File> {
-        self.files.get(self.revision, source)
+        self.files.get(self.environment.revision(), source)
     }
 
     /// The caller supplies a declaration index from this source at the query's revision.
     pub fn declaration_handle(&self, source: &Source, node_index: NodeIndex) -> DeclarationHandle {
-        DeclarationHandle::new(self.revision, source.clone(), node_index)
+        DeclarationHandle::new(self.environment.revision(), source.clone(), node_index)
     }
 
     /// Reads a type at the handle's revision, without applying classpath visibility.
@@ -71,11 +65,11 @@ impl<'a> JavaQuery<'a> {
     pub fn find_type(&self, name: &Name) -> Vec<JavaTypeEntry<'a>> {
         let mut candidates = Vec::new();
 
-        for (source, file) in self.files.iter(self.revision) {
+        for (source, file) in self.files.iter(self.environment.revision()) {
             let Source::Source { uri } = source else {
                 continue;
             };
-            if let Some(classpath) = self.classpath {
+            if let Some(classpath) = self.environment.classpath() {
                 let Ok(url) = Url::parse(uri) else {
                     continue;
                 };
@@ -147,7 +141,7 @@ mod tests {
         files.put(revision, other.clone(), File::new());
         files.put(Revision::new(5), source.clone(), File::new());
         let classpath = Classpath::default();
-        let query = JavaQuery::new(&files, revision, Some(&classpath));
+        let query = JavaQuery::new(&files, QueryEnvironment::new(revision, Some(&classpath)));
 
         let expected = files.get(revision, &source).unwrap();
         let actual = query.file(&source).unwrap();
@@ -170,7 +164,7 @@ mod tests {
             crate::lower_into("package p.q; class Outer { private class Member {} }"),
         );
         let classpath = classpath(&["src"]);
-        let query = JavaQuery::new(&files, revision, Some(&classpath));
+        let query = JavaQuery::new(&files, QueryEnvironment::new(revision, Some(&classpath)));
         let found = query.find_type(&name("p.q.Outer.Member"));
 
         assert_eq!(found.len(), 1);
@@ -202,7 +196,7 @@ mod tests {
             );
         }
         let classpath = classpath(&["src", "src/a"]);
-        let query = JavaQuery::new(&files, revision, Some(&classpath));
+        let query = JavaQuery::new(&files, QueryEnvironment::new(revision, Some(&classpath)));
         let found = query.find_type(&name("p.Example"));
 
         assert_eq!(found.len(), 2);
@@ -224,7 +218,7 @@ mod tests {
             crate::lower_into("package p; class Example {}"),
         );
         let classpath = classpath(&["src"]);
-        let query = JavaQuery::new(&files, revision, Some(&classpath));
+        let query = JavaQuery::new(&files, QueryEnvironment::new(revision, Some(&classpath)));
 
         assert!(query.find_type(&name("p.Example")).is_empty());
     }
@@ -240,7 +234,7 @@ mod tests {
             crate::lower_into("package p; class Example {} class Example {}"),
         );
         let classpath = classpath(&["src"]);
-        let query = JavaQuery::new(&files, revision, Some(&classpath));
+        let query = JavaQuery::new(&files, QueryEnvironment::new(revision, Some(&classpath)));
         let found = query.find_type(&name("p.Example"));
 
         assert_eq!(found.len(), 2);
@@ -264,8 +258,14 @@ mod tests {
         );
         files.remove(Revision::new(3), source);
         let classpath = classpath(&["src"]);
-        let old = JavaQuery::new(&files, Revision::new(1), Some(&classpath));
-        let deleted = JavaQuery::new(&files, Revision::new(3), Some(&classpath));
+        let old = JavaQuery::new(
+            &files,
+            QueryEnvironment::new(Revision::new(1), Some(&classpath)),
+        );
+        let deleted = JavaQuery::new(
+            &files,
+            QueryEnvironment::new(Revision::new(3), Some(&classpath)),
+        );
 
         assert_eq!(old.find_type(&name("p.Example")).len(), 1);
         assert!(deleted.find_type(&name("p.Example")).is_empty());
@@ -289,11 +289,11 @@ mod tests {
             );
         }
 
-        let unrestricted = JavaQuery::new(&files, revision, None);
+        let unrestricted = JavaQuery::new(&files, QueryEnvironment::new(revision, None));
         let roots = classpath(&["src"]);
-        let restricted = JavaQuery::new(&files, revision, Some(&roots));
+        let restricted = JavaQuery::new(&files, QueryEnvironment::new(revision, Some(&roots)));
         let empty = Classpath::default();
-        let excluded = JavaQuery::new(&files, revision, Some(&empty));
+        let excluded = JavaQuery::new(&files, QueryEnvironment::new(revision, Some(&empty)));
 
         assert_eq!(unrestricted.find_type(&name("p.Target")).len(), 3);
         assert_eq!(restricted.find_type(&name("p.Target")).len(), 1);
@@ -305,7 +305,7 @@ mod tests {
         let files = RevisionedStorage::default();
         let revision = Revision::new(7);
         let classpath = Classpath::default();
-        let query = JavaQuery::new(&files, revision, Some(&classpath));
+        let query = JavaQuery::new(&files, QueryEnvironment::new(revision, Some(&classpath)));
 
         assert_eq!(query.revision(), revision);
         assert!(std::ptr::eq(query.classpath().unwrap(), &classpath));

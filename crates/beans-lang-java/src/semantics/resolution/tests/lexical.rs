@@ -82,7 +82,7 @@ fn class_type_parameter_is_a_java_candidate() {
         panic!("expected one Java type parameter");
     };
     assert_eq!(handle.owner().node_index(), outer);
-    assert_eq!(handle.parameter(&file).unwrap().name, "T");
+    assert_eq!(handle.parameter(&file).unwrap().name.value(), "T");
 }
 
 #[test]

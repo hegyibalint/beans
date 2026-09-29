@@ -52,7 +52,7 @@ fn a_type_parameter_across_a_static_nested_class_boundary_is_invalid() {
         panic!("expected an illegal type-parameter use, got {result:?}");
     };
     assert_eq!(parameter.owner().node_index(), outer);
-    assert_eq!(parameter.parameter(&file).unwrap().name, "T");
+    assert_eq!(parameter.parameter(&file).unwrap().name.value(), "T");
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn an_inner_class_can_use_a_type_parameter_of_its_static_enclosing_class() {
         panic!("expected one Java type parameter");
     };
     assert_eq!(parameter.owner().node_index(), nested);
-    assert_eq!(parameter.parameter(&file).unwrap().name, "U");
+    assert_eq!(parameter.parameter(&file).unwrap().name.value(), "U");
 }
 
 #[test]

@@ -13,6 +13,7 @@ mod workspace;
 #[derive(Default)]
 pub(crate) struct Features {
     engine: Engine,
+    definition_link_support: bool,
     open_documents: HashMap<String, OpenDocument>,
     workspace_documents: HashMap<String, OpenDocument>,
 }

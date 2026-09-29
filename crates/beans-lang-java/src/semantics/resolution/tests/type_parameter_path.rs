@@ -118,7 +118,7 @@ fn circular_type_parameter_bounds_terminate() {
         panic!("expected a circular-bound failure, got {result:?}");
     };
     assert_eq!(parameter.owner().node_index(), owner);
-    assert_eq!(parameter.parameter(&file).unwrap().name, "T");
+    assert_eq!(parameter.parameter(&file).unwrap().name.value(), "T");
 }
 
 #[test]

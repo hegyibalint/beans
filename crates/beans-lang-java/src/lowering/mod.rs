@@ -229,7 +229,9 @@ fn lower_type_parameter(content: &str, node: Node) -> Option<TypeParameter> {
 
     for child in node.named_children(&mut cursor) {
         match child.kind() {
-            "type_identifier" => name = node_text(child, content),
+            "type_identifier" => {
+                name = node_text(child, content).map(|text| Spanned::new(text, byte_range(child)));
+            }
             "type_bound" => bounds.extend(lower_type_bound(content, child)),
             _ => {}
         }
@@ -354,7 +356,14 @@ fn lower_type_name_segments(content: &str, node: Node) -> Option<Vec<Spanned<Typ
                 .find(|child| child.kind() == "type_arguments")
                 .map(|arguments| lower_type_arguments(content, *arguments))
                 .unwrap_or_default();
-            segments.last_mut()?.value_mut().bounds = arguments;
+            let last = segments.pop()?;
+            let start = last.range().start();
+            let mut component = last.into_value();
+            component.bounds = arguments;
+            segments.push(Spanned::new(
+                component,
+                ByteRange::new(start, node.end_byte()),
+            ));
             Some(segments)
         }
         "annotated_type" => {

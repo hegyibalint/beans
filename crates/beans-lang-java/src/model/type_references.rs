@@ -6,7 +6,7 @@ use crate::model::{
     references::{TypeBound, TypeRef},
 };
 
-/// A type reference found at a source byte, and the identifier under that byte.
+/// A type reference found at a source byte, and the component under that byte.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TypeReferenceOccurrence<'a> {
     pub(crate) reference: &'a TypeRef,
@@ -16,7 +16,7 @@ pub(crate) struct TypeReferenceOccurrence<'a> {
 
 /// Only modeled type positions are searched; this does not resolve the reference.
 impl File {
-    /// Finds a modeled type identifier at a byte without resolving it.
+    /// Finds a modeled type component at a byte without resolving it.
     pub fn type_reference_at(&self, offset: usize) -> Option<ByteRange> {
         type_reference_at(self, offset).map(|occurrence| occurrence.range)
     }
@@ -53,7 +53,7 @@ fn find_in_bound(bound: &TypeBound, offset: usize) -> Option<TypeReferenceOccurr
         .find_map(|reference| find_in_reference(reference, offset))
 }
 
-fn find_in_reference(
+pub(crate) fn find_in_reference(
     reference: &Spanned<TypeRef>,
     offset: usize,
 ) -> Option<TypeReferenceOccurrence<'_>> {
@@ -63,8 +63,8 @@ fn find_in_reference(
 
     match reference.value() {
         TypeRef::Named { segments } => {
-            // JLS §4.3 and §4.5.1: each qualified identifier may have type arguments;
-            // a nested argument is a separate reference, not part of its owner's name.
+            // JLS §4.3 and §4.5.1: a component includes its type arguments,
+            // but a nested argument has its own occurrence and takes precedence.
             segments
                 .iter()
                 .flat_map(|segment| &segment.value().bounds)

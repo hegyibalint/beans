@@ -3,14 +3,13 @@
 use std::path::Path;
 
 use beans_core::engine::Revision;
-use beans_core::model::{
-    classpath::Classpath,
-    lsp::features::hover::{HoverProvider, HoverRequest, HoverResponse},
-    ranges::ByteRange,
-    source::{Source, SourceSpan},
-};
+use beans_core::model::{classpath::Classpath, source::Source};
 use beans_lang_java::engine::JavaEngine;
 use beans_platform_jvm::engine::JvmEngine;
+
+pub mod language_features;
+
+use language_features::LanguageFeatures;
 
 #[derive(Default)]
 pub struct Engine {
@@ -21,18 +20,8 @@ pub struct Engine {
 }
 
 impl Engine {
-    /// Asks each vertical for hover content at the current revision, in priority order.
-    pub fn hover(&self, request: &HoverRequest<'_>) -> Option<HoverResponse> {
-        let providers: [&dyn HoverProvider; 2] = [&self.java, &self.jvm];
-        providers
-            .into_iter()
-            .find_map(|provider| provider.hover(self.revision, request))
-    }
-
-    /// Finds a modeled Java type identifier, without resolving its declaration.
-    pub fn type_reference_at(&self, source: &Source, offset: usize) -> Option<ByteRange> {
-        let file = self.java.file(self.revision, source)?;
-        file.type_reference_at(offset)
+    pub fn language_features(&self) -> LanguageFeatures<'_> {
+        LanguageFeatures::new(self)
     }
 
     /// Ingests an open document under the URI identity provided by the client.
@@ -48,16 +37,6 @@ impl Engine {
     pub fn close_document(&mut self, uri: &str) {
         let revision = self.revision.advance();
         self.java.remove(revision, Source::uri(uri));
-    }
-
-    pub fn goto_definition(&self, source: &Source, offset: usize) -> Option<SourceSpan> {
-        self.java.goto_definition(
-            self.revision,
-            source,
-            offset,
-            self.classpath.as_ref(),
-            &self.jvm,
-        )
     }
 
     /// None makes all stored source models eligible; Some restricts discovery to its roots.
@@ -104,13 +83,20 @@ mod tests {
     use std::path::Path;
 
     use super::Engine;
-    use beans_core::engine::Revision;
+    use beans_core::engine::{QueryEnvironment, Revision};
     use beans_core::model::{
         classpath::{Classpath, ClasspathElement},
         lsp::features::hover::HoverRequest,
         ranges::ByteRange,
         source::{Source, SourceSpan},
     };
+
+    fn type_reference_at(engine: &Engine, source: &Source, offset: usize) -> Option<ByteRange> {
+        engine
+            .java()
+            .file(engine.revision(), source)?
+            .type_reference_at(offset)
+    }
 
     #[test]
     fn the_default_engine_starts_at_the_default_revision() {
@@ -142,7 +128,7 @@ mod tests {
         let classpath = Classpath::default();
         let file = engine
             .java()
-            .query(engine.revision(), Some(&classpath))
+            .query(QueryEnvironment::new(engine.revision(), Some(&classpath)))
             .file(&source)
             .unwrap();
         assert_eq!(file.package_name.as_slice(), ["example"]);
@@ -155,25 +141,21 @@ mod tests {
         let source = Source::uri(uri);
         engine.process_document(uri, "java", "class C extends First {} ");
         assert_eq!(
-            engine
-                .type_reference_at(&source, 16)
-                .map(|range| range.len()),
+            type_reference_at(&engine, &source, 16).map(|range| range.len()),
             Some(5)
         );
         assert_eq!(
-            engine.type_reference_at(&Source::uri("file:///Example.java"), 16),
+            type_reference_at(&engine, &Source::uri("file:///Example.java"), 16),
             None
         );
 
         engine.process_document(uri, "java", "class C extends Second {} ");
         assert_eq!(
-            engine
-                .type_reference_at(&source, 16)
-                .map(|range| range.len()),
+            type_reference_at(&engine, &source, 16).map(|range| range.len()),
             Some(6)
         );
         engine.close_document(uri);
-        assert_eq!(engine.type_reference_at(&source, 16), None);
+        assert_eq!(type_reference_at(&engine, &source, 16), None);
     }
 
     #[test]
@@ -192,7 +174,10 @@ mod tests {
         let name_start = target_text.find("Target").unwrap();
 
         assert_eq!(
-            engine.goto_definition(&Source::uri(use_uri), use_text.rfind("Target").unwrap()),
+            engine
+                .language_features()
+                .goto_definition(&Source::uri(use_uri), use_text.rfind("Target").unwrap())
+                .map(|definition| definition.target),
             Some(SourceSpan::new(
                 Source::uri(target_uri),
                 ByteRange::new(name_start, name_start + "Target".len()),
@@ -212,11 +197,24 @@ mod tests {
         let source = Source::uri(use_uri);
         let offset = text.rfind("Target").unwrap();
 
-        assert!(engine.goto_definition(&source, offset).is_some());
+        assert!(
+            engine
+                .language_features()
+                .goto_definition(&source, offset)
+                .is_some()
+        );
         engine.set_classpath(Some(Classpath::default()));
-        assert_eq!(engine.goto_definition(&source, offset), None);
+        assert_eq!(
+            engine.language_features().goto_definition(&source, offset),
+            None
+        );
         engine.set_classpath(None);
-        assert!(engine.goto_definition(&source, offset).is_some());
+        assert!(
+            engine
+                .language_features()
+                .goto_definition(&source, offset)
+                .is_some()
+        );
     }
 
     #[test]
@@ -228,6 +226,7 @@ mod tests {
         engine.process_document(uri, "java", contents);
 
         let info = engine
+            .language_features()
             .hover(&HoverRequest {
                 source: &source,
                 contents,
@@ -240,6 +239,7 @@ mod tests {
         assert_eq!(&contents[range.start()..range.end()], "Target");
         assert!(
             engine
+                .language_features()
                 .hover(&HoverRequest {
                     source: &Source::uri("file:///README.md"),
                     contents,
@@ -258,7 +258,7 @@ mod tests {
 
         assert_eq!(engine.revision(), Revision::default());
         assert_eq!(
-            engine.type_reference_at(&Source::uri("untitled:Example.java"), 16),
+            type_reference_at(&engine, &Source::uri("untitled:Example.java"), 16),
             None
         );
     }
