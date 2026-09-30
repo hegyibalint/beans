@@ -34,5 +34,3 @@ Read the dedicated `docs/TESTING.md` to learn more about our testing policy.
 The project is not yet using GH Issues as development is mostly single person and local.
 For simplicity, there is a `TODO.md` file.
 Make sure the file is maintained after a feature there is developed.
-
-## Behavior
