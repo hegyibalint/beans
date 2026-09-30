@@ -2,16 +2,15 @@ pub mod storage;
 
 use crate::model::classpath::Classpath;
 
-/// Provides the revision and classpath for queries over stored models.
-/// `None` leaves source discovery unrestricted; an empty classpath does not.
+/// Provides the revision and visibility policy for queries over stored models.
 #[derive(Clone, Copy)]
 pub struct QueryEnvironment<'a> {
     revision: Revision,
-    classpath: Option<&'a Classpath>,
+    classpath: &'a dyn Classpath,
 }
 
 impl<'a> QueryEnvironment<'a> {
-    pub fn new(revision: Revision, classpath: Option<&'a Classpath>) -> Self {
+    pub fn new(revision: Revision, classpath: &'a dyn Classpath) -> Self {
         Self {
             revision,
             classpath,
@@ -22,7 +21,7 @@ impl<'a> QueryEnvironment<'a> {
         self.revision
     }
 
-    pub fn classpath(self) -> Option<&'a Classpath> {
+    pub fn classpath(self) -> &'a dyn Classpath {
         self.classpath
     }
 }
@@ -44,20 +43,18 @@ impl Revision {
 #[cfg(test)]
 mod tests {
     use super::{QueryEnvironment, Revision};
-    use crate::model::classpath::Classpath;
+    use crate::model::classpath::{Classpath, Unrestricted};
 
     #[test]
     fn query_environment_keeps_its_revision_and_borrowed_classpath() {
-        let classpath = Classpath::default();
-        let environment = QueryEnvironment::new(Revision::new(4), Some(&classpath));
+        let classpath = Unrestricted;
+        let environment = QueryEnvironment::new(Revision::new(4), &classpath);
 
         assert_eq!(environment.revision(), Revision::new(4));
-        assert!(std::ptr::eq(environment.classpath().unwrap(), &classpath));
-        assert!(
-            QueryEnvironment::new(Revision::new(4), None)
-                .classpath()
-                .is_none()
-        );
+        assert!(std::ptr::eq(
+            environment.classpath(),
+            &classpath as &dyn Classpath
+        ));
     }
 
     #[test]

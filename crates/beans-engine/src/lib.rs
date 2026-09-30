@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use beans_core::engine::Revision;
-use beans_core::model::{classpath::Classpath, source::Source};
+use beans_core::model::source::Source;
 use beans_lang_java::engine::JavaEngine;
 use beans_platform_jvm::engine::JvmEngine;
 
@@ -14,7 +14,6 @@ use language_features::LanguageFeatures;
 #[derive(Default)]
 pub struct Engine {
     revision: Revision,
-    classpath: Option<Classpath>,
     java: JavaEngine,
     jvm: JvmEngine,
 }
@@ -37,11 +36,6 @@ impl Engine {
     pub fn close_document(&mut self, uri: &str) {
         let revision = self.revision.advance();
         self.java.remove(revision, Source::uri(uri));
-    }
-
-    /// None makes all stored source models eligible; Some restricts discovery to its roots.
-    pub fn set_classpath(&mut self, classpath: Option<Classpath>) {
-        self.classpath = classpath;
     }
 
     /// Whether any vertical can ingest this file.
@@ -85,7 +79,7 @@ mod tests {
     use super::Engine;
     use beans_core::engine::{QueryEnvironment, Revision};
     use beans_core::model::{
-        classpath::{Classpath, ClasspathElement},
+        classpath::Unrestricted,
         lsp::features::hover::HoverRequest,
         ranges::ByteRange,
         source::{Source, SourceSpan},
@@ -125,10 +119,10 @@ mod tests {
 
         assert_eq!(engine.revision(), Revision::new(1));
         let source = Source::uri(uri);
-        let classpath = Classpath::default();
+        let classpath = Unrestricted;
         let file = engine
             .java()
-            .query(QueryEnvironment::new(engine.revision(), Some(&classpath)))
+            .query(QueryEnvironment::new(engine.revision(), &classpath))
             .file(&source)
             .unwrap();
         assert_eq!(file.package_name.as_slice(), ["example"]);
@@ -161,12 +155,8 @@ mod tests {
     #[test]
     fn an_imported_type_in_another_stored_file_reaches_navigation() {
         let mut engine = Engine::default();
-        engine.set_classpath(Some(Classpath::new(vec![ClasspathElement::new(
-            "/src".into(),
-            [0; 32].into(),
-        )])));
         let use_uri = "file:///src/p/Use.java";
-        let target_uri = "file:///src/q/Target.java";
+        let target_uri = "file:///other/q/Target.java";
         let use_text = "package p; import q.Target; class Use { Target field; }";
         let target_text = "package q; public class Target {}";
         engine.process_document(use_uri, "java", use_text);
@@ -182,38 +172,6 @@ mod tests {
                 Source::uri(target_uri),
                 ByteRange::new(name_start, name_start + "Target".len()),
             ))
-        );
-    }
-
-    #[test]
-    fn absent_classpath_uses_all_ingested_sources_but_an_empty_one_excludes_them() {
-        let mut engine = Engine::default();
-        let use_uri = "file:///src/demo/Use.java";
-        let target_uri = "file:///other/Target.java";
-        let text = "package demo; import other.Target; class Use { Target field; }";
-        let target = "package other; public class Target {}";
-        engine.process_document(use_uri, "java", text);
-        engine.process_document(target_uri, "java", target);
-        let source = Source::uri(use_uri);
-        let offset = text.rfind("Target").unwrap();
-
-        assert!(
-            engine
-                .language_features()
-                .goto_definition(&source, offset)
-                .is_some()
-        );
-        engine.set_classpath(Some(Classpath::default()));
-        assert_eq!(
-            engine.language_features().goto_definition(&source, offset),
-            None
-        );
-        engine.set_classpath(None);
-        assert!(
-            engine
-                .language_features()
-                .goto_definition(&source, offset)
-                .is_some()
         );
     }
 

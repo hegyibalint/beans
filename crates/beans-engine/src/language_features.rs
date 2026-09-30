@@ -3,6 +3,7 @@
 use beans_core::{
     engine::QueryEnvironment,
     model::{
+        classpath::Unrestricted,
         lsp::features::hover::{HoverProvider, HoverRequest, HoverResponse},
         source::{NavigationResult, Source},
     },
@@ -30,7 +31,7 @@ impl<'a> LanguageFeatures<'a> {
 
     pub fn goto_definition(&self, source: &Source, offset: usize) -> Option<NavigationResult> {
         self.engine.java.goto_definition(
-            QueryEnvironment::new(self.engine.revision, self.engine.classpath.as_ref()),
+            QueryEnvironment::new(self.engine.revision, &Unrestricted),
             source,
             offset,
             &self.engine.jvm,

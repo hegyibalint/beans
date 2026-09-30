@@ -8,11 +8,7 @@ use crate::{
 };
 use beans_core::{
     engine::{QueryEnvironment, Revision},
-    model::{
-        classpath::{Classpath, ClasspathElement},
-        names::Name,
-        source::Source,
-    },
+    model::{classpath::Unrestricted, names::Name, source::Source},
     resolution::query::TypeDefinitionQuery,
 };
 use beans_platform_jvm::{
@@ -43,7 +39,6 @@ enum Occurrence {
 struct Fixture {
     java: JavaEngine,
     source: Source,
-    classpath: Classpath,
 }
 
 impl Fixture {
@@ -58,11 +53,7 @@ impl Fixture {
                 Source::uri(format!("file:///src/{name}.java")),
             );
         }
-        Self {
-            java,
-            source,
-            classpath: Classpath::new(vec![ClasspathElement::new("/src".into(), [0; 32].into())]),
-        }
+        Self { java, source }
     }
 
     fn resolve(&self, jvm: &JvmDefinitions) -> Result<TypeCandidate, ResolutionFailure> {
@@ -74,10 +65,9 @@ impl Fixture {
         jvm: &JvmDefinitions,
         occurrence: Occurrence,
     ) -> Result<TypeCandidate, ResolutionFailure> {
-        let java = self.java.query(QueryEnvironment::new(
-            Revision::new(1),
-            Some(&self.classpath),
-        ));
+        let java = self
+            .java
+            .query(QueryEnvironment::new(Revision::new(1), &Unrestricted));
         let definitions = ResolutionQuery::new(&java, jvm);
         let file = java.file(&self.source).unwrap();
         let (index, reference) = file
@@ -106,10 +96,9 @@ impl Fixture {
     }
 
     fn expected(&self, name: &str) -> TypeCandidate {
-        let query = self.java.query(QueryEnvironment::new(
-            Revision::new(1),
-            Some(&self.classpath),
-        ));
+        let query = self
+            .java
+            .query(QueryEnvironment::new(Revision::new(1), &Unrestricted));
         let entry = query
             .find_type(&name.split('.').map(str::to_owned).collect())
             .into_iter()

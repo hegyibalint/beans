@@ -2,7 +2,7 @@ Ingress:
 
 - Add a project import subsystem that recognizes Maven, Gradle, SBT, etc.,
   offers an import choice through LSP, and supplies the resulting classpath.
-  Until then, ingest accepted files across the workspace with no classpath.
+  Until then, ingest accepted files across the workspace with `Unrestricted` visibility.
 - Respect gitignored files during the fallback workspace walk when needed.
 
 Navigation:

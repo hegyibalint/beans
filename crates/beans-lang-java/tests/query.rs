@@ -1,6 +1,6 @@
 use beans_core::engine::{QueryEnvironment, Revision};
 use beans_core::model::{
-    classpath::{Classpath, ClasspathElement},
+    classpath::{Classpath, Unrestricted},
     source::Source,
 };
 use beans_lang_java::{
@@ -22,11 +22,14 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
         lower_into("package app; class Target {} class Use { Target target; }"),
         Source::uri("file:///src/app/Use.java"),
     );
-    let classpath = Classpath::new(vec![ClasspathElement::new("src".into(), [0; 32].into())]);
-    let query = engine.query(QueryEnvironment::new(entry.revision, Some(&classpath)));
+    let classpath = Unrestricted;
+    let query = engine.query(QueryEnvironment::new(entry.revision, &classpath));
 
     assert_eq!(query.revision(), revision);
-    assert!(std::ptr::eq(query.classpath().unwrap(), &classpath));
+    assert!(std::ptr::eq(
+        query.classpath(),
+        &classpath as &dyn Classpath
+    ));
     let file = query.file(&entry.key).expect("expected the stored model");
     let (node_index, type_ref) = file
         .iter_nodes()
@@ -67,8 +70,8 @@ fn an_imported_type_resolves_to_another_stored_source_file() {
         lower_into("package q; public class Target {}"),
         target_source.clone(),
     );
-    let classpath = Classpath::new(vec![ClasspathElement::new("/src".into(), [0; 32].into())]);
-    let java = engine.query(QueryEnvironment::new(revision, Some(&classpath)));
+    let classpath = Unrestricted;
+    let java = engine.query(QueryEnvironment::new(revision, &classpath));
     let jvm = JvmEngine::default();
     let definitions = ResolutionQuery::new(&java, &jvm);
     let file = java.file(&use_source).unwrap();

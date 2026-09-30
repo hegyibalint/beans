@@ -139,7 +139,7 @@ fn resolve_field_type_at(
 mod tests {
     use super::*;
     use crate::{lowering::lower_into, semantics::resolution::ResolutionFailure};
-    use beans_core::model::{names::Name, ranges::ByteRange};
+    use beans_core::model::{classpath::Unrestricted, names::Name, ranges::ByteRange};
 
     fn definition_at(
         java: &JavaEngine,
@@ -148,7 +148,7 @@ mod tests {
         offset: usize,
     ) -> Option<SourceSpan> {
         java.goto_definition(
-            QueryEnvironment::new(revision, None),
+            QueryEnvironment::new(revision, &Unrestricted),
             source,
             offset,
             &JvmEngine::default(),
@@ -268,7 +268,7 @@ mod tests {
         ] {
             let definition = java
                 .goto_definition(
-                    QueryEnvironment::new(revision, None),
+                    QueryEnvironment::new(revision, &Unrestricted),
                     &source,
                     offset,
                     &JvmEngine::default(),
