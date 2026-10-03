@@ -1,5 +1,6 @@
 # Paths are relative to this file. Dependencies expose sources in one direction.
-# Optional: jdk_home = "/path/to/jdk"
+# For a local JDK, set BEANS_WORKSPACE_TOML_JAVA_HOME in the server's environment.
+# Optional shared default: jdk_home = "vendor/jdk"
 
 [unit.demo]
 sources = ["src/demo"]

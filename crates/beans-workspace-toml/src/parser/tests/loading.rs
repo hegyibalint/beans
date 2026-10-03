@@ -58,6 +58,45 @@ fn a_descriptor_is_resolved_against_its_containing_root() {
 }
 
 #[test]
+fn loading_reads_the_environment_but_parsing_does_not() {
+    const CHILD_ROOT: &str = "BEANS_TEST_WORKSPACE_ROOT";
+    if let Some(root) = std::env::var_os(CHILD_ROOT) {
+        let root = PathBuf::from(root);
+        let workspace = load(&root).unwrap().unwrap();
+        assert_eq!(
+            workspace.model().units["app"].jdk_home,
+            Some(root.join("local jdk"))
+        );
+        let parsed = crate::parser::parse("[unit.app]\n", &root).unwrap();
+        assert_eq!(parsed.model().units["app"].jdk_home, None);
+        return;
+    }
+
+    let root = Root::new();
+    fs::write(root.descriptor(), "[unit.app]\n").unwrap();
+    // A child process keeps environment changes isolated from parallel tests.
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "parser::tests::loading::loading_reads_the_environment_but_parsing_does_not",
+            "--nocapture",
+        ])
+        .env(CHILD_ROOT, root.path())
+        .env(
+            "BEANS_WORKSPACE_TOML_JAVA_HOME",
+            root.path().join("local jdk"),
+        )
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "child test failed:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn an_unreadable_descriptor_is_not_treated_as_absent() {
     let root = Root::new();
     fs::create_dir(root.descriptor()).unwrap();

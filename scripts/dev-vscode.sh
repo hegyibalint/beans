@@ -9,6 +9,10 @@ case "$PROJECT" in
   *) PROJECT="$PWD/$PROJECT" ;;
 esac
 
+# Use mise's selected JDK unless explicitly overridden (empty opts out).
+BEANS_WORKSPACE_TOML_JAVA_HOME="${BEANS_WORKSPACE_TOML_JAVA_HOME-$(mise where java)}"
+export BEANS_WORKSPACE_TOML_JAVA_HOME
+
 cargo build -p beans-lsp
 # Crate diagnostics go to stderr, displayed in VS Code's Output -> Beans.
 export RUST_LOG="${RUST_LOG:-beans=debug}"
@@ -21,11 +25,12 @@ if [ ! -d extensions/vscode/node_modules ]; then
 fi
 npm --prefix extensions/vscode run compile
 
+# Isolate the dev instance so it inherits this script's environment.
 if [ "$PROJECT" = "$PWD/examples/playground" ]; then
-  code --new-window --disable-extensions \
+  code --new-window --disable-extensions --user-data-dir "$PWD/target/vscode-dev" \
     --extensionDevelopmentPath="$PWD/extensions/vscode" \
     "$PROJECT" "$PROJECT/src/demo/Example.java"
 else
-  code --new-window --disable-extensions \
+  code --new-window --disable-extensions --user-data-dir "$PWD/target/vscode-dev" \
     --extensionDevelopmentPath="$PWD/extensions/vscode" "$PROJECT"
 fi

@@ -25,6 +25,7 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_beans-lsp"))
         .env("BEANS_LSP_LOG_PATH", &log_path)
         .env("RUST_LOG", "beans=debug")
+        .env("BEANS_WORKSPACE_TOML_JAVA_HOME", "local-jdk")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -34,7 +35,7 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
         .join("../../examples/playground")
         .canonicalize()
         .unwrap();
-    let workspace_uri = Url::from_directory_path(root).unwrap().to_string();
+    let workspace_uri = Url::from_directory_path(&root).unwrap().to_string();
     let mut stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
     let mut stderr = child.stderr.take().unwrap();
@@ -115,6 +116,14 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
                 && line.ends_with("beans.toml: units=2")
         })
         .unwrap_or_else(|| panic!("missing descriptor log: {diagnostics}"));
+    assert!(
+        diagnostics.contains(&format!(
+            " [beans-workspace-toml] BEANS_WORKSPACE_TOML_JAVA_HOME override active for {}: jdk_home={}",
+            root.join("beans.toml").display(),
+            root.join("local-jdk").display()
+        )),
+        "{diagnostics}"
+    );
     let (timestamp, _) = descriptor_log.split_once(' ').unwrap();
     assert!(timestamp.contains('T') && timestamp.ends_with('Z'));
     assert!(

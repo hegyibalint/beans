@@ -15,6 +15,25 @@ Demo's sources can resolve `library.Widget`; the library does not depend on
 demo. Paths are relative to this directory. There is no configured JDK or
 compiled classpath, since binary ingestion is not implemented yet.
 
+The development script sets `BEANS_WORKSPACE_TOML_JAVA_HOME` from
+`mise where java`, using the JDK selected in the repository's `mise.toml`.
+From the repository root:
+
+```sh
+mise install
+scripts/dev-vscode.sh
+# Optionally use a different JDK, or opt out of the override:
+BEANS_WORKSPACE_TOML_JAVA_HOME="/path/to/jdk" scripts/dev-vscode.sh
+BEANS_WORKSPACE_TOML_JAVA_HOME="" scripts/dev-vscode.sh
+```
+
+The script uses an isolated VS Code user-data directory (`target/vscode-dev`)
+so your normal editor instance cannot supply a stale environment. Close all
+Beans development windows before rerunning with changed environment variables. A nonempty value overrides
+all units' `jdk_home` settings; unset or empty preserves the descriptor settings.
+Relative paths resolve against this workspace directory. For now, a selected JDK
+triggers the warning about unavailable binary inputs rather than indexing it.
+
 The development script enables `RUST_LOG=beans=debug`. Open **Output → Beans**
 to see the server's stderr diagnostics:
 

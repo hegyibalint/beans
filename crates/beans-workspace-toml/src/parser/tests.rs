@@ -1,3 +1,4 @@
+mod jdk_override;
 mod loading;
 mod paths;
 mod schema;
