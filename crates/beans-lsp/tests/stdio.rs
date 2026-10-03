@@ -1,6 +1,7 @@
 use std::{
     fs,
-    io::BufReader,
+    io::{BufReader, Read},
+    path::Path,
     process::{Command, Stdio},
     sync::mpsc,
     thread,
@@ -9,6 +10,7 @@ use std::{
 
 use lsp_server::{Message, Notification, Request};
 use serde_json::json;
+use url::Url;
 
 #[test]
 fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
@@ -22,12 +24,20 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
     ));
     let mut child = Command::new(env!("CARGO_BIN_EXE_beans-lsp"))
         .env("BEANS_LSP_LOG_PATH", &log_path)
+        .env("RUST_LOG", "beans=debug")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples/playground")
+        .canonicalize()
+        .unwrap();
+    let workspace_uri = Url::from_directory_path(root).unwrap().to_string();
     let mut stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
+    let mut stderr = child.stderr.take().unwrap();
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
         let mut stdout = BufReader::new(stdout);
@@ -35,7 +45,10 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
             Message::Request(Request::new(
                 1.into(),
                 "initialize".into(),
-                json!({"capabilities": {}}),
+                json!({
+                    "capabilities": {},
+                    "workspaceFolders": [{"uri": workspace_uri, "name": "playground"}]
+                }),
             ))
             .write(&mut stdin)?;
             let Some(Message::Response(response)) = Message::read(&mut stdout)? else {
@@ -93,6 +106,10 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
         panic!("stdio session failed: {result:?}");
     }
     assert!(child.wait().unwrap().success());
+    let mut diagnostics = String::new();
+    stderr.read_to_string(&mut diagnostics).unwrap();
+    assert!(diagnostics.contains("Loaded ") && diagnostics.contains("beans.toml: units=2"));
+    assert!(diagnostics.contains("Indexed 2 workspace sources"));
     let lines = fs::read_to_string(&log_path).unwrap();
     fs::remove_file(log_path).unwrap();
     let entries: Vec<serde_json::Value> = lines

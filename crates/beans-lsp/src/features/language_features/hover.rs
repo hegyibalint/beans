@@ -1,21 +1,27 @@
-use beans_core::model::{lsp::features::hover::HoverRequest, source::Source};
+use beans_core::model::source::Source;
+use beans_lang::{HoverProvider, HoverRequest};
 use lsp_types::{Hover, HoverContents, HoverParams, MarkupContent, MarkupKind, Range};
 
 use super::super::Features;
 
-impl Features {
-    pub(crate) fn hover(&self, params: HoverParams) -> Option<Hover> {
-        let position = params.text_document_position_params;
+impl HoverProvider<(), HoverParams, Hover> for Features {
+    fn hover(&self, _context: &(), params: &HoverParams) -> Option<Hover> {
+        let position = &params.text_document_position_params;
         let document = self
             .open_documents
             .get(position.text_document.uri.as_str())?;
         let offset = document.byte_offset(position.position)?;
         let source = Source::uri(document.uri.as_str());
-        let response = self.engine.language_features().hover(&HoverRequest {
-            source: &source,
-            contents: &document.text,
-            offset,
-        })?;
+        let classpath = self.workspaces.classpath_for(document.uri.as_str());
+        let context = self.languages.feature_context(classpath);
+        let response = self.languages.hover(
+            &context,
+            &HoverRequest {
+                source: &source,
+                contents: &document.text,
+                offset,
+            },
+        )?;
         let range = response.range();
 
         Some(Hover {
@@ -52,7 +58,7 @@ mod tests {
                 "position": {"line": 0, "character": character}
             }))
             .unwrap();
-            features.hover(params)
+            features.hover(&(), &params)
         };
         let start = text[..text.find("Box").unwrap()].encode_utf16().count() as u32;
         let end = start + "Box<Café>".encode_utf16().count() as u32;

@@ -1,13 +1,14 @@
 use beans_core::{
-    engine::{QueryEnvironment, Revision},
+    engine::Revision,
+    features::navigation::{DefinitionProvider, DefinitionRequest, NavigationResult},
     model::{
         ranges::ByteRange,
-        source::{NavigationResult, Source, SourceSpan},
+        source::{Source, SourceSpan},
     },
 };
-use beans_platform_jvm::engine::JvmEngine;
 
 use crate::{
+    engine::JavaEngine,
     model::{File, nodes::NodeKind, references::TypeRef, type_references::find_in_reference},
     semantics::resolution::{
         Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate,
@@ -16,19 +17,22 @@ use crate::{
     },
 };
 
-use super::JavaEngine;
+use super::JavaFeatureContext;
 
-impl JavaEngine {
+impl<'request>
+    DefinitionProvider<JavaFeatureContext<'_>, DefinitionRequest<'request>, NavigationResult>
+    for JavaEngine
+{
     /// Finds a type definition at a Java source position using the visible Java and JVM types.
-    pub fn goto_definition(
+    fn goto_definition(
         &self,
-        environment: QueryEnvironment<'_>,
-        source: &Source,
-        offset: usize,
-        jvm: &JvmEngine,
+        context: &JavaFeatureContext<'_>,
+        request: &DefinitionRequest<'request>,
     ) -> Option<NavigationResult> {
-        let java = self.query(environment);
-        let definitions = ResolutionQuery::new(&java, jvm);
+        let source = request.source;
+        let offset = request.offset;
+        let java = self.query(context.scope);
+        let definitions = ResolutionQuery::new(&java, context.jvm);
         let file = java.file(source)?;
         if let Some(range) = type_parameter_declaration_at(file, offset) {
             return Some(NavigationResult {
@@ -38,7 +42,7 @@ impl JavaEngine {
         }
         let (origin_range, candidate) = resolve_field_type_at(
             file,
-            environment.revision(),
+            context.scope.revision(),
             source,
             offset,
             Some(&definitions),
@@ -139,7 +143,11 @@ fn resolve_field_type_at(
 mod tests {
     use super::*;
     use crate::{lowering::lower_into, semantics::resolution::ResolutionFailure};
-    use beans_core::model::{classpath::Unrestricted, names::Name, ranges::ByteRange};
+    use beans_core::{
+        engine::QueryScope,
+        model::{classpath::Unrestricted, names::Name, ranges::ByteRange},
+    };
+    use beans_platform_jvm::engine::JvmEngine;
 
     fn definition_at(
         java: &JavaEngine,
@@ -148,10 +156,11 @@ mod tests {
         offset: usize,
     ) -> Option<SourceSpan> {
         java.goto_definition(
-            QueryEnvironment::new(revision, &Unrestricted),
-            source,
-            offset,
-            &JvmEngine::default(),
+            &JavaFeatureContext {
+                scope: QueryScope::new(revision, &Unrestricted),
+                jvm: &JvmEngine::default(),
+            },
+            &DefinitionRequest { source, offset },
         )
         .map(|definition| definition.target)
     }
@@ -268,10 +277,14 @@ mod tests {
         ] {
             let definition = java
                 .goto_definition(
-                    QueryEnvironment::new(revision, &Unrestricted),
-                    &source,
-                    offset,
-                    &JvmEngine::default(),
+                    &JavaFeatureContext {
+                        scope: QueryScope::new(revision, &Unrestricted),
+                        jvm: &JvmEngine::default(),
+                    },
+                    &DefinitionRequest {
+                        source: &source,
+                        offset,
+                    },
                 )
                 .unwrap();
             assert_eq!(Some(definition.target), declaration(name));

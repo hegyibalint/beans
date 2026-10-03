@@ -5,13 +5,12 @@ use std::path::Path;
 use self::query::JavaQuery;
 use crate::{lowering::lower_into, model::File};
 use beans_core::engine::{
-    QueryEnvironment, Revision,
+    QueryScope, Revision,
     storage::{RevisionEntry, RevisionedStorage},
 };
 use beans_core::model::source::Source;
 use url::Url;
 
-mod navigation;
 pub mod query;
 
 #[derive(Default)]
@@ -58,11 +57,11 @@ impl JavaEngine {
         self.files.put(revision, source, model)
     }
 
-    pub fn query<'a>(&'a self, environment: QueryEnvironment<'a>) -> JavaQuery<'a> {
-        JavaQuery::new(&self.files, environment)
+    pub fn query<'a>(&'a self, scope: QueryScope<'a>) -> JavaQuery<'a> {
+        JavaQuery::new(&self.files, scope)
     }
 
-    pub fn analyse(&self, _entry: &RevisionEntry<Source>, _environment: QueryEnvironment<'_>) {
+    pub fn analyse(&self, _entry: &RevisionEntry<Source>, _scope: QueryScope<'_>) {
         todo!("analysis is not implemented")
     }
 }

@@ -15,7 +15,8 @@ fn initialization_advertises_open_and_close_synchronization() {
     assert_eq!(
         result["capabilities"],
         json!({"definitionProvider": true, "hoverProvider": true,
-               "textDocumentSync": {"openClose": true, "change": 1}})
+               "textDocumentSync": {"openClose": true, "change": 1},
+               "workspace": {"workspaceFolders": {"supported": true}}})
     );
     assert_eq!(result["serverInfo"]["name"], "beans");
 }

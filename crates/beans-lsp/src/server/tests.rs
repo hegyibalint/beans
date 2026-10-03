@@ -1,6 +1,7 @@
 mod goto_definition;
 mod hover;
 mod lifecycle;
+mod workspace_import;
 
 use super::{Lifecycle, Server};
 use beans_testing::template::Template;

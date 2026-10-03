@@ -1,16 +1,19 @@
-use beans_core::{
-    engine::Revision,
-    model::lsp::features::hover::{HoverProvider, HoverRequest, HoverResponse},
-};
+use beans_core::features::hover::{HoverProvider, HoverRequest, HoverResponse};
 
-use crate::engine::JavaEngine;
+use crate::{engine::JavaEngine, model::type_references::type_reference_at};
 
-use crate::model::type_references::type_reference_at;
+use super::JavaFeatureContext;
 
-/// Shows the complete type as written at a modeled position; resolution is not wired yet.
-impl HoverProvider for JavaEngine {
-    fn hover(&self, revision: Revision, request: &HoverRequest<'_>) -> Option<HoverResponse> {
-        let file = self.file(revision, request.source)?;
+impl<'request> HoverProvider<JavaFeatureContext<'_>, HoverRequest<'request>, HoverResponse>
+    for JavaEngine
+{
+    /// Shows the complete type as written at a modeled position; resolution is not wired yet.
+    fn hover(
+        &self,
+        context: &JavaFeatureContext<'_>,
+        request: &HoverRequest<'request>,
+    ) -> Option<HoverResponse> {
+        let file = self.file(context.scope.revision(), request.source)?;
         let occurrence = type_reference_at(file, request.offset)?;
         Some(HoverResponse::new(
             request
@@ -25,7 +28,11 @@ impl HoverProvider for JavaEngine {
 mod tests {
     use super::*;
     use crate::lowering::lower_into;
-    use beans_core::model::source::Source;
+    use beans_core::{
+        engine::{QueryScope, Revision},
+        model::{classpath::Unrestricted, source::Source},
+    };
+    use beans_platform_jvm::engine::JvmEngine;
 
     fn hover(
         engine: &JavaEngine,
@@ -35,13 +42,36 @@ mod tests {
         offset: usize,
     ) -> Option<HoverResponse> {
         engine.hover(
-            revision,
+            &JavaFeatureContext {
+                scope: QueryScope::new(revision, &Unrestricted),
+                jvm: &JvmEngine::default(),
+            },
             &HoverRequest {
                 source,
                 contents,
                 offset,
             },
         )
+    }
+
+    #[test]
+    fn hover_uses_the_context_revision_after_replacement_and_removal() {
+        let source = Source::uri("untitled:Example.java");
+        let old = "class C extends Former {}";
+        let new = "class C extends New {}";
+        let mut engine = JavaEngine::default();
+        engine.store(Revision::new(1), lower_into(old), source.clone());
+        engine.store(Revision::new(2), lower_into(new), source.clone());
+        engine.remove(Revision::new(3), source.clone());
+
+        for (revision, contents, expected) in [
+            (Revision::new(1), old, Some("Former")),
+            (Revision::new(2), new, Some("New")),
+            (Revision::new(3), new, None),
+        ] {
+            let response = hover(&engine, revision, &source, contents, 16);
+            assert_eq!(response.as_ref().map(HoverResponse::contents), expected);
+        }
     }
 
     #[test]

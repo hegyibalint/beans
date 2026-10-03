@@ -1,4 +1,4 @@
-use beans_core::engine::{QueryEnvironment, Revision};
+use beans_core::engine::{QueryScope, Revision};
 use beans_core::model::{
     classpath::{Classpath, Unrestricted},
     source::Source,
@@ -23,7 +23,7 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
         Source::uri("file:///src/app/Use.java"),
     );
     let classpath = Unrestricted;
-    let query = engine.query(QueryEnvironment::new(entry.revision, &classpath));
+    let query = engine.query(QueryScope::new(entry.revision, &classpath));
 
     assert_eq!(query.revision(), revision);
     assert!(std::ptr::eq(
@@ -71,7 +71,7 @@ fn an_imported_type_resolves_to_another_stored_source_file() {
         target_source.clone(),
     );
     let classpath = Unrestricted;
-    let java = engine.query(QueryEnvironment::new(revision, &classpath));
+    let java = engine.query(QueryScope::new(revision, &classpath));
     let jvm = JvmEngine::default();
     let definitions = ResolutionQuery::new(&java, &jvm);
     let file = java.file(&use_source).unwrap();

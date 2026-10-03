@@ -1,7 +1,9 @@
+use beans_lang::{DefinitionProvider, HoverProvider};
 use lsp_server::{ErrorCode, Request, Response};
 use lsp_types::{
     GotoDefinitionParams, HoverParams, InitializeParams, InitializeResult, OneOf,
     ServerCapabilities, ServerInfo, TextDocumentSyncKind, TextDocumentSyncOptions,
+    WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
     request::{GotoDefinition, HoverRequest, Request as _},
 };
 
@@ -13,7 +15,14 @@ impl Server {
             (Lifecycle::Uninitialized, "initialize") => {
                 match serde_json::from_value::<InitializeParams>(request.params) {
                     Ok(params) => {
-                        self.features.initialize(&params);
+                        if let Err(error) = self.features.initialize(&params) {
+                            log::error!("Workspace import failed: {error}");
+                            return Response::new_err(
+                                request.id,
+                                ErrorCode::RequestFailed as i32,
+                                error.to_string(),
+                            );
+                        }
                         self.lifecycle = Lifecycle::Running;
                         return Response::new_ok(
                             request.id,
@@ -21,6 +30,15 @@ impl Server {
                                 capabilities: ServerCapabilities {
                                     definition_provider: Some(OneOf::Left(true)),
                                     hover_provider: Some(true.into()),
+                                    workspace: Some(WorkspaceServerCapabilities {
+                                        workspace_folders: Some(
+                                            WorkspaceFoldersServerCapabilities {
+                                                supported: Some(true),
+                                                ..WorkspaceFoldersServerCapabilities::default()
+                                            },
+                                        ),
+                                        ..WorkspaceServerCapabilities::default()
+                                    }),
                                     text_document_sync: Some(
                                         TextDocumentSyncOptions {
                                             open_close: Some(true),
@@ -62,7 +80,7 @@ impl Server {
             (Lifecycle::Running, GotoDefinition::METHOD) => {
                 return match serde_json::from_value::<GotoDefinitionParams>(request.params) {
                     Ok(params) => {
-                        Response::new_ok(request.id, self.features.goto_definition(params))
+                        Response::new_ok(request.id, self.features.goto_definition(&(), &params))
                     }
                     Err(error) => Response::new_err(
                         request.id,
@@ -73,7 +91,7 @@ impl Server {
             }
             (Lifecycle::Running, HoverRequest::METHOD) => {
                 return match serde_json::from_value::<HoverParams>(request.params) {
-                    Ok(params) => Response::new_ok(request.id, self.features.hover(params)),
+                    Ok(params) => Response::new_ok(request.id, self.features.hover(&(), &params)),
                     Err(error) => Response::new_err(
                         request.id,
                         ErrorCode::InvalidParams as i32,

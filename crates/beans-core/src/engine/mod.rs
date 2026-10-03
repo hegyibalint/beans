@@ -2,14 +2,15 @@ pub mod storage;
 
 use crate::model::classpath::Classpath;
 
-/// Provides the revision and visibility policy for queries over stored models.
+/// Selects which model versions and source origins a query can see.
+/// This is a query boundary, not a language's lexical scope or an owned snapshot.
 #[derive(Clone, Copy)]
-pub struct QueryEnvironment<'a> {
+pub struct QueryScope<'a> {
     revision: Revision,
     classpath: &'a dyn Classpath,
 }
 
-impl<'a> QueryEnvironment<'a> {
+impl<'a> QueryScope<'a> {
     pub fn new(revision: Revision, classpath: &'a dyn Classpath) -> Self {
         Self {
             revision,
@@ -42,17 +43,17 @@ impl Revision {
 
 #[cfg(test)]
 mod tests {
-    use super::{QueryEnvironment, Revision};
+    use super::{QueryScope, Revision};
     use crate::model::classpath::{Classpath, Unrestricted};
 
     #[test]
-    fn query_environment_keeps_its_revision_and_borrowed_classpath() {
+    fn query_scope_keeps_its_revision_and_borrowed_classpath() {
         let classpath = Unrestricted;
-        let environment = QueryEnvironment::new(Revision::new(4), &classpath);
+        let scope = QueryScope::new(Revision::new(4), &classpath);
 
-        assert_eq!(environment.revision(), Revision::new(4));
+        assert_eq!(scope.revision(), Revision::new(4));
         assert!(std::ptr::eq(
-            environment.classpath(),
+            scope.classpath(),
             &classpath as &dyn Classpath
         ));
     }

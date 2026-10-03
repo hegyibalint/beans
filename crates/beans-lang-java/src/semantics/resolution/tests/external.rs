@@ -7,7 +7,7 @@ use crate::{
     },
 };
 use beans_core::{
-    engine::{QueryEnvironment, Revision},
+    engine::{QueryScope, Revision},
     model::{classpath::Unrestricted, names::Name, source::Source},
     resolution::query::TypeDefinitionQuery,
 };
@@ -67,7 +67,7 @@ impl Fixture {
     ) -> Result<TypeCandidate, ResolutionFailure> {
         let java = self
             .java
-            .query(QueryEnvironment::new(Revision::new(1), &Unrestricted));
+            .query(QueryScope::new(Revision::new(1), &Unrestricted));
         let definitions = ResolutionQuery::new(&java, jvm);
         let file = java.file(&self.source).unwrap();
         let (index, reference) = file
@@ -98,7 +98,7 @@ impl Fixture {
     fn expected(&self, name: &str) -> TypeCandidate {
         let query = self
             .java
-            .query(QueryEnvironment::new(Revision::new(1), &Unrestricted));
+            .query(QueryScope::new(Revision::new(1), &Unrestricted));
         let entry = query
             .find_type(&name.split('.').map(str::to_owned).collect())
             .into_iter()
