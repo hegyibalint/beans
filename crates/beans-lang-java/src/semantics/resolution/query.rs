@@ -1,6 +1,6 @@
 use crate::semantics::DeclarationHandle;
-use beans_core::model::names::Name;
-use beans_core::resolution::query::TypeDefinitionQuery;
+use beans_core::names::Name;
+use beans_core::resolution::TypeDefinitionQuery;
 use beans_platform_jvm::engine::query::ClassHandle;
 
 use super::{JavaTypeCandidate, TypeCandidate};
@@ -54,13 +54,14 @@ where
 #[cfg(test)]
 mod tests {
     use crate::model::File;
-    use beans_core::engine::{Revision, storage::RevisionedStorage};
-    use beans_core::model::source::Source;
+    use beans_core::origin::Origin;
+    use beans_core::revision::Revision;
     use beans_platform_jvm::engine::query::JvmQuery;
     use beans_platform_jvm::model::{
         classes::{AccessLevel, Class, ClassKind},
         names::BinaryName,
     };
+    use beans_storage::RevisionedStorage;
 
     use super::*;
 
@@ -91,7 +92,7 @@ mod tests {
         let revision = Revision::new(1);
         let java_handle = DeclarationHandle::new(
             revision,
-            Source::uri("file:///src/Example.java"),
+            Origin::uri("file:///src/Example.java"),
             File::ROOT_NODE_ID,
         );
 
@@ -99,7 +100,7 @@ mod tests {
         let mut classes = RevisionedStorage::default();
         classes.put(
             revision,
-            Source::class_file("lib/Example.class"),
+            Origin::class_file("lib/Example.class"),
             vec![Class::new(
                 binary_name.clone(),
                 ClassKind::Class,

@@ -1,4 +1,4 @@
-use beans_core::model::ranges::Spanned;
+use beans_core::ranges::Spanned;
 
 use crate::model::references::{self, TypeRef};
 
@@ -82,7 +82,7 @@ impl TypeDeclaration {
 #[cfg(test)]
 mod tests {
     use super::{Kind, TypeDeclaration, TypeParameter};
-    use beans_core::model::ranges::{ByteRange, Spanned};
+    use beans_core::ranges::{ByteRange, Spanned};
 
     #[test]
     fn parameter_lookup_without_parameters_returns_none() {

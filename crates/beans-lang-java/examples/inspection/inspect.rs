@@ -20,7 +20,7 @@ use std::{
     process,
 };
 
-use beans_core::model::ranges::Spanned;
+use beans_core::ranges::Spanned;
 use beans_lang_java::lowering::lower_into;
 use beans_lang_java::model::{
     File,

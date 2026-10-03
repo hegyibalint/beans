@@ -2,7 +2,7 @@ use crate::model::{
     File,
     references::{TypeNameComponent, TypeRef},
 };
-use beans_core::model::ranges::Spanned;
+use beans_core::ranges::Spanned;
 
 use super::{
     Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, TypeParameterHandle,

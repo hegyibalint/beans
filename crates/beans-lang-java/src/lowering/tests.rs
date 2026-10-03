@@ -3,7 +3,7 @@ use crate::model::{
     nodes::{NodeIndex, types::TypeDeclaration},
     references::{TypeNameComponent, TypeRef},
 };
-use beans_core::model::ranges::{ByteRange, Spanned};
+use beans_core::ranges::{ByteRange, Spanned};
 
 struct TypeEntry<'a> {
     parent: NodeIndex,

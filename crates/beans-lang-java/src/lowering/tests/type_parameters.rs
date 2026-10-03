@@ -34,7 +34,7 @@ fn zero_one_and_two_type_parameters_are_preserved() {
 
 #[test]
 fn type_parameter_names_preserve_their_identifier_spans() {
-    use beans_core::model::ranges::ByteRange;
+    use beans_core::ranges::ByteRange;
 
     let text = "class Example<T extends Labelled, U> {}";
     let file = lower_into(text);

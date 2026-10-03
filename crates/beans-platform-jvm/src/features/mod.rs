@@ -1,6 +1,6 @@
 //! JVM implementations of protocol-neutral editor features.
 
-use beans_core::engine::QueryScope;
+use beans_core::query_scope::QueryScope;
 
 mod hover;
 mod navigation;

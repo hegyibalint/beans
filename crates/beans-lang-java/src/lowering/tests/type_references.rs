@@ -1,7 +1,7 @@
 use super::{find_type_declaration, named_segment, named_segments, raw_type, span};
 use crate::lower_into;
 use crate::model::references::{TypeBound, TypeNameComponent, TypeRef};
-use beans_core::model::ranges::ByteRange;
+use beans_core::ranges::ByteRange;
 
 fn first_superinterface_bound<'a>(
     file: &'a crate::model::File,
@@ -46,8 +46,6 @@ fn qualified_names_preserve_parent_and_component_byte_ranges() {
     assert_eq!(reference.range(), ByteRange::new(19, 47));
     assert_eq!(segments[0].range(), ByteRange::new(19, 32)); // Outer<String>
     assert_eq!(segments[1].range(), ByteRange::new(33, 47)); // Inner<Integer>
-    assert!(reference.range().contains_range(segments[0].range()));
-    assert!(reference.range().contains_range(segments[1].range()));
     assert!(reference.range().contains(32)); // The dot belongs to neither component.
     assert!(!segments[0].range().contains(32));
     assert!(!segments[1].range().contains(32));

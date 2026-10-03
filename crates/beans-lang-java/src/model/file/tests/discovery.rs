@@ -1,4 +1,4 @@
-use beans_core::model::{
+use beans_core::{
     names::Name,
     ranges::{ByteRange, Spanned},
 };

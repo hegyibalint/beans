@@ -1,6 +1,6 @@
 //! Feature-local dispatch to the concretely owned language and platform engines.
 
-use beans_core::{engine::QueryScope, model::classpath::Classpath};
+use beans_core::{classpath::Classpath, query_scope::QueryScope};
 use beans_lang_java::features::JavaFeatureContext;
 use beans_platform_jvm::features::JvmFeatureContext;
 
@@ -19,7 +19,7 @@ mod navigation;
 /// The aggregate cannot advance while a context is still in use:
 ///
 /// ```compile_fail
-/// use beans_core::model::classpath::Unrestricted;
+/// use beans_core::classpath::Unrestricted;
 /// use beans_lang::Languages;
 ///
 /// let mut languages = Languages::default();
@@ -43,14 +43,14 @@ impl Languages {
     /// The returned context keeps this aggregate borrowed while requests use it.
     ///
     /// ```
-    /// use beans_core::model::{classpath::Unrestricted, source::Source};
+    /// use beans_core::{classpath::Unrestricted, origin::Origin};
     /// use beans_lang::{HoverProvider, HoverRequest, Languages};
     ///
     /// let mut languages = Languages::default();
     /// let uri = "untitled:Example.java";
     /// let contents = "class C extends Target {}";
     /// languages.process_document(uri, "java", contents);
-    /// let source = Source::uri(uri);
+    /// let source = Origin::uri(uri);
     /// let context = languages.feature_context(&Unrestricted);
     /// let hover = languages.hover(&context, &HoverRequest {
     ///     source: &source,
@@ -81,7 +81,7 @@ impl Languages {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use beans_core::{engine::Revision, model::classpath::Unrestricted};
+    use beans_core::{classpath::Unrestricted, revision::Revision};
 
     #[test]
     fn feature_context_binds_the_current_revision_and_borrows_visibility() {

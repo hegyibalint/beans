@@ -1,4 +1,4 @@
-use crate::model::names::Name;
+use crate::names::Name;
 
 pub trait TypeDefinitionQuery<Handle> {
     fn find_types<'query>(

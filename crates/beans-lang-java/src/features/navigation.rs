@@ -1,10 +1,9 @@
 use beans_core::{
-    engine::Revision,
     features::navigation::{DefinitionProvider, DefinitionRequest, NavigationResult},
-    model::{
-        ranges::ByteRange,
-        source::{Source, SourceSpan},
-    },
+    origin::Origin,
+    ranges::ByteRange,
+    revision::Revision,
+    source::SourceSpan,
 };
 
 use crate::{
@@ -83,7 +82,7 @@ fn type_parameter_declaration_at(file: &File, offset: usize) -> Option<ByteRange
 fn resolve_field_type_at(
     file: &File,
     revision: Revision,
-    source: &Source,
+    source: &Origin,
     offset: usize,
     definitions: Option<&dyn TypeCandidateQuery>,
 ) -> Option<(ByteRange, Result<TypeCandidate, ResolutionFailure>)> {
@@ -144,15 +143,14 @@ mod tests {
     use super::*;
     use crate::{lowering::lower_into, semantics::resolution::ResolutionFailure};
     use beans_core::{
-        engine::QueryScope,
-        model::{classpath::Unrestricted, names::Name, ranges::ByteRange},
+        classpath::Unrestricted, names::Name, query_scope::QueryScope, ranges::ByteRange,
     };
     use beans_platform_jvm::engine::JvmEngine;
 
     fn definition_at(
         java: &JavaEngine,
         revision: Revision,
-        source: &Source,
+        source: &Origin,
         offset: usize,
     ) -> Option<SourceSpan> {
         java.goto_definition(
@@ -167,7 +165,7 @@ mod tests {
 
     fn at<'a>(
         file: &'a File,
-        source: &'a Source,
+        source: &'a Origin,
         text: &str,
         type_name: &str,
     ) -> Option<Result<TypeCandidate, ResolutionFailure>> {
@@ -185,7 +183,7 @@ mod tests {
     fn field_type_use_resolves_to_its_member_declaration() {
         let text = "class Outer { class Member {} Member field; }";
         let file = lower_into(text);
-        let source = Source::uri("untitled:Example.java");
+        let source = Origin::uri("untitled:Example.java");
         let member_name: Name = ["Outer", "Member"].into_iter().map(str::to_owned).collect();
         let member_index = file.find_type(&member_name)[0].0;
 
@@ -203,7 +201,7 @@ mod tests {
     fn resolved_field_type_projects_to_its_declaration_name() {
         let text = "class Outer { class Member {} Member field; }";
         let revision = Revision::new(1);
-        let source = Source::uri("untitled:Example.java");
+        let source = Origin::uri("untitled:Example.java");
         let mut java = JavaEngine::default();
         java.store(revision, lower_into(text), source.clone());
         let name_start = text.find("Member").unwrap();
@@ -221,7 +219,7 @@ mod tests {
     fn qualified_field_type_navigates_each_component_to_its_own_declaration() {
         let text = "class Box<T> { class Slot<U> {} } class Example { Box<String>.Slot<Integer> nested; Box<? extends Number> numbers; }";
         let revision = Revision::new(1);
-        let source = Source::uri("untitled:Example.java");
+        let source = Origin::uri("untitled:Example.java");
         let mut java = JavaEngine::default();
         java.store(revision, lower_into(text), source.clone());
         let box_name = text.find("class Box").unwrap() + "class ".len();
@@ -251,7 +249,7 @@ mod tests {
     fn generic_components_and_their_arguments_navigate_independently() {
         let text = "class A {} class B {} class First<T> { class Second<U> {} } class Use { First<A>.Second<B> field; }";
         let revision = Revision::new(1);
-        let source = Source::uri("untitled:Example.java");
+        let source = Origin::uri("untitled:Example.java");
         let mut java = JavaEngine::default();
         java.store(revision, lower_into(text), source.clone());
 
@@ -304,7 +302,7 @@ mod tests {
         // JLS §6.3 and §6.5.5.1: the class type parameter is in scope in its body.
         let text = "class Example<T extends Labelled> { T label; }";
         let revision = Revision::new(1);
-        let source = Source::uri("untitled:Example.java");
+        let source = Origin::uri("untitled:Example.java");
         let mut java = JavaEngine::default();
         java.store(revision, lower_into(text), source.clone());
         let declaration = text.find("<T").unwrap() + 1;
@@ -331,7 +329,7 @@ mod tests {
     fn type_parameter_declaration_names_navigate_to_themselves() {
         let text = "class Box<T, U extends Labelled> { U label; }";
         let revision = Revision::new(1);
-        let source = Source::uri("untitled:Example.java");
+        let source = Origin::uri("untitled:Example.java");
         let mut java = JavaEngine::default();
         java.store(revision, lower_into(text), source.clone());
 
@@ -366,7 +364,7 @@ mod tests {
     fn field_type_end_positions_navigate_when_entered_from_the_right() {
         let text = "class Box<T> { class Slot<U> {} T value; Box<String>.Slot<Integer> nested; }";
         let revision = Revision::new(1);
-        let source = Source::uri("untitled:Example.java");
+        let source = Origin::uri("untitled:Example.java");
         let mut java = JavaEngine::default();
         java.store(revision, lower_into(text), source.clone());
 
@@ -402,7 +400,7 @@ mod tests {
     fn unrelated_positions_do_not_resolve_to_field_types() {
         let text = "class Outer { class Member {} Member field; int count; }";
         let file = lower_into(text);
-        let source = Source::uri("untitled:Example.java");
+        let source = Origin::uri("untitled:Example.java");
         let at_offset =
             |offset| resolve_field_type_at(&file, Revision::new(1), &source, offset, None);
 
@@ -422,7 +420,7 @@ mod tests {
     fn unresolved_field_type_retains_the_resolution_failure() {
         let text = "class Outer { Missing field; }";
         let file = lower_into(text);
-        let source = Source::uri("untitled:Example.java");
+        let source = Origin::uri("untitled:Example.java");
 
         assert_eq!(
             at(&file, &source, text, "Missing"),

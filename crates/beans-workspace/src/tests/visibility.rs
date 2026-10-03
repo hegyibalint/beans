@@ -1,4 +1,4 @@
-use beans_core::model::{classpath::Classpath, source::Source};
+use beans_core::{classpath::Classpath, origin::Origin};
 
 use crate::{Workspace, Workspaces};
 
@@ -11,7 +11,7 @@ fn unconfigured_workspaces_supply_unrestricted_visibility_for_document_uris() {
     ] {
         let classpath = workspaces.classpath_for(uri);
 
-        assert!(classpath.contains(&Source::jar_entry("library.jar", "Example.class")));
+        assert!(classpath.contains(&Origin::jar_entry("library.jar", "Example.class")));
     }
 }
 
@@ -19,10 +19,10 @@ fn unconfigured_workspaces_supply_unrestricted_visibility_for_document_uris() {
 fn configured_workspaces_forward_the_document_uri_and_borrow_backend_visibility() {
     struct SelectedSource {
         document: String,
-        visible: Source,
+        visible: Origin,
     }
     impl Classpath for SelectedSource {
-        fn contains(&self, source: &Source) -> bool {
+        fn contains(&self, source: &Origin) -> bool {
             source == &self.visible
         }
     }
@@ -33,7 +33,7 @@ fn configured_workspaces_forward_the_document_uri_and_borrow_backend_visibility(
         }
     }
     let uri = "beans-jvm:///library/Example.class";
-    let visible = Source::jar_entry("library.jar", "Example.class");
+    let visible = Origin::jar_entry("library.jar", "Example.class");
     let workspaces = Workspaces::new(SelectedSource {
         document: uri.into(),
         visible: visible.clone(),
@@ -42,5 +42,5 @@ fn configured_workspaces_forward_the_document_uri_and_borrow_backend_visibility(
     let classpath = workspaces.classpath_for(uri);
 
     assert!(classpath.contains(&visible));
-    assert!(!classpath.contains(&Source::uri("file:///unrelated/Other.java")));
+    assert!(!classpath.contains(&Origin::uri("file:///unrelated/Other.java")));
 }

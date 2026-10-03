@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 beans-core.workspace = true
 beans-platform-jvm.workspace = true
+beans-storage.workspace = true
 tree-sitter.workspace = true
 tree-sitter-java.workspace = true
 url.workspace = true

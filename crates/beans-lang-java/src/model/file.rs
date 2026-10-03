@@ -1,4 +1,4 @@
-use beans_core::model::names::Name;
+use beans_core::names::Name;
 
 use super::{
     imports::Import,

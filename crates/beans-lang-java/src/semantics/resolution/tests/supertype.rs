@@ -1,6 +1,6 @@
 use crate::model::{File, nodes::NodeIndex};
-use beans_core::engine::Revision;
-use beans_core::model::{names::Name, source::Source};
+use beans_core::revision::Revision;
+use beans_core::{names::Name, origin::Origin};
 
 use crate::semantics::resolution::{Context, JavaTypeCandidate, TypeCandidate, resolve_supertype};
 
@@ -18,7 +18,7 @@ fn type_index(file: &File, components: &[&str]) -> NodeIndex {
 
 fn resolve_declared_superclass(file: &File, owner: NodeIndex) -> TypeCandidate {
     let declaration = file.node(owner).unwrap().kind().as_type().unwrap();
-    let source = Source::uri("file:///Test.java");
+    let source = Origin::uri("file:///Test.java");
     let ctx = Context::new(
         Revision::new(1),
         &source,

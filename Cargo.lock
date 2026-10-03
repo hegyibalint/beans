@@ -30,6 +30,7 @@ version = "0.0.1"
 dependencies = [
  "beans-core",
  "beans-platform-jvm",
+ "beans-storage",
  "tree-sitter",
  "tree-sitter-java",
  "url",
@@ -58,7 +59,15 @@ name = "beans-platform-jvm"
 version = "0.0.1"
 dependencies = [
  "beans-core",
+ "beans-storage",
  "cafebabe",
+]
+
+[[package]]
+name = "beans-storage"
+version = "0.0.1"
+dependencies = [
+ "beans-core",
 ]
 
 [[package]]

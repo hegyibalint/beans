@@ -2,8 +2,8 @@
 
 use std::path::Path;
 
-use beans_core::engine::Revision;
-use beans_core::model::source::Source;
+use beans_core::origin::Origin;
+use beans_core::revision::Revision;
 use beans_lang_java::engine::JavaEngine;
 use beans_platform_jvm::engine::JvmEngine;
 
@@ -35,12 +35,12 @@ impl Languages {
         }
         let model = self.java.process(contents);
         let revision = self.revision.advance();
-        self.java.store(revision, model, Source::uri(uri));
+        self.java.store(revision, model, Origin::uri(uri));
     }
 
     pub fn close_document(&mut self, uri: &str) {
         let revision = self.revision.advance();
-        self.java.remove(revision, Source::uri(uri));
+        self.java.remove(revision, Origin::uri(uri));
     }
 
     /// Whether any vertical can ingest this file.
@@ -52,7 +52,7 @@ impl Languages {
         if self.java.accept_uri(uri) {
             let model = self.java.process(contents);
             let revision = self.revision.advance();
-            self.java.store(revision, model, Source::uri(uri));
+            self.java.store(revision, model, Origin::uri(uri));
         }
     }
 
@@ -66,12 +66,12 @@ mod tests {
     use std::path::Path;
 
     use super::Languages;
-    use beans_core::engine::{QueryScope, Revision};
-    use beans_core::model::{classpath::Unrestricted, ranges::ByteRange, source::Source};
+    use beans_core::{classpath::Unrestricted, origin::Origin, ranges::ByteRange};
+    use beans_core::{query_scope::QueryScope, revision::Revision};
 
     fn type_reference_at(
         languages: &Languages,
-        source: &Source,
+        source: &Origin,
         offset: usize,
     ) -> Option<ByteRange> {
         languages
@@ -104,7 +104,7 @@ mod tests {
         languages.process(uri, "package example; public class Example {}");
 
         assert_eq!(languages.revision(), Revision::new(1));
-        let source = Source::uri(uri);
+        let source = Origin::uri(uri);
         let classpath = Unrestricted;
         let file = languages
             .java
@@ -118,21 +118,21 @@ mod tests {
     fn virtual_documents_keep_their_identity_and_latest_type_occurrences() {
         let mut languages = Languages::default();
         let uri = "untitled:Example.java";
-        let source = Source::uri(uri);
+        let source = Origin::uri(uri);
         languages.process_document(uri, "java", "class C extends First {} ");
         assert_eq!(
-            type_reference_at(&languages, &source, 16).map(|range| range.len()),
-            Some(5)
+            type_reference_at(&languages, &source, 16),
+            Some(ByteRange::new(16, 21))
         );
         assert_eq!(
-            type_reference_at(&languages, &Source::uri("file:///Example.java"), 16),
+            type_reference_at(&languages, &Origin::uri("file:///Example.java"), 16),
             None
         );
 
         languages.process_document(uri, "java", "class C extends Second {} ");
         assert_eq!(
-            type_reference_at(&languages, &source, 16).map(|range| range.len()),
-            Some(6)
+            type_reference_at(&languages, &source, 16),
+            Some(ByteRange::new(16, 22))
         );
         languages.close_document(uri);
         assert_eq!(type_reference_at(&languages, &source, 16), None);
@@ -147,7 +147,7 @@ mod tests {
 
         assert_eq!(languages.revision(), Revision::default());
         assert_eq!(
-            type_reference_at(&languages, &Source::uri("untitled:Example.java"), 16),
+            type_reference_at(&languages, &Origin::uri("untitled:Example.java"), 16),
             None
         );
     }

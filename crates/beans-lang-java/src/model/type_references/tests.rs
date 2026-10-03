@@ -1,4 +1,4 @@
-use beans_core::model::{names::Name, ranges::ByteRange};
+use beans_core::{names::Name, ranges::ByteRange};
 
 use super::type_reference_at;
 use crate::lowering::lower_into;

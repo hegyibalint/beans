@@ -97,8 +97,8 @@ pub(super) fn local_type_candidate(ctx: &Context<'_>, index: NodeIndex) -> Optio
 #[cfg(test)]
 mod tests {
     use crate::model::{File, nodes::NodeIndex};
-    use beans_core::engine::Revision;
-    use beans_core::model::{names::Name, source::Source};
+    use beans_core::revision::Revision;
+    use beans_core::{names::Name, origin::Origin};
 
     use super::*;
 
@@ -119,7 +119,7 @@ mod tests {
         let file = crate::lowering::lower_into(
             "class Outer { class Base {} interface First {} interface Second {} class Child extends Base implements First, Second {} }",
         );
-        let source = Source::uri("file:///Test.java");
+        let source = Origin::uri("file:///Test.java");
         let revision = Revision::new(1);
         let child = type_index(&file, &["Outer", "Child"]);
         let declaration = file.node(child).unwrap().kind().as_type().unwrap();

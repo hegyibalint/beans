@@ -4,18 +4,16 @@ use std::path::Path;
 
 use self::query::JavaQuery;
 use crate::{lowering::lower_into, model::File};
-use beans_core::engine::{
-    QueryScope, Revision,
-    storage::{RevisionEntry, RevisionedStorage},
-};
-use beans_core::model::source::Source;
+use beans_core::origin::Origin;
+use beans_core::{query_scope::QueryScope, revision::Revision};
+use beans_storage::{RevisionEntry, RevisionedStorage};
 use url::Url;
 
 pub mod query;
 
 #[derive(Default)]
 pub struct JavaEngine {
-    files: RevisionedStorage<Source, File>,
+    files: RevisionedStorage<Origin, File>,
 }
 
 impl JavaEngine {
@@ -40,11 +38,11 @@ impl JavaEngine {
     }
 
     /// Reads a stored Java file at the requested revision.
-    pub fn file(&self, revision: Revision, source: &Source) -> Option<&File> {
+    pub fn file(&self, revision: Revision, source: &Origin) -> Option<&File> {
         self.files.get(revision, source)
     }
 
-    pub fn remove(&mut self, revision: Revision, source: Source) {
+    pub fn remove(&mut self, revision: Revision, source: Origin) {
         self.files.remove(revision, source);
     }
 
@@ -52,8 +50,8 @@ impl JavaEngine {
         &mut self,
         revision: Revision,
         model: File,
-        source: Source,
-    ) -> RevisionEntry<Source> {
+        source: Origin,
+    ) -> RevisionEntry<Origin> {
         self.files.put(revision, source, model)
     }
 
@@ -61,7 +59,7 @@ impl JavaEngine {
         JavaQuery::new(&self.files, scope)
     }
 
-    pub fn analyse(&self, _entry: &RevisionEntry<Source>, _scope: QueryScope<'_>) {
+    pub fn analyse(&self, _entry: &RevisionEntry<Origin>, _scope: QueryScope<'_>) {
         todo!("analysis is not implemented")
     }
 }
@@ -69,7 +67,7 @@ impl JavaEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use beans_core::model::names::Name;
+    use beans_core::names::Name;
 
     #[test]
     fn accept_recognizes_java_source_paths() {
@@ -97,7 +95,7 @@ mod tests {
     fn store_returns_the_address_of_the_supplied_model() {
         let mut engine = JavaEngine::default();
         let revision = Revision::default();
-        let source = Source::uri("file:///Example.java");
+        let source = Origin::uri("file:///Example.java");
         let mut model = File::new();
         model.package_name = Name::new(vec!["example".into()]);
 

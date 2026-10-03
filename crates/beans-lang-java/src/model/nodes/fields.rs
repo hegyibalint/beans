@@ -1,4 +1,4 @@
-use beans_core::model::ranges::Spanned;
+use beans_core::ranges::Spanned;
 
 use crate::model::references::TypeRef;
 

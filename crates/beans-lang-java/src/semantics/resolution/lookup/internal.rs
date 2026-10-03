@@ -2,7 +2,7 @@ use crate::model::{
     nodes::{NodeIndex, types::AccessLevel},
     references::TypeNameComponent,
 };
-use beans_core::model::ranges::Spanned;
+use beans_core::ranges::Spanned;
 
 use super::super::{
     Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate,

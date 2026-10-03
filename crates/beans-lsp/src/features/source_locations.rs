@@ -1,6 +1,6 @@
 use std::{borrow::Cow, fs};
 
-use beans_core::model::source::{Source, SourceSpan};
+use beans_core::{origin::Origin, source::SourceSpan};
 use lsp_types::{Location, Range, Uri};
 use url::Url;
 
@@ -9,7 +9,7 @@ use crate::model::open_document::OpenDocument;
 
 impl Features {
     pub(crate) fn location_for_span(&self, span: SourceSpan) -> Option<Location> {
-        let Source::Source { uri } = span.source else {
+        let Origin::Document { uri } = span.origin else {
             return None;
         };
         let document_uri: Uri = uri.parse().ok()?;
@@ -43,7 +43,7 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use beans_core::model::{ranges::ByteRange, source::SourceSpan};
+    use beans_core::{ranges::ByteRange, source::SourceSpan};
     use beans_testing::template::Template;
     use lsp_types::{Position, Range};
 
@@ -73,7 +73,7 @@ mod tests {
 
         let location = Features::default()
             .location_for_span(SourceSpan::new(
-                Source::uri(&uri),
+                Origin::uri(&uri),
                 ByteRange::new(target.start, target.end),
             ))
             .unwrap();

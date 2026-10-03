@@ -1,5 +1,5 @@
 use crate::model::{imports::ImportType, references::TypeNameComponent};
-use beans_core::model::{names::Name, ranges::Spanned};
+use beans_core::{names::Name, ranges::Spanned};
 
 use super::super::{
     Context, ResolutionFailure, TypeCandidate, query::TypeCandidateQuery,

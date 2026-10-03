@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use beans_core::model::classpath::{Classpath, Unrestricted};
+use beans_core::classpath::{Classpath, Unrestricted};
 use url::Url;
 
 /// Backend contract for document URI visibility, including platform-provided virtual documents.
@@ -22,7 +22,7 @@ impl Workspace for Unrestricted {
 /// Until a workspace is configured, every stored source is visible.
 ///
 /// ```
-/// use beans_core::engine::{QueryScope, Revision};
+/// use beans_core::{query_scope::QueryScope, revision::Revision};
 /// use beans_workspace::Workspaces;
 ///
 /// fn scope<'a>(

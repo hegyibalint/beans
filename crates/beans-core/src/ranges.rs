@@ -21,20 +21,8 @@ impl ByteRange {
         self.end
     }
 
-    pub const fn len(self) -> usize {
-        self.end - self.start
-    }
-
-    pub const fn is_empty(self) -> bool {
-        self.start == self.end
-    }
-
     pub const fn contains(self, offset: usize) -> bool {
         self.start <= offset && offset < self.end
-    }
-
-    pub const fn contains_range(self, range: Self) -> bool {
-        self.start <= range.start && range.end <= self.end
     }
 }
 
@@ -57,20 +45,12 @@ impl<T> Spanned<T> {
         &self.value
     }
 
-    pub const fn value_mut(&mut self) -> &mut T {
-        &mut self.value
-    }
-
     pub fn into_value(self) -> T {
         self.value
     }
 
     pub const fn range(&self) -> ByteRange {
         self.range
-    }
-
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Spanned<U> {
-        Spanned::new(f(self.value), self.range)
     }
 }
 
@@ -102,28 +82,15 @@ mod tests {
         assert!(!range.contains(7));
         assert_eq!(range.start(), 3);
         assert_eq!(range.end(), 7);
-        assert_eq!(range.len(), 4);
-        assert!(!range.is_empty());
-    }
-
-    #[test]
-    fn parent_ranges_can_contain_children_without_covering_only_their_bytes() {
-        let parent = ByteRange::new(3, 14);
-
-        assert!(parent.contains_range(ByteRange::new(3, 7)));
-        assert!(parent.contains_range(ByteRange::new(9, 14)));
-        assert!(!parent.contains_range(ByteRange::new(2, 7)));
-        assert!(!parent.contains_range(ByteRange::new(9, 15)));
     }
 
     #[test]
     fn empty_ranges_contain_no_offsets() {
         let range = ByteRange::new(5, 5);
 
-        assert!(range.is_empty());
-        assert_eq!(range.len(), 0);
+        assert!(!range.contains(4));
         assert!(!range.contains(5));
-        assert!(range.contains_range(range));
+        assert!(!range.contains(6));
     }
 
     #[test]
@@ -138,7 +105,6 @@ mod tests {
 
         assert_eq!(value.value(), &"name");
         assert_eq!(value.range(), ByteRange::new(3, 7));
-        assert_eq!(value.map(str::len).value(), &4);
     }
 
     #[test]

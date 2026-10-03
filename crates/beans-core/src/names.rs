@@ -36,24 +36,6 @@ impl FromIterator<String> for Name {
     }
 }
 
-impl IntoIterator for Name {
-    type Item = String;
-    type IntoIter = std::vec::IntoIter<String>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.components.into_iter()
-    }
-}
-
-impl<'a> IntoIterator for &'a Name {
-    type Item = &'a String;
-    type IntoIter = std::slice::Iter<'a, String>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.components.iter()
-    }
-}
-
 impl fmt::Display for Name {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (index, component) in self.components.iter().enumerate() {
@@ -77,7 +59,6 @@ mod tests {
         assert!(name.is_valid());
         assert!(name.is_empty());
         assert_eq!(name.len(), 0);
-        assert_eq!((&name).into_iter().next(), None);
         assert_eq!(name.to_string(), "");
     }
 
@@ -109,25 +90,6 @@ mod tests {
             assert!(!name.is_valid());
             assert_eq!(name.as_slice(), components);
         }
-    }
-
-    #[test]
-    fn borrowed_iteration_returns_the_stored_components_in_order() {
-        let name = Name::new(vec!["p".into(), "Outer".into(), "Member".into()]);
-        let components: Vec<_> = (&name).into_iter().collect();
-
-        assert_eq!(components.len(), name.len());
-        for (component, stored) in components.into_iter().zip(name.as_slice()) {
-            assert!(std::ptr::eq(component, stored));
-        }
-    }
-
-    #[test]
-    fn owned_iteration_moves_the_components_out_in_order() {
-        let name = Name::new(vec!["p".into(), "Outer".into(), "Member".into()]);
-        let components: Vec<String> = name.into_iter().collect();
-
-        assert_eq!(components, ["p", "Outer", "Member"]);
     }
 
     #[test]

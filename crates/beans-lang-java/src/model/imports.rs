@@ -1,4 +1,4 @@
-use beans_core::model::names::Name;
+use beans_core::names::Name;
 
 use super::references::TypeRef;
 
@@ -78,7 +78,7 @@ pub enum ImportType {
 
 #[cfg(test)]
 mod tests {
-    use beans_core::model::{
+    use beans_core::{
         names::Name,
         ranges::{ByteRange, Spanned},
     };
@@ -160,14 +160,18 @@ mod tests {
     #[test]
     fn type_arguments_do_not_change_the_starting_name() {
         let import = Import::new(Name::new(vec!["p".into(), "Outer".into()]), SingleType);
-        let mut reference = named("Outer.Inner");
-        let TypeRef::Named { segments } = &mut reference else {
-            unreachable!();
+        let reference = TypeRef::Named {
+            segments: vec![
+                span(TypeNameComponent {
+                    name: "Outer".into(),
+                    bounds: vec![TypeBound::new_unbounded()],
+                }),
+                span(TypeNameComponent {
+                    name: "Inner".into(),
+                    bounds: vec![],
+                }),
+            ],
         };
-        segments[0]
-            .value_mut()
-            .bounds
-            .push(TypeBound::new_unbounded());
 
         assert!(import.is_prefix(&reference));
     }

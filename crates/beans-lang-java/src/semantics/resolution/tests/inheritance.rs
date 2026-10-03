@@ -2,8 +2,8 @@ use crate::model::{
     File,
     nodes::{NodeIndex, NodeKind},
 };
-use beans_core::engine::Revision;
-use beans_core::model::{names::Name, source::Source};
+use beans_core::revision::Revision;
+use beans_core::{names::Name, origin::Origin};
 
 use crate::semantics::resolution::{
     Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, resolve,
@@ -29,7 +29,7 @@ fn resolve_field(file: &File, field_name: &str) -> Result<TypeCandidate, Resolut
             _ => None,
         })
         .expect("expected field");
-    let source = Source::uri("file:///Test.java");
+    let source = Origin::uri("file:///Test.java");
     let ctx = Context::new(
         Revision::new(1),
         &source,

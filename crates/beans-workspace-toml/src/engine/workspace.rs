@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, path::PathBuf};
 
-use beans_core::model::classpath::{Classpath, Unrestricted};
+use beans_core::classpath::{Classpath, Unrestricted};
 use beans_workspace::Workspace;
 
 use super::classpath::SourceClasspath;

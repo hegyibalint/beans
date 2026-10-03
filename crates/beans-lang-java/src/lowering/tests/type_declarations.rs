@@ -4,7 +4,7 @@ use crate::model::{
     File,
     nodes::types::{AccessLevel, Kind, Modifier},
 };
-use beans_core::model::ranges::ByteRange;
+use beans_core::ranges::ByteRange;
 
 #[test]
 fn declaration_kinds_are_preserved() {

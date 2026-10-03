@@ -1,6 +1,6 @@
 use crate::lower_into;
 use crate::model::imports::{Import, ImportType};
-use beans_core::model::names::Name;
+use beans_core::names::Name;
 
 fn name(components: &[&str]) -> Name {
     components

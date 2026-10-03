@@ -1,7 +1,8 @@
-use beans_core::model::{
+use beans_core::{
     classpath::{Classpath, Unrestricted},
+    origin::Origin,
     ranges::ByteRange,
-    source::{Source, SourceSpan},
+    source::SourceSpan,
 };
 use beans_lang::{DefinitionProvider, DefinitionRequest, Languages};
 
@@ -9,7 +10,7 @@ use beans_lang::{DefinitionProvider, DefinitionRequest, Languages};
 fn imported_type_navigation_obeys_supplied_visibility() {
     struct NoSources;
     impl Classpath for NoSources {
-        fn contains(&self, _source: &Source) -> bool {
+        fn contains(&self, _source: &Origin) -> bool {
             false
         }
     }
@@ -22,7 +23,7 @@ fn imported_type_navigation_obeys_supplied_visibility() {
     languages.process_document(use_uri, "java", use_text);
     languages.process_document(target_uri, "java", target_text);
     let name_start = target_text.find("Target").unwrap();
-    let source = Source::uri(use_uri);
+    let source = Origin::uri(use_uri);
     let request = DefinitionRequest {
         source: &source,
         offset: use_text.rfind("Target").unwrap(),
@@ -33,7 +34,7 @@ fn imported_type_navigation_obeys_supplied_visibility() {
             .goto_definition(&languages.feature_context(&Unrestricted), &request)
             .map(|definition| definition.target),
         Some(SourceSpan::new(
-            Source::uri(target_uri),
+            Origin::uri(target_uri),
             ByteRange::new(name_start, name_start + "Target".len()),
         ))
     );

@@ -1,13 +1,16 @@
 use std::{collections::HashMap, hash::Hash};
 
-use super::Revision;
+use beans_core::revision::Revision;
 
+/// A key at a revision, not a pinned or immutable snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RevisionEntry<K> {
     pub revision: Revision,
     pub key: K,
 }
 
+/// In-memory per-key histories, including deletion markers.
+/// Writes must use non-decreasing revisions per key; same-revision writes replace.
 pub struct RevisionedStorage<K, V> {
     entries: HashMap<K, Vec<Version<V>>>,
 }
@@ -75,10 +78,10 @@ mod tests {
     #[test]
     fn put_returns_an_owned_address_of_the_written_value() {
         let mut storage = RevisionedStorage::default();
-        let entry = storage.put(Revision(2), String::from("A"), "first");
-        storage.put(Revision(5), String::from("A"), "second");
+        let entry = storage.put(Revision::new(2), String::from("A"), "first");
+        storage.put(Revision::new(5), String::from("A"), "second");
 
-        assert_eq!(entry.revision, Revision(2));
+        assert_eq!(entry.revision, Revision::new(2));
         assert_eq!(entry.key, "A");
         assert_eq!(storage.get(entry.revision, &entry.key), Some(&"first"));
     }
@@ -86,10 +89,10 @@ mod tests {
     #[test]
     fn iteration_yields_only_live_values_at_the_requested_revision() {
         let mut storage = RevisionedStorage::default();
-        storage.put(Revision(2), "A", "first");
-        storage.put(Revision(3), "B", "other");
-        storage.put(Revision(4), "A", "second");
-        storage.remove(Revision(5), "B");
+        storage.put(Revision::new(2), "A", "first");
+        storage.put(Revision::new(3), "B", "other");
+        storage.put(Revision::new(4), "A", "second");
+        storage.remove(Revision::new(5), "B");
 
         for (revision, expected) in [
             (1, vec![]),
@@ -100,7 +103,7 @@ mod tests {
             (9, vec![("A", "second")]),
         ] {
             let mut actual: Vec<_> = storage
-                .iter(Revision(revision))
+                .iter(Revision::new(revision))
                 .map(|(k, v)| (*k, *v))
                 .collect();
             actual.sort();
@@ -112,14 +115,14 @@ mod tests {
     fn unknown_key_has_no_value() {
         let storage = RevisionedStorage::<&str, &str>::default();
 
-        assert_eq!(storage.get(Revision(5), &"missing"), None);
+        assert_eq!(storage.get(Revision::new(5), &"missing"), None);
     }
 
     #[test]
     fn get_returns_the_newest_value_not_newer_than_the_requested_revision() {
         let mut storage = RevisionedStorage::default();
-        storage.put(Revision(2), "A", "first");
-        storage.put(Revision(5), "A", "second");
+        storage.put(Revision::new(2), "A", "first");
+        storage.put(Revision::new(5), "A", "second");
 
         for (revision, expected) in [
             (1, None),
@@ -128,70 +131,70 @@ mod tests {
             (5, Some(&"second")),
             (9, Some(&"second")),
         ] {
-            assert_eq!(storage.get(Revision(revision), &"A"), expected);
+            assert_eq!(storage.get(Revision::new(revision), &"A"), expected);
         }
     }
 
     #[test]
     fn keys_have_independent_histories_and_can_share_a_revision() {
         let mut storage = RevisionedStorage::default();
-        storage.put(Revision(2), "A", "old A");
-        storage.put(Revision(5), "A", "new A");
-        storage.put(Revision(3), "B", "old B");
-        storage.put(Revision(5), "B", "new B");
+        storage.put(Revision::new(2), "A", "old A");
+        storage.put(Revision::new(5), "A", "new A");
+        storage.put(Revision::new(3), "B", "old B");
+        storage.put(Revision::new(5), "B", "new B");
 
-        assert_eq!(storage.get(Revision(4), &"A"), Some(&"old A"));
-        assert_eq!(storage.get(Revision(4), &"B"), Some(&"old B"));
-        assert_eq!(storage.get(Revision(5), &"A"), Some(&"new A"));
-        assert_eq!(storage.get(Revision(5), &"B"), Some(&"new B"));
+        assert_eq!(storage.get(Revision::new(4), &"A"), Some(&"old A"));
+        assert_eq!(storage.get(Revision::new(4), &"B"), Some(&"old B"));
+        assert_eq!(storage.get(Revision::new(5), &"A"), Some(&"new A"));
+        assert_eq!(storage.get(Revision::new(5), &"B"), Some(&"new B"));
     }
 
     #[test]
     fn same_revision_writes_replace_rather_than_append() {
         let mut storage = RevisionedStorage::default();
-        storage.put(Revision(1), "A", "old");
-        storage.put(Revision(2), "A", "first");
-        storage.put(Revision(2), "A", "replacement");
-        assert_eq!(storage.get(Revision(2), &"A"), Some(&"replacement"));
+        storage.put(Revision::new(1), "A", "old");
+        storage.put(Revision::new(2), "A", "first");
+        storage.put(Revision::new(2), "A", "replacement");
+        assert_eq!(storage.get(Revision::new(2), &"A"), Some(&"replacement"));
 
-        storage.remove(Revision(2), "A");
-        assert_eq!(storage.get(Revision(2), &"A"), None);
+        storage.remove(Revision::new(2), "A");
+        assert_eq!(storage.get(Revision::new(2), &"A"), None);
 
-        storage.put(Revision(2), "A", "restored");
-        assert_eq!(storage.get(Revision(2), &"A"), Some(&"restored"));
-        assert_eq!(storage.get(Revision(1), &"A"), Some(&"old"));
+        storage.put(Revision::new(2), "A", "restored");
+        assert_eq!(storage.get(Revision::new(2), &"A"), Some(&"restored"));
+        assert_eq!(storage.get(Revision::new(1), &"A"), Some(&"old"));
         assert_eq!(storage.entries["A"].len(), 2);
     }
 
     #[test]
     fn deletion_hides_the_value_without_erasing_history() {
         let mut storage = RevisionedStorage::default();
-        storage.put(Revision(1), "A", "value");
-        storage.remove(Revision(3), "A");
+        storage.put(Revision::new(1), "A", "value");
+        storage.remove(Revision::new(3), "A");
 
-        assert_eq!(storage.get(Revision(2), &"A"), Some(&"value"));
-        assert_eq!(storage.get(Revision(3), &"A"), None);
-        assert_eq!(storage.get(Revision(9), &"A"), None);
+        assert_eq!(storage.get(Revision::new(2), &"A"), Some(&"value"));
+        assert_eq!(storage.get(Revision::new(3), &"A"), None);
+        assert_eq!(storage.get(Revision::new(9), &"A"), None);
     }
 
     #[test]
     fn a_later_put_reintroduces_a_deleted_key() {
         let mut storage = RevisionedStorage::default();
-        storage.put(Revision(1), "A", "old");
-        storage.remove(Revision(3), "A");
-        storage.put(Revision(5), "A", "new");
+        storage.put(Revision::new(1), "A", "old");
+        storage.remove(Revision::new(3), "A");
+        storage.put(Revision::new(5), "A", "new");
 
-        assert_eq!(storage.get(Revision(2), &"A"), Some(&"old"));
-        assert_eq!(storage.get(Revision(4), &"A"), None);
-        assert_eq!(storage.get(Revision(5), &"A"), Some(&"new"));
+        assert_eq!(storage.get(Revision::new(2), &"A"), Some(&"old"));
+        assert_eq!(storage.get(Revision::new(4), &"A"), None);
+        assert_eq!(storage.get(Revision::new(5), &"A"), Some(&"new"));
     }
 
     #[test]
     fn removing_an_unknown_key_is_a_noop() {
         let mut storage = RevisionedStorage::<&str, &str>::default();
-        storage.remove(Revision(2), "missing");
+        storage.remove(Revision::new(2), "missing");
 
-        assert_eq!(storage.get(Revision(2), &"missing"), None);
+        assert_eq!(storage.get(Revision::new(2), &"missing"), None);
         assert!(storage.entries.is_empty());
     }
 
@@ -199,16 +202,16 @@ mod tests {
     #[should_panic(expected = "revisions must be non-decreasing per key")]
     fn put_rejects_a_revision_older_than_the_keys_latest_write() {
         let mut storage = RevisionedStorage::default();
-        storage.put(Revision(5), "A", "new");
-        storage.put(Revision(4), "A", "old");
+        storage.put(Revision::new(5), "A", "new");
+        storage.put(Revision::new(4), "A", "old");
     }
 
     #[test]
     #[should_panic(expected = "revisions must be non-decreasing per key")]
     fn remove_rejects_a_revision_older_than_the_keys_latest_write() {
         let mut storage = RevisionedStorage::default();
-        storage.put(Revision(5), "A", "value");
-        storage.remove(Revision(4), "A");
+        storage.put(Revision::new(5), "A", "value");
+        storage.remove(Revision::new(4), "A");
     }
 
     #[test]
@@ -218,8 +221,8 @@ mod tests {
         struct Value(u64);
 
         let mut storage = RevisionedStorage::default();
-        storage.put(Revision(1), Key(7), Value(42));
+        storage.put(Revision::new(1), Key(7), Value(42));
 
-        assert_eq!(storage.get(Revision(1), &Key(7)).unwrap().0, 42);
+        assert_eq!(storage.get(Revision::new(1), &Key(7)).unwrap().0, 42);
     }
 }

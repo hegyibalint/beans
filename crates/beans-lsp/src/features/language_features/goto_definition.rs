@@ -1,4 +1,4 @@
-use beans_core::model::source::Source;
+use beans_core::origin::Origin;
 use beans_lang::{DefinitionProvider, DefinitionRequest};
 use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, LocationLink, Range};
 
@@ -15,7 +15,7 @@ impl DefinitionProvider<(), GotoDefinitionParams, GotoDefinitionResponse> for Fe
             .open_documents
             .get(position.text_document.uri.as_str())?;
         let offset = document.byte_offset(position.position)?;
-        let source = Source::uri(document.uri.as_str());
+        let source = Origin::uri(document.uri.as_str());
         let classpath = self.workspaces.classpath_for(document.uri.as_str());
         let context = self.languages.feature_context(classpath);
         let definition = self.languages.goto_definition(
@@ -56,7 +56,7 @@ mod tests {
     use std::{cell::Cell, rc::Rc};
 
     use super::*;
-    use beans_core::model::classpath::Classpath;
+    use beans_core::classpath::Classpath;
     use beans_lang::HoverProvider;
     use beans_workspace::{Workspace, Workspaces};
     use lsp_types::{DidOpenTextDocumentParams, TextDocumentItem};
@@ -64,12 +64,12 @@ mod tests {
 
     struct TestWorkspace {
         document: String,
-        visible: Source,
+        visible: Origin,
         lookups: Rc<Cell<usize>>,
     }
 
     impl Classpath for TestWorkspace {
-        fn contains(&self, source: &Source) -> bool {
+        fn contains(&self, source: &Origin) -> bool {
             source == &self.visible
         }
     }
@@ -91,7 +91,7 @@ mod tests {
         let lookups = Rc::new(Cell::new(0));
         let workspace = |visible| TestWorkspace {
             document: use_uri.into(),
-            visible: Source::uri(visible),
+            visible: Origin::uri(visible),
             lookups: lookups.clone(),
         };
         let mut features = Features {

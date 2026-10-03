@@ -9,7 +9,7 @@ use crate::model::{
     },
     references::{PrimitiveType, TypeBound, TypeNameComponent, TypeRef},
 };
-use beans_core::model::{
+use beans_core::{
     names::Name,
     ranges::{ByteRange, Spanned},
 };

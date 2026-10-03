@@ -1,6 +1,6 @@
 use std::fs;
 
-use beans_core::{engine::Revision, model::source::Source};
+use beans_core::{origin::Origin, revision::Revision};
 use url::Url;
 
 use crate::features::Features;
@@ -56,7 +56,7 @@ fn declared_sources_outside_the_project_root_are_indexed_and_scoped() {
         !features
             .workspaces
             .classpath_for(uri.as_str())
-            .contains(&Source::jar_entry("/unrelated.jar", "Example.class"))
+            .contains(&Origin::jar_entry("/unrelated.jar", "Example.class"))
     );
 }
 
@@ -74,7 +74,7 @@ fn an_absent_descriptor_keeps_fallback_ingestion_and_unrestricted_visibility() {
         features
             .workspaces
             .classpath_for(uri.as_str())
-            .contains(&Source::jar_entry("/unrelated.jar", "Example.class"))
+            .contains(&Origin::jar_entry("/unrelated.jar", "Example.class"))
     );
 }
 

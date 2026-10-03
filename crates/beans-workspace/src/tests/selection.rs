@@ -1,20 +1,20 @@
-use beans_core::model::{
+use beans_core::{
     classpath::{Classpath, Unrestricted},
-    source::Source,
+    origin::Origin,
 };
 
 use crate::{Workspace, Workspaces};
 
-struct Visible(Source);
+struct Visible(Origin);
 
 impl Visible {
     fn new(name: &str) -> Self {
-        Self(Source::jar_entry(name, "Example.class"))
+        Self(Origin::jar_entry(name, "Example.class"))
     }
 }
 
 impl Classpath for Visible {
-    fn contains(&self, source: &Source) -> bool {
+    fn contains(&self, source: &Origin) -> bool {
         source == &self.0
     }
 }
@@ -28,7 +28,7 @@ impl Workspace for Visible {
 fn sees(workspaces: &Workspaces, uri: &str, artifact: &str) -> bool {
     workspaces
         .classpath_for(uri)
-        .contains(&Source::jar_entry(artifact, "Example.class"))
+        .contains(&Origin::jar_entry(artifact, "Example.class"))
 }
 
 #[test]

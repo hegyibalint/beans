@@ -1,4 +1,4 @@
-use beans_core::model::ranges::{ByteRange, Spanned};
+use beans_core::ranges::{ByteRange, Spanned};
 
 use crate::model::{
     File,

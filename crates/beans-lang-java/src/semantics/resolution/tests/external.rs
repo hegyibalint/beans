@@ -7,9 +7,8 @@ use crate::{
     },
 };
 use beans_core::{
-    engine::{QueryScope, Revision},
-    model::{classpath::Unrestricted, names::Name, source::Source},
-    resolution::query::TypeDefinitionQuery,
+    classpath::Unrestricted, names::Name, origin::Origin, query_scope::QueryScope,
+    resolution::TypeDefinitionQuery, revision::Revision,
 };
 use beans_platform_jvm::{
     engine::{JvmEngine, query::ClassHandle},
@@ -38,19 +37,19 @@ enum Occurrence {
 
 struct Fixture {
     java: JavaEngine,
-    source: Source,
+    source: Origin,
 }
 
 impl Fixture {
     fn new(current: &str, other_files: &[(&str, &str)]) -> Self {
         let mut java = JavaEngine::default();
-        let source = Source::uri("file:///src/Use.java");
+        let source = Origin::uri("file:///src/Use.java");
         java.store(Revision::new(1), java.process(current), source.clone());
         for (name, text) in other_files {
             java.store(
                 Revision::new(1),
                 java.process(text),
-                Source::uri(format!("file:///src/{name}.java")),
+                Origin::uri(format!("file:///src/{name}.java")),
             );
         }
         Self { java, source }
@@ -120,7 +119,7 @@ fn mock_jvm_class(name: &str) -> (JvmEngine, JvmDefinitions) {
             ClassKind::Class,
             AccessLevel::Public,
         )],
-        Source::class_file("mock.class"),
+        Origin::class_file("mock.class"),
     );
     let handle = jvm
         .query(Revision::new(1))

@@ -1,10 +1,9 @@
 use std::path::PathBuf;
 
-use super::ranges::ByteRange;
-
+/// Identifies an input contributing models, not a symbol declared within it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Source {
-    Source {
+pub enum Origin {
+    Document {
         uri: String,
     },
     Class {
@@ -24,35 +23,9 @@ pub enum Source {
     },
 }
 
-/// A byte position in a source known to the engine.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SourceLocation {
-    pub source: Source,
-    pub offset: usize,
-}
-
-impl SourceLocation {
-    pub fn new(source: Source, offset: usize) -> Self {
-        Self { source, offset }
-    }
-}
-
-/// A byte range in a source known to the engine.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SourceSpan {
-    pub source: Source,
-    pub range: ByteRange,
-}
-
-impl SourceSpan {
-    pub fn new(source: Source, range: ByteRange) -> Self {
-        Self { source, range }
-    }
-}
-
-impl Source {
+impl Origin {
     pub fn uri(uri: impl Into<String>) -> Self {
-        Self::Source { uri: uri.into() }
+        Self::Document { uri: uri.into() }
     }
 
     pub fn class_file(path: impl Into<PathBuf>) -> Self {
@@ -83,42 +56,32 @@ impl Source {
 
 #[cfg(test)]
 mod tests {
-    use super::{Source, SourceLocation};
+    use super::Origin;
 
     #[test]
     fn source_files_and_virtual_documents_share_a_uri_based_kind() {
         assert_eq!(
-            Source::uri("file:///Example.java"),
-            Source::Source {
+            Origin::uri("file:///Example.java"),
+            Origin::Document {
                 uri: "file:///Example.java".into(),
             }
         );
         assert_eq!(
-            Source::uri("untitled:Example.java"),
-            Source::Source {
+            Origin::uri("untitled:Example.java"),
+            Origin::Document {
                 uri: "untitled:Example.java".into(),
             }
         );
         assert_ne!(
-            Source::uri("file:///Example.class"),
-            Source::class_file("Example.class")
+            Origin::uri("file:///Example.class"),
+            Origin::class_file("Example.class")
         );
         assert_eq!(
-            Source::jar_entry("library.jar", "p/Example.class"),
-            Source::JarEntry {
+            Origin::jar_entry("library.jar", "p/Example.class"),
+            Origin::JarEntry {
                 jar_path: "library.jar".into(),
                 entry_path: "p/Example.class".into(),
             }
-        );
-    }
-
-    #[test]
-    fn locations_pair_a_source_with_a_byte_offset() {
-        let source = Source::uri("file:///Example.java");
-
-        assert_eq!(
-            SourceLocation::new(source.clone(), 17),
-            SourceLocation { source, offset: 17 }
         );
     }
 }

@@ -22,8 +22,7 @@ impl<'request>
 mod tests {
     use super::*;
     use beans_core::{
-        engine::{QueryScope, Revision},
-        model::{classpath::Unrestricted, source::Source},
+        classpath::Unrestricted, origin::Origin, query_scope::QueryScope, revision::Revision,
     };
 
     #[test]
@@ -38,7 +37,7 @@ mod tests {
                 .goto_definition(
                     &context,
                     &DefinitionRequest {
-                        source: &Source::class_file("Example.class"),
+                        source: &Origin::class_file("Example.class"),
                         offset: 0,
                     },
                 )

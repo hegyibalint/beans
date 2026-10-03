@@ -1,11 +1,12 @@
 use crate::model::{classes::Class, names::BinaryName};
-use beans_core::engine::{Revision, storage::RevisionedStorage};
-use beans_core::model::source::Source;
+use beans_core::origin::Origin;
+use beans_core::revision::Revision;
+use beans_storage::RevisionedStorage;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ClassHandle {
     revision: Revision,
-    source: Source,
+    source: Origin,
     index: usize,
 }
 
@@ -16,12 +17,12 @@ pub struct ClassEntry<'a> {
 }
 
 pub struct JvmQuery<'a> {
-    classes: &'a RevisionedStorage<Source, Vec<Class>>,
+    classes: &'a RevisionedStorage<Origin, Vec<Class>>,
     revision: Revision,
 }
 
 impl<'a> JvmQuery<'a> {
-    pub fn new(classes: &'a RevisionedStorage<Source, Vec<Class>>, revision: Revision) -> Self {
+    pub fn new(classes: &'a RevisionedStorage<Origin, Vec<Class>>, revision: Revision) -> Self {
         Self { classes, revision }
     }
 
@@ -74,13 +75,14 @@ mod tests {
         classes::{AccessLevel, Class, ClassKind},
         names::BinaryName,
     };
-    use beans_core::engine::{Revision, storage::RevisionedStorage};
-    use beans_core::model::source::Source;
+    use beans_core::origin::Origin;
+    use beans_core::revision::Revision;
+    use beans_storage::RevisionedStorage;
 
     use super::JvmQuery;
 
-    fn source(path: &str) -> Source {
-        Source::class_file(path)
+    fn source(path: &str) -> Origin {
+        Origin::class_file(path)
     }
 
     fn class(name: &str) -> Class {
@@ -93,7 +95,7 @@ mod tests {
 
     #[test]
     fn an_empty_query_finds_no_classes() {
-        let classes = RevisionedStorage::<Source, Vec<Class>>::default();
+        let classes = RevisionedStorage::<Origin, Vec<Class>>::default();
         let query = JvmQuery::new(&classes, Revision::new(1));
 
         assert_eq!(query.revision(), Revision::new(1));

@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, path::PathBuf};
 
-use beans_core::model::{classpath::Classpath, source::Source};
+use beans_core::{classpath::Classpath, origin::Origin};
 
 use crate::{
     model::{Project, Unit},
@@ -31,21 +31,21 @@ impl SourceClasspath {
 mod tests;
 
 impl Classpath for SourceClasspath {
-    fn contains(&self, source: &Source) -> bool {
+    fn contains(&self, source: &Origin) -> bool {
         match source {
-            Source::Source { uri } => document_path(uri)
+            Origin::Document { uri } => document_path(uri)
                 .is_some_and(|path| self.source_roots.iter().any(|root| path.starts_with(root))),
-            Source::Class { path } => {
+            Origin::Class { path } => {
                 path.is_absolute() && {
                     let path = normalize(path);
                     self.artifacts.iter().any(|root| path.starts_with(root))
                 }
             }
-            Source::JarEntry { jar_path: path, .. }
-            | Source::JmodEntry {
+            Origin::JarEntry { jar_path: path, .. }
+            | Origin::JmodEntry {
                 jmod_path: path, ..
             }
-            | Source::JimageEntry {
+            | Origin::JimageEntry {
                 jimage_path: path, ..
             } => path.is_absolute() && self.artifacts.contains(&normalize(path)),
         }

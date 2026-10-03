@@ -1,7 +1,4 @@
-use crate::model::{
-    ranges::ByteRange,
-    source::{Source, SourceSpan},
-};
+use crate::{origin::Origin, ranges::ByteRange, source::SourceSpan};
 
 /// Finds a definition using the implementation's context and request/response types.
 /// Unsupported requests and positions without a navigable definition return `None`.
@@ -11,7 +8,7 @@ pub trait DefinitionProvider<C: ?Sized, Request: ?Sized, Response> {
 
 /// A position in a stored source model, expressed as a UTF-8 byte offset.
 pub struct DefinitionRequest<'a> {
-    pub source: &'a Source,
+    pub source: &'a Origin,
     pub offset: usize,
 }
 

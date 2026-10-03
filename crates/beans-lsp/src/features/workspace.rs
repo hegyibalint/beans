@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use beans_core::model::classpath::Unrestricted;
+use beans_core::classpath::Unrestricted;
 use beans_workspace::Workspaces;
 use beans_workspace_toml::{LoadError, load};
 use lsp_types::{InitializeParams, Uri};

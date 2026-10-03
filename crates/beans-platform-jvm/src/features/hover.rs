@@ -12,7 +12,7 @@ impl<'request> HoverProvider<JvmFeatureContext<'_>, HoverRequest<'request>, Hove
         _context: &JvmFeatureContext<'_>,
         _request: &HoverRequest<'request>,
     ) -> Option<HoverResponse> {
-        // Source positions are not modeled; class-file debug attributes are optional
+        // Origin positions are not modeled; class-file debug attributes are optional
         // and do not supply symbol byte ranges (JVMS §4.7.10 and §4.7.12).
         None
     }
@@ -22,8 +22,7 @@ impl<'request> HoverProvider<JvmFeatureContext<'_>, HoverRequest<'request>, Hove
 mod tests {
     use super::*;
     use beans_core::{
-        engine::{QueryScope, Revision},
-        model::{classpath::Unrestricted, source::Source},
+        classpath::Unrestricted, origin::Origin, query_scope::QueryScope, revision::Revision,
     };
 
     #[test]
@@ -32,7 +31,7 @@ mod tests {
         let context = JvmFeatureContext {
             scope: QueryScope::new(Revision::default(), &Unrestricted),
         };
-        let source = Source::class_file("Example.class");
+        let source = Origin::class_file("Example.class");
         let request = HoverRequest {
             source: &source,
             contents: "",

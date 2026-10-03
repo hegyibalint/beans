@@ -1,6 +1,6 @@
 use std::fs;
 
-use beans_core::model::source::Source;
+use beans_core::origin::Origin;
 use url::Url;
 
 use crate::features::Features;
@@ -29,7 +29,7 @@ fn an_explicit_fallback_folder_supersedes_an_ancestors_declared_sources() {
         features
             .workspaces
             .classpath_for(uri.as_str())
-            .contains(&Source::jar_entry("/unrelated.jar", "Example.class"))
+            .contains(&Origin::jar_entry("/unrelated.jar", "Example.class"))
     );
 }
 
@@ -53,6 +53,6 @@ fn unit_ids_are_local_to_each_imported_folder() {
     let one_uri = Url::from_file_path(one.join("src/Example.java")).unwrap();
     let two_uri = Url::from_file_path(two.join("src/Example.java")).unwrap();
     let classpath = features.workspaces.classpath_for(one_uri.as_str());
-    assert!(classpath.contains(&Source::uri(one_uri.as_str())));
-    assert!(!classpath.contains(&Source::uri(two_uri.as_str())));
+    assert!(classpath.contains(&Origin::uri(one_uri.as_str())));
+    assert!(!classpath.contains(&Origin::uri(two_uri.as_str())));
 }

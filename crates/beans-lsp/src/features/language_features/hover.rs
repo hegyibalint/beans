@@ -1,4 +1,4 @@
-use beans_core::model::source::Source;
+use beans_core::origin::Origin;
 use beans_lang::{HoverProvider, HoverRequest};
 use lsp_types::{Hover, HoverContents, HoverParams, MarkupContent, MarkupKind, Range};
 
@@ -11,7 +11,7 @@ impl HoverProvider<(), HoverParams, Hover> for Features {
             .open_documents
             .get(position.text_document.uri.as_str())?;
         let offset = document.byte_offset(position.position)?;
-        let source = Source::uri(document.uri.as_str());
+        let source = Origin::uri(document.uri.as_str());
         let classpath = self.workspaces.classpath_for(document.uri.as_str());
         let context = self.languages.feature_context(classpath);
         let response = self.languages.hover(

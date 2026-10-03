@@ -2,18 +2,16 @@ use std::path::Path;
 
 use self::query::{ClassHandle, JvmQuery};
 use crate::model::classes::Class;
-use beans_core::engine::{
-    Revision,
-    storage::{RevisionEntry, RevisionedStorage},
-};
-use beans_core::model::{names::Name, source::Source};
-use beans_core::resolution::query::TypeDefinitionQuery;
+use beans_core::resolution::TypeDefinitionQuery;
+use beans_core::revision::Revision;
+use beans_core::{names::Name, origin::Origin};
+use beans_storage::{RevisionEntry, RevisionedStorage};
 
 pub mod query;
 
 #[derive(Default)]
 pub struct JvmEngine {
-    classes: RevisionedStorage<Source, Vec<Class>>,
+    classes: RevisionedStorage<Origin, Vec<Class>>,
 }
 
 impl JvmEngine {
@@ -26,8 +24,8 @@ impl JvmEngine {
         &mut self,
         revision: Revision,
         classes: Vec<Class>,
-        source: Source,
-    ) -> RevisionEntry<Source> {
+        source: Origin,
+    ) -> RevisionEntry<Origin> {
         self.classes.put(revision, source, classes)
     }
 
@@ -53,8 +51,8 @@ mod tests {
         names::BinaryName,
     };
 
-    fn source(path: &str) -> Source {
-        Source::uri(format!("file:///{path}"))
+    fn source(path: &str) -> Origin {
+        Origin::uri(format!("file:///{path}"))
     }
 
     fn class(name: &str) -> Class {

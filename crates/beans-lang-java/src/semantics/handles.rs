@@ -1,4 +1,4 @@
-use beans_core::{engine::Revision, model::source::Source};
+use beans_core::{origin::Origin, revision::Revision};
 
 use crate::model::nodes::NodeIndex;
 
@@ -6,12 +6,12 @@ use crate::model::nodes::NodeIndex;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DeclarationHandle {
     revision: Revision,
-    source: Source,
+    source: Origin,
     node_index: NodeIndex,
 }
 
 impl DeclarationHandle {
-    pub fn new(revision: Revision, source: Source, node_index: NodeIndex) -> Self {
+    pub fn new(revision: Revision, source: Origin, node_index: NodeIndex) -> Self {
         Self {
             revision,
             source,
@@ -23,7 +23,7 @@ impl DeclarationHandle {
         self.revision
     }
 
-    pub fn source(&self) -> &Source {
+    pub fn source(&self) -> &Origin {
         &self.source
     }
 
