@@ -1,0 +1,9 @@
+# Paths are relative to this file. Dependencies expose sources in one direction.
+# Optional: jdk_home = "/path/to/jdk"
+
+[unit.demo]
+sources = ["src/demo"]
+depends_on = ["library"]
+
+[unit.library]
+sources = ["src/library"]

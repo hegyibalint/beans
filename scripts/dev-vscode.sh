@@ -10,6 +10,8 @@ case "$PROJECT" in
 esac
 
 cargo build -p beans-lsp
+# Crate diagnostics go to stderr, displayed in VS Code's Output -> Beans.
+export RUST_LOG="${RUST_LOG:-beans=debug}"
 # target/ is ignored by git; the server log contains full document contents.
 BEANS_LSP_LOG_PATH="${BEANS_LSP_LOG_PATH:-$PWD/target/beans-lsp.jsonl}"
 export BEANS_LSP_LOG_PATH

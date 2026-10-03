@@ -1,8 +1,18 @@
 Ingress:
 
+- Ingest descriptor-declared compiled inputs, including the selected JDK.
+  TOML initialization currently indexes declared source directories and warns
+  when binary inputs are configured but unavailable.
+- Reload descriptors and rescan sources on file and workspace-folder changes;
+  descriptor edits currently require a server restart.
+- Map platform-provided virtual document URIs to workspace scopes; the TOML
+  backend currently treats them as unclaimed and supplies unrestricted visibility.
+- Pass workspace-selected classpaths into document analysis when it is implemented;
+  synchronization currently only stores or removes models.
 - Add a project import subsystem that recognizes Maven, Gradle, SBT, etc.,
   offers an import choice through LSP, and supplies the resulting classpath.
-  Until then, ingest accepted files across the workspace with `Unrestricted` visibility.
+  Without a `beans.toml`, ingest accepted files across the workspace with
+  `Unrestricted` visibility.
 - Respect gitignored files during the fallback workspace walk when needed.
 
 Navigation:
