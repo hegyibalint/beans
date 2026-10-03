@@ -2,8 +2,10 @@ use std::process::ExitCode;
 
 use lsp_server::Connection;
 
+mod logging;
+
 fn main() -> ExitCode {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+    logging::init();
     let (connection, threads) = Connection::stdio();
     // On failure the reader may still be blocked on stdin; do not join it.
     // A normal exit notification stops the reader, so joining also flushes stdout.

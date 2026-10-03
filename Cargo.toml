@@ -28,7 +28,7 @@ beans-testing = { path = "crates/beans-testing" }
 beans-workspace = { path = "crates/beans-workspace" }
 beans-workspace-toml = { path = "crates/beans-workspace-toml" }
 cafebabe = { version = "0.9", default-features = false }
-env_logger = { version = "0.11", default-features = false }
+env_logger = { version = "0.11", default-features = false, features = ["humantime"] }
 log = "0.4"
 lsp-server = "0.8"
 lsp-types = "0.97"

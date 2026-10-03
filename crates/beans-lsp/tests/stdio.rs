@@ -108,8 +108,19 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
     assert!(child.wait().unwrap().success());
     let mut diagnostics = String::new();
     stderr.read_to_string(&mut diagnostics).unwrap();
-    assert!(diagnostics.contains("Loaded ") && diagnostics.contains("beans.toml: units=2"));
-    assert!(diagnostics.contains("Indexed 2 workspace sources"));
+    let descriptor_log = diagnostics
+        .lines()
+        .find(|line| {
+            line.contains(" [beans-workspace-toml] Loaded ")
+                && line.ends_with("beans.toml: units=2")
+        })
+        .unwrap_or_else(|| panic!("missing descriptor log: {diagnostics}"));
+    let (timestamp, _) = descriptor_log.split_once(' ').unwrap();
+    assert!(timestamp.contains('T') && timestamp.ends_with('Z'));
+    assert!(
+        diagnostics.contains(" [beans-lsp] Indexed 2 workspace sources"),
+        "{diagnostics}"
+    );
     let lines = fs::read_to_string(&log_path).unwrap();
     fs::remove_file(log_path).unwrap();
     let entries: Vec<serde_json::Value> = lines

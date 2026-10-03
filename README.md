@@ -34,6 +34,18 @@ The idea is to allow a community to form around Beans by making it convenient fo
 
 ### Debugging the language server
 
+Diagnostic logs go to stderr, with a UTC timestamp and the emitting crate's name:
+
+```text
+2026-01-01T12:00:00.123Z [beans-workspace-toml] Loaded /project/beans.toml: units=2
+```
+
+The default level is `warn`. Set `RUST_LOG=beans=info` to include informational
+messages from all Beans crates, or `RUST_LOG=beans=debug` for debug messages.
+Crate-specific filters use Rust's underscore names, for example
+`RUST_LOG=beans_workspace_toml=debug`. Existing `log::info!`, `log::debug!`, etc.
+calls supply the crate name automatically; no per-call prefix is needed.
+
 Set `BEANS_LSP_LOG_PATH=/path/to/beans-lsp.jsonl` in the **language server process's** environment, then restart the server. Beans appends one JSON object per line for every incoming LSP request/notification/response and every outgoing response. Each entry includes a Unix `time_ms`, `pid`, `direction`, and the decoded `message`, including request IDs, parameters, results, and errors. Leave the variable unset to disable logging. The parent directory must already exist; an unwritable path prevents the server from starting.
 
 **The log contains document contents and potentially other private client data.** Keep it in a private location and remove or redact it before sharing. Logging does not write to stdout, which is reserved for the LSP transport.
