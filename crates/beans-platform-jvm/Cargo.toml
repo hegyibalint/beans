@@ -9,3 +9,7 @@ license.workspace = true
 beans-core.workspace = true
 beans-storage.workspace = true
 cafebabe.workspace = true
+zip.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
