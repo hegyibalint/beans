@@ -1,27 +1,29 @@
-mod containers;
+mod container;
+mod model;
 
-use beans_core::{origin::Origin, revision::Revision};
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 
-struct PlatformEntry {
-    origin: Origin,
-    class: Class,
-}
+use beans_core::{resource::ResourceId, revision::Revision};
+use beans_storage::RevisionedStorage;
+
+use crate::model::class::Class;
 
 struct JvmPlatform {
-    classes: HashMap<Revision, PlatformEntry>,
+    classes: RevisionedStorage<ResourceId, Class>,
 }
 
 impl JvmPlatform {
-    pub fn accept(path: PathBuf) -> bool {
-        containers::accept(path);
-    }
+    pub fn process(&mut self, revision: Revision, path: PathBuf) -> Result<(), String> {
+        let file =
+            std::fs::File::open(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+        let resource_id = ResourceId::file(path);
+        let entries = container::jar::process(resource_id, file)?;
 
-    pub fn process(path: PathBuf) -> Result<PlatformEntry, String> {
-        return containers::process(path);
-    }
+        for entry in entries {
+            let (id, class) = entry?;
+            self.classes.put(revision, id, class);
+        }
 
-    pub fn store(self: &mut Self, revision: Revision, entry: PlatformEntry) {
-        self.classes.insert(revision, entry);
+        Ok(())
     }
 }

@@ -1,1 +1,1 @@
-struct Class {}
+pub struct Class {}

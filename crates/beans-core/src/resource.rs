@@ -1,12 +1,6 @@
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ResourceId {
-    pub root: ResourceRoot,
-    pub entries: Vec<ResourceEntry>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ResourceRoot {
     File { path: PathBuf },
     Virtual { provider: String, key: String },
@@ -15,7 +9,17 @@ pub enum ResourceRoot {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ResourceEntry(pub String);
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ResourceId {
+    pub root: ResourceRoot,
+    pub entries: Vec<ResourceEntry>,
+}
+
 impl ResourceId {
+    pub fn file(path: impl Into<PathBuf>) -> Self {
+        Self::new(ResourceRoot::File { path: path.into() })
+    }
+
     pub fn new(root: ResourceRoot) -> Self {
         Self {
             root,
@@ -36,7 +40,19 @@ mod tests {
     use std::collections::HashSet;
 
     fn file(path: &str) -> ResourceId {
-        ResourceId::new(ResourceRoot::File { path: path.into() })
+        ResourceId::file(path)
+    }
+
+    #[test]
+    fn file_constructor_preserves_the_path_and_has_no_entries() {
+        let path = PathBuf::from("relative/../library.jar");
+        let id = ResourceId::file(path.clone());
+        assert_eq!(id.root, ResourceRoot::File { path });
+        assert!(id.entries.is_empty());
+        assert_eq!(
+            ResourceId::file("library.jar"),
+            ResourceId::file(PathBuf::from("library.jar"))
+        );
     }
 
     fn entry(name: &str) -> ResourceEntry {
