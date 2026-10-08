@@ -1,12 +1,16 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
-use beans_core::origin::Origin;
+use beans_core::resource::{ResourceEntry, ResourceId, ResourceRoot};
 use beans_workspace::Workspace;
 
 use crate::{
     engine::TomlWorkspace,
     model::{Project, Unit},
 };
+
+fn entry(path: &str, name: &str) -> ResourceId {
+    ResourceId::new(ResourceRoot::File { path: path.into() }).entry(ResourceEntry(name.into()))
+}
 
 fn unit(sources: &[&str], artifact: &str) -> Unit {
     Unit {
@@ -47,8 +51,8 @@ fn each_document_selects_its_own_units_policy() {
         ),
     ] {
         let classpath = workspace.classpath_for(document);
-        assert!(classpath.contains(&Origin::jar_entry(visible, "Example.class")));
-        assert!(!classpath.contains(&Origin::jar_entry(hidden, "Example.class")));
+        assert!(classpath.contains_class(&entry(visible, "Example.class")));
+        assert!(!classpath.contains_class(&entry(hidden, "Example.class")));
     }
 }
 
@@ -60,9 +64,9 @@ fn shared_roots_combine_the_policies_of_all_owners() {
     ]);
     let classpath = workspace.classpath_for("file:///project/shared/Future.java");
 
-    assert!(classpath.contains(&Origin::jar_entry("/project/app.jar", "Example.class")));
-    assert!(classpath.contains(&Origin::jar_entry("/project/lib.jar", "Example.class")));
-    assert!(!classpath.contains(&Origin::jar_entry("/project/other.jar", "Example.class")));
+    assert!(classpath.contains_class(&entry("/project/app.jar", "Example.class")));
+    assert!(classpath.contains_class(&entry("/project/lib.jar", "Example.class")));
+    assert!(!classpath.contains_class(&entry("/project/other.jar", "Example.class")));
 }
 
 #[test]
@@ -77,10 +81,10 @@ fn nested_roots_add_owners_only_within_the_nested_tree() {
     let nested = workspace.classpath_for("file:///project/src/nested/Future.java");
     let outer = workspace.classpath_for("file:///project/src/Future.java");
 
-    assert!(nested.contains(&Origin::jar_entry("/project/broad.jar", "Example.class")));
-    assert!(nested.contains(&Origin::jar_entry("/project/nested.jar", "Example.class")));
-    assert!(outer.contains(&Origin::jar_entry("/project/broad.jar", "Example.class")));
-    assert!(!outer.contains(&Origin::jar_entry("/project/nested.jar", "Example.class")));
+    assert!(nested.contains_class(&entry("/project/broad.jar", "Example.class")));
+    assert!(nested.contains_class(&entry("/project/nested.jar", "Example.class")));
+    assert!(outer.contains_class(&entry("/project/broad.jar", "Example.class")));
+    assert!(!outer.contains_class(&entry("/project/nested.jar", "Example.class")));
 }
 
 #[test]
@@ -98,7 +102,7 @@ fn unclaimed_and_non_file_documents_remain_unrestricted() {
         assert!(
             workspace
                 .classpath_for(uri)
-                .contains(&Origin::jar_entry("/unrelated.jar", "Example.class")),
+                .contains_class(&entry("/unrelated.jar", "Example.class")),
             "{uri}"
         );
     }
@@ -109,6 +113,6 @@ fn file_uris_are_decoded_before_ownership_is_selected() {
     let workspace = workspace(&[("app", unit(&["/project/my sources"], "/project/app.jar"))]);
     let classpath = workspace.classpath_for("file:///project/my%20sources/Future.java");
 
-    assert!(classpath.contains(&Origin::jar_entry("/project/app.jar", "Example.class")));
-    assert!(!classpath.contains(&Origin::jar_entry("/unrelated.jar", "Example.class")));
+    assert!(classpath.contains_class(&entry("/project/app.jar", "Example.class")));
+    assert!(!classpath.contains_class(&entry("/unrelated.jar", "Example.class")));
 }

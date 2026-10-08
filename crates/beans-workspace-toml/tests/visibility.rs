@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use beans_core::origin::Origin;
+use beans_core::resource::{ResourceId, ResourceRoot};
 use beans_workspace::Workspaces;
 use beans_workspace_toml::parse;
 
@@ -25,6 +25,7 @@ fn descriptor_visibility_reaches_the_workspaces_facade() {
 
     let classpath = workspaces.classpath_for("file:///project/app/src/Use.java");
 
-    assert!(classpath.contains(&Origin::uri("file:///project/lib/src/Target.java")));
-    assert!(!classpath.contains(&Origin::uri("file:///project/other/src/Target.java")));
+    let file = |path: &str| ResourceId::new(ResourceRoot::File { path: path.into() });
+    assert!(classpath.contains_source(&file("/project/lib/src/Target.java")));
+    assert!(!classpath.contains_source(&file("/project/other/src/Target.java")));
 }

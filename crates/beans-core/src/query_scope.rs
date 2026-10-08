@@ -1,6 +1,6 @@
 use crate::{classpath::Classpath, revision::Revision};
 
-/// Selects which model versions and origins a query can see.
+/// Selects which model versions and resources a query can see.
 /// This is a query boundary, not a language's lexical scope or an owned snapshot.
 #[derive(Clone, Copy)]
 pub struct QueryScope<'a> {

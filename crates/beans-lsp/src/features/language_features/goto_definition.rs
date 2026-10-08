@@ -69,8 +69,12 @@ mod tests {
     }
 
     impl Classpath for TestWorkspace {
-        fn contains(&self, source: &Origin) -> bool {
+        fn contains_source(&self, source: &Origin) -> bool {
             source == &self.visible
+        }
+
+        fn contains_class(&self, _source: &Origin) -> bool {
+            false
         }
     }
 

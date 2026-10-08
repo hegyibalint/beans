@@ -1,8 +1,18 @@
-use beans_core::{classpath::Classpath, origin::Origin};
-
-use crate::model::Unit;
+use beans_core::{
+    classpath::Classpath,
+    resource::{ResourceEntry, ResourceId, ResourceRoot},
+};
 
 use super::{classpath, unit};
+use crate::model::Unit;
+
+fn file(path: &str) -> ResourceId {
+    ResourceId::new(ResourceRoot::File { path: path.into() })
+}
+
+fn entry(path: &str, name: &str) -> ResourceId {
+    file(path).entry(ResourceEntry(name.into()))
+}
 
 #[test]
 fn classpath_entries_admit_standalone_classes_and_classes_in_output_directories() {
@@ -13,13 +23,20 @@ fn classpath_entries_admit_standalone_classes_and_classes_in_output_directories(
         },
         &[],
     );
-
-    assert!(classpath.contains(&Origin::class_file("/project/Feature.class")));
-    assert!(classpath.contains(&Origin::class_file("/project/out/p/Feature.class")));
-    assert!(classpath.contains(&Origin::class_file("/project/out/p/../Feature.class")));
-    assert!(!classpath.contains(&Origin::class_file("/project/Other.class")));
-    assert!(!classpath.contains(&Origin::class_file("/project/out-other/Feature.class")));
-    assert!(!classpath.contains(&Origin::class_file("out/Feature.class")));
+    for path in [
+        "/project/Feature.class",
+        "/project/out/p/Feature.class",
+        "/project/out/p/../Feature.class",
+    ] {
+        assert!(classpath.contains_class(&file(path)));
+    }
+    for path in [
+        "/project/Other.class",
+        "/project/out-other/Feature.class",
+        "out/Feature.class",
+    ] {
+        assert!(!classpath.contains_class(&file(path)));
+    }
 }
 
 #[test]
@@ -35,38 +52,51 @@ fn archive_entries_are_matched_by_their_container_not_entry_name() {
         },
         &[],
     );
-
-    for source in [
-        Origin::jar_entry("/project/lib.jar", "p/Feature.class"),
-        Origin::jmod_entry("/project/lib.jmod", "classes/p/Feature.class"),
-        Origin::jimage_entry("/project/modules", "java.base/p/Feature.class"),
+    for (path, name) in [
+        ("/project/lib.jar", "p/Feature.class"),
+        ("/project/lib.jmod", "classes/p/Feature.class"),
+        ("/project/modules", "java.base/p/Feature.class"),
     ] {
-        assert!(classpath.contains(&source), "{source:?}");
+        assert!(classpath.contains_class(&entry(path, name)));
     }
-    for source in [
-        Origin::jar_entry("/project/other.jar", "p/Feature.class"),
-        Origin::jmod_entry("/project/other.jmod", "classes/p/Feature.class"),
-        Origin::jimage_entry("/project/other-modules", "java.base/p/Feature.class"),
-        Origin::jar_entry("lib.jar", "p/Feature.class"),
+    for path in [
+        "/project/other.jar",
+        "/project/other.jmod",
+        "/project/other-modules",
+        "lib.jar",
     ] {
-        assert!(!classpath.contains(&source), "{source:?}");
+        assert!(!classpath.contains_class(&entry(path, "p/Feature.class")));
     }
 }
 
 #[test]
-fn a_classpath_directory_does_not_implicitly_include_archives_inside_it() {
+fn directories_do_not_implicitly_include_archives_inside_them() {
     let classpath = classpath(
         Unit {
             classpath: vec!["/project/lib".into()],
+            ..unit(&["/project/src"])
+        },
+        &[],
+    );
+    for path in ["/project/lib/dependency.jar", "/project/src/dependency.jar"] {
+        assert!(!classpath.contains_class(&entry(path, "p/Feature.class")));
+    }
+}
+
+#[test]
+fn nested_entries_follow_the_explicitly_included_outer_artifact() {
+    let classpath = classpath(
+        Unit {
+            classpath: vec!["/project/app.zip".into()],
             ..unit(&[])
         },
         &[],
     );
-
-    assert!(!classpath.contains(&Origin::jar_entry(
-        "/project/lib/dependency.jar",
-        "p/Feature.class"
-    )));
+    let nested =
+        entry("/project/app.zip", "lib/a.jar").entry(ResourceEntry("p/Feature.class".into()));
+    let other = entry("/other/app.zip", "lib/a.jar").entry(ResourceEntry("p/Feature.class".into()));
+    assert!(classpath.contains_class(&nested));
+    assert!(!classpath.contains_class(&other));
 }
 
 #[test]
@@ -78,16 +108,15 @@ fn a_jdk_contributes_only_its_own_runtime_image() {
         },
         &[],
     );
-
-    assert!(classpath.contains(&Origin::jimage_entry(
+    assert!(classpath.contains_class(&entry(
         "/jdk/lib/modules",
         "java.base/java/lang/Object.class"
     )));
-    assert!(!classpath.contains(&Origin::jimage_entry(
+    assert!(!classpath.contains_class(&entry(
         "/other-jdk/lib/modules",
         "java.base/java/lang/Object.class"
     )));
-    assert!(!classpath.contains(&Origin::jmod_entry(
+    assert!(!classpath.contains_class(&entry(
         "/jdk/jmods/java.base.jmod",
         "classes/java/lang/Object.class"
     )));
@@ -109,9 +138,8 @@ fn dependencies_do_not_export_their_classpaths_or_jdks() {
             },
         )],
     );
-
-    assert!(!classpath.contains(&Origin::jar_entry("/project/lib.jar", "Feature.class")));
-    assert!(!classpath.contains(&Origin::jimage_entry(
+    assert!(!classpath.contains_class(&entry("/project/lib.jar", "Feature.class")));
+    assert!(!classpath.contains_class(&entry(
         "/jdk/lib/modules",
         "java.base/java/lang/Object.class"
     )));

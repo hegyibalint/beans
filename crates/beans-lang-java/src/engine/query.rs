@@ -64,7 +64,7 @@ impl<'a> JavaQuery<'a> {
 
         for (source, file) in self.files.iter(self.scope.revision()) {
             if !matches!(source, Origin::Document { .. })
-                || !self.scope.classpath().contains(source)
+                || !self.scope.classpath().contains_source(source)
             {
                 continue;
             }
@@ -114,7 +114,11 @@ mod tests {
     struct NoSources;
 
     impl Classpath for NoSources {
-        fn contains(&self, _source: &Origin) -> bool {
+        fn contains_source(&self, _source: &Origin) -> bool {
+            false
+        }
+
+        fn contains_class(&self, _source: &Origin) -> bool {
             false
         }
     }
@@ -122,8 +126,12 @@ mod tests {
     struct SelectedSource<'a>(&'a Origin);
 
     impl Classpath for SelectedSource<'_> {
-        fn contains(&self, source: &Origin) -> bool {
+        fn contains_source(&self, source: &Origin) -> bool {
             source == self.0
+        }
+
+        fn contains_class(&self, _source: &Origin) -> bool {
+            false
         }
     }
 

@@ -1,20 +1,32 @@
 use beans_core::{
     classpath::{Classpath, Unrestricted},
-    origin::Origin,
+    resource::{ResourceEntry, ResourceId, ResourceRoot},
 };
 
 use crate::{Workspace, Workspaces};
 
-struct Visible(Origin);
+fn entry(name: &str) -> ResourceId {
+    ResourceId::new(ResourceRoot::Virtual {
+        provider: "test".into(),
+        key: name.into(),
+    })
+    .entry(ResourceEntry("Example.class".into()))
+}
+
+struct Visible(ResourceId);
 
 impl Visible {
     fn new(name: &str) -> Self {
-        Self(Origin::jar_entry(name, "Example.class"))
+        Self(entry(name))
     }
 }
 
 impl Classpath for Visible {
-    fn contains(&self, source: &Origin) -> bool {
+    fn contains_source(&self, _source: &ResourceId) -> bool {
+        false
+    }
+
+    fn contains_class(&self, source: &ResourceId) -> bool {
         source == &self.0
     }
 }
@@ -28,7 +40,7 @@ impl Workspace for Visible {
 fn sees(workspaces: &Workspaces, uri: &str, artifact: &str) -> bool {
     workspaces
         .classpath_for(uri)
-        .contains(&Origin::jar_entry(artifact, "Example.class"))
+        .contains_class(&entry(artifact))
 }
 
 #[test]

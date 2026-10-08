@@ -1,4 +1,5 @@
 mod artifacts;
+mod separation;
 mod sources;
 
 use crate::model::{Project, Unit};

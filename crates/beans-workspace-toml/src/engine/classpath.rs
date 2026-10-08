@@ -1,10 +1,13 @@
 use std::{collections::BTreeSet, path::PathBuf};
 
-use beans_core::{classpath::Classpath, origin::Origin};
+use beans_core::{
+    classpath::Classpath,
+    resource::{ResourceId, ResourceRoot},
+};
 
 use crate::{
     model::{Project, Unit},
-    paths::{document_path, normalize},
+    paths::normalize,
 };
 
 #[derive(Debug, Default)]
@@ -31,23 +34,29 @@ impl SourceClasspath {
 mod tests;
 
 impl Classpath for SourceClasspath {
-    fn contains(&self, source: &Origin) -> bool {
-        match source {
-            Origin::Document { uri } => document_path(uri)
-                .is_some_and(|path| self.source_roots.iter().any(|root| path.starts_with(root))),
-            Origin::Class { path } => {
-                path.is_absolute() && {
-                    let path = normalize(path);
-                    self.artifacts.iter().any(|root| path.starts_with(root))
-                }
-            }
-            Origin::JarEntry { jar_path: path, .. }
-            | Origin::JmodEntry {
-                jmod_path: path, ..
-            }
-            | Origin::JimageEntry {
-                jimage_path: path, ..
-            } => path.is_absolute() && self.artifacts.contains(&normalize(path)),
+    fn contains_source(&self, resource: &ResourceId) -> bool {
+        let ResourceRoot::File { path } = &resource.root else {
+            return false;
+        };
+        if !path.is_absolute() || !resource.entries.is_empty() {
+            return false;
+        }
+        let path = normalize(path);
+        self.source_roots.iter().any(|root| path.starts_with(root))
+    }
+
+    fn contains_class(&self, resource: &ResourceId) -> bool {
+        let ResourceRoot::File { path } = &resource.root else {
+            return false;
+        };
+        if !path.is_absolute() {
+            return false;
+        }
+        let path = normalize(path);
+        if resource.entries.is_empty() {
+            self.artifacts.iter().any(|root| path.starts_with(root))
+        } else {
+            self.artifacts.contains(&path)
         }
     }
 }

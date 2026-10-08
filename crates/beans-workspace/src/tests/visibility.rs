@@ -1,6 +1,16 @@
-use beans_core::{classpath::Classpath, origin::Origin};
+use beans_core::{
+    classpath::Classpath,
+    resource::{ResourceEntry, ResourceId, ResourceRoot},
+};
 
 use crate::{Workspace, Workspaces};
+
+fn library_entry() -> ResourceId {
+    ResourceId::new(ResourceRoot::File {
+        path: "/library.jar".into(),
+    })
+    .entry(ResourceEntry("Example.class".into()))
+}
 
 #[test]
 fn unconfigured_workspaces_supply_unrestricted_visibility_for_document_uris() {
@@ -11,7 +21,8 @@ fn unconfigured_workspaces_supply_unrestricted_visibility_for_document_uris() {
     ] {
         let classpath = workspaces.classpath_for(uri);
 
-        assert!(classpath.contains(&Origin::jar_entry("library.jar", "Example.class")));
+        assert!(classpath.contains_source(&library_entry()));
+        assert!(classpath.contains_class(&library_entry()));
     }
 }
 
@@ -19,10 +30,14 @@ fn unconfigured_workspaces_supply_unrestricted_visibility_for_document_uris() {
 fn configured_workspaces_forward_the_document_uri_and_borrow_backend_visibility() {
     struct SelectedSource {
         document: String,
-        visible: Origin,
+        visible: ResourceId,
     }
     impl Classpath for SelectedSource {
-        fn contains(&self, source: &Origin) -> bool {
+        fn contains_source(&self, _source: &ResourceId) -> bool {
+            false
+        }
+
+        fn contains_class(&self, source: &ResourceId) -> bool {
             source == &self.visible
         }
     }
@@ -33,7 +48,7 @@ fn configured_workspaces_forward_the_document_uri_and_borrow_backend_visibility(
         }
     }
     let uri = "beans-jvm:///library/Example.class";
-    let visible = Origin::jar_entry("library.jar", "Example.class");
+    let visible = library_entry();
     let workspaces = Workspaces::new(SelectedSource {
         document: uri.into(),
         visible: visible.clone(),
@@ -41,6 +56,11 @@ fn configured_workspaces_forward_the_document_uri_and_borrow_backend_visibility(
 
     let classpath = workspaces.classpath_for(uri);
 
-    assert!(classpath.contains(&visible));
-    assert!(!classpath.contains(&Origin::uri("file:///unrelated/Other.java")));
+    assert!(!classpath.contains_source(&visible));
+    assert!(classpath.contains_class(&visible));
+    assert!(
+        !classpath.contains_class(&ResourceId::new(ResourceRoot::File {
+            path: "/unrelated/Other.java".into(),
+        }))
+    );
 }

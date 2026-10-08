@@ -2,8 +2,9 @@
 
 pub mod classpath;
 pub mod features;
+pub mod input;
 pub mod names;
-pub mod origin;
+pub mod resource;
 pub mod query_scope;
 pub mod ranges;
 pub mod resolution;

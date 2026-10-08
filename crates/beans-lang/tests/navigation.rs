@@ -10,7 +10,11 @@ use beans_lang::{DefinitionProvider, DefinitionRequest, Languages};
 fn imported_type_navigation_obeys_supplied_visibility() {
     struct NoSources;
     impl Classpath for NoSources {
-        fn contains(&self, _source: &Origin) -> bool {
+        fn contains_source(&self, _source: &Origin) -> bool {
+            false
+        }
+
+        fn contains_class(&self, _source: &Origin) -> bool {
             false
         }
     }

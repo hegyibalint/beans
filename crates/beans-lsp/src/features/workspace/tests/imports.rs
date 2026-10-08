@@ -56,7 +56,7 @@ fn declared_sources_outside_the_project_root_are_indexed_and_scoped() {
         !features
             .workspaces
             .classpath_for(uri.as_str())
-            .contains(&Origin::jar_entry("/unrelated.jar", "Example.class"))
+            .contains_class(&Origin::jar_entry("/unrelated.jar", "Example.class"))
     );
 }
 
@@ -74,7 +74,7 @@ fn an_absent_descriptor_keeps_fallback_ingestion_and_unrestricted_visibility() {
         features
             .workspaces
             .classpath_for(uri.as_str())
-            .contains(&Origin::jar_entry("/unrelated.jar", "Example.class"))
+            .contains_class(&Origin::jar_entry("/unrelated.jar", "Example.class"))
     );
 }
 
