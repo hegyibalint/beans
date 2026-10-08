@@ -18,5 +18,3 @@ beans-vscode/out/
 
 # Ephemeral agentic plan files
 PLAN*.md
-# Local, untracked agent memory
-CLAUDE.local.md
