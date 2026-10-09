@@ -27,6 +27,3 @@ pub fn process(
         super::class::process(entry_id, entry).transpose()
     }))
 }
-
-#[cfg(test)]
-mod tests;

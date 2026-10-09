@@ -60,6 +60,7 @@ version = "0.0.1"
 dependencies = [
  "beans-core",
  "beans-storage",
+ "beans-testing",
  "cafebabe",
  "tempfile",
  "zip",
@@ -75,6 +76,10 @@ dependencies = [
 [[package]]
 name = "beans-testing"
 version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "beans-workspace"

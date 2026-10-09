@@ -4,10 +4,10 @@ use beans_core::resource::ResourceId;
 
 use crate::model::class::Class;
 
-pub fn process(id: ResourceId, _reader: impl Read) -> Result<Option<(ResourceId, Class)>, String> {
-    // Check _reader starts with 0xCAFEBABE
-
-    // Use parser.rs to deliver the model
-    // Return the tuple
-    Err(format!("{id:?}: class processing is not implemented"))
+pub fn process(id: ResourceId, reader: impl Read) -> Result<Option<(ResourceId, Class)>, String> {
+    let class = crate::parser::parse(reader).map_err(|error| format!("{id:?}: {error}"))?;
+    Ok(class.map(|class| (id, class)))
 }
+
+#[cfg(test)]
+mod tests;

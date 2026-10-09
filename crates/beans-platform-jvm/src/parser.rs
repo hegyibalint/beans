@@ -1,1 +1,27 @@
-pub fn parse(reader: impl Read) -> Result<Option<Class>, String> {}
+use std::io::Read;
+
+use crate::model::class::Class;
+
+pub fn parse(mut reader: impl Read) -> Result<Option<Class>, String> {
+    let mut options = cafebabe::ParseOptions::default();
+    options.parse_bytecode(false);
+
+    let mut bytes = Vec::new();
+    reader
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+
+    // See JVMS §4: the class-file magic is 0xCAFEBABE.
+    if !bytes.starts_with(&[0xCA, 0xFE, 0xBA, 0xBE]) {
+        return Ok(None);
+    }
+
+    let class =
+        cafebabe::parse_class_with_options(&bytes, &options).map_err(|error| error.to_string())?;
+    Ok(Some(Class {
+        name: class.this_class.to_string(),
+    }))
+}
+
+#[cfg(test)]
+mod tests;

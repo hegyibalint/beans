@@ -1,5 +1,9 @@
 mod container;
 mod model;
+mod parser;
+
+#[cfg(test)]
+mod tests;
 
 use std::path::PathBuf;
 

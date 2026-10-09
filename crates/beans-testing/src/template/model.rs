@@ -50,7 +50,7 @@ mod tests {
             span(1, 4).positions("abcdef").collect::<Vec<_>>(),
             [1, 2, 3]
         );
-        assert_eq!(span(2, 2).positions("abcdef").collect::<Vec<_>>(), []);
+        assert!(span(2, 2).positions("abcdef").next().is_none());
     }
 
     #[test]

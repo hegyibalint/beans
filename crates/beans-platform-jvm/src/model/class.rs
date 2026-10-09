@@ -1,1 +1,3 @@
-pub struct Class {}
+pub struct Class {
+    pub name: String,
+}
