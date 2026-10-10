@@ -15,11 +15,12 @@ use beans_storage::RevisionedStorage;
 
 use crate::model::class::Class;
 
-struct JvmPlatform {
+#[derive(Default)]
+pub struct JvmEngine {
     classes: RevisionedStorage<ResourceId, Class>,
 }
 
-impl JvmPlatform {
+impl JvmEngine {
     pub fn process_jdk_home(&mut self, revision: Revision, home: &Path) -> Result<(), String> {
         for artifact in jdk_artifacts(home)? {
             self.process(revision, artifact)?;

@@ -53,9 +53,7 @@ fn stores_classes_from_each_container_format() {
     ] {
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(&bytes).unwrap();
-        let mut platform = JvmPlatform {
-            classes: RevisionedStorage::default(),
-        };
+        let mut platform = JvmEngine::default();
         let revision = Revision::new(1);
 
         platform.process(revision, file.path().to_owned()).unwrap();
@@ -76,9 +74,7 @@ fn stores_classes_from_each_container_format() {
 fn recognized_empty_container_does_not_fall_through() {
     let mut file = NamedTempFile::new().unwrap();
     file.write_all(&jar_bytes(None)).unwrap();
-    let mut platform = JvmPlatform {
-        classes: RevisionedStorage::default(),
-    };
+    let mut platform = JvmEngine::default();
     let revision = Revision::new(1);
 
     platform.process(revision, file.path().to_owned()).unwrap();
@@ -96,9 +92,7 @@ fn reports_unknown_formats_and_preserves_recognized_errors() {
     ] {
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(bytes).unwrap();
-        let mut platform = JvmPlatform {
-            classes: RevisionedStorage::default(),
-        };
+        let mut platform = JvmEngine::default();
         let revision = Revision::new(1);
 
         let error = platform
@@ -130,9 +124,7 @@ fn imports_each_jdk_runtime_layout() {
         let path = home.path().join(relative);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, bytes).unwrap();
-        let mut platform = JvmPlatform {
-            classes: RevisionedStorage::default(),
-        };
+        let mut platform = JvmEngine::default();
         let revision = Revision::new(1);
 
         assert_eq!(jdk_artifacts(home.path()).unwrap(), vec![path.clone()]);
@@ -165,9 +157,7 @@ fn invalid_existing_runtime_does_not_fall_back() {
     std::fs::create_dir_all(home.path().join("jre/lib")).unwrap();
     std::fs::write(home.path().join("lib/modules"), b"invalid image").unwrap();
     std::fs::write(home.path().join("jre/lib/rt.jar"), jar_bytes(None)).unwrap();
-    let mut platform = JvmPlatform {
-        classes: RevisionedStorage::default(),
-    };
+    let mut platform = JvmEngine::default();
 
     let error = platform
         .process_jdk_home(Revision::new(1), home.path())
@@ -212,9 +202,7 @@ fn legacy_layouts_import_optional_tools() {
             jar_bytes(Some(&support::class_bytes("example/Tools"))),
         )
         .unwrap();
-        let mut platform = JvmPlatform {
-            classes: RevisionedStorage::default(),
-        };
+        let mut platform = JvmEngine::default();
         let revision = Revision::new(1);
 
         assert_eq!(
@@ -240,9 +228,7 @@ fn modern_layout_ignores_legacy_artifacts() {
     std::fs::write(&runtime, jimage_bytes(&support::class_bytes("example/Foo"))).unwrap();
     std::fs::write(home.path().join("jre/lib/rt.jar"), b"invalid").unwrap();
     std::fs::write(home.path().join("lib/rt.jar"), b"invalid").unwrap();
-    let mut platform = JvmPlatform {
-        classes: RevisionedStorage::default(),
-    };
+    let mut platform = JvmEngine::default();
     let revision = Revision::new(1);
 
     assert_eq!(jdk_artifacts(home.path()).unwrap(), vec![runtime]);
@@ -284,9 +270,7 @@ fn parsing_optional_artifact_errors_are_not_ignored() {
     std::fs::create_dir_all(home.path().join("lib")).unwrap();
     std::fs::write(home.path().join("lib/rt.jar"), jar_bytes(None)).unwrap();
     std::fs::write(home.path().join("lib/tools.jar"), b"invalid tools").unwrap();
-    let mut platform = JvmPlatform {
-        classes: RevisionedStorage::default(),
-    };
+    let mut platform = JvmEngine::default();
 
     let error = platform
         .process_jdk_home(Revision::new(1), home.path())

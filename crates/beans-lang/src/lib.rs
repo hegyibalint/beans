@@ -5,7 +5,7 @@ use std::path::Path;
 use beans_core::origin::Origin;
 use beans_core::revision::Revision;
 use beans_lang_java::engine::JavaEngine;
-use beans_platform_jvm::engine::JvmEngine;
+use beans_platform_jvm::JvmEngine;
 
 pub mod features;
 
@@ -14,12 +14,6 @@ pub use features::{
     LanguageFeatures, LanguagesFeatureContext, NavigationResult,
 };
 
-/// Owns semantic state and exposes features without exposing its verticals.
-///
-/// ```compile_fail
-/// let languages = beans_lang::Languages::default();
-/// let _ = languages.java();
-/// ```
 #[derive(Default)]
 pub struct Languages {
     revision: Revision,
