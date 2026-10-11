@@ -1,0 +1,12 @@
+[package]
+name = "beans-engine"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+beans-core.workspace = true
+beans-lang.workspace = true
+beans-workspace.workspace = true
+crossbeam-channel.workspace = true

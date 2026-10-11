@@ -16,6 +16,16 @@ name = "beans-core"
 version = "0.0.1"
 
 [[package]]
+name = "beans-engine"
+version = "0.0.1"
+dependencies = [
+ "beans-core",
+ "beans-lang",
+ "beans-workspace",
+ "crossbeam-channel",
+]
+
+[[package]]
 name = "beans-lang"
 version = "0.0.1"
 dependencies = [
