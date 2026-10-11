@@ -5,13 +5,20 @@ use beans_lang_java::engine::JavaLanguage;
 use beans_platform_jvm::JvmPlatform;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 
+mod features;
+
 #[cfg(test)]
 mod tests;
 
 pub struct Engine {
+    // Monotonic version where we are.
     revision: Revision,
-    java: JavaLanguage,
+
+    // Language verticals
     jvm: JvmPlatform,
+    java: JavaLanguage,
+
+    // Event bus
     sender: Sender<Event>,
     events: Receiver<Event>,
 }
