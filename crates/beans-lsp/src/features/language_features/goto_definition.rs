@@ -1,5 +1,5 @@
+use beans_core::features::{DefinitionProvider, DefinitionRequest};
 use beans_core::origin::Origin;
-use beans_lang::{DefinitionProvider, DefinitionRequest};
 use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, LocationLink, Range};
 
 use super::super::Features;
@@ -57,7 +57,7 @@ mod tests {
 
     use super::*;
     use beans_core::classpath::Classpath;
-    use beans_lang::HoverProvider;
+    use beans_core::features::HoverProvider;
     use beans_workspace::{Workspace, Workspaces};
     use lsp_types::{DidOpenTextDocumentParams, TextDocumentItem};
     use serde_json::json;

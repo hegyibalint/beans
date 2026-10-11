@@ -1,10 +1,11 @@
 use beans_core::{
     classpath::{Classpath, Unrestricted},
+    features::{DefinitionProvider, DefinitionRequest},
     origin::Origin,
     ranges::ByteRange,
     source::SourceSpan,
 };
-use beans_lang::{DefinitionProvider, DefinitionRequest, Languages};
+use beans_lang::Languages;
 
 #[test]
 fn imported_type_navigation_obeys_supplied_visibility() {

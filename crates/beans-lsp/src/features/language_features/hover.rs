@@ -1,5 +1,5 @@
+use beans_core::features::{HoverProvider, HoverRequest};
 use beans_core::origin::Origin;
-use beans_lang::{HoverProvider, HoverRequest};
 use lsp_types::{Hover, HoverContents, HoverParams, MarkupContent, MarkupKind, Range};
 
 use super::super::Features;

@@ -4,8 +4,8 @@ use std::path::Path;
 
 use beans_core::origin::Origin;
 use beans_core::revision::Revision;
-use beans_lang_java::engine::JavaEngine;
-use beans_platform_jvm::JvmEngine;
+use beans_lang_java::engine::JavaLanguage;
+use beans_platform_jvm::JvmPlatform;
 
 pub mod features;
 
@@ -17,8 +17,8 @@ pub use features::{
 #[derive(Default)]
 pub struct Languages {
     revision: Revision,
-    java: JavaEngine,
-    jvm: JvmEngine,
+    java: JavaLanguage,
+    jvm: JvmPlatform,
 }
 
 impl Languages {

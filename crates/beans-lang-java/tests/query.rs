@@ -4,18 +4,18 @@ use beans_core::{
 };
 use beans_core::{query_scope::QueryScope, revision::Revision};
 use beans_lang_java::{
-    engine::JavaEngine,
+    engine::JavaLanguage,
     lowering::lower_into,
     model::nodes::NodeKind,
     semantics::resolution::{
         Context, JavaTypeCandidate, TypeCandidate, query::ResolutionQuery, resolve,
     },
 };
-use beans_platform_jvm::engine::JvmEngine;
+use beans_platform_jvm::JvmPlatform;
 
 #[test]
 fn stored_models_can_be_resolved_using_the_engines_query() {
-    let mut engine = JavaEngine::default();
+    let mut engine = JavaLanguage::default();
     let revision = Revision::new(3);
     let entry = engine.store(
         revision,
@@ -56,7 +56,7 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
 
 #[test]
 fn an_imported_type_resolves_to_another_stored_source_file() {
-    let mut engine = JavaEngine::default();
+    let mut engine = JavaLanguage::default();
     let revision = Revision::new(1);
     let use_source = Origin::uri("file:///src/p/Use.java");
     let target_source = Origin::uri("file:///src/q/Target.java");
@@ -72,7 +72,7 @@ fn an_imported_type_resolves_to_another_stored_source_file() {
     );
     let classpath = Unrestricted;
     let java = engine.query(QueryScope::new(revision, &classpath));
-    let jvm = JvmEngine::default();
+    let jvm = JvmPlatform::default();
     let definitions = ResolutionQuery::new(&java, &jvm);
     let file = java.file(&use_source).unwrap();
     let field = file

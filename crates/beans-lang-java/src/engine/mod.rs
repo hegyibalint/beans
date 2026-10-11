@@ -12,11 +12,15 @@ use url::Url;
 pub mod query;
 
 #[derive(Default)]
-pub struct JavaEngine {
+pub struct JavaLanguage {
     files: RevisionedStorage<Origin, File>,
 }
 
-impl JavaEngine {
+impl JavaLanguage {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn accept(&self, path: &Path) -> bool {
         path.extension()
             .is_some_and(|extension| extension == "java")
@@ -71,7 +75,7 @@ mod tests {
 
     #[test]
     fn accept_recognizes_java_source_paths() {
-        let engine = JavaEngine::default();
+        let engine = JavaLanguage::default();
 
         assert!(engine.accept(Path::new("src/example/Example.java")));
         assert!(engine.accept(Path::new("virtual/*Example.java")));
@@ -84,7 +88,7 @@ mod tests {
 
     #[test]
     fn process_lowers_java_source_without_storing_it() {
-        let engine = JavaEngine::default();
+        let engine = JavaLanguage::default();
 
         let file = engine.process("package example; class Example {}");
 
@@ -93,7 +97,7 @@ mod tests {
 
     #[test]
     fn store_returns_the_address_of_the_supplied_model() {
-        let mut engine = JavaEngine::default();
+        let mut engine = JavaLanguage::default();
         let revision = Revision::default();
         let source = Origin::uri("file:///Example.java");
         let mut model = File::new();

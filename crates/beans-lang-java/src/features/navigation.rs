@@ -7,7 +7,7 @@ use beans_core::{
 };
 
 use crate::{
-    engine::JavaEngine,
+    engine::JavaLanguage,
     model::{File, nodes::NodeKind, references::TypeRef, type_references::find_in_reference},
     semantics::resolution::{
         Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate,
@@ -20,7 +20,7 @@ use super::JavaFeatureContext;
 
 impl<'request>
     DefinitionProvider<JavaFeatureContext<'_>, DefinitionRequest<'request>, NavigationResult>
-    for JavaEngine
+    for JavaLanguage
 {
     /// Finds a type definition at a Java source position using the visible Java and JVM types.
     fn goto_definition(
@@ -145,10 +145,10 @@ mod tests {
     use beans_core::{
         classpath::Unrestricted, names::Name, query_scope::QueryScope, ranges::ByteRange,
     };
-    use beans_platform_jvm::engine::JvmEngine;
+    use beans_platform_jvm::JvmPlatform;
 
     fn definition_at(
-        java: &JavaEngine,
+        java: &JavaLanguage,
         revision: Revision,
         source: &Origin,
         offset: usize,
@@ -156,7 +156,7 @@ mod tests {
         java.goto_definition(
             &JavaFeatureContext {
                 scope: QueryScope::new(revision, &Unrestricted),
-                jvm: &JvmEngine::default(),
+                jvm: &JvmPlatform::default(),
             },
             &DefinitionRequest { source, offset },
         )
@@ -202,7 +202,7 @@ mod tests {
         let text = "class Outer { class Member {} Member field; }";
         let revision = Revision::new(1);
         let source = Origin::uri("untitled:Example.java");
-        let mut java = JavaEngine::default();
+        let mut java = JavaLanguage::default();
         java.store(revision, lower_into(text), source.clone());
         let name_start = text.find("Member").unwrap();
 
@@ -220,7 +220,7 @@ mod tests {
         let text = "class Box<T> { class Slot<U> {} } class Example { Box<String>.Slot<Integer> nested; Box<? extends Number> numbers; }";
         let revision = Revision::new(1);
         let source = Origin::uri("untitled:Example.java");
-        let mut java = JavaEngine::default();
+        let mut java = JavaLanguage::default();
         java.store(revision, lower_into(text), source.clone());
         let box_name = text.find("class Box").unwrap() + "class ".len();
         let slot_name = text.find("class Slot").unwrap() + "class ".len();
@@ -250,7 +250,7 @@ mod tests {
         let text = "class A {} class B {} class First<T> { class Second<U> {} } class Use { First<A>.Second<B> field; }";
         let revision = Revision::new(1);
         let source = Origin::uri("untitled:Example.java");
-        let mut java = JavaEngine::default();
+        let mut java = JavaLanguage::default();
         java.store(revision, lower_into(text), source.clone());
 
         let first = text.find("First<A>").unwrap();
@@ -277,7 +277,7 @@ mod tests {
                 .goto_definition(
                     &JavaFeatureContext {
                         scope: QueryScope::new(revision, &Unrestricted),
-                        jvm: &JvmEngine::default(),
+                        jvm: &JvmPlatform::default(),
                     },
                     &DefinitionRequest {
                         source: &source,
@@ -303,7 +303,7 @@ mod tests {
         let text = "class Example<T extends Labelled> { T label; }";
         let revision = Revision::new(1);
         let source = Origin::uri("untitled:Example.java");
-        let mut java = JavaEngine::default();
+        let mut java = JavaLanguage::default();
         java.store(revision, lower_into(text), source.clone());
         let declaration = text.find("<T").unwrap() + 1;
         let use_offset = text.find("T label").unwrap();
@@ -330,7 +330,7 @@ mod tests {
         let text = "class Box<T, U extends Labelled> { U label; }";
         let revision = Revision::new(1);
         let source = Origin::uri("untitled:Example.java");
-        let mut java = JavaEngine::default();
+        let mut java = JavaLanguage::default();
         java.store(revision, lower_into(text), source.clone());
 
         for offset in [
@@ -365,7 +365,7 @@ mod tests {
         let text = "class Box<T> { class Slot<U> {} T value; Box<String>.Slot<Integer> nested; }";
         let revision = Revision::new(1);
         let source = Origin::uri("untitled:Example.java");
-        let mut java = JavaEngine::default();
+        let mut java = JavaLanguage::default();
         java.store(revision, lower_into(text), source.clone());
 
         for (use_start, target_start, name) in [

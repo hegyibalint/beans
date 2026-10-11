@@ -1,8 +1,16 @@
 use std::thread;
 
-use beans_core::events::{Event, JavaHomeFound};
+use beans_core::{
+    events::{Event, JavaHomeFound},
+    revision::Revision,
+};
 
 use super::Engine;
+
+#[test]
+fn a_new_engine_starts_at_the_default_revision() {
+    assert_eq!(Engine::new().revision(), Revision::default());
+}
 
 #[test]
 fn producers_share_one_engine_inbox() {

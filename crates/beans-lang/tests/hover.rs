@@ -1,5 +1,9 @@
-use beans_core::{classpath::Unrestricted, origin::Origin};
-use beans_lang::{HoverRequest, LanguageFeatures, Languages};
+use beans_core::{
+    classpath::Unrestricted,
+    features::{HoverRequest, LanguageFeatures},
+    origin::Origin,
+};
+use beans_lang::Languages;
 
 #[test]
 fn java_hover_reaches_the_shared_feature_contract() {

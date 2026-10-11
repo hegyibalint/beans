@@ -1,7 +1,7 @@
 //! Java implementations of protocol-neutral editor features.
 
 use beans_core::query_scope::QueryScope;
-use beans_platform_jvm::engine::JvmEngine;
+use beans_platform_jvm::JvmPlatform;
 
 mod hover;
 mod navigation;
@@ -10,5 +10,5 @@ mod navigation;
 #[derive(Clone, Copy)]
 pub struct JavaFeatureContext<'a> {
     pub scope: QueryScope<'a>,
-    pub jvm: &'a JvmEngine,
+    pub jvm: &'a JvmPlatform,
 }

@@ -1,5 +1,5 @@
 use crate::{
-    engine::JavaEngine,
+    engine::JavaLanguage,
     model::nodes::NodeKind,
     semantics::resolution::{
         Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, query::ResolutionQuery,
@@ -11,7 +11,8 @@ use beans_core::{
     resolution::TypeDefinitionQuery, revision::Revision,
 };
 use beans_platform_jvm::{
-    engine::{JvmEngine, query::ClassHandle},
+    JvmPlatform,
+    engine::query::ClassHandle,
     model::{
         classes::{AccessLevel, Class, ClassKind},
         names::BinaryName,
@@ -36,13 +37,13 @@ enum Occurrence {
 }
 
 struct Fixture {
-    java: JavaEngine,
+    java: JavaLanguage,
     source: Origin,
 }
 
 impl Fixture {
     fn new(current: &str, other_files: &[(&str, &str)]) -> Self {
-        let mut java = JavaEngine::default();
+        let mut java = JavaLanguage::default();
         let source = Origin::uri("file:///src/Use.java");
         java.store(Revision::new(1), java.process(current), source.clone());
         for (name, text) in other_files {
@@ -109,8 +110,8 @@ impl Fixture {
     }
 }
 
-fn mock_jvm_class(name: &str) -> (JvmEngine, JvmDefinitions) {
-    let mut jvm = JvmEngine::default();
+fn mock_jvm_class(name: &str) -> (JvmPlatform, JvmDefinitions) {
+    let mut jvm = JvmPlatform::default();
     let binary_name = BinaryName::new(name);
     jvm.store(
         Revision::new(1),

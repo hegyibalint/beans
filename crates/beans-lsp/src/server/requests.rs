@@ -1,4 +1,4 @@
-use beans_lang::{DefinitionProvider, HoverProvider};
+use beans_core::features::{DefinitionProvider, HoverProvider};
 use lsp_server::{ErrorCode, Request, Response};
 use lsp_types::{
     GotoDefinitionParams, HoverParams, InitializeParams, InitializeResult, OneOf,
