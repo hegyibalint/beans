@@ -1,12 +1,16 @@
-use beans_core::{query_scope::QueryScope, resource::ResourceId};
+use beans_core::{query_scope::QueryScope, resource::ResourceId, revision::Revision};
 use beans_storage::RevisionEntry;
 
-use crate::JvmPlatform;
+use crate::{Class, JvmPlatform};
 
 #[cfg(test)]
 mod tests;
 
 impl JvmPlatform {
+    pub fn class(&self, revision: Revision, source: &ResourceId) -> Option<&Class> {
+        self.classes.get(revision, source)
+    }
+
     /// Looks up an exact binary name in internal form (JVMS §4.2.1).
     pub fn find_classes(
         &self,

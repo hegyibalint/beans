@@ -1,46 +1,9 @@
-use std::collections::HashMap;
-
 use beans_core::resource::{ResourceId, ResourceRoot};
 
-use crate::Engine;
-
-pub struct Documents {
-    entries: HashMap<ResourceId, Entry>,
-}
-
-impl Documents {
-    pub fn new() -> Self {
-        Self {
-            entries: HashMap::new(),
-        }
-    }
-
-    pub fn get(&self, source: &ResourceId) -> Option<&Entry> {
-        self.entries.get(source)
-    }
-
-    pub fn insert(&mut self, source: ResourceId, entry: Entry) -> Option<Entry> {
-        self.entries.insert(source, entry)
-    }
-
-    pub fn remove(&mut self, source: &ResourceId) -> Option<Entry> {
-        self.entries.remove(source)
-    }
-}
-
-pub struct Entry {
-    pub model: Model,
-    pub content: Option<Content>,
-}
-
-pub enum Model {
-    Java(beans_lang_java::model::File),
-    Jvm(beans_platform_jvm::Class),
-}
-
-pub enum Content {
-    Stored(Vec<u8>),
-}
+use crate::{
+    Engine,
+    storage::{Content, Entry, Model},
+};
 
 impl Engine {
     pub fn document_open(&mut self, source: ResourceId, language_id: &str, contents: &str) {
@@ -52,8 +15,8 @@ impl Engine {
     }
 
     pub fn document_close(&mut self, source: ResourceId) {
-        let revision = self.revision.advance();
-        self.java.remove(revision, source);
+        self.revision.advance();
+        self.storage.remove(&source);
     }
 
     pub fn process(&mut self, source: ResourceId, contents: &str) {
@@ -70,9 +33,17 @@ impl Engine {
         if language_id != "java" {
             return;
         }
-        let model = self.java.process(contents);
-        let revision = self.revision.advance();
-        self.java.store(revision, model, source);
+        let Some(model) = self.java.process(&source, contents) else {
+            return;
+        };
+        self.revision.advance();
+        self.storage.insert(
+            source,
+            Entry {
+                model: Model::Java(model),
+                content: Some(Content::Stored(contents.as_bytes().to_vec())),
+            },
+        );
     }
 }
 

@@ -1,12 +1,16 @@
 //! Application coordination, independent of editor protocols.
 
 use beans_core::{events::Event, revision::Revision};
-use beans_lang_java::engine::JavaLanguage;
+use beans_lang_java::JavaLanguage;
 use beans_platform_jvm::JvmPlatform;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 
-pub mod documents;
+use crate::storage::Storage;
+
+mod documents;
 mod features;
+mod model_query;
+pub mod storage;
 
 #[cfg(test)]
 mod tests;
@@ -14,6 +18,8 @@ mod tests;
 pub struct Engine {
     // Monotonic version where we are.
     revision: Revision,
+    // Central model and content storage
+    storage: Storage,
 
     // Language verticals
     jvm: JvmPlatform,
@@ -32,6 +38,7 @@ impl Engine {
 
         Self {
             revision: Revision::default(),
+            storage: Storage::new(),
             java,
             jvm,
             sender,

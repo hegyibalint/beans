@@ -7,80 +7,25 @@ use beans_core::{
 
 use crate::{
     Engine,
-    documents::{Content, Documents, Entry, Model},
+    storage::{Content, Model},
 };
-
-#[test]
-fn document_entries_keep_the_model_and_retained_input_together() {
-    let mut documents = Documents::new();
-    let source = ResourceId::file("/src/example/Example.java");
-    let contents = "package example; class Example {}";
-    let model = beans_lang_java::engine::JavaLanguage::new().process(contents);
-
-    assert!(
-        documents
-            .insert(
-                source.clone(),
-                Entry {
-                    model: Model::Java(model),
-                    content: Some(Content::Stored(contents.as_bytes().to_vec())),
-                },
-            )
-            .is_none()
-    );
-
-    let entry = documents.get(&source).unwrap();
-    let Model::Java(file) = &entry.model else {
-        panic!("expected a Java model");
-    };
-    let Content::Stored(bytes) = entry.content.as_ref().unwrap();
-    assert_eq!(file.package_name.as_slice(), ["example"]);
-    assert_eq!(bytes.as_slice(), contents.as_bytes());
-    assert!(documents.get(&ResourceId::file("/Missing.java")).is_none());
-}
-
-#[test]
-fn document_entries_can_be_replaced_and_removed_without_retained_content() {
-    let mut documents = Documents::new();
-    let source = ResourceId::file("/Example.class");
-    let entry = |name: &str| Entry {
-        model: Model::Jvm(beans_platform_jvm::Class { name: name.into() }),
-        content: None,
-    };
-
-    assert!(documents.insert(source.clone(), entry("First")).is_none());
-    let previous = documents.insert(source.clone(), entry("Second")).unwrap();
-    let Model::Jvm(previous) = previous.model else {
-        panic!("expected a JVM model");
-    };
-    assert_eq!(previous.name, "First");
-
-    let current = documents.get(&source).unwrap();
-    let Model::Jvm(current) = &current.model else {
-        panic!("expected a JVM model");
-    };
-    assert_eq!(current.name, "Second");
-
-    let removed = documents.remove(&source).unwrap();
-    assert!(removed.content.is_none());
-    let Model::Jvm(removed) = removed.model else {
-        panic!("expected a JVM model");
-    };
-    assert_eq!(removed.name, "Second");
-    assert!(documents.get(&source).is_none());
-    assert!(documents.remove(&source).is_none());
-}
 
 #[test]
 fn processing_java_source_advances_the_revision_and_stores_its_model() {
     let mut engine = Engine::new();
     let source = ResourceId::file("/src/example/Example.java");
 
-    engine.process(source.clone(), "package example; public class Example {}");
+    let contents = "package example; public class Example {}";
+    engine.process(source.clone(), contents);
 
     assert_eq!(engine.revision(), Revision::new(1));
-    let file = engine.java.file(engine.revision(), &source).unwrap();
+    let entry = engine.storage.get(&source).unwrap();
+    let Model::Java(file) = &entry.model else {
+        panic!("expected a Java model");
+    };
     assert_eq!(file.package_name.as_slice(), ["example"]);
+    let Content::Stored(bytes) = entry.content.as_ref().unwrap();
+    assert_eq!(bytes.as_slice(), contents.as_bytes());
 }
 
 #[test]
@@ -113,15 +58,56 @@ fn virtual_documents_keep_their_identity_through_replacement_and_removal() {
         assert_eq!(response.range(), ByteRange::new(16, end));
         assert!(
             engine
-                .java
-                .file(engine.revision(), &ResourceId::file("/Example.java"))
+                .storage
+                .get(&ResourceId::file("/Example.java"))
                 .is_none()
         );
     }
 
     engine.document_close(source.clone());
     assert_eq!(engine.revision(), Revision::new(3));
-    assert!(engine.java.file(engine.revision(), &source).is_none());
+    assert!(engine.storage.get(&source).is_none());
+}
+
+#[test]
+fn selected_java_documents_do_not_require_a_java_filename() {
+    let contents = "package example; class Example {}";
+    for source in [
+        ResourceId::file("/Example.txt"),
+        ResourceId::new(ResourceRoot::Virtual {
+            provider: "test".into(),
+            key: "untitled:Untitled-1".into(),
+        }),
+    ] {
+        let mut engine = Engine::new();
+        engine.process(source.clone(), contents);
+        assert_eq!(engine.revision(), Revision::default());
+
+        engine.document_open(source.clone(), "java", contents);
+        let entry = engine.storage.get(&source).unwrap();
+        let Model::Java(file) = &entry.model else {
+            panic!("expected a Java model");
+        };
+        assert_eq!(file.package_name.as_slice(), ["example"]);
+        let Content::Stored(bytes) = entry.content.as_ref().unwrap();
+        assert_eq!(bytes.as_slice(), contents.as_bytes());
+
+        engine.document_close(source.clone());
+        assert!(engine.storage.get(&source).is_none());
+    }
+}
+
+#[test]
+fn incomplete_java_is_published_with_its_original_content() {
+    let mut engine = Engine::new();
+    let source = ResourceId::file("/Example.java");
+    let contents = "class Example { Missing field;";
+    engine.document_open(source.clone(), "java", contents);
+
+    let entry = engine.storage.get(&source).unwrap();
+    assert!(matches!(entry.model, Model::Java(_)));
+    let Content::Stored(bytes) = entry.content.as_ref().unwrap();
+    assert_eq!(bytes.as_slice(), contents.as_bytes());
 }
 
 #[test]
@@ -143,10 +129,5 @@ fn unsupported_source_inputs_do_not_advance_the_revision() {
     engine.document_edit(virtual_source.clone(), "plaintext", "class C extends T {}");
 
     assert_eq!(engine.revision(), Revision::default());
-    assert!(
-        engine
-            .java
-            .file(engine.revision(), &virtual_source)
-            .is_none()
-    );
+    assert!(engine.storage.get(&virtual_source).is_none());
 }

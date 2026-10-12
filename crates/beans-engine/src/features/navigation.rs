@@ -5,14 +5,16 @@ use beans_core::{
 };
 use beans_lang_java::features::JavaFeatureContext;
 
-use crate::Engine;
+use crate::{Engine, model_query::ModelQuery};
 
 impl Engine {
     pub fn feature_goto_definition(
         &self,
         request: &DefinitionRequest<'_>,
     ) -> Option<NavigationResult> {
+        let models = ModelQuery::new(&self.storage);
         let context = JavaFeatureContext {
+            models: &models,
             scope: QueryScope::new(self.revision, &Unrestricted),
             jvm: &self.jvm,
         };

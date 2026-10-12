@@ -1,36 +1,55 @@
+use std::collections::HashMap;
+
 use beans_core::{
     classpath::{Classpath, Unrestricted},
+    query_scope::QueryScope,
     resource::ResourceId,
+    revision::Revision,
 };
-use beans_core::{query_scope::QueryScope, revision::Revision};
 use beans_lang_java::{
-    engine::JavaLanguage,
+    JavaLanguage,
     lowering::lower_into,
-    model::nodes::NodeKind,
+    model::{File, nodes::NodeKind},
+    model_query::JavaModelQuery,
     semantics::resolution::{
         Context, JavaTypeCandidate, TypeCandidate, query::ResolutionQuery, resolve,
     },
 };
 use beans_platform_jvm::JvmPlatform;
 
+struct Models {
+    files: HashMap<ResourceId, File>,
+}
+
+impl JavaModelQuery for Models {
+    fn java_file(&self, source: &ResourceId) -> Option<&File> {
+        self.files.get(source)
+    }
+
+    fn java_files(&self) -> impl Iterator<Item = (&ResourceId, &File)> {
+        self.files.iter()
+    }
+}
+
 #[test]
-fn stored_models_can_be_resolved_using_the_engines_query() {
-    let mut engine = JavaLanguage::default();
+fn supplied_models_can_be_resolved_using_the_languages_query() {
+    let source = ResourceId::file("/src/app/Use.java");
+    let models = Models {
+        files: HashMap::from([(
+            source.clone(),
+            lower_into("package app; class Target {} class Use { Target target; }"),
+        )]),
+    };
     let revision = Revision::new(3);
-    let entry = engine.store(
-        revision,
-        lower_into("package app; class Target {} class Use { Target target; }"),
-        ResourceId::file("/src/app/Use.java"),
-    );
     let classpath = Unrestricted;
-    let query = engine.query(QueryScope::new(entry.revision, &classpath));
+    let query = JavaLanguage::new().query(&models, QueryScope::new(revision, &classpath));
 
     assert_eq!(query.revision(), revision);
     assert!(std::ptr::eq(
         query.classpath(),
         &classpath as &dyn Classpath
     ));
-    let file = query.file(&entry.key).expect("expected the stored model");
+    let file = query.file(&source).expect("expected the supplied model");
     let (node_index, type_ref) = file
         .iter_nodes()
         .find_map(|entry| match entry.node.kind() {
@@ -40,8 +59,7 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
             _ => None,
         })
         .expect("expected target field");
-
-    let ctx = Context::new(revision, &entry.key, file, node_index, type_ref.value());
+    let ctx = Context::new(revision, &source, file, node_index, type_ref.value());
     let TypeCandidate::Java(JavaTypeCandidate::Declaration(declaration)) = resolve(&ctx).unwrap()
     else {
         panic!("expected a Java declaration");
@@ -51,28 +69,29 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
         .expect("expected a readable declaration handle");
 
     assert_eq!(target.declaration.name(), Some("Target"));
-    assert_eq!(target.source, &entry.key);
+    assert_eq!(target.source, &source);
 }
 
 #[test]
-fn an_imported_type_resolves_to_another_stored_source_file() {
-    let mut engine = JavaLanguage::default();
-    let revision = Revision::new(1);
+fn an_imported_type_resolves_to_another_supplied_source_file() {
     let use_source = ResourceId::file("/src/p/Use.java");
     let target_source = ResourceId::file("/src/q/Target.java");
-    engine.store(
-        revision,
-        lower_into("package p; import q.Target; class Use { Target field; }"),
-        use_source.clone(),
-    );
-    engine.store(
-        revision,
-        lower_into("package q; public class Target {}"),
-        target_source.clone(),
-    );
+    let models = Models {
+        files: HashMap::from([
+            (
+                use_source.clone(),
+                lower_into("package p; import q.Target; class Use { Target field; }"),
+            ),
+            (
+                target_source.clone(),
+                lower_into("package q; public class Target {}"),
+            ),
+        ]),
+    };
+    let revision = Revision::new(1);
     let classpath = Unrestricted;
-    let java = engine.query(QueryScope::new(revision, &classpath));
-    let jvm = JvmPlatform::default();
+    let java = JavaLanguage::new().query(&models, QueryScope::new(revision, &classpath));
+    let jvm = JvmPlatform::new();
     let definitions = ResolutionQuery::new(&java, &jvm);
     let file = java.file(&use_source).unwrap();
     let field = file
@@ -92,7 +111,7 @@ fn an_imported_type_resolves_to_another_stored_source_file() {
     .with_definitions(&definitions);
 
     let TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) = resolve(&ctx).unwrap() else {
-        panic!("expected a stored Java type");
+        panic!("expected a supplied Java type");
     };
     assert_eq!(handle.source(), &target_source);
     assert_eq!(

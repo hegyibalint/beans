@@ -1,12 +1,13 @@
 use std::io::Write;
 
 use crate::{
-    engine::JavaLanguage,
+    JavaLanguage, lower_into,
     model::nodes::NodeKind,
     semantics::resolution::{
         Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, query::ResolutionQuery,
         resolve, resolve_supertype,
     },
+    testing::Models,
 };
 use beans_core::{
     classpath::Unrestricted, query_scope::QueryScope, resource::ResourceId, revision::Revision,
@@ -23,19 +24,19 @@ enum Occurrence {
 }
 
 struct Fixture {
-    java: JavaLanguage,
+    java: Models,
     source: ResourceId,
 }
 
 impl Fixture {
     fn new(current: &str, other_files: &[(&str, &str)]) -> Self {
-        let mut java = JavaLanguage::default();
+        let mut java = Models::new();
         let source = ResourceId::file("/src/Use.java");
-        java.store(Revision::new(1), java.process(current), source.clone());
+        java.store(Revision::new(1), lower_into(current), source.clone());
         for (name, text) in other_files {
             java.store(
                 Revision::new(1),
-                java.process(text),
+                lower_into(text),
                 ResourceId::file(format!("/src/{name}.java")),
             );
         }
@@ -51,9 +52,9 @@ impl Fixture {
         jvm: &JvmPlatform,
         occurrence: Occurrence,
     ) -> Result<TypeCandidate, ResolutionFailure> {
-        let java = self
-            .java
-            .query(QueryScope::new(Revision::new(1), &Unrestricted));
+        let models = self.java.model_query(Revision::new(1));
+        let java =
+            JavaLanguage::new().query(&models, QueryScope::new(Revision::new(1), &Unrestricted));
         let definitions = ResolutionQuery::new(&java, jvm);
         let file = java.file(&self.source).unwrap();
         let (index, reference) = file
@@ -82,9 +83,9 @@ impl Fixture {
     }
 
     fn expected(&self, name: &str) -> TypeCandidate {
-        let query = self
-            .java
-            .query(QueryScope::new(Revision::new(1), &Unrestricted));
+        let models = self.java.model_query(Revision::new(1));
+        let query =
+            JavaLanguage::new().query(&models, QueryScope::new(Revision::new(1), &Unrestricted));
         let entry = query
             .find_type(&name.split('.').map(str::to_owned).collect())
             .into_iter()

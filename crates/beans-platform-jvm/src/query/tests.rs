@@ -61,6 +61,12 @@ fn lookup_uses_the_requested_revision_through_replacement_and_removal() {
     );
     platform.classes.remove(Revision::new(5), resource.clone());
 
+    assert!(platform.class(Revision::default(), &resource).is_none());
+    assert!(
+        platform
+            .class(Revision::new(3), &ResourceId::file("/Missing.class"))
+            .is_none()
+    );
     assert!(
         platform
             .find_classes(
@@ -81,11 +87,7 @@ fn lookup_uses_the_requested_revision_through_replacement_and_removal() {
         );
         let address = &addresses[0];
         assert_eq!(
-            platform
-                .classes
-                .get(address.revision, &address.key)
-                .unwrap()
-                .name,
+            platform.class(address.revision, &address.key).unwrap().name,
             name
         );
     }
@@ -97,6 +99,7 @@ fn lookup_uses_the_requested_revision_through_replacement_and_removal() {
             )
             .is_empty()
     );
+    assert!(platform.class(Revision::new(5), &resource).is_none());
     for name in ["example/Former", "example/Latest"] {
         assert!(
             platform

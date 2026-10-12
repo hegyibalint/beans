@@ -3,12 +3,15 @@
 use beans_core::query_scope::QueryScope;
 use beans_platform_jvm::JvmPlatform;
 
+use crate::model_query::JavaModelQuery;
+
 mod hover;
 mod navigation;
 
-/// Binds Java feature queries to a scope and the platform supplying JVM candidates.
+/// Model access and legacy discovery must use the same selected view.
 #[derive(Clone, Copy)]
-pub struct JavaFeatureContext<'a> {
+pub struct JavaFeatureContext<'a, Q: JavaModelQuery> {
+    pub models: &'a Q,
     pub scope: QueryScope<'a>,
     pub jvm: &'a JvmPlatform,
 }

@@ -7,8 +7,9 @@ use beans_core::{
 };
 
 use crate::{
-    engine::JavaLanguage,
+    JavaLanguage,
     model::{File, nodes::NodeKind, references::TypeRef, type_references::find_in_reference},
+    model_query::JavaModelQuery,
     semantics::resolution::{
         Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate,
         query::{ResolutionQuery, TypeCandidateQuery},
@@ -18,21 +19,21 @@ use crate::{
 
 use super::JavaFeatureContext;
 
-impl<'request>
-    DefinitionProvider<JavaFeatureContext<'_>, DefinitionRequest<'request>, NavigationResult>
+impl<'request, Q: JavaModelQuery>
+    DefinitionProvider<JavaFeatureContext<'_, Q>, DefinitionRequest<'request>, NavigationResult>
     for JavaLanguage
 {
     /// Finds a type definition at a Java source position using the visible Java and JVM types.
     fn goto_definition(
         &self,
-        context: &JavaFeatureContext<'_>,
+        context: &JavaFeatureContext<'_, Q>,
         request: &DefinitionRequest<'request>,
     ) -> Option<NavigationResult> {
         let source = request.source;
         let offset = request.offset;
-        let java = self.query(context.scope);
+        let java = self.query(context.models, context.scope);
         let definitions = ResolutionQuery::new(&java, context.jvm);
-        let file = java.file(source)?;
+        let file = context.models.java_file(source)?;
         if let Some(range) = type_parameter_declaration_at(file, offset) {
             return Some(NavigationResult {
                 origin_range: range,
@@ -48,8 +49,9 @@ impl<'request>
         )?;
         let target = match candidate.ok()? {
             TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) => {
-                let declaration = self
-                    .file(handle.revision(), handle.source())?
+                let declaration = context
+                    .models
+                    .java_file(handle.source())?
                     .node(handle.node_index())?
                     .kind()
                     .as_type()?;
@@ -57,7 +59,7 @@ impl<'request>
             }
             TypeCandidate::Java(JavaTypeCandidate::TypeParameter(handle)) => {
                 let owner = handle.owner();
-                let file = self.file(owner.revision(), owner.source())?;
+                let file = context.models.java_file(owner.source())?;
                 SourceSpan::new(owner.source().clone(), handle.parameter(file)?.name.range())
             }
             TypeCandidate::Jvm(_) => return None,
@@ -141,7 +143,7 @@ fn resolve_field_type_at(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{lowering::lower_into, semantics::resolution::ResolutionFailure};
+    use crate::{lowering::lower_into, semantics::resolution::ResolutionFailure, testing::Models};
     use beans_core::resource::ResourceRoot;
     use beans_core::{
         classpath::Unrestricted, names::Name, query_scope::QueryScope, ranges::ByteRange,
@@ -156,19 +158,23 @@ mod tests {
     }
 
     fn definition_at(
-        java: &JavaLanguage,
+        java: &Models,
         revision: Revision,
         source: &ResourceId,
         offset: usize,
     ) -> Option<SourceSpan> {
-        java.goto_definition(
-            &JavaFeatureContext {
-                scope: QueryScope::new(revision, &Unrestricted),
-                jvm: &JvmPlatform::default(),
-            },
-            &DefinitionRequest { source, offset },
-        )
-        .map(|definition| definition.target)
+        let jvm = JvmPlatform::new();
+        let models = java.model_query(revision);
+        JavaLanguage::new()
+            .goto_definition(
+                &JavaFeatureContext {
+                    models: &models,
+                    scope: QueryScope::new(revision, &Unrestricted),
+                    jvm: &jvm,
+                },
+                &DefinitionRequest { source, offset },
+            )
+            .map(|definition| definition.target)
     }
 
     fn at<'a>(
@@ -206,11 +212,46 @@ mod tests {
     }
 
     #[test]
+    fn navigation_reads_the_source_and_target_from_the_supplied_models() {
+        let text = "class Outer { class Member {} Member field; }";
+        let revision = Revision::new(1);
+        let source = source_id();
+        let mut stored = Models::new();
+        stored.store(revision, lower_into(text), source.clone());
+        let receiver = JavaLanguage::new();
+        let jvm = JvmPlatform::new();
+        let models = stored.model_query(revision);
+        let name_start = text.find("Member").unwrap();
+
+        let definition = receiver
+            .goto_definition(
+                &JavaFeatureContext {
+                    models: &models,
+                    scope: QueryScope::new(revision, &Unrestricted),
+                    jvm: &jvm,
+                },
+                &DefinitionRequest {
+                    source: &source,
+                    offset: text.rfind("Member").unwrap(),
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            definition.target,
+            SourceSpan::new(
+                source.clone(),
+                ByteRange::new(name_start, name_start + "Member".len()),
+            )
+        );
+    }
+
+    #[test]
     fn resolved_field_type_projects_to_its_declaration_name() {
         let text = "class Outer { class Member {} Member field; }";
         let revision = Revision::new(1);
         let source = source_id();
-        let mut java = JavaLanguage::default();
+        let mut java = Models::new();
         java.store(revision, lower_into(text), source.clone());
         let name_start = text.find("Member").unwrap();
 
@@ -228,7 +269,7 @@ mod tests {
         let text = "class Box<T> { class Slot<U> {} } class Example { Box<String>.Slot<Integer> nested; Box<? extends Number> numbers; }";
         let revision = Revision::new(1);
         let source = source_id();
-        let mut java = JavaLanguage::default();
+        let mut java = Models::new();
         java.store(revision, lower_into(text), source.clone());
         let box_name = text.find("class Box").unwrap() + "class ".len();
         let slot_name = text.find("class Slot").unwrap() + "class ".len();
@@ -258,9 +299,11 @@ mod tests {
         let text = "class A {} class B {} class First<T> { class Second<U> {} } class Use { First<A>.Second<B> field; }";
         let revision = Revision::new(1);
         let source = source_id();
-        let mut java = JavaLanguage::default();
+        let mut java = Models::new();
         java.store(revision, lower_into(text), source.clone());
 
+        let jvm = JvmPlatform::new();
+        let models = java.model_query(revision);
         let first = text.find("First<A>").unwrap();
         let second = text.find("Second<B>").unwrap();
         let declaration = |name: &str| {
@@ -281,11 +324,12 @@ mod tests {
             (second + "Second<B>".len() - 1, "Second", "Second<B>"), // >
             (second + "Second<".len(), "B", "B"),
         ] {
-            let definition = java
+            let definition = JavaLanguage::new()
                 .goto_definition(
                     &JavaFeatureContext {
+                        models: &models,
                         scope: QueryScope::new(revision, &Unrestricted),
-                        jvm: &JvmPlatform::default(),
+                        jvm: &jvm,
                     },
                     &DefinitionRequest {
                         source: &source,
@@ -311,7 +355,7 @@ mod tests {
         let text = "class Example<T extends Labelled> { T label; }";
         let revision = Revision::new(1);
         let source = source_id();
-        let mut java = JavaLanguage::default();
+        let mut java = Models::new();
         java.store(revision, lower_into(text), source.clone());
         let declaration = text.find("<T").unwrap() + 1;
         let use_offset = text.find("T label").unwrap();
@@ -338,7 +382,7 @@ mod tests {
         let text = "class Box<T, U extends Labelled> { U label; }";
         let revision = Revision::new(1);
         let source = source_id();
-        let mut java = JavaLanguage::default();
+        let mut java = Models::new();
         java.store(revision, lower_into(text), source.clone());
 
         for offset in [
@@ -373,7 +417,7 @@ mod tests {
         let text = "class Box<T> { class Slot<U> {} T value; Box<String>.Slot<Integer> nested; }";
         let revision = Revision::new(1);
         let source = source_id();
-        let mut java = JavaLanguage::default();
+        let mut java = Models::new();
         java.store(revision, lower_into(text), source.clone());
 
         for (use_start, target_start, name) in [

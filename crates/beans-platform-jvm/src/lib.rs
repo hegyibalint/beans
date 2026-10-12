@@ -1,5 +1,6 @@
 mod container;
 mod model;
+pub mod model_query;
 mod parser;
 mod query;
 

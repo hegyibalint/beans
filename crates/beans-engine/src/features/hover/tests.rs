@@ -1,4 +1,4 @@
-use beans_core::{features::HoverRequest, resource::ResourceId, revision::Revision};
+use beans_core::{features::HoverRequest, resource::ResourceId};
 
 use crate::Engine;
 
@@ -7,9 +7,7 @@ fn hover_only_requires_a_request() {
     let mut engine = Engine::new();
     let source = ResourceId::file("/src/Example.java");
     let contents = "class C extends Target {}";
-    let model = engine.java.process(contents);
-    engine.revision = Revision::new(1);
-    engine.java.store(engine.revision, model, source.clone());
+    engine.document_open(source.clone(), "java", contents);
 
     let response = engine
         .feature_hover(&HoverRequest {
@@ -25,20 +23,14 @@ fn hover_only_requires_a_request() {
 }
 
 #[test]
-fn hover_uses_the_engines_current_revision() {
+fn hover_reads_the_engines_storage_entries_after_replacement() {
     let mut engine = Engine::new();
     let source = ResourceId::file("/src/Example.java");
-    let versions = [
-        (Revision::new(1), "class C extends Former {}", "Former"),
-        (Revision::new(2), "class C extends Latest {}", "Latest"),
-    ];
-    for (revision, contents, _) in versions {
-        let model = engine.java.process(contents);
-        engine.java.store(revision, model, source.clone());
-    }
-
-    for (revision, contents, expected) in versions {
-        engine.revision = revision;
+    for (contents, expected) in [
+        ("class C extends Former {}", "Former"),
+        ("class C extends Latest {}", "Latest"),
+    ] {
+        engine.document_edit(source.clone(), "java", contents);
         let response = engine
             .feature_hover(&HoverRequest {
                 source: &source,

@@ -1,16 +1,16 @@
-use crate::engine::query::JavaQuery;
+use crate::{model_query::JavaModelQuery, query::JavaQuery};
 use beans_core::{names::Name, query_scope::QueryScope, resolution::TypeDefinitionQuery};
 use beans_platform_jvm::JvmPlatform;
 
 use super::{JavaTypeCandidate, TypeCandidate};
 
-pub struct ResolutionQuery<'a> {
-    java: &'a JavaQuery<'a>,
+pub struct ResolutionQuery<'a, Q: JavaModelQuery> {
+    java: &'a JavaQuery<'a, Q>,
     jvm: &'a JvmPlatform,
 }
 
-impl<'a> ResolutionQuery<'a> {
-    pub fn new(java: &'a JavaQuery<'a>, jvm: &'a JvmPlatform) -> Self {
+impl<'a, Q: JavaModelQuery> ResolutionQuery<'a, Q> {
+    pub fn new(java: &'a JavaQuery<'a, Q>, jvm: &'a JvmPlatform) -> Self {
         Self { java, jvm }
     }
 }
@@ -21,7 +21,7 @@ pub trait TypeCandidateQuery {
     fn candidates(&self, name: &Name) -> Vec<TypeCandidate>;
 }
 
-impl TypeDefinitionQuery<TypeCandidate> for ResolutionQuery<'_> {
+impl<Q: JavaModelQuery> TypeDefinitionQuery<TypeCandidate> for ResolutionQuery<'_, Q> {
     fn find_types<'query>(
         &'query self,
         name: &'query Name,
@@ -43,7 +43,7 @@ impl TypeDefinitionQuery<TypeCandidate> for ResolutionQuery<'_> {
     }
 }
 
-impl TypeCandidateQuery for ResolutionQuery<'_> {
+impl<Q: JavaModelQuery> TypeCandidateQuery for ResolutionQuery<'_, Q> {
     fn candidates(&self, name: &Name) -> Vec<TypeCandidate> {
         TypeDefinitionQuery::find_types(self, name).collect()
     }
@@ -62,7 +62,7 @@ mod tests {
     use beans_testing::support::class_bytes;
     use tempfile::NamedTempFile;
 
-    use crate::engine::JavaLanguage;
+    use crate::{JavaLanguage, lower_into, testing::Models};
 
     use super::*;
 
@@ -70,17 +70,18 @@ mod tests {
     fn native_definition_addresses_are_wrapped_and_chained_in_query_order() {
         let revision = Revision::new(1);
         let name = Name::new(vec!["example".into(), "Example".into()]);
-        let mut language = JavaLanguage::new();
+        let mut language = Models::new();
         language.store(
             revision,
-            language.process("package example; class Example {}"),
+            lower_into("package example; class Example {}"),
             ResourceId::file("/src/Example.java"),
         );
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(&class_bytes("example/Example")).unwrap();
         let mut platform = JvmPlatform::new();
         platform.process(revision, file.path().to_owned()).unwrap();
-        let java = language.query(QueryScope::new(revision, &Unrestricted));
+        let models = language.model_query(revision);
+        let java = JavaLanguage::new().query(&models, QueryScope::new(revision, &Unrestricted));
         let java_address = java.find_types(&name).next().unwrap();
         let query = ResolutionQuery::new(&java, &platform);
 
@@ -118,14 +119,15 @@ mod tests {
         platform
             .process(Revision::new(5), file.path().to_owned())
             .unwrap();
-        let language = JavaLanguage::new();
+        let language = Models::new();
         let name = Name::new(vec!["example".into(), "Example".into()]);
 
         for (revision, visible, expected) in [(4, true, false), (7, false, false), (7, true, true)]
         {
             let classpath = Visibility(visible);
             let revision = Revision::new(revision);
-            let java = language.query(QueryScope::new(revision, &classpath));
+            let models = language.model_query(revision);
+            let java = JavaLanguage::new().query(&models, QueryScope::new(revision, &classpath));
             let query = ResolutionQuery::new(&java, &platform);
             let candidates = query.candidates(&name);
 

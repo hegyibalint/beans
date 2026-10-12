@@ -102,6 +102,39 @@ mod tests {
     }
 
     #[test]
+    fn untitled_documents_are_routed_by_language_id_without_a_filename() {
+        let uri: Uri = "untitled:Untitled-1".parse().unwrap();
+        let mut session = Features::default();
+        let initial_revision = session.engine.revision();
+        let open = |language: &str| DidOpenTextDocumentParams {
+            text_document: TextDocumentItem::new(
+                uri.clone(),
+                language.into(),
+                1,
+                "class Example {}".into(),
+            ),
+        };
+        let close = || DidCloseTextDocumentParams {
+            text_document: TextDocumentIdentifier::new(uri.clone()),
+        };
+
+        session.did_open(open("plaintext"));
+        assert_eq!(session.engine.revision(), initial_revision);
+        session.did_close(close());
+
+        session.did_open(open("java"));
+        let java_revision = session.engine.revision();
+        assert!(java_revision > initial_revision);
+        let document = session.open_documents.get(uri.as_str()).unwrap();
+        assert_eq!(document.language_id, "java");
+        assert_eq!(document.text, "class Example {}");
+
+        session.did_close(close());
+        assert!(!session.open_documents.contains_key(uri.as_str()));
+        assert!(session.engine.revision() > java_revision);
+    }
+
+    #[test]
     fn opening_and_closing_tracks_the_document() {
         let uri: Uri = "file:///Example.java".parse().unwrap();
         let mut session = Features::default();
