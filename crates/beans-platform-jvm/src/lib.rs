@@ -14,7 +14,7 @@ use std::{
 use beans_core::{resource::ResourceId, revision::Revision};
 use beans_storage::RevisionedStorage;
 
-use crate::model::class::Class;
+pub use crate::model::class::Class;
 
 #[derive(Default)]
 pub struct JvmPlatform {

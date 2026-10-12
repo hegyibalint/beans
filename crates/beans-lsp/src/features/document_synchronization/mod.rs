@@ -8,7 +8,7 @@ use crate::model::open_document::OpenDocument;
 impl Features {
     pub(crate) fn did_open(&mut self, params: DidOpenTextDocumentParams) {
         let document = OpenDocument::from(params.text_document);
-        self.engine.process_document(
+        self.engine.document_open(
             resource_for_uri(&document.uri),
             &document.language_id,
             &document.text,
@@ -33,7 +33,7 @@ impl Features {
         }
         document.version = params.text_document.version;
         document.text = change.text;
-        self.engine.process_document(
+        self.engine.document_edit(
             resource_for_uri(&document.uri),
             &document.language_id,
             &document.text,
@@ -50,14 +50,11 @@ impl Features {
                 .workspace_documents
                 .get(params.text_document.uri.as_str())
             {
-                self.engine.process_document(
-                    resource_for_uri(&indexed.uri),
-                    &indexed.language_id,
-                    &indexed.text,
-                );
+                self.engine
+                    .process(resource_for_uri(&indexed.uri), &indexed.text);
             } else {
                 self.engine
-                    .close_document(resource_for_uri(&params.text_document.uri));
+                    .document_close(resource_for_uri(&params.text_document.uri));
             }
         }
     }

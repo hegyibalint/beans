@@ -54,7 +54,10 @@ impl Features {
     fn ingest_files(&mut self, files: BTreeSet<PathBuf>) {
         let mut count = 0;
         for path in files {
-            if !self.engine.accept(&path) {
+            if !path
+                .extension()
+                .is_some_and(|extension| extension == "java")
+            {
                 continue;
             }
             let Ok(text) = fs::read_to_string(&path) else {

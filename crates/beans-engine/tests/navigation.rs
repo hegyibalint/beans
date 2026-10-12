@@ -21,8 +21,8 @@ fn imported_type_navigation_is_unrestricted_for_file_and_virtual_documents() {
         }),
     ] {
         let mut engine = Engine::new();
-        engine.process_document(source.clone(), "java", use_text);
-        engine.process_document(target.clone(), "java", target_text);
+        engine.document_open(source.clone(), "java", use_text);
+        engine.document_open(target.clone(), "java", target_text);
 
         assert_eq!(
             engine

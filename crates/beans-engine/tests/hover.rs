@@ -12,7 +12,7 @@ fn java_hover_reaches_the_shared_feature_contract() {
         key: "untitled:Example.java".into(),
     });
     let contents = "class C extends Target {}";
-    engine.process_document(source.clone(), "java", contents);
+    engine.document_open(source.clone(), "java", contents);
 
     let info = engine
         .feature_hover(&HoverRequest {

@@ -5,7 +5,7 @@ use beans_lang_java::engine::JavaLanguage;
 use beans_platform_jvm::JvmPlatform;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 
-mod documents;
+pub mod documents;
 mod features;
 
 #[cfg(test)]
