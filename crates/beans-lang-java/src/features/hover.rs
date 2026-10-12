@@ -1,28 +1,22 @@
-use beans_core::features::hover::{HoverProvider, HoverRequest, HoverResponse};
+use beans_core::features::hover::{HoverRequest, HoverResponse};
 
-use crate::{JavaLanguage, model::type_references::type_reference_at, model_query::JavaModelQuery};
+use crate::{model::type_references::type_reference_at, model_query::JavaModelQuery};
 
 use super::JavaFeatureContext;
 
-impl<'request, Q: JavaModelQuery>
-    HoverProvider<JavaFeatureContext<'_, Q>, HoverRequest<'request>, HoverResponse>
-    for JavaLanguage
-{
-    /// Shows the complete type as written at a modeled position; resolution is not wired yet.
-    fn hover(
-        &self,
-        context: &JavaFeatureContext<'_, Q>,
-        request: &HoverRequest<'request>,
-    ) -> Option<HoverResponse> {
-        let file = context.models.java_file(request.source)?;
-        let occurrence = type_reference_at(file, request.offset)?;
-        Some(HoverResponse::new(
-            request
-                .contents
-                .get(occurrence.type_range.start()..occurrence.type_range.end())?,
-            occurrence.range,
-        ))
-    }
+/// Shows the complete type as written at a modeled position; resolution is not wired yet.
+pub fn hover<Q: JavaModelQuery>(
+    context: &JavaFeatureContext<'_, Q>,
+    request: &HoverRequest<'_>,
+) -> Option<HoverResponse> {
+    let file = context.models.java_file(request.source)?;
+    let occurrence = type_reference_at(file, request.offset)?;
+    Some(HoverResponse::new(
+        request
+            .contents
+            .get(occurrence.type_range.start()..occurrence.type_range.end())?,
+        occurrence.range,
+    ))
 }
 
 #[cfg(test)]
@@ -35,7 +29,6 @@ mod tests {
         resource::{ResourceId, ResourceRoot},
         revision::Revision,
     };
-    use beans_platform_jvm::JvmPlatform;
 
     fn source_id() -> ResourceId {
         ResourceId::new(ResourceRoot::Virtual {
@@ -51,13 +44,11 @@ mod tests {
         contents: &str,
         offset: usize,
     ) -> Option<HoverResponse> {
-        let jvm = JvmPlatform::new();
         let models = engine.model_query(revision);
-        JavaLanguage::new().hover(
+        super::hover(
             &JavaFeatureContext {
                 models: &models,
                 scope: QueryScope::new(revision, &Unrestricted),
-                jvm: &jvm,
             },
             &HoverRequest {
                 source,
@@ -68,30 +59,26 @@ mod tests {
     }
 
     #[test]
-    fn hover_reads_the_supplied_models_instead_of_the_receivers_storage() {
+    fn hover_reads_the_supplied_models() {
         let source = source_id();
         let contents = "class C extends Supplied {}";
         let revision = Revision::new(1);
         let mut stored = Models::new();
         stored.store(revision, lower_into(contents), source.clone());
-        let receiver = JavaLanguage::new();
-        let jvm = JvmPlatform::new();
         let models = stored.model_query(revision);
 
-        let response = receiver
-            .hover(
-                &JavaFeatureContext {
-                    models: &models,
-                    scope: QueryScope::new(revision, &Unrestricted),
-                    jvm: &jvm,
-                },
-                &HoverRequest {
-                    source: &source,
-                    contents,
-                    offset: contents.find("Supplied").unwrap(),
-                },
-            )
-            .unwrap();
+        let response = super::hover(
+            &JavaFeatureContext {
+                models: &models,
+                scope: QueryScope::new(revision, &Unrestricted),
+            },
+            &HoverRequest {
+                source: &source,
+                contents,
+                offset: contents.find("Supplied").unwrap(),
+            },
+        )
+        .unwrap();
 
         assert_eq!(response.contents(), "Supplied");
     }

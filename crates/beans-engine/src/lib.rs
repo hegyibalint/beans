@@ -1,8 +1,6 @@
 //! Application coordination, independent of editor protocols.
 
 use beans_core::{events::Event, revision::Revision};
-use beans_lang_java::JavaLanguage;
-use beans_platform_jvm::JvmPlatform;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 
 use crate::storage::Storage;
@@ -21,11 +19,6 @@ pub struct Engine {
     /// Central model and content storage
     storage: Storage,
 
-    /// The JVM platform vertical
-    jvm: JvmPlatform,
-    /// The Java language vertical
-    java: JavaLanguage,
-
     /// Sender into the main event loop
     sender: Sender<Event>,
     /// Receiver for the main event loop
@@ -35,14 +28,10 @@ pub struct Engine {
 impl Engine {
     pub fn new() -> Self {
         let (sender, events) = unbounded();
-        let jvm = JvmPlatform::new();
-        let java = JavaLanguage::new();
 
         Self {
             revision: Revision::default(),
             storage: Storage::new(),
-            java,
-            jvm,
             sender,
             events,
         }

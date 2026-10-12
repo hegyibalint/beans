@@ -2,10 +2,9 @@
 
 use std::path::Path;
 
-use beans_core::{query_scope::QueryScope, resource::ResourceId};
-use beans_storage::RevisionEntry;
+use beans_core::resource::ResourceId;
 
-use crate::{model::File, model_query::JavaModelQuery, query::JavaQuery};
+use crate::model::File;
 
 pub mod features;
 pub mod lowering;
@@ -16,34 +15,13 @@ pub mod semantics;
 
 pub use lowering::lower_into;
 
-#[derive(Default)]
-pub struct JavaLanguage;
+pub fn accept(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension == "java")
+}
 
-impl JavaLanguage {
-    pub fn new() -> Self {
-        Self
-    }
-
-    pub fn accept(&self, path: &Path) -> bool {
-        path.extension()
-            .is_some_and(|extension| extension == "java")
-    }
-
-    pub fn process(&self, _source: &ResourceId, contents: &str) -> Option<File> {
-        Some(lower_into(contents))
-    }
-
-    pub fn query<'a, Q: JavaModelQuery>(
-        &self,
-        models: &'a Q,
-        scope: QueryScope<'a>,
-    ) -> JavaQuery<'a, Q> {
-        JavaQuery::new(models, scope)
-    }
-
-    pub fn analyse(&self, _entry: &RevisionEntry<ResourceId>, _scope: QueryScope<'_>) {
-        todo!("analysis is not implemented")
-    }
+pub fn process(_source: &ResourceId, contents: &str) -> Option<File> {
+    Some(lower_into(contents))
 }
 
 #[cfg(test)]

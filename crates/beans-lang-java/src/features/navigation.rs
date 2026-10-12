@@ -1,15 +1,17 @@
 use beans_core::{
-    features::navigation::{DefinitionProvider, DefinitionRequest, NavigationResult},
+    features::navigation::{DefinitionRequest, NavigationResult},
     ranges::ByteRange,
     resource::ResourceId,
     revision::Revision,
     source::SourceSpan,
 };
 
+use beans_platform_jvm::model_query::JvmModelQuery;
+
 use crate::{
-    JavaLanguage,
     model::{File, nodes::NodeKind, references::TypeRef, type_references::find_in_reference},
     model_query::JavaModelQuery,
+    query::JavaQuery,
     semantics::resolution::{
         Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate,
         query::{ResolutionQuery, TypeCandidateQuery},
@@ -19,56 +21,50 @@ use crate::{
 
 use super::JavaFeatureContext;
 
-impl<'request, Q: JavaModelQuery>
-    DefinitionProvider<JavaFeatureContext<'_, Q>, DefinitionRequest<'request>, NavigationResult>
-    for JavaLanguage
-{
-    /// Finds a type definition at a Java source position using the visible Java and JVM types.
-    fn goto_definition(
-        &self,
-        context: &JavaFeatureContext<'_, Q>,
-        request: &DefinitionRequest<'request>,
-    ) -> Option<NavigationResult> {
-        let source = request.source;
-        let offset = request.offset;
-        let java = self.query(context.models, context.scope);
-        let definitions = ResolutionQuery::new(&java, context.jvm);
-        let file = context.models.java_file(source)?;
-        if let Some(range) = type_parameter_declaration_at(file, offset) {
-            return Some(NavigationResult {
-                origin_range: range,
-                target: SourceSpan::new(source.clone(), range),
-            });
-        }
-        let (origin_range, candidate) = resolve_field_type_at(
-            file,
-            context.scope.revision(),
-            source,
-            offset,
-            Some(&definitions),
-        )?;
-        let target = match candidate.ok()? {
-            TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) => {
-                let declaration = context
-                    .models
-                    .java_file(handle.source())?
-                    .node(handle.node_index())?
-                    .kind()
-                    .as_type()?;
-                SourceSpan::new(handle.source().clone(), declaration.name.as_ref()?.range())
-            }
-            TypeCandidate::Java(JavaTypeCandidate::TypeParameter(handle)) => {
-                let owner = handle.owner();
-                let file = context.models.java_file(owner.source())?;
-                SourceSpan::new(owner.source().clone(), handle.parameter(file)?.name.range())
-            }
-            TypeCandidate::Jvm(_) => return None,
-        };
-        Some(NavigationResult {
-            origin_range,
-            target,
-        })
+/// Finds a type definition at a Java source position using the visible Java and JVM types.
+pub fn goto_definition<Q: JavaModelQuery + JvmModelQuery>(
+    context: &JavaFeatureContext<'_, Q>,
+    request: &DefinitionRequest<'_>,
+) -> Option<NavigationResult> {
+    let source = request.source;
+    let offset = request.offset;
+    let java = JavaQuery::new(context.models, context.scope);
+    let definitions = ResolutionQuery::new(&java, context.models);
+    let file = context.models.java_file(source)?;
+    if let Some(range) = type_parameter_declaration_at(file, offset) {
+        return Some(NavigationResult {
+            origin_range: range,
+            target: SourceSpan::new(source.clone(), range),
+        });
     }
+    let (origin_range, candidate) = resolve_field_type_at(
+        file,
+        context.scope.revision(),
+        source,
+        offset,
+        Some(&definitions),
+    )?;
+    let target = match candidate.ok()? {
+        TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) => {
+            let declaration = context
+                .models
+                .java_file(handle.source())?
+                .node(handle.node_index())?
+                .kind()
+                .as_type()?;
+            SourceSpan::new(handle.source().clone(), declaration.name.as_ref()?.range())
+        }
+        TypeCandidate::Java(JavaTypeCandidate::TypeParameter(handle)) => {
+            let owner = handle.owner();
+            let file = context.models.java_file(owner.source())?;
+            SourceSpan::new(owner.source().clone(), handle.parameter(file)?.name.range())
+        }
+        TypeCandidate::Jvm(_) => return None,
+    };
+    Some(NavigationResult {
+        origin_range,
+        target,
+    })
 }
 
 /// A type parameter declaration already identifies its own definition (JLS §4.4).
@@ -148,7 +144,6 @@ mod tests {
     use beans_core::{
         classpath::Unrestricted, names::Name, query_scope::QueryScope, ranges::ByteRange,
     };
-    use beans_platform_jvm::JvmPlatform;
 
     fn source_id() -> ResourceId {
         ResourceId::new(ResourceRoot::Virtual {
@@ -163,18 +158,15 @@ mod tests {
         source: &ResourceId,
         offset: usize,
     ) -> Option<SourceSpan> {
-        let jvm = JvmPlatform::new();
         let models = java.model_query(revision);
-        JavaLanguage::new()
-            .goto_definition(
-                &JavaFeatureContext {
-                    models: &models,
-                    scope: QueryScope::new(revision, &Unrestricted),
-                    jvm: &jvm,
-                },
-                &DefinitionRequest { source, offset },
-            )
-            .map(|definition| definition.target)
+        goto_definition(
+            &JavaFeatureContext {
+                models: &models,
+                scope: QueryScope::new(revision, &Unrestricted),
+            },
+            &DefinitionRequest { source, offset },
+        )
+        .map(|definition| definition.target)
     }
 
     fn at<'a>(
@@ -218,24 +210,20 @@ mod tests {
         let source = source_id();
         let mut stored = Models::new();
         stored.store(revision, lower_into(text), source.clone());
-        let receiver = JavaLanguage::new();
-        let jvm = JvmPlatform::new();
         let models = stored.model_query(revision);
         let name_start = text.find("Member").unwrap();
 
-        let definition = receiver
-            .goto_definition(
-                &JavaFeatureContext {
-                    models: &models,
-                    scope: QueryScope::new(revision, &Unrestricted),
-                    jvm: &jvm,
-                },
-                &DefinitionRequest {
-                    source: &source,
-                    offset: text.rfind("Member").unwrap(),
-                },
-            )
-            .unwrap();
+        let definition = goto_definition(
+            &JavaFeatureContext {
+                models: &models,
+                scope: QueryScope::new(revision, &Unrestricted),
+            },
+            &DefinitionRequest {
+                source: &source,
+                offset: text.rfind("Member").unwrap(),
+            },
+        )
+        .unwrap();
 
         assert_eq!(
             definition.target,
@@ -302,7 +290,6 @@ mod tests {
         let mut java = Models::new();
         java.store(revision, lower_into(text), source.clone());
 
-        let jvm = JvmPlatform::new();
         let models = java.model_query(revision);
         let first = text.find("First<A>").unwrap();
         let second = text.find("Second<B>").unwrap();
@@ -324,19 +311,17 @@ mod tests {
             (second + "Second<B>".len() - 1, "Second", "Second<B>"), // >
             (second + "Second<".len(), "B", "B"),
         ] {
-            let definition = JavaLanguage::new()
-                .goto_definition(
-                    &JavaFeatureContext {
-                        models: &models,
-                        scope: QueryScope::new(revision, &Unrestricted),
-                        jvm: &jvm,
-                    },
-                    &DefinitionRequest {
-                        source: &source,
-                        offset,
-                    },
-                )
-                .unwrap();
+            let definition = goto_definition(
+                &JavaFeatureContext {
+                    models: &models,
+                    scope: QueryScope::new(revision, &Unrestricted),
+                },
+                &DefinitionRequest {
+                    source: &source,
+                    offset,
+                },
+            )
+            .unwrap();
             assert_eq!(Some(definition.target), declaration(name));
             assert_eq!(
                 &text[definition.origin_range.start()..definition.origin_range.end()],

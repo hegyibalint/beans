@@ -9,6 +9,34 @@ pub mod jimage;
 
 use std::io::{self, Read, Seek, SeekFrom};
 
+use beans_core::resource::ResourceId;
+
+use crate::Class;
+
+pub fn process(
+    id: &ResourceId,
+    mut reader: impl Read + Seek,
+) -> Result<Option<impl Iterator<Item = Result<(ResourceId, Class), String>>>, String> {
+    let (classes, jar, image) =
+        match magic(&mut reader).map_err(|error| format!("{id:?}: {error}"))? {
+            Some([0xCA, 0xFE, 0xBA, 0xBE]) => (class::process(id, reader)?, None, None),
+            Some(
+                [0x50, 0x4B, 0x03, 0x04] | [0x50, 0x4B, 0x05, 0x06] | [0x50, 0x4B, 0x06, 0x06],
+            ) => (None, jar::process(id, reader)?, None),
+            Some([0xCA, 0xFE, 0xDA, 0xDA] | [0xDA, 0xDA, 0xFE, 0xCA]) => {
+                (None, None, jimage::process(id, reader)?)
+            }
+            _ => return Ok(None),
+        };
+    Ok(Some(
+        classes
+            .into_iter()
+            .flatten()
+            .chain(jar.into_iter().flatten())
+            .chain(image.into_iter().flatten()),
+    ))
+}
+
 fn magic(reader: &mut (impl Read + Seek)) -> Result<Option<[u8; 4]>, String> {
     let start = reader
         .stream_position()

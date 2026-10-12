@@ -23,7 +23,7 @@ impl Engine {
         let ResourceRoot::File { path } = &source.root else {
             return;
         };
-        if !source.entries.is_empty() || !self.java.accept(path) {
+        if !source.entries.is_empty() || !beans_lang_java::accept(path) {
             return;
         }
         self.document_process(source, "java", contents);
@@ -33,7 +33,7 @@ impl Engine {
         if language_id != "java" {
             return;
         }
-        let Some(model) = self.java.process(&source, contents) else {
+        let Some(model) = beans_lang_java::process(&source, contents) else {
             return;
         };
         self.revision.advance();

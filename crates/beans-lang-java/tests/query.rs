@@ -7,15 +7,15 @@ use beans_core::{
     revision::Revision,
 };
 use beans_lang_java::{
-    JavaLanguage,
     lowering::lower_into,
     model::{File, nodes::NodeKind},
     model_query::JavaModelQuery,
+    query::JavaQuery,
     semantics::resolution::{
         Context, JavaTypeCandidate, TypeCandidate, query::ResolutionQuery, resolve,
     },
 };
-use beans_platform_jvm::JvmPlatform;
+use beans_platform_jvm::{Class, model_query::JvmModelQuery};
 
 struct Models {
     files: HashMap<ResourceId, File>,
@@ -31,8 +31,18 @@ impl JavaModelQuery for Models {
     }
 }
 
+impl JvmModelQuery for Models {
+    fn jvm_class(&self, _source: &ResourceId) -> Option<&Class> {
+        None
+    }
+
+    fn jvm_classes(&self) -> impl Iterator<Item = (&ResourceId, &Class)> {
+        std::iter::empty()
+    }
+}
+
 #[test]
-fn supplied_models_can_be_resolved_using_the_languages_query() {
+fn supplied_models_can_be_resolved_using_the_java_query() {
     let source = ResourceId::file("/src/app/Use.java");
     let models = Models {
         files: HashMap::from([(
@@ -42,7 +52,7 @@ fn supplied_models_can_be_resolved_using_the_languages_query() {
     };
     let revision = Revision::new(3);
     let classpath = Unrestricted;
-    let query = JavaLanguage::new().query(&models, QueryScope::new(revision, &classpath));
+    let query = JavaQuery::new(&models, QueryScope::new(revision, &classpath));
 
     assert_eq!(query.revision(), revision);
     assert!(std::ptr::eq(
@@ -90,9 +100,8 @@ fn an_imported_type_resolves_to_another_supplied_source_file() {
     };
     let revision = Revision::new(1);
     let classpath = Unrestricted;
-    let java = JavaLanguage::new().query(&models, QueryScope::new(revision, &classpath));
-    let jvm = JvmPlatform::new();
-    let definitions = ResolutionQuery::new(&java, &jvm);
+    let java = JavaQuery::new(&models, QueryScope::new(revision, &classpath));
+    let definitions = ResolutionQuery::new(&java, &models);
     let file = java.file(&use_source).unwrap();
     let field = file
         .iter_nodes()

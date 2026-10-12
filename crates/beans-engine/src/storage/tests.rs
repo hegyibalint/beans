@@ -7,9 +7,7 @@ fn entries_keep_the_model_and_retained_input_together() {
     let mut storage = Storage::new();
     let source = ResourceId::file("/src/example/Example.java");
     let contents = "package example; class Example {}";
-    let model = beans_lang_java::JavaLanguage::new()
-        .process(&source, contents)
-        .unwrap();
+    let model = beans_lang_java::process(&source, contents).unwrap();
 
     assert!(
         storage

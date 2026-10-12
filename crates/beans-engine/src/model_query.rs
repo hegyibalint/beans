@@ -39,6 +39,15 @@ impl JvmModelQuery for ModelQuery<'_> {
             Model::Jvm(class) => Some(class),
         }
     }
+
+    fn jvm_classes(&self) -> impl Iterator<Item = (&ResourceId, &Class)> {
+        self.storage
+            .iter()
+            .filter_map(|(source, entry)| match &entry.model {
+                Model::Java(_) => None,
+                Model::Jvm(class) => Some((source, class)),
+            })
+    }
 }
 
 #[cfg(test)]

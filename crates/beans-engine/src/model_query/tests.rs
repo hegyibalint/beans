@@ -1,5 +1,5 @@
 use beans_core::resource::{ResourceEntry, ResourceId};
-use beans_lang_java::{JavaLanguage, model_query::JavaModelQuery};
+use beans_lang_java::model_query::JavaModelQuery;
 use beans_platform_jvm::{Class, model_query::JvmModelQuery};
 
 use super::ModelQuery;
@@ -13,9 +13,7 @@ fn java_model_reads_borrow_the_stored_entry() {
         source.clone(),
         Entry {
             model: Model::Java(
-                JavaLanguage::new()
-                    .process(&source, "package example; class Example {}")
-                    .unwrap(),
+                beans_lang_java::process(&source, "package example; class Example {}").unwrap(),
             ),
             content: None,
         },
@@ -57,6 +55,10 @@ fn jvm_model_reads_borrow_the_entry_at_the_full_resource_id() {
     assert!(std::ptr::eq(class, stored));
     assert!(query.java_file(&source).is_none());
     assert!(query.jvm_class(&container).is_none());
+    let classes: Vec<_> = query.jvm_classes().collect();
+    assert_eq!(classes.len(), 1);
+    assert_eq!(classes[0].0, &source);
+    assert!(std::ptr::eq(classes[0].1, class));
 }
 
 #[test]
@@ -66,11 +68,7 @@ fn enumeration_returns_only_borrowed_java_models() {
     storage.insert(
         java_source.clone(),
         Entry {
-            model: Model::Java(
-                JavaLanguage::new()
-                    .process(&java_source, "class Example {}")
-                    .unwrap(),
-            ),
+            model: Model::Java(beans_lang_java::process(&java_source, "class Example {}").unwrap()),
             content: None,
         },
     );
@@ -92,6 +90,96 @@ fn enumeration_returns_only_borrowed_java_models() {
         files[0].1,
         query.java_file(&java_source).unwrap()
     ));
+}
+
+#[test]
+fn jvm_discovery_uses_replaced_and_removed_storage_entries() {
+    use beans_core::{classpath::Unrestricted, query_scope::QueryScope, revision::Revision};
+
+    let mut storage = Storage::new();
+    let source = ResourceId::file("/Example.class");
+    let scope = QueryScope::new(Revision::new(7), &Unrestricted);
+    for name in ["example/Former", "example/Latest"] {
+        storage.insert(
+            source.clone(),
+            Entry {
+                model: Model::Jvm(Class { name: name.into() }),
+                content: None,
+            },
+        );
+        let query = ModelQuery::new(&storage);
+        let found = beans_platform_jvm::find_classes(&query, scope, name);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].key, source);
+        assert_eq!(found[0].revision, scope.revision());
+        if name == "example/Latest" {
+            assert!(beans_platform_jvm::find_classes(&query, scope, "example/Former").is_empty());
+        }
+    }
+    storage.remove(&source);
+    let query = ModelQuery::new(&storage);
+    assert!(query.jvm_class(&source).is_none());
+    assert!(query.jvm_classes().next().is_none());
+    assert!(beans_platform_jvm::find_classes(&query, scope, "example/Latest").is_empty());
+}
+
+#[test]
+fn java_resolution_consumes_jvm_models_from_the_same_engine_storage() {
+    use beans_core::{classpath::Unrestricted, query_scope::QueryScope, revision::Revision};
+    use beans_lang_java::{
+        model::nodes::NodeKind,
+        query::JavaQuery,
+        semantics::resolution::{Context, TypeCandidate, query::ResolutionQuery, resolve},
+    };
+
+    let mut storage = Storage::new();
+    let source = ResourceId::file("/Use.java");
+    let class_source =
+        ResourceId::file("/runtime.jar").entry(ResourceEntry("java/lang/String.class".into()));
+    storage.insert(
+        source.clone(),
+        Entry {
+            model: Model::Java(
+                beans_lang_java::process(&source, "class Use { String field; }").unwrap(),
+            ),
+            content: None,
+        },
+    );
+    storage.insert(
+        class_source.clone(),
+        Entry {
+            model: Model::Jvm(Class {
+                name: "java/lang/String".into(),
+            }),
+            content: None,
+        },
+    );
+    let models = ModelQuery::new(&storage);
+    let revision = Revision::new(7);
+    let java = JavaQuery::new(&models, QueryScope::new(revision, &Unrestricted));
+    let definitions = ResolutionQuery::new(&java, &models);
+    let file = java.file(&source).unwrap();
+    let field = file
+        .iter_nodes()
+        .find(|entry| matches!(entry.node.kind(), NodeKind::Field(_)))
+        .unwrap();
+    let NodeKind::Field(declaration) = field.node.kind() else {
+        unreachable!()
+    };
+    let context = Context::new(
+        revision,
+        &source,
+        file,
+        field.index,
+        declaration.declared_type.value(),
+    )
+    .with_definitions(&definitions);
+
+    let TypeCandidate::Jvm(address) = resolve(&context).unwrap() else {
+        panic!("expected an Engine-stored JVM candidate");
+    };
+    assert_eq!(address.key, class_source);
+    assert_eq!(address.revision, revision);
 }
 
 #[test]

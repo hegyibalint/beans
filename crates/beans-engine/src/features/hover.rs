@@ -1,6 +1,6 @@
 use beans_core::{
     classpath::Unrestricted,
-    features::{HoverProvider, HoverRequest, HoverResponse},
+    features::{HoverRequest, HoverResponse},
     query_scope::QueryScope,
 };
 use beans_lang_java::features::JavaFeatureContext;
@@ -16,8 +16,7 @@ impl Engine {
         let context = JavaFeatureContext {
             models: &models,
             scope: QueryScope::new(self.revision, &Unrestricted),
-            jvm: &self.jvm,
         };
-        self.java.hover(&context, request)
+        beans_lang_java::features::hover(&context, request)
     }
 }

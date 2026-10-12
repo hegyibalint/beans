@@ -4,26 +4,45 @@ use beans_core::{
     resource::{ResourceEntry, ResourceId},
     revision::Revision,
 };
-use beans_storage::RevisionEntry;
+use beans_storage::{RevisionEntry, RevisionedStorage};
 
-use crate::{JvmPlatform, model::class::Class};
+use crate::{Class, find_classes, model_query::JvmModelQuery};
+
+struct Models<'a> {
+    classes: &'a RevisionedStorage<ResourceId, Class>,
+    revision: Revision,
+}
+
+impl JvmModelQuery for Models<'_> {
+    fn jvm_class(&self, source: &ResourceId) -> Option<&Class> {
+        self.classes.get(self.revision, source)
+    }
+
+    fn jvm_classes(&self) -> impl Iterator<Item = (&ResourceId, &Class)> {
+        self.classes.iter(self.revision)
+    }
+}
 
 #[test]
 fn lookup_requires_an_exact_internal_binary_name() {
-    let mut platform = JvmPlatform::new();
+    let mut classes = RevisionedStorage::default();
     let resource = ResourceId::file("/Outer$Inner.class");
     let revision = Revision::new(1);
-    platform.classes.put(
+    classes.put(
         revision,
         resource.clone(),
         Class {
             name: "example/Outer$Inner".into(),
         },
     );
+    let models = Models {
+        classes: &classes,
+        revision,
+    };
     let scope = QueryScope::new(revision, &Unrestricted);
 
     assert_eq!(
-        platform.find_classes(scope, "example/Outer$Inner"),
+        find_classes(&models, scope, "example/Outer$Inner"),
         vec![RevisionEntry {
             revision,
             key: resource
@@ -37,88 +56,78 @@ fn lookup_requires_an_exact_internal_binary_name() {
         "example/Missing",
         "",
     ] {
-        assert!(platform.find_classes(scope, name).is_empty(), "{name}");
+        assert!(find_classes(&models, scope, name).is_empty(), "{name}");
     }
 }
 
 #[test]
-fn lookup_uses_the_requested_revision_through_replacement_and_removal() {
-    let mut platform = JvmPlatform::new();
+fn lookup_uses_provider_selected_models_after_replacement_and_removal() {
+    let mut classes = RevisionedStorage::default();
     let resource = ResourceId::file("/Example.class");
-    platform.classes.put(
+    classes.put(
         Revision::new(1),
         resource.clone(),
         Class {
             name: "example/Former".into(),
         },
     );
-    platform.classes.put(
+    classes.put(
         Revision::new(3),
         resource.clone(),
         Class {
             name: "example/Latest".into(),
         },
     );
-    platform.classes.remove(Revision::new(5), resource.clone());
+    classes.remove(Revision::new(5), resource.clone());
+    let query_revision = Revision::new(42);
+    let scope = QueryScope::new(query_revision, &Unrestricted);
 
-    assert!(platform.class(Revision::default(), &resource).is_none());
-    assert!(
-        platform
-            .class(Revision::new(3), &ResourceId::file("/Missing.class"))
-            .is_none()
-    );
-    assert!(
-        platform
-            .find_classes(
-                QueryScope::new(Revision::default(), &Unrestricted),
-                "example/Former"
-            )
-            .is_empty()
-    );
-    for (revision, name) in [(2, "example/Former"), (4, "example/Latest")] {
-        let revision = Revision::new(revision);
-        let addresses = platform.find_classes(QueryScope::new(revision, &Unrestricted), name);
+    for (selected_revision, expected) in [
+        (0, None),
+        (2, Some("example/Former")),
+        (4, Some("example/Latest")),
+        (5, None),
+    ] {
+        let models = Models {
+            classes: &classes,
+            revision: Revision::new(selected_revision),
+        };
         assert_eq!(
-            addresses,
-            vec![RevisionEntry {
-                revision,
-                key: resource.clone()
-            }]
+            models.jvm_class(&resource).map(|class| class.name.as_str()),
+            expected
         );
-        let address = &addresses[0];
-        assert_eq!(
-            platform.class(address.revision, &address.key).unwrap().name,
-            name
-        );
-    }
-    assert!(
-        platform
-            .find_classes(
-                QueryScope::new(Revision::new(3), &Unrestricted),
-                "example/Former"
-            )
-            .is_empty()
-    );
-    assert!(platform.class(Revision::new(5), &resource).is_none());
-    for name in ["example/Former", "example/Latest"] {
         assert!(
-            platform
-                .find_classes(QueryScope::new(Revision::new(5), &Unrestricted), name)
-                .is_empty()
+            models
+                .jvm_class(&ResourceId::file("/Missing.class"))
+                .is_none()
         );
+        for name in ["example/Former", "example/Latest"] {
+            let addresses = find_classes(&models, scope, name);
+            if expected == Some(name) {
+                assert_eq!(
+                    addresses,
+                    vec![RevisionEntry {
+                        revision: query_revision,
+                        key: resource.clone()
+                    }]
+                );
+            } else {
+                assert!(addresses.is_empty());
+            }
+        }
     }
 }
 
 #[test]
 fn duplicate_binary_names_retain_their_distinct_resource_addresses() {
-    let mut platform = JvmPlatform::new();
+    let mut classes = RevisionedStorage::default();
     let revision = Revision::new(1);
     let resources = [
         ResourceId::file("/first.jar").entry(ResourceEntry("example/Foo.class".into())),
         ResourceId::file("/second.jar").entry(ResourceEntry("example/Foo.class".into())),
     ];
     for resource in &resources {
-        platform.classes.put(
+        classes.put(
             revision,
             resource.clone(),
             Class {
@@ -126,8 +135,15 @@ fn duplicate_binary_names_retain_their_distinct_resource_addresses() {
             },
         );
     }
-
-    let addresses = platform.find_classes(QueryScope::new(revision, &Unrestricted), "example/Foo");
+    let models = Models {
+        classes: &classes,
+        revision,
+    };
+    let addresses = find_classes(
+        &models,
+        QueryScope::new(revision, &Unrestricted),
+        "example/Foo",
+    );
 
     assert_eq!(addresses.len(), 2);
     for resource in resources {
@@ -146,18 +162,17 @@ fn lookup_applies_class_visibility_not_source_visibility() {
         fn contains_source(&self, _resource: &ResourceId) -> bool {
             false
         }
-
         fn contains_class(&self, resource: &ResourceId) -> bool {
             resource == &self.0
         }
     }
 
-    let mut platform = JvmPlatform::new();
+    let mut classes = RevisionedStorage::default();
     let revision = Revision::new(1);
     let visible = ResourceId::file("/visible.class");
     let hidden = ResourceId::file("/hidden.class");
     for resource in [&visible, &hidden] {
-        platform.classes.put(
+        classes.put(
             revision,
             resource.clone(),
             Class {
@@ -165,10 +180,18 @@ fn lookup_applies_class_visibility_not_source_visibility() {
             },
         );
     }
+    let models = Models {
+        classes: &classes,
+        revision,
+    };
     let classpath = SelectedClass(visible.clone());
 
     assert_eq!(
-        platform.find_classes(QueryScope::new(revision, &classpath), "example/Foo"),
+        find_classes(
+            &models,
+            QueryScope::new(revision, &classpath),
+            "example/Foo"
+        ),
         vec![RevisionEntry {
             revision,
             key: visible

@@ -1,16 +1,16 @@
 use crate::{model_query::JavaModelQuery, query::JavaQuery};
 use beans_core::{names::Name, query_scope::QueryScope, resolution::TypeDefinitionQuery};
-use beans_platform_jvm::JvmPlatform;
+use beans_platform_jvm::model_query::JvmModelQuery;
 
 use super::{JavaTypeCandidate, TypeCandidate};
 
-pub struct ResolutionQuery<'a, Q: JavaModelQuery> {
-    java: &'a JavaQuery<'a, Q>,
-    jvm: &'a JvmPlatform,
+pub struct ResolutionQuery<'a, J: JavaModelQuery, P: JvmModelQuery> {
+    java: &'a JavaQuery<'a, J>,
+    jvm: &'a P,
 }
 
-impl<'a, Q: JavaModelQuery> ResolutionQuery<'a, Q> {
-    pub fn new(java: &'a JavaQuery<'a, Q>, jvm: &'a JvmPlatform) -> Self {
+impl<'a, J: JavaModelQuery, P: JvmModelQuery> ResolutionQuery<'a, J, P> {
+    pub fn new(java: &'a JavaQuery<'a, J>, jvm: &'a P) -> Self {
         Self { java, jvm }
     }
 }
@@ -21,7 +21,9 @@ pub trait TypeCandidateQuery {
     fn candidates(&self, name: &Name) -> Vec<TypeCandidate>;
 }
 
-impl<Q: JavaModelQuery> TypeDefinitionQuery<TypeCandidate> for ResolutionQuery<'_, Q> {
+impl<J: JavaModelQuery, P: JvmModelQuery> TypeDefinitionQuery<TypeCandidate>
+    for ResolutionQuery<'_, J, P>
+{
     fn find_types<'query>(
         &'query self,
         name: &'query Name,
@@ -33,9 +35,7 @@ impl<Q: JavaModelQuery> TypeDefinitionQuery<TypeCandidate> for ResolutionQuery<'
         let scope = QueryScope::new(self.java.revision(), self.java.classpath());
         // JVMS §4.2.1: internal names use '/'; canonical member-name conversion is not wired.
         let binary_name = name.as_slice().join("/");
-        let jvm = self
-            .jvm
-            .find_classes(scope, &binary_name)
+        let jvm = beans_platform_jvm::find_classes(self.jvm, scope, &binary_name)
             .into_iter()
             .map(TypeCandidate::Jvm);
 
@@ -43,7 +43,7 @@ impl<Q: JavaModelQuery> TypeDefinitionQuery<TypeCandidate> for ResolutionQuery<'
     }
 }
 
-impl<Q: JavaModelQuery> TypeCandidateQuery for ResolutionQuery<'_, Q> {
+impl<J: JavaModelQuery, P: JvmModelQuery> TypeCandidateQuery for ResolutionQuery<'_, J, P> {
     fn candidates(&self, name: &Name) -> Vec<TypeCandidate> {
         TypeDefinitionQuery::find_types(self, name).collect()
     }
@@ -62,7 +62,7 @@ mod tests {
     use beans_testing::support::class_bytes;
     use tempfile::NamedTempFile;
 
-    use crate::{JavaLanguage, lower_into, testing::Models};
+    use crate::{lower_into, testing::Models};
 
     use super::*;
 
@@ -78,12 +78,18 @@ mod tests {
         );
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(&class_bytes("example/Example")).unwrap();
-        let mut platform = JvmPlatform::new();
-        platform.process(revision, file.path().to_owned()).unwrap();
+        let source = ResourceId::file(file.path());
+        for entry in beans_platform_jvm::process(&source, std::fs::File::open(file.path()).unwrap())
+            .unwrap()
+            .unwrap()
+        {
+            let (source, class) = entry.unwrap();
+            language.store_class(revision, class, source);
+        }
         let models = language.model_query(revision);
-        let java = JavaLanguage::new().query(&models, QueryScope::new(revision, &Unrestricted));
+        let java = JavaQuery::new(&models, QueryScope::new(revision, &Unrestricted));
         let java_address = java.find_types(&name).next().unwrap();
-        let query = ResolutionQuery::new(&java, &platform);
+        let query = ResolutionQuery::new(&java, &models);
 
         let candidates: Vec<_> = query.find_types(&name).collect();
 
@@ -115,11 +121,15 @@ mod tests {
 
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(&class_bytes("example/Example")).unwrap();
-        let mut platform = JvmPlatform::new();
-        platform
-            .process(Revision::new(5), file.path().to_owned())
-            .unwrap();
-        let language = Models::new();
+        let mut language = Models::new();
+        let source = ResourceId::file(file.path());
+        for entry in beans_platform_jvm::process(&source, std::fs::File::open(file.path()).unwrap())
+            .unwrap()
+            .unwrap()
+        {
+            let (source, class) = entry.unwrap();
+            language.store_class(Revision::new(5), class, source);
+        }
         let name = Name::new(vec!["example".into(), "Example".into()]);
 
         for (revision, visible, expected) in [(4, true, false), (7, false, false), (7, true, true)]
@@ -127,8 +137,8 @@ mod tests {
             let classpath = Visibility(visible);
             let revision = Revision::new(revision);
             let models = language.model_query(revision);
-            let java = JavaLanguage::new().query(&models, QueryScope::new(revision, &classpath));
-            let query = ResolutionQuery::new(&java, &platform);
+            let java = JavaQuery::new(&models, QueryScope::new(revision, &classpath));
+            let query = ResolutionQuery::new(&java, &models);
             let candidates = query.candidates(&name);
 
             if expected {

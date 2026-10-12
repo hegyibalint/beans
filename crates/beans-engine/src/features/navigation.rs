@@ -1,6 +1,6 @@
 use beans_core::{
     classpath::Unrestricted,
-    features::{DefinitionProvider, DefinitionRequest, NavigationResult},
+    features::{DefinitionRequest, NavigationResult},
     query_scope::QueryScope,
 };
 use beans_lang_java::features::JavaFeatureContext;
@@ -16,8 +16,7 @@ impl Engine {
         let context = JavaFeatureContext {
             models: &models,
             scope: QueryScope::new(self.revision, &Unrestricted),
-            jvm: &self.jvm,
         };
-        self.java.goto_definition(&context, request)
+        beans_lang_java::features::goto_definition(&context, request)
     }
 }

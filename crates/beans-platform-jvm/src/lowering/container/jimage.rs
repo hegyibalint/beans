@@ -155,7 +155,7 @@ impl Location {
             .seek(SeekFrom::Start(start))
             .map_err(|error| format!("{entry_id:?}: {error}"))?;
         let mut resource = reader.take(self.uncompressed_size);
-        let class = crate::parser::parse(&mut resource)
+        let class = crate::lowering::parser::parse(&mut resource)
             .map_err(|error| format!("{entry_id:?}: {error}"))?;
         if resource.limit() != 0 {
             return Err(format!("{entry_id:?}: truncated jimage resource"));

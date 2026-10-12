@@ -15,7 +15,7 @@ pub fn process(
     }
 
     Ok(Some(std::iter::once_with(move || {
-        let class = crate::parser::parse(reader)
+        let class = crate::lowering::parser::parse(reader)
             .map_err(|error| format!("{id:?}: {error}"))?
             .ok_or_else(|| format!("{id:?}: invalid class-file magic"))?;
         Ok((id.clone(), class))

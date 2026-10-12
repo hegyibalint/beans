@@ -1,7 +1,8 @@
-mod container;
+//! JVM container processing and model interpretation, independent of storage.
+
+pub mod lowering;
 mod model;
 pub mod model_query;
-mod parser;
 mod query;
 
 #[cfg(test)]
@@ -12,59 +13,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use beans_core::{resource::ResourceId, revision::Revision};
-use beans_storage::RevisionedStorage;
-
-pub use crate::model::class::Class;
-
-#[derive(Default)]
-pub struct JvmPlatform {
-    classes: RevisionedStorage<ResourceId, Class>,
-}
-
-impl JvmPlatform {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn process_jdk_home(&mut self, revision: Revision, home: &Path) -> Result<(), String> {
-        for artifact in jdk_artifacts(home)? {
-            self.process(revision, artifact)?;
-        }
-        Ok(())
-    }
-
-    pub fn process(&mut self, revision: Revision, path: PathBuf) -> Result<(), String> {
-        let mut file =
-            std::fs::File::open(&path).map_err(|error| format!("{}: {error}", path.display()))?;
-        let resource_id = ResourceId::file(path);
-
-        if let Some(entries) = container::class::process(&resource_id, &mut file)? {
-            return self.store(revision, entries);
-        }
-        if let Some(entries) = container::jar::process(&resource_id, &mut file)? {
-            return self.store(revision, entries);
-        }
-        if let Some(entries) = container::jimage::process(&resource_id, &mut file)? {
-            return self.store(revision, entries);
-        }
-
-        Err(format!("{resource_id:?}: unrecognized container format"))
-    }
-
-    fn store(
-        &mut self,
-        revision: Revision,
-        entries: impl Iterator<Item = Result<(ResourceId, Class), String>>,
-    ) -> Result<(), String> {
-        for entry in entries {
-            let (id, class) = entry?;
-            self.classes.put(revision, id, class);
-        }
-
-        Ok(())
-    }
-}
+pub use crate::{lowering::process, model::class::Class, query::find_classes};
 
 /// Selects the first supported layout, including tools.jar only for legacy homes.
 pub fn jdk_artifacts(home: &Path) -> Result<Vec<PathBuf>, String> {
