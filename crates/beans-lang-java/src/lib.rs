@@ -29,7 +29,6 @@ impl JavaLanguage {
             .is_some_and(|extension| extension == "java")
     }
 
-    /// The caller selects Java; a resource's name does not override that selection.
     pub fn process(&self, _source: &ResourceId, contents: &str) -> Option<File> {
         Some(lower_into(contents))
     }

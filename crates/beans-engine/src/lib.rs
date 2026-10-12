@@ -16,17 +16,19 @@ pub mod storage;
 mod tests;
 
 pub struct Engine {
-    // Monotonic version where we are.
+    /// Monotonic version where we are.
     revision: Revision,
-    // Central model and content storage
+    /// Central model and content storage
     storage: Storage,
 
-    // Language verticals
+    /// The JVM platform vertical
     jvm: JvmPlatform,
+    /// The Java language vertical
     java: JavaLanguage,
 
-    // Event bus
+    /// Sender into the main event loop
     sender: Sender<Event>,
+    /// Receiver for the main event loop
     events: Receiver<Event>,
 }
 
