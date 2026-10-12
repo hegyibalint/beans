@@ -4,25 +4,25 @@ use crate::model::{
 };
 pub use crate::semantics::DeclarationHandle;
 use beans_core::resolution::TypeDefinitionQuery;
-use beans_core::{classpath::Classpath, names::Name, origin::Origin};
+use beans_core::{classpath::Classpath, names::Name, resource::ResourceId};
 use beans_core::{query_scope::QueryScope, revision::Revision};
 use beans_storage::RevisionedStorage;
 
 #[derive(Debug, Clone, Copy)]
 pub struct JavaTypeEntry<'a> {
-    pub source: &'a Origin,
+    pub source: &'a ResourceId,
     pub file: &'a File,
     pub node_index: NodeIndex,
     pub declaration: &'a TypeDeclaration,
 }
 
 pub struct JavaQuery<'a> {
-    files: &'a RevisionedStorage<Origin, File>,
+    files: &'a RevisionedStorage<ResourceId, File>,
     scope: QueryScope<'a>,
 }
 
 impl<'a> JavaQuery<'a> {
-    pub fn new(files: &'a RevisionedStorage<Origin, File>, scope: QueryScope<'a>) -> Self {
+    pub fn new(files: &'a RevisionedStorage<ResourceId, File>, scope: QueryScope<'a>) -> Self {
         Self { files, scope }
     }
 
@@ -35,12 +35,16 @@ impl<'a> JavaQuery<'a> {
     }
 
     /// Reads a stored model at this revision, without applying classpath visibility.
-    pub fn file(&self, source: &Origin) -> Option<&'a File> {
+    pub fn file(&self, source: &ResourceId) -> Option<&'a File> {
         self.files.get(self.scope.revision(), source)
     }
 
     /// The caller supplies a declaration index from this source at the query's revision.
-    pub fn declaration_handle(&self, source: &Origin, node_index: NodeIndex) -> DeclarationHandle {
+    pub fn declaration_handle(
+        &self,
+        source: &ResourceId,
+        node_index: NodeIndex,
+    ) -> DeclarationHandle {
         DeclarationHandle::new(self.scope.revision(), source.clone(), node_index)
     }
 
@@ -63,9 +67,7 @@ impl<'a> JavaQuery<'a> {
         let mut candidates = Vec::new();
 
         for (source, file) in self.files.iter(self.scope.revision()) {
-            if !matches!(source, Origin::Document { .. })
-                || !self.scope.classpath().contains_source(source)
-            {
+            if !self.scope.classpath().contains_source(source) {
                 continue;
             }
 
@@ -97,40 +99,43 @@ impl TypeDefinitionQuery<DeclarationHandle> for JavaQuery<'_> {
 mod tests {
     use super::*;
     use beans_core::classpath::Unrestricted;
-    use url::Url;
+    use beans_core::resource::ResourceRoot;
 
     fn name(name: &str) -> Name {
         name.split('.').map(str::to_owned).collect()
     }
 
-    fn source_at(path: &str) -> Origin {
-        Origin::uri(
-            Url::from_file_path(std::env::current_dir().unwrap().join(path))
-                .unwrap()
-                .to_string(),
-        )
+    fn source_at(path: &str) -> ResourceId {
+        ResourceId::file(std::env::current_dir().unwrap().join(path))
+    }
+
+    fn virtual_source(key: &str) -> ResourceId {
+        ResourceId::new(ResourceRoot::Virtual {
+            provider: "test".into(),
+            key: key.into(),
+        })
     }
 
     struct NoSources;
 
     impl Classpath for NoSources {
-        fn contains_source(&self, _source: &Origin) -> bool {
+        fn contains_source(&self, _source: &ResourceId) -> bool {
             false
         }
 
-        fn contains_class(&self, _source: &Origin) -> bool {
+        fn contains_class(&self, _source: &ResourceId) -> bool {
             false
         }
     }
 
-    struct SelectedSource<'a>(&'a Origin);
+    struct SelectedSource<'a>(&'a ResourceId);
 
     impl Classpath for SelectedSource<'_> {
-        fn contains_source(&self, source: &Origin) -> bool {
+        fn contains_source(&self, source: &ResourceId) -> bool {
             source == self.0
         }
 
-        fn contains_class(&self, _source: &Origin) -> bool {
+        fn contains_class(&self, _source: &ResourceId) -> bool {
             false
         }
     }
@@ -185,7 +190,7 @@ mod tests {
     }
 
     #[test]
-    fn discovery_retains_distinct_origins() {
+    fn discovery_retains_distinct_resources() {
         let mut files = RevisionedStorage::default();
         let revision = Revision::new(1);
         for path in [
@@ -210,27 +215,27 @@ mod tests {
         assert!(
             found
                 .iter()
-                .all(|entry| matches!(entry.source, Origin::Document { .. }))
+                .all(|entry| matches!(entry.source.root, ResourceRoot::File { .. }))
         );
     }
 
     #[test]
-    fn discovery_excludes_non_source_origins() {
+    fn discovery_uses_stored_source_models_not_resource_extensions() {
         let mut files = RevisionedStorage::default();
         let revision = Revision::new(1);
         files.put(
             revision,
-            Origin::class_file("src/Example.class"),
+            ResourceId::file("src/Example.class"),
             crate::lower_into("package p; class Example {}"),
         );
         let classpath = Unrestricted;
         let query = JavaQuery::new(&files, QueryScope::new(revision, &classpath));
 
-        assert!(query.find_type(&name("p.Example")).is_empty());
+        assert_eq!(query.find_type(&name("p.Example")).len(), 1);
     }
 
     #[test]
-    fn discovery_preserves_duplicate_declarations_within_one_origin() {
+    fn discovery_preserves_duplicate_declarations_within_one_resource() {
         let mut files = RevisionedStorage::default();
         let revision = Revision::new(1);
         // Error recovery: duplicate top-level declarations remain distinct.
@@ -273,14 +278,14 @@ mod tests {
     }
 
     #[test]
-    fn unrestricted_classpath_sees_all_stored_source_origins() {
+    fn unrestricted_classpath_sees_all_stored_source_models() {
         let mut files = RevisionedStorage::default();
         let revision = Revision::new(1);
         for source in [
             source_at("src/Target.java"),
             source_at("elsewhere/Target.java"),
-            Origin::uri("untitled:Target.java"),
-            Origin::class_file("src/Target.class"),
+            virtual_source("untitled:Target.java"),
+            ResourceId::file("src/Target.class"),
         ] {
             files.put(
                 revision,
@@ -294,7 +299,7 @@ mod tests {
         let empty = NoSources;
         let excluded = JavaQuery::new(&files, QueryScope::new(revision, &empty));
 
-        assert_eq!(unrestricted.find_type(&name("p.Target")).len(), 3);
+        assert_eq!(unrestricted.find_type(&name("p.Target")).len(), 4);
         assert!(excluded.find_type(&name("p.Target")).is_empty());
     }
 
@@ -302,7 +307,7 @@ mod tests {
     fn discovery_uses_custom_classpath_visibility_for_virtual_sources() {
         let mut files = RevisionedStorage::default();
         let revision = Revision::new(1);
-        let selected = Origin::uri("untitled:Target.java");
+        let selected = virtual_source("untitled:Target.java");
         for source in [source_at("src/Target.java"), selected.clone()] {
             files.put(
                 revision,
@@ -322,7 +327,7 @@ mod tests {
     fn context_retains_the_supplied_revision_and_classpath() {
         let files = RevisionedStorage::default();
         let revision = Revision::new(7);
-        let source = Origin::uri("untitled:Example.java");
+        let source = virtual_source("untitled:Example.java");
         let classpath = SelectedSource(&source);
         let query = JavaQuery::new(&files, QueryScope::new(revision, &classpath));
 

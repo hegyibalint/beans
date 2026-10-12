@@ -2,14 +2,14 @@ use lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
 };
 
-use super::Features;
+use super::{Features, source_locations::resource_for_uri};
 use crate::model::open_document::OpenDocument;
 
 impl Features {
     pub(crate) fn did_open(&mut self, params: DidOpenTextDocumentParams) {
         let document = OpenDocument::from(params.text_document);
-        self.languages.process_document(
-            document.uri.as_str(),
+        self.engine.process_document(
+            resource_for_uri(&document.uri),
             &document.language_id,
             &document.text,
         );
@@ -33,8 +33,8 @@ impl Features {
         }
         document.version = params.text_document.version;
         document.text = change.text;
-        self.languages.process_document(
-            document.uri.as_str(),
+        self.engine.process_document(
+            resource_for_uri(&document.uri),
             &document.language_id,
             &document.text,
         );
@@ -50,14 +50,14 @@ impl Features {
                 .workspace_documents
                 .get(params.text_document.uri.as_str())
             {
-                self.languages.process_document(
-                    indexed.uri.as_str(),
+                self.engine.process_document(
+                    resource_for_uri(&indexed.uri),
                     &indexed.language_id,
                     &indexed.text,
                 );
             } else {
-                self.languages
-                    .close_document(params.text_document.uri.as_str());
+                self.engine
+                    .close_document(resource_for_uri(&params.text_document.uri));
             }
         }
     }
@@ -91,9 +91,9 @@ mod tests {
                 text: text.into(),
             }],
         };
-        let opened_revision = session.languages.revision();
+        let opened_revision = session.engine.revision();
         session.did_change(change(2, "class C extends New {}"));
-        let updated_revision = session.languages.revision();
+        let updated_revision = session.engine.revision();
         session.did_change(change(1, "class C extends Stale {}"));
 
         assert_eq!(
@@ -101,7 +101,7 @@ mod tests {
             "class C extends New {}"
         );
         assert!(updated_revision > opened_revision);
-        assert_eq!(session.languages.revision(), updated_revision);
+        assert_eq!(session.engine.revision(), updated_revision);
     }
 
     #[test]

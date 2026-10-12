@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use crate::{
     engine::JavaLanguage,
     model::nodes::NodeKind,
@@ -7,28 +9,12 @@ use crate::{
     },
 };
 use beans_core::{
-    classpath::Unrestricted, names::Name, origin::Origin, query_scope::QueryScope,
-    resolution::TypeDefinitionQuery, revision::Revision,
+    classpath::Unrestricted, query_scope::QueryScope, resource::ResourceId, revision::Revision,
 };
-use beans_platform_jvm::{
-    JvmPlatform,
-    engine::query::ClassHandle,
-    model::{
-        classes::{AccessLevel, Class, ClassKind},
-        names::BinaryName,
-    },
-};
-
-struct JvmDefinitions(Vec<(Name, ClassHandle)>);
-
-impl TypeDefinitionQuery<ClassHandle> for JvmDefinitions {
-    fn find_types<'a>(&'a self, name: &'a Name) -> impl Iterator<Item = ClassHandle> + 'a {
-        self.0
-            .iter()
-            .filter(move |(candidate, _)| candidate == name)
-            .map(|(_, handle)| handle.clone())
-    }
-}
+use beans_platform_jvm::JvmPlatform;
+use beans_storage::RevisionEntry;
+use beans_testing::support::class_bytes;
+use tempfile::NamedTempFile;
 
 #[derive(Clone, Copy)]
 enum Occurrence {
@@ -38,31 +24,31 @@ enum Occurrence {
 
 struct Fixture {
     java: JavaLanguage,
-    source: Origin,
+    source: ResourceId,
 }
 
 impl Fixture {
     fn new(current: &str, other_files: &[(&str, &str)]) -> Self {
         let mut java = JavaLanguage::default();
-        let source = Origin::uri("file:///src/Use.java");
+        let source = ResourceId::file("/src/Use.java");
         java.store(Revision::new(1), java.process(current), source.clone());
         for (name, text) in other_files {
             java.store(
                 Revision::new(1),
                 java.process(text),
-                Origin::uri(format!("file:///src/{name}.java")),
+                ResourceId::file(format!("/src/{name}.java")),
             );
         }
         Self { java, source }
     }
 
-    fn resolve(&self, jvm: &JvmDefinitions) -> Result<TypeCandidate, ResolutionFailure> {
+    fn resolve(&self, jvm: &JvmPlatform) -> Result<TypeCandidate, ResolutionFailure> {
         self.resolve_at(jvm, Occurrence::Field)
     }
 
     fn resolve_at(
         &self,
-        jvm: &JvmDefinitions,
+        jvm: &JvmPlatform,
         occurrence: Occurrence,
     ) -> Result<TypeCandidate, ResolutionFailure> {
         let java = self
@@ -110,26 +96,17 @@ impl Fixture {
     }
 }
 
-fn mock_jvm_class(name: &str) -> (JvmPlatform, JvmDefinitions) {
-    let mut jvm = JvmPlatform::default();
-    let binary_name = BinaryName::new(name);
-    jvm.store(
-        Revision::new(1),
-        vec![Class::new(
-            binary_name.clone(),
-            ClassKind::Class,
-            AccessLevel::Public,
-        )],
-        Origin::class_file("mock.class"),
-    );
-    let handle = jvm
-        .query(Revision::new(1))
-        .find_class(&binary_name)
-        .next()
-        .unwrap()
-        .handle;
-    let canonical = name.split('.').map(str::to_owned).collect();
-    (jvm, JvmDefinitions(vec![(canonical, handle)]))
+fn jvm_class(binary_name: &str) -> (NamedTempFile, JvmPlatform, RevisionEntry<ResourceId>) {
+    let revision = Revision::new(1);
+    let mut file = NamedTempFile::new().unwrap();
+    file.write_all(&class_bytes(binary_name)).unwrap();
+    let mut jvm = JvmPlatform::new();
+    jvm.process(revision, file.path().to_owned()).unwrap();
+    let address = RevisionEntry {
+        revision,
+        key: ResourceId::file(file.path()),
+    };
+    (file, jvm, address)
 }
 
 #[test]
@@ -143,7 +120,7 @@ fn single_import_shadows_current_package_and_on_demand_imports() {
         ],
     );
     assert_eq!(
-        fixture.resolve(&JvmDefinitions(vec![])),
+        fixture.resolve(&JvmPlatform::new()),
         Ok(fixture.expected("q.Foo"))
     );
 }
@@ -158,7 +135,7 @@ fn current_package_shadows_on_demand_imports() {
         ],
     );
     assert_eq!(
-        fixture.resolve(&JvmDefinitions(vec![])),
+        fixture.resolve(&JvmPlatform::new()),
         Ok(fixture.expected("p.Foo"))
     );
 }
@@ -173,7 +150,7 @@ fn distinct_on_demand_imports_are_ambiguous_but_duplicate_imports_are_not() {
         "package p; import q.*; import r.*; class Use { Foo field; }",
         files,
     );
-    let Err(ResolutionFailure::Ambiguous(candidates)) = ambiguous.resolve(&JvmDefinitions(vec![]))
+    let Err(ResolutionFailure::Ambiguous(candidates)) = ambiguous.resolve(&JvmPlatform::new())
     else {
         panic!("expected ambiguous on-demand imports");
     };
@@ -187,7 +164,7 @@ fn distinct_on_demand_imports_are_ambiguous_but_duplicate_imports_are_not() {
         files,
     );
     assert_eq!(
-        duplicate.resolve(&JvmDefinitions(vec![])),
+        duplicate.resolve(&JvmPlatform::new()),
         Ok(duplicate.expected("q.Foo"))
     );
 }
@@ -204,8 +181,7 @@ fn a_qualified_suffix_does_not_disambiguate_on_demand_imports() {
             ("Second", "package r; public class Outer {}"),
         ],
     );
-    let Err(ResolutionFailure::Ambiguous(candidates)) = fixture.resolve(&JvmDefinitions(vec![]))
-    else {
+    let Err(ResolutionFailure::Ambiguous(candidates)) = fixture.resolve(&JvmPlatform::new()) else {
         panic!("expected two competing Outer types");
     };
     assert_eq!(
@@ -221,7 +197,7 @@ fn java_lang_is_imported_on_demand() {
         &[("String", "package java.lang; public class String {}")],
     );
     assert_eq!(
-        fixture.resolve(&JvmDefinitions(vec![])),
+        fixture.resolve(&JvmPlatform::new()),
         Ok(fixture.expected("java.lang.String"))
     );
 }
@@ -236,7 +212,7 @@ fn imported_qualified_name_resolves_the_member_and_commits_to_its_owner() {
         )],
     );
     assert_eq!(
-        fixture.resolve(&JvmDefinitions(vec![])),
+        fixture.resolve(&JvmPlatform::new()),
         Ok(fixture.expected("q.Outer.Inner"))
     );
 
@@ -245,7 +221,7 @@ fn imported_qualified_name_resolves_the_member_and_commits_to_its_owner() {
         &[("Outer", "package q; public class Outer {}")],
     );
     assert_eq!(
-        missing.resolve(&JvmDefinitions(vec![])),
+        missing.resolve(&JvmPlatform::new()),
         Err(ResolutionFailure::Partial)
     );
 }
@@ -260,7 +236,7 @@ fn qualified_spelling_can_start_with_a_package() {
         )],
     );
     assert_eq!(
-        fixture.resolve(&JvmDefinitions(vec![])),
+        fixture.resolve(&JvmPlatform::new()),
         Ok(fixture.expected("q.Outer.Inner"))
     );
 }
@@ -272,7 +248,7 @@ fn imported_superclass_uses_the_same_external_query() {
         &[("Base", "package q; public class Base {}")],
     );
     assert_eq!(
-        fixture.resolve_at(&JvmDefinitions(vec![]), Occurrence::Supertype),
+        fixture.resolve_at(&JvmPlatform::new(), Occurrence::Supertype),
         Ok(fixture.expected("q.Base"))
     );
 }
@@ -280,11 +256,8 @@ fn imported_superclass_uses_the_same_external_query() {
 #[test]
 fn the_query_can_supply_a_jvm_candidate_without_a_java_definition() {
     let fixture = Fixture::new("package p; import q.Foo; class Use { Foo field; }", &[]);
-    let (_jvm, definitions) = mock_jvm_class("q.Foo");
-    assert_eq!(
-        fixture.resolve(&definitions),
-        Ok(TypeCandidate::Jvm(definitions.0[0].1.clone()))
-    );
+    let (_file, jvm, address) = jvm_class("q/Foo");
+    assert_eq!(fixture.resolve(&jvm), Ok(TypeCandidate::Jvm(address)));
 }
 
 #[test]
@@ -293,11 +266,8 @@ fn a_jvm_single_import_shadows_a_java_type_in_the_current_package() {
         "package p; import q.Foo; class Use { Foo field; }",
         &[("Foo", "package p; class Foo {}")],
     );
-    let (_jvm, definitions) = mock_jvm_class("q.Foo");
-    assert_eq!(
-        fixture.resolve(&definitions),
-        Ok(TypeCandidate::Jvm(definitions.0[0].1.clone()))
-    );
+    let (_file, jvm, address) = jvm_class("q/Foo");
+    assert_eq!(fixture.resolve(&jvm), Ok(TypeCandidate::Jvm(address)));
 }
 
 #[test]
@@ -306,16 +276,13 @@ fn java_and_jvm_definitions_at_the_same_tier_are_not_silently_preferred() {
         "package p; import q.Foo; class Use { Foo field; }",
         &[("Foo", "package q; public class Foo {}")],
     );
-    let (_jvm, definitions) = mock_jvm_class("q.Foo");
-    let Err(ResolutionFailure::Ambiguous(candidates)) = fixture.resolve(&definitions) else {
+    let (_file, jvm, address) = jvm_class("q/Foo");
+    let Err(ResolutionFailure::Ambiguous(candidates)) = fixture.resolve(&jvm) else {
         panic!("expected two distinct definitions");
     };
     assert_eq!(
         candidates,
-        [
-            fixture.expected("q.Foo"),
-            TypeCandidate::Jvm(definitions.0[0].1.clone())
-        ]
+        [fixture.expected("q.Foo"), TypeCandidate::Jvm(address)]
     );
 }
 
@@ -323,7 +290,7 @@ fn java_and_jvm_definitions_at_the_same_tier_are_not_silently_preferred() {
 fn an_unmatched_name_is_not_found() {
     let fixture = Fixture::new("package p; class Use { Missing field; }", &[]);
     assert_eq!(
-        fixture.resolve(&JvmDefinitions(vec![])),
+        fixture.resolve(&JvmPlatform::new()),
         Err(ResolutionFailure::NotFound)
     );
 }

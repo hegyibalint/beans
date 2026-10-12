@@ -4,16 +4,15 @@ use std::path::Path;
 
 use self::query::JavaQuery;
 use crate::{lowering::lower_into, model::File};
-use beans_core::origin::Origin;
+use beans_core::resource::ResourceId;
 use beans_core::{query_scope::QueryScope, revision::Revision};
 use beans_storage::{RevisionEntry, RevisionedStorage};
-use url::Url;
 
 pub mod query;
 
 #[derive(Default)]
 pub struct JavaLanguage {
-    files: RevisionedStorage<Origin, File>,
+    files: RevisionedStorage<ResourceId, File>,
 }
 
 impl JavaLanguage {
@@ -26,27 +25,16 @@ impl JavaLanguage {
             .is_some_and(|extension| extension == "java")
     }
 
-    pub fn accept_uri(&self, uri: &str) -> bool {
-        let Ok(url) = Url::parse(uri) else {
-            return false;
-        };
-        url.scheme() == "file"
-            && url
-                .to_file_path()
-                .ok()
-                .is_some_and(|path| self.accept(&path))
-    }
-
     pub fn process(&self, contents: &str) -> File {
         lower_into(contents)
     }
 
     /// Reads a stored Java file at the requested revision.
-    pub fn file(&self, revision: Revision, source: &Origin) -> Option<&File> {
+    pub fn file(&self, revision: Revision, source: &ResourceId) -> Option<&File> {
         self.files.get(revision, source)
     }
 
-    pub fn remove(&mut self, revision: Revision, source: Origin) {
+    pub fn remove(&mut self, revision: Revision, source: ResourceId) {
         self.files.remove(revision, source);
     }
 
@@ -54,8 +42,8 @@ impl JavaLanguage {
         &mut self,
         revision: Revision,
         model: File,
-        source: Origin,
-    ) -> RevisionEntry<Origin> {
+        source: ResourceId,
+    ) -> RevisionEntry<ResourceId> {
         self.files.put(revision, source, model)
     }
 
@@ -63,7 +51,7 @@ impl JavaLanguage {
         JavaQuery::new(&self.files, scope)
     }
 
-    pub fn analyse(&self, _entry: &RevisionEntry<Origin>, _scope: QueryScope<'_>) {
+    pub fn analyse(&self, _entry: &RevisionEntry<ResourceId>, _scope: QueryScope<'_>) {
         todo!("analysis is not implemented")
     }
 }
@@ -81,9 +69,6 @@ mod tests {
         assert!(engine.accept(Path::new("virtual/*Example.java")));
         assert!(!engine.accept(Path::new("README.md")));
         assert!(!engine.accept(Path::new("Example.class")));
-        assert!(engine.accept_uri("file:///src/example/Example.java"));
-        assert!(!engine.accept_uri("untitled:Example.java"));
-        assert!(!engine.accept_uri("file:///src/example/Example.class"));
     }
 
     #[test]
@@ -99,7 +84,7 @@ mod tests {
     fn store_returns_the_address_of_the_supplied_model() {
         let mut engine = JavaLanguage::default();
         let revision = Revision::default();
-        let source = Origin::uri("file:///Example.java");
+        let source = ResourceId::file("/Example.java");
         let mut model = File::new();
         model.package_name = Name::new(vec!["example".into()]);
 

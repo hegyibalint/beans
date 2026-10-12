@@ -3,7 +3,6 @@ resolver = "3"
 members = [
     "crates/beans-core",
     "crates/beans-engine",
-    "crates/beans-lang",
     "crates/beans-lang-java",
     "crates/beans-lsp",
     "crates/beans-platform-jvm",
@@ -22,7 +21,6 @@ license = "Apache-2.0"
 [workspace.dependencies]
 beans-core = { path = "crates/beans-core" }
 beans-engine = { path = "crates/beans-engine" }
-beans-lang = { path = "crates/beans-lang" }
 beans-lang-java = { path = "crates/beans-lang-java" }
 beans-platform-jvm = { path = "crates/beans-platform-jvm" }
 beans-storage = { path = "crates/beans-storage" }

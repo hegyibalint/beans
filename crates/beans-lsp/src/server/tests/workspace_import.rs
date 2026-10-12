@@ -11,7 +11,7 @@ const EXAMPLE: &str = include_str!("../../../../../examples/playground/src/demo/
 const WIDGET: &str = include_str!("../../../../../examples/playground/src/library/Widget.java");
 
 #[test]
-fn descriptor_dependencies_control_definition_queries_after_restart() {
+fn definition_queries_are_unrestricted_across_descriptor_units() {
     for depends_on_library in [true, false] {
         let root = tempfile::tempdir().unwrap();
         fs::create_dir_all(root.path().join("src/demo")).unwrap();
@@ -50,16 +50,12 @@ fn descriptor_dependencies_control_definition_queries_after_restart() {
             }),
         );
 
-        let expected = if depends_on_library {
-            let target = Template::parse(WIDGET);
-            let start = WIDGET.find("Widget").unwrap();
-            json!({
-                "uri": Url::from_file_path(root.path().join("src/library/Widget.java")).unwrap().as_str(),
-                "range": {"start": position(&target, start), "end": position(&target, start + "Widget".len())},
-            })
-        } else {
-            Value::Null
-        };
+        let target = Template::parse(WIDGET);
+        let start = WIDGET.find("Widget").unwrap();
+        let expected = json!({
+            "uri": Url::from_file_path(root.path().join("src/library/Widget.java")).unwrap().as_str(),
+            "range": {"start": position(&target, start), "end": position(&target, start + "Widget".len())},
+        });
         assert_eq!(
             response.result,
             Some(expected),

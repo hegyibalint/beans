@@ -1,6 +1,7 @@
 mod container;
 mod model;
 mod parser;
+mod query;
 
 #[cfg(test)]
 mod tests;

@@ -1,8 +1,7 @@
 use beans_core::features::{HoverProvider, HoverRequest};
-use beans_core::origin::Origin;
 use lsp_types::{Hover, HoverContents, HoverParams, MarkupContent, MarkupKind, Range};
 
-use super::super::Features;
+use super::super::{Features, source_locations::resource_for_uri};
 
 impl HoverProvider<(), HoverParams, Hover> for Features {
     fn hover(&self, _context: &(), params: &HoverParams) -> Option<Hover> {
@@ -11,17 +10,12 @@ impl HoverProvider<(), HoverParams, Hover> for Features {
             .open_documents
             .get(position.text_document.uri.as_str())?;
         let offset = document.byte_offset(position.position)?;
-        let source = Origin::uri(document.uri.as_str());
-        let classpath = self.workspaces.classpath_for(document.uri.as_str());
-        let context = self.languages.feature_context(classpath);
-        let response = self.languages.hover(
-            &context,
-            &HoverRequest {
-                source: &source,
-                contents: &document.text,
-                offset,
-            },
-        )?;
+        let source = resource_for_uri(&document.uri);
+        let response = self.engine.feature_hover(&HoverRequest {
+            source: &source,
+            contents: &document.text,
+            offset,
+        })?;
         let range = response.range();
 
         Some(Hover {

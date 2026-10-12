@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use super::*;
-use crate::tests::support::class_bytes;
+use beans_testing::support::class_bytes;
 
 #[test]
 fn yields_one_class() {

@@ -4,7 +4,7 @@ use crate::model::{
     references::TypeRef,
 };
 use beans_core::revision::Revision;
-use beans_core::{names::Name, origin::Origin};
+use beans_core::{names::Name, resource::ResourceId};
 
 use crate::semantics::resolution::{
     Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, resolve,
@@ -30,7 +30,7 @@ fn resolve_field(file: &File, field_name: &str) -> Result<TypeCandidate, Resolut
             _ => None,
         })
         .expect("expected field");
-    let source = Origin::uri("file:///Test.java");
+    let source = ResourceId::file("/Test.java");
     let ctx = Context::new(
         Revision::new(1),
         &source,
@@ -184,7 +184,7 @@ fn a_non_named_reference_is_invalid() {
 #[test]
 fn an_empty_named_reference_is_invalid() {
     let file = crate::lower_into("class Outer {}");
-    let source = Origin::uri("file:///Test.java");
+    let source = ResourceId::file("/Test.java");
     let type_ref = TypeRef::Named {
         segments: Vec::new(),
     };

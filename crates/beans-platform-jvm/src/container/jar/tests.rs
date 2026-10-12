@@ -3,7 +3,7 @@ use std::io::{Cursor, Write};
 use zip::{ZipWriter, write::SimpleFileOptions};
 
 use super::*;
-use crate::tests::support::class_bytes;
+use beans_testing::support::class_bytes;
 
 fn archive(entries: &[(&str, &[u8])]) -> Cursor<Vec<u8>> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));

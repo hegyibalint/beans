@@ -4,8 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use beans_core::classpath::Unrestricted;
-use beans_workspace::Workspaces;
+use beans_core::resource::ResourceId;
 use beans_workspace_toml::{LoadError, load};
 use lsp_types::{InitializeParams, Uri};
 use url::Url;
@@ -20,9 +19,7 @@ impl Features {
             .map(|root| load(&root).map(|backend| (root, backend)))
             .collect::<Result<_, _>>()?;
 
-        let folder_roots: Vec<_> = imports.iter().map(|(root, _)| root.clone()).collect();
         self.client_capabilities = params.capabilities.clone();
-        let mut workspaces = Workspaces::default();
         let mut files = BTreeSet::new();
         for (root, backend) in imports {
             match backend {
@@ -44,23 +41,12 @@ impl Features {
                             root.display()
                         );
                     }
-                    // Explicit folders select their own backend. Additional registrations
-                    // are only needed for declared sources outside every workspace folder.
-                    let external_roots = source_roots.into_iter().filter(|source| {
-                        !folder_roots.iter().any(|folder| source.starts_with(folder))
-                    });
-                    workspaces.add(
-                        std::iter::once(project.root.clone()).chain(external_roots),
-                        backend,
-                    );
                 }
                 None => {
                     files.extend(workspace_files(&root));
-                    workspaces.add([root], Unrestricted);
                 }
             }
         }
-        self.workspaces = workspaces;
         self.ingest_files(files);
         Ok(())
     }
@@ -68,7 +54,7 @@ impl Features {
     fn ingest_files(&mut self, files: BTreeSet<PathBuf>) {
         let mut count = 0;
         for path in files {
-            if !self.languages.accept(&path) {
+            if !self.engine.accept(&path) {
                 continue;
             }
             let Ok(text) = fs::read_to_string(&path) else {
@@ -80,7 +66,7 @@ impl Features {
             let Ok(document_uri) = uri.as_str().parse() else {
                 continue;
             };
-            self.languages.process(uri.as_str(), &text);
+            self.engine.process(ResourceId::file(path), &text);
             self.workspace_documents.insert(
                 uri.as_str().into(),
                 OpenDocument::new(document_uri, "java".into(), 0, text),

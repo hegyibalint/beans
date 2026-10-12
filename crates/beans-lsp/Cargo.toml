@@ -11,8 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 beans-core.workspace = true
-beans-lang.workspace = true
-beans-workspace.workspace = true
+beans-engine.workspace = true
 beans-workspace-toml.workspace = true
 env_logger.workspace = true
 log.workspace = true

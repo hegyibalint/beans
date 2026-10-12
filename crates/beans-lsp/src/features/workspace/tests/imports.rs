@@ -1,6 +1,6 @@
 use std::fs;
 
-use beans_core::{origin::Origin, revision::Revision};
+use beans_core::revision::Revision;
 use url::Url;
 
 use crate::features::Features;
@@ -28,13 +28,13 @@ fn a_descriptor_limits_ingestion_to_declared_sources() {
     features.initialize(&params(&[root.path()])).unwrap();
 
     assert_eq!(features.workspace_documents.len(), 1);
-    assert_eq!(features.languages.revision(), Revision::new(1));
+    assert_eq!(features.engine.revision(), Revision::new(1));
     let uri = Url::from_file_path(root.path().join("src/Included.java")).unwrap();
     assert!(features.workspace_documents.contains_key(uri.as_str()));
 }
 
 #[test]
-fn declared_sources_outside_the_project_root_are_indexed_and_scoped() {
+fn declared_sources_outside_the_project_root_are_indexed() {
     let root = tempfile::tempdir().unwrap();
     let project = root.path().join("project");
     let shared = root.path().join("shared");
@@ -52,16 +52,10 @@ fn declared_sources_outside_the_project_root_are_indexed_and_scoped() {
 
     let uri = Url::from_file_path(shared.join("Included.java")).unwrap();
     assert!(features.workspace_documents.contains_key(uri.as_str()));
-    assert!(
-        !features
-            .workspaces
-            .classpath_for(uri.as_str())
-            .contains_class(&Origin::jar_entry("/unrelated.jar", "Example.class"))
-    );
 }
 
 #[test]
-fn an_absent_descriptor_keeps_fallback_ingestion_and_unrestricted_visibility() {
+fn an_absent_descriptor_keeps_fallback_ingestion() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("Example.java"), "").unwrap();
     let mut features = Features::default();
@@ -70,12 +64,7 @@ fn an_absent_descriptor_keeps_fallback_ingestion_and_unrestricted_visibility() {
 
     assert_eq!(features.workspace_documents.len(), 1);
     let uri = Url::from_file_path(root.path().join("Example.java")).unwrap();
-    assert!(
-        features
-            .workspaces
-            .classpath_for(uri.as_str())
-            .contains_class(&Origin::jar_entry("/unrelated.jar", "Example.class"))
-    );
+    assert!(features.workspace_documents.contains_key(uri.as_str()));
 }
 
 #[test]
@@ -104,7 +93,7 @@ fn a_bad_descriptor_prevents_partial_imports_in_other_folders() {
             .contains(&invalid.join("beans.toml").display().to_string())
     );
     assert!(features.workspace_documents.is_empty());
-    assert_eq!(features.languages.revision(), Revision::default());
+    assert_eq!(features.engine.revision(), Revision::default());
 }
 
 #[test]

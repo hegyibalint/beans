@@ -1,7 +1,7 @@
 use std::io;
 
 use super::*;
-use crate::tests::support::class_bytes;
+use beans_testing::support::class_bytes;
 
 #[test]
 fn returns_the_owned_class_name() {

@@ -1,6 +1,8 @@
 use std::io::{Cursor, Write};
 
-use beans_core::resource::ResourceEntry;
+use beans_core::{classpath::Unrestricted, query_scope::QueryScope, resource::ResourceEntry};
+use beans_storage::RevisionEntry;
+use beans_testing::support::class_bytes;
 use tempfile::NamedTempFile;
 use zip::{ZipWriter, write::SimpleFileOptions};
 
@@ -45,7 +47,7 @@ fn jimage_bytes(class: &[u8]) -> Vec<u8> {
 
 #[test]
 fn stores_classes_from_each_container_format() {
-    let class = support::class_bytes("example/Foo");
+    let class = class_bytes("example/Foo");
     for (bytes, entry) in [
         (class.clone(), None),
         (jar_bytes(Some(&class)), Some("example/Foo.class")),
@@ -62,6 +64,13 @@ fn stores_classes_from_each_container_format() {
         if let Some(entry) = entry {
             id = id.entry(ResourceEntry(entry.into()));
         }
+        assert_eq!(
+            platform.find_classes(QueryScope::new(revision, &Unrestricted), "example/Foo"),
+            vec![RevisionEntry {
+                revision,
+                key: id.clone(),
+            }]
+        );
         assert_eq!(
             platform.classes.get(revision, &id).unwrap().name,
             "example/Foo"
@@ -106,7 +115,7 @@ fn reports_unknown_formats_and_preserves_recognized_errors() {
 
 #[test]
 fn imports_each_jdk_runtime_layout() {
-    let class = support::class_bytes("example/Foo");
+    let class = class_bytes("example/Foo");
     for (relative, bytes, entry) in [
         (
             "lib/modules",
@@ -192,16 +201,8 @@ fn legacy_layouts_import_optional_tools() {
         let tools = home.path().join("lib/tools.jar");
         std::fs::create_dir_all(runtime.parent().unwrap()).unwrap();
         std::fs::create_dir_all(tools.parent().unwrap()).unwrap();
-        std::fs::write(
-            &runtime,
-            jar_bytes(Some(&support::class_bytes("example/Runtime"))),
-        )
-        .unwrap();
-        std::fs::write(
-            &tools,
-            jar_bytes(Some(&support::class_bytes("example/Tools"))),
-        )
-        .unwrap();
+        std::fs::write(&runtime, jar_bytes(Some(&class_bytes("example/Runtime")))).unwrap();
+        std::fs::write(&tools, jar_bytes(Some(&class_bytes("example/Tools")))).unwrap();
         let mut platform = JvmPlatform::default();
         let revision = Revision::new(1);
 
@@ -225,7 +226,7 @@ fn modern_layout_ignores_legacy_artifacts() {
     let runtime = home.path().join("lib/modules");
     std::fs::create_dir_all(home.path().join("lib/tools.jar")).unwrap();
     std::fs::create_dir_all(home.path().join("jre/lib")).unwrap();
-    std::fs::write(&runtime, jimage_bytes(&support::class_bytes("example/Foo"))).unwrap();
+    std::fs::write(&runtime, jimage_bytes(&class_bytes("example/Foo"))).unwrap();
     std::fs::write(home.path().join("jre/lib/rt.jar"), b"invalid").unwrap();
     std::fs::write(home.path().join("lib/rt.jar"), b"invalid").unwrap();
     let mut platform = JvmPlatform::default();
@@ -277,21 +278,4 @@ fn parsing_optional_artifact_errors_are_not_ignored() {
         .unwrap_err();
     assert!(error.contains("lib/tools.jar"));
     assert!(error.contains("unrecognized container format"));
-}
-
-pub(crate) mod support {
-    pub fn class_bytes(name: &str) -> Vec<u8> {
-        let mut bytes = vec![0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 52, 0, 5];
-        for (name, index) in [(name, 1u16), ("java/lang/Object", 3)] {
-            bytes.push(1);
-            bytes.extend((name.len() as u16).to_be_bytes());
-            bytes.extend(name.as_bytes());
-            bytes.push(7);
-            bytes.extend(index.to_be_bytes());
-        }
-        for value in [0x21u16, 2, 4, 0, 0, 0, 0] {
-            bytes.extend(value.to_be_bytes());
-        }
-        bytes
-    }
 }

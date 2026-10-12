@@ -130,14 +130,14 @@ pub use self::{
     result::{JavaTypeCandidate, ResolutionFailure, TypeCandidate, TypeParameterHandle},
 };
 use crate::model::{File, nodes::NodeIndex, references::TypeRef};
-use beans_core::origin::Origin;
+use beans_core::resource::ResourceId;
 use beans_core::revision::Revision;
 
 pub struct Context<'a> {
     /// Borrowed query over visible Java and JVM types; `None` limits lookup to this file.
     definitions: Option<&'a dyn query::TypeCandidateQuery>,
     revision: Revision,
-    source: &'a Origin,
+    source: &'a ResourceId,
     file: &'a File,
     node_index: NodeIndex,
     type_ref: &'a TypeRef,
@@ -146,7 +146,7 @@ pub struct Context<'a> {
 impl<'a> Context<'a> {
     pub fn new(
         revision: Revision,
-        source: &'a Origin,
+        source: &'a ResourceId,
         file: &'a File,
         node_index: NodeIndex,
         type_ref: &'a TypeRef,

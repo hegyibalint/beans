@@ -29,14 +29,24 @@ mod tests {
     use super::*;
     use crate::lowering::lower_into;
     use beans_core::{
-        classpath::Unrestricted, origin::Origin, query_scope::QueryScope, revision::Revision,
+        classpath::Unrestricted,
+        query_scope::QueryScope,
+        resource::{ResourceId, ResourceRoot},
+        revision::Revision,
     };
     use beans_platform_jvm::JvmPlatform;
+
+    fn source_id() -> ResourceId {
+        ResourceId::new(ResourceRoot::Virtual {
+            provider: "test".into(),
+            key: "untitled:Example.java".into(),
+        })
+    }
 
     fn hover(
         engine: &JavaLanguage,
         revision: Revision,
-        source: &Origin,
+        source: &ResourceId,
         contents: &str,
         offset: usize,
     ) -> Option<HoverResponse> {
@@ -55,7 +65,7 @@ mod tests {
 
     #[test]
     fn hover_uses_the_context_revision_after_replacement_and_removal() {
-        let source = Origin::uri("untitled:Example.java");
+        let source = source_id();
         let old = "class C extends Former {}";
         let new = "class C extends New {}";
         let mut engine = JavaLanguage::default();
@@ -78,7 +88,7 @@ mod tests {
         let contents = "class C extends Outer<String>.Inner {}";
         let mut engine = JavaLanguage::default();
         let revision = Revision::new(1);
-        let source = Origin::uri("untitled:Example.java");
+        let source = source_id();
         engine.store(revision, lower_into(contents), source.clone());
         let offset = contents.find("String").unwrap();
 
@@ -93,7 +103,7 @@ mod tests {
             hover(
                 &engine,
                 revision,
-                &Origin::class_file("C.class"),
+                &ResourceId::file("C.class"),
                 contents,
                 offset
             )
@@ -106,7 +116,7 @@ mod tests {
         let contents = "class C extends Simple<Whatever> {}";
         let mut engine = JavaLanguage::default();
         let revision = Revision::new(1);
-        let source = Origin::uri("untitled:Example.java");
+        let source = source_id();
         engine.store(revision, lower_into(contents), source.clone());
 
         let response = hover(
@@ -130,7 +140,7 @@ mod tests {
         let contents = "class C extends Qualified<Asd>.Type<Asd2> {}";
         let mut engine = JavaLanguage::default();
         let revision = Revision::new(1);
-        let source = Origin::uri("untitled:Example.java");
+        let source = source_id();
         engine.store(revision, lower_into(contents), source.clone());
 
         for (name, component) in [("Qualified", "Qualified<Asd>"), ("Type", "Type<Asd2>")] {
@@ -164,7 +174,7 @@ mod tests {
         let contents = "class C { int[] counts; Simple<Whatever>[] values; }";
         let mut engine = JavaLanguage::default();
         let revision = Revision::new(1);
-        let source = Origin::uri("untitled:Example.java");
+        let source = source_id();
         engine.store(revision, lower_into(contents), source.clone());
 
         for (name, expected, component) in [

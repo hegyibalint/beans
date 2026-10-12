@@ -1,6 +1,9 @@
 use std::{borrow::Cow, fs};
 
-use beans_core::{origin::Origin, source::SourceSpan};
+use beans_core::{
+    resource::{ResourceId, ResourceRoot},
+    source::SourceSpan,
+};
 use lsp_types::{Location, Range, Uri};
 use url::Url;
 
@@ -9,30 +12,46 @@ use crate::model::open_document::OpenDocument;
 
 impl Features {
     pub(crate) fn location_for_span(&self, span: SourceSpan) -> Option<Location> {
-        let Origin::Document { uri } = span.origin else {
+        if !span.resource.entries.is_empty() {
             return None;
-        };
-        let document_uri: Uri = uri.parse().ok()?;
-        let text: Cow<'_, str> = match self
+        }
+        let document = self
             .open_documents
-            .get(&uri)
-            .or_else(|| self.workspace_documents.get(&uri))
-        {
-            Some(document) => Cow::Borrowed(&document.text),
-            None => {
-                let path = Url::parse(&uri).ok()?.to_file_path().ok()?;
-                Cow::Owned(fs::read_to_string(path).ok()?)
-            }
+            .values()
+            .chain(self.workspace_documents.values())
+            .find(|document| resource_for_uri(&document.uri) == span.resource);
+        let (uri, text) = if let Some(document) = document {
+            (document.uri.clone(), Cow::Borrowed(document.text.as_str()))
+        } else {
+            let ResourceRoot::File { path } = &span.resource.root else {
+                return None;
+            };
+            let uri = Url::from_file_path(path).ok()?.as_str().parse().ok()?;
+            (uri, Cow::Owned(fs::read_to_string(path).ok()?))
         };
 
         Some(Location::new(
-            document_uri,
+            uri,
             Range::new(
                 OpenDocument::position_in(&text, span.range.start())?,
                 OpenDocument::position_in(&text, span.range.end())?,
             ),
         ))
     }
+}
+
+pub(super) fn resource_for_uri(uri: &Uri) -> ResourceId {
+    if let Some(path) = Url::parse(uri.as_str())
+        .ok()
+        .filter(|uri| uri.scheme() == "file")
+        .and_then(|uri| uri.to_file_path().ok())
+    {
+        return ResourceId::file(path);
+    }
+    ResourceId::new(ResourceRoot::Virtual {
+        provider: "lsp".into(),
+        key: uri.as_str().into(),
+    })
 }
 
 #[cfg(test)]
@@ -43,11 +62,65 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use beans_core::{ranges::ByteRange, source::SourceSpan};
+    use beans_core::{ranges::ByteRange, resource::ResourceEntry, source::SourceSpan};
     use beans_testing::template::Template;
     use lsp_types::{Position, Range};
 
     use super::*;
+
+    #[test]
+    fn file_uris_become_file_resources() {
+        let uri = "file:///src/My%20Type.java".parse().unwrap();
+        assert_eq!(
+            resource_for_uri(&uri),
+            ResourceId::file("/src/My Type.java")
+        );
+    }
+
+    #[test]
+    fn virtual_uris_keep_the_clients_spelling() {
+        let uri: Uri = "BEANS-jvm:///library/Use.class".parse().unwrap();
+        assert_eq!(
+            resource_for_uri(&uri),
+            ResourceId::new(ResourceRoot::Virtual {
+                provider: "lsp".into(),
+                key: uri.as_str().into(),
+            })
+        );
+    }
+
+    #[test]
+    fn locations_preserve_the_open_documents_uri_spelling() {
+        let uri: Uri = "file:///src/%54arget.java".parse().unwrap();
+        let mut features = Features::default();
+        features.open_documents.insert(
+            uri.as_str().into(),
+            OpenDocument::new(uri.clone(), "java".into(), 1, "class Target {}".into()),
+        );
+
+        let location = features
+            .location_for_span(SourceSpan::new(
+                ResourceId::file("/src/Target.java"),
+                ByteRange::new(6, 12),
+            ))
+            .unwrap();
+
+        assert_eq!(location.uri, uri);
+        assert_eq!(
+            location.range,
+            Range::new(Position::new(0, 6), Position::new(0, 12))
+        );
+    }
+
+    #[test]
+    fn nested_resources_have_no_source_location_yet() {
+        let source = ResourceId::file("/library.jar").entry(ResourceEntry("Target.class".into()));
+        assert!(
+            Features::default()
+                .location_for_span(SourceSpan::new(source, ByteRange::new(0, 1)))
+                .is_none()
+        );
+    }
 
     #[test]
     fn missing_text_snapshot_is_read_from_disk_for_coordinates() {
@@ -73,7 +146,7 @@ mod tests {
 
         let location = Features::default()
             .location_for_span(SourceSpan::new(
-                Origin::uri(&uri),
+                ResourceId::file(path),
                 ByteRange::new(target.start, target.end),
             ))
             .unwrap();

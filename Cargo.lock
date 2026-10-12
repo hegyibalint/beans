@@ -26,24 +26,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "beans-lang"
-version = "0.0.1"
-dependencies = [
- "beans-core",
- "beans-lang-java",
- "beans-platform-jvm",
-]
-
-[[package]]
 name = "beans-lang-java"
 version = "0.0.1"
 dependencies = [
  "beans-core",
  "beans-platform-jvm",
  "beans-storage",
+ "beans-testing",
+ "tempfile",
  "tree-sitter",
  "tree-sitter-java",
- "url",
 ]
 
 [[package]]
@@ -51,9 +43,8 @@ name = "beans-lsp"
 version = "0.0.1"
 dependencies = [
  "beans-core",
- "beans-lang",
+ "beans-engine",
  "beans-testing",
- "beans-workspace",
  "beans-workspace-toml",
  "env_logger",
  "log",
