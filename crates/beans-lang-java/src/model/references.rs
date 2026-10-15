@@ -1,6 +1,7 @@
 use beans_core::ranges::Spanned;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TypeRef {
     /// `java.util.Map<String, Integer>`
     Named {
@@ -17,7 +18,7 @@ pub enum TypeRef {
     Void,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PrimitiveType {
     Byte,
     Short,
@@ -29,7 +30,7 @@ pub enum PrimitiveType {
     Boolean,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TypeNameComponent {
     pub name: String,
     /// The type arguments applied to this name component.
@@ -37,7 +38,7 @@ pub struct TypeNameComponent {
     pub bounds: Vec<TypeBound>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BoundKind {
     Exact,
     Extends,
@@ -45,7 +46,7 @@ pub enum BoundKind {
     Unbounded,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TypeBound<T = Spanned<TypeRef>> {
     kind: BoundKind,
     types: Vec<T>,

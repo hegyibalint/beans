@@ -84,7 +84,8 @@ pub(in crate::semantics::resolution) fn lookup_downward(
             };
             let mut visiting = Vec::new();
             classify_candidates(
-                lookup_inherited_member_types(ctx, &owner, first, &mut visiting, state).into_iter(),
+                lookup_inherited_member_types(ctx, &owner, first, &mut visiting, state)?
+                    .into_iter(),
             )?
         }
     };
@@ -120,7 +121,7 @@ fn lookup_upward_in_type_body(
 
     let mut visiting = Vec::new();
     classify_candidates(
-        lookup_inherited_member_types(ctx, owner, segment, &mut visiting, state).into_iter(),
+        lookup_inherited_member_types(ctx, owner, segment, &mut visiting, state)?.into_iter(),
     )
 }
 
@@ -150,11 +151,11 @@ fn lookup_inherited_member_types(
     segment: &TypeNameComponent,
     visiting: &mut Vec<TypeCandidate>,
     state: &mut State,
-) -> Vec<TypeCandidate> {
+) -> Result<Vec<TypeCandidate>, ResolutionFailure> {
     if visiting.contains(owner) {
         // Circular inheritance is invalid (JLS §8.1.5, §9.1.3). Until lookup can
         // retain branch diagnostics beside candidates, this branch contributes none.
-        return Vec::new();
+        return Ok(Vec::new());
     }
     visiting.push(owner.clone());
 
@@ -162,13 +163,14 @@ fn lookup_inherited_member_types(
     let Some(owner_index) = local_declaration_handle(ctx, owner).map(|handle| handle.node_index())
     else {
         visiting.pop();
-        return candidates;
+        return Ok(candidates);
     };
 
     for type_ref in iter_direct_supertype_refs(ctx, owner) {
         let supertype_ctx = ctx.for_type_ref(owner_index, type_ref);
         let supertype = match resolve_supertype_with_state(&supertype_ctx, state) {
             Ok(candidate) => candidate,
+            Err(failure @ ResolutionFailure::Query(_)) => return Err(failure),
             Err(_) => continue,
         };
 
@@ -176,7 +178,7 @@ fn lookup_inherited_member_types(
             .filter(|candidate| candidate_name(ctx, candidate) == Some(segment.name.as_str()))
             .collect::<Vec<_>>();
         let branch = if declared.is_empty() {
-            lookup_inherited_member_types(ctx, &supertype, segment, visiting, state)
+            lookup_inherited_member_types(ctx, &supertype, segment, visiting, state)?
         } else {
             declared
         };
@@ -189,7 +191,7 @@ fn lookup_inherited_member_types(
     }
 
     visiting.pop();
-    candidates
+    Ok(candidates)
 }
 
 fn is_inherited_member_type(ctx: &Context<'_>, candidate: &TypeCandidate) -> bool {

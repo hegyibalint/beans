@@ -1,17 +1,18 @@
 use std::io::Write;
 
 use crate::{
-    engine::JavaLanguage,
+    lower_into,
     model::nodes::NodeKind,
+    query::JavaQuery,
     semantics::resolution::{
         Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, query::ResolutionQuery,
         resolve, resolve_supertype,
     },
+    testing::Models,
 };
 use beans_core::{
     classpath::Unrestricted, query_scope::QueryScope, resource::ResourceId, revision::Revision,
 };
-use beans_platform_jvm::JvmPlatform;
 use beans_storage::RevisionEntry;
 use beans_testing::support::class_bytes;
 use tempfile::NamedTempFile;
@@ -23,39 +24,39 @@ enum Occurrence {
 }
 
 struct Fixture {
-    java: JavaLanguage,
+    java: Models,
     source: ResourceId,
 }
 
 impl Fixture {
     fn new(current: &str, other_files: &[(&str, &str)]) -> Self {
-        let mut java = JavaLanguage::default();
+        let mut java = Models::new();
         let source = ResourceId::file("/src/Use.java");
-        java.store(Revision::new(1), java.process(current), source.clone());
+        java.store(Revision::new(1), lower_into(current), source.clone());
         for (name, text) in other_files {
             java.store(
                 Revision::new(1),
-                java.process(text),
+                lower_into(text),
                 ResourceId::file(format!("/src/{name}.java")),
             );
         }
         Self { java, source }
     }
 
-    fn resolve(&self, jvm: &JvmPlatform) -> Result<TypeCandidate, ResolutionFailure> {
+    fn resolve(&self, jvm: &Models) -> Result<TypeCandidate, ResolutionFailure> {
         self.resolve_at(jvm, Occurrence::Field)
     }
 
     fn resolve_at(
         &self,
-        jvm: &JvmPlatform,
+        jvm: &Models,
         occurrence: Occurrence,
     ) -> Result<TypeCandidate, ResolutionFailure> {
-        let java = self
-            .java
-            .query(QueryScope::new(Revision::new(1), &Unrestricted));
-        let definitions = ResolutionQuery::new(&java, jvm);
-        let file = java.file(&self.source).unwrap();
+        let models = self.java.model_query(Revision::new(1));
+        let java = JavaQuery::new(&models, QueryScope::new(Revision::new(1), &Unrestricted));
+        let classes = jvm.model_query(Revision::new(1));
+        let definitions = ResolutionQuery::new(&java, &classes);
+        let file = java.file(&self.source).unwrap().unwrap();
         let (index, reference) = file
             .iter_nodes()
             .find_map(|entry| match (occurrence, entry.node.kind()) {
@@ -73,7 +74,7 @@ impl Fixture {
                 _ => None,
             })
             .unwrap();
-        let ctx = Context::new(Revision::new(1), &self.source, file, index, reference)
+        let ctx = Context::new(Revision::new(1), &self.source, &file, index, reference)
             .with_definitions(&definitions);
         match occurrence {
             Occurrence::Field => resolve(&ctx),
@@ -82,26 +83,31 @@ impl Fixture {
     }
 
     fn expected(&self, name: &str) -> TypeCandidate {
-        let query = self
-            .java
-            .query(QueryScope::new(Revision::new(1), &Unrestricted));
+        let models = self.java.model_query(Revision::new(1));
+        let query = JavaQuery::new(&models, QueryScope::new(Revision::new(1), &Unrestricted));
         let entry = query
             .find_type(&name.split('.').map(str::to_owned).collect())
+            .unwrap()
             .into_iter()
             .next()
             .expect("expected a stored Java type");
-        TypeCandidate::Java(JavaTypeCandidate::Declaration(
-            query.declaration_handle(entry.source, entry.node_index),
-        ))
+        TypeCandidate::Java(JavaTypeCandidate::Declaration(entry))
     }
 }
 
-fn jvm_class(binary_name: &str) -> (NamedTempFile, JvmPlatform, RevisionEntry<ResourceId>) {
+fn jvm_class(binary_name: &str) -> (NamedTempFile, Models, RevisionEntry<ResourceId>) {
     let revision = Revision::new(1);
     let mut file = NamedTempFile::new().unwrap();
     file.write_all(&class_bytes(binary_name)).unwrap();
-    let mut jvm = JvmPlatform::new();
-    jvm.process(revision, file.path().to_owned()).unwrap();
+    let mut jvm = Models::new();
+    let source = ResourceId::file(file.path());
+    for entry in beans_platform_jvm::process(&source, std::fs::File::open(file.path()).unwrap())
+        .unwrap()
+        .unwrap()
+    {
+        let (source, class) = entry.unwrap();
+        jvm.store_class(revision, class, source);
+    }
     let address = RevisionEntry {
         revision,
         key: ResourceId::file(file.path()),
@@ -120,7 +126,7 @@ fn single_import_shadows_current_package_and_on_demand_imports() {
         ],
     );
     assert_eq!(
-        fixture.resolve(&JvmPlatform::new()),
+        fixture.resolve(&Models::new()),
         Ok(fixture.expected("q.Foo"))
     );
 }
@@ -135,7 +141,7 @@ fn current_package_shadows_on_demand_imports() {
         ],
     );
     assert_eq!(
-        fixture.resolve(&JvmPlatform::new()),
+        fixture.resolve(&Models::new()),
         Ok(fixture.expected("p.Foo"))
     );
 }
@@ -150,8 +156,7 @@ fn distinct_on_demand_imports_are_ambiguous_but_duplicate_imports_are_not() {
         "package p; import q.*; import r.*; class Use { Foo field; }",
         files,
     );
-    let Err(ResolutionFailure::Ambiguous(candidates)) = ambiguous.resolve(&JvmPlatform::new())
-    else {
+    let Err(ResolutionFailure::Ambiguous(candidates)) = ambiguous.resolve(&Models::new()) else {
         panic!("expected ambiguous on-demand imports");
     };
     assert_eq!(
@@ -164,7 +169,7 @@ fn distinct_on_demand_imports_are_ambiguous_but_duplicate_imports_are_not() {
         files,
     );
     assert_eq!(
-        duplicate.resolve(&JvmPlatform::new()),
+        duplicate.resolve(&Models::new()),
         Ok(duplicate.expected("q.Foo"))
     );
 }
@@ -181,7 +186,7 @@ fn a_qualified_suffix_does_not_disambiguate_on_demand_imports() {
             ("Second", "package r; public class Outer {}"),
         ],
     );
-    let Err(ResolutionFailure::Ambiguous(candidates)) = fixture.resolve(&JvmPlatform::new()) else {
+    let Err(ResolutionFailure::Ambiguous(candidates)) = fixture.resolve(&Models::new()) else {
         panic!("expected two competing Outer types");
     };
     assert_eq!(
@@ -197,7 +202,7 @@ fn java_lang_is_imported_on_demand() {
         &[("String", "package java.lang; public class String {}")],
     );
     assert_eq!(
-        fixture.resolve(&JvmPlatform::new()),
+        fixture.resolve(&Models::new()),
         Ok(fixture.expected("java.lang.String"))
     );
 }
@@ -212,7 +217,7 @@ fn imported_qualified_name_resolves_the_member_and_commits_to_its_owner() {
         )],
     );
     assert_eq!(
-        fixture.resolve(&JvmPlatform::new()),
+        fixture.resolve(&Models::new()),
         Ok(fixture.expected("q.Outer.Inner"))
     );
 
@@ -221,7 +226,7 @@ fn imported_qualified_name_resolves_the_member_and_commits_to_its_owner() {
         &[("Outer", "package q; public class Outer {}")],
     );
     assert_eq!(
-        missing.resolve(&JvmPlatform::new()),
+        missing.resolve(&Models::new()),
         Err(ResolutionFailure::Partial)
     );
 }
@@ -236,7 +241,7 @@ fn qualified_spelling_can_start_with_a_package() {
         )],
     );
     assert_eq!(
-        fixture.resolve(&JvmPlatform::new()),
+        fixture.resolve(&Models::new()),
         Ok(fixture.expected("q.Outer.Inner"))
     );
 }
@@ -248,7 +253,7 @@ fn imported_superclass_uses_the_same_external_query() {
         &[("Base", "package q; public class Base {}")],
     );
     assert_eq!(
-        fixture.resolve_at(&JvmPlatform::new(), Occurrence::Supertype),
+        fixture.resolve_at(&Models::new(), Occurrence::Supertype),
         Ok(fixture.expected("q.Base"))
     );
 }
@@ -290,7 +295,7 @@ fn java_and_jvm_definitions_at_the_same_tier_are_not_silently_preferred() {
 fn an_unmatched_name_is_not_found() {
     let fixture = Fixture::new("package p; class Use { Missing field; }", &[]);
     assert_eq!(
-        fixture.resolve(&JvmPlatform::new()),
+        fixture.resolve(&Models::new()),
         Err(ResolutionFailure::NotFound)
     );
 }

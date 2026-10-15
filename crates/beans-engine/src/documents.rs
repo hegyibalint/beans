@@ -1,38 +1,57 @@
-use std::path::Path;
-
-use beans_core::resource::{ResourceId, ResourceRoot};
+use beans_core::{
+    resource::{ResourceId, ResourceRoot},
+    revision::Revision,
+};
 
 use crate::Engine;
 
-#[cfg(test)]
-mod tests;
-
 impl Engine {
-    pub fn accept(&self, path: &Path) -> bool {
-        self.java.accept(path)
+    pub fn document_open(
+        &mut self,
+        source: ResourceId,
+        language_id: &str,
+        contents: &str,
+    ) -> Result<Option<Revision>, String> {
+        self.document_process(source, language_id, contents)
     }
 
-    pub fn process(&mut self, source: ResourceId, contents: &str) {
+    pub fn document_edit(
+        &mut self,
+        source: ResourceId,
+        language_id: &str,
+        contents: &str,
+    ) -> Result<Option<Revision>, String> {
+        self.document_process(source, language_id, contents)
+    }
+
+    pub fn process(
+        &mut self,
+        source: ResourceId,
+        contents: &str,
+    ) -> Result<Option<Revision>, String> {
         let ResourceRoot::File { path } = &source.root else {
-            return;
+            return Ok(None);
         };
-        if !source.entries.is_empty() || !self.accept(path) {
-            return;
+        if !source.entries.is_empty() || !beans_lang_java::accept(path) {
+            return Ok(None);
         }
-        self.process_document(source, "java", contents);
+        self.document_process(source, "java", contents)
     }
 
-    pub fn process_document(&mut self, source: ResourceId, language_id: &str, contents: &str) {
+    fn document_process(
+        &mut self,
+        source: ResourceId,
+        language_id: &str,
+        contents: &str,
+    ) -> Result<Option<Revision>, String> {
         if language_id != "java" {
-            return;
+            return Ok(None);
         }
-        let model = self.java.process(contents);
-        let revision = self.revision.advance();
-        self.java.store(revision, model, source);
-    }
-
-    pub fn close_document(&mut self, source: ResourceId) {
-        let revision = self.revision.advance();
-        self.java.remove(revision, source);
+        let Some(file) = beans_lang_java::process(&source, contents) else {
+            return Ok(None);
+        };
+        self.storage
+            .publish_java(&source, &file, contents)
+            .map(Some)
     }
 }

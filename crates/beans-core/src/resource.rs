@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+mod url;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ResourceRoot {
     File { path: PathBuf },
@@ -31,6 +33,27 @@ impl ResourceId {
         let mut child = self.clone();
         child.entries.push(entry);
         child
+    }
+
+    /// Encodes a canonical Beans URL without filesystem or parent-directory resolution.
+    /// Native file paths are platform-specific; entries and virtual keys stay opaque.
+    /// Unix paths use native bytes; non-Unicode Windows paths use a tagged UTF-16 payload.
+    ///
+    /// ```
+    /// use beans_core::resource::{ResourceEntry, ResourceId};
+    ///
+    /// let id = ResourceId::file("app.zip").entry(ResourceEntry("lib/a.jar".into()));
+    /// let url = id.to_url()?;
+    /// assert_eq!(ResourceId::from_url(&url)?, id);
+    /// # Ok::<(), String>(())
+    /// ```
+    pub fn to_url(&self) -> Result<String, String> {
+        url::encode(self)
+    }
+
+    /// Parses a Beans URL, separating entries before percent-decoding their contents.
+    pub fn from_url(url: &str) -> Result<Self, String> {
+        url::decode(url)
     }
 }
 

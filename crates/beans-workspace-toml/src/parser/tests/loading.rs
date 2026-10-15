@@ -47,12 +47,12 @@ fn an_absent_descriptor_is_not_an_error() {
 #[test]
 fn a_descriptor_is_resolved_against_its_containing_root() {
     let root = Root::new();
-    fs::write(root.descriptor(), "[unit.app]\nsources = [\"src\"]\n").unwrap();
+    fs::write(root.descriptor(), "[module.app]\nsources = [\"src\"]\n").unwrap();
 
     let workspace = load(root.path()).unwrap().unwrap();
 
     assert_eq!(
-        workspace.model().units["app"].sources,
+        workspace.model().modules["app"].sources,
         [root.path().join("src")]
     );
 }
@@ -63,17 +63,14 @@ fn loading_reads_the_environment_but_parsing_does_not() {
     if let Some(root) = std::env::var_os(CHILD_ROOT) {
         let root = PathBuf::from(root);
         let workspace = load(&root).unwrap().unwrap();
-        assert_eq!(
-            workspace.model().units["app"].jdk_home,
-            Some(root.join("local jdk"))
-        );
-        let parsed = crate::parser::parse("[unit.app]\n", &root).unwrap();
-        assert_eq!(parsed.model().units["app"].jdk_home, None);
+        assert_eq!(workspace.model().jdk_home, Some(root.join("local jdk")));
+        let parsed = crate::parser::parse("[module.app]\n", &root).unwrap();
+        assert_eq!(parsed.model().jdk_home, None);
         return;
     }
 
     let root = Root::new();
-    fs::write(root.descriptor(), "[unit.app]\n").unwrap();
+    fs::write(root.descriptor(), "[module.app]\n").unwrap();
     // A child process keeps environment changes isolated from parallel tests.
     let output = std::process::Command::new(std::env::current_exe().unwrap())
         .args([
@@ -125,7 +122,7 @@ fn parse_errors_keep_the_descriptor_path_and_cause() {
     let root = Root::new();
     fs::write(
         root.descriptor(),
-        "[unit.app]\ndepends_on = [\"missing\"]\n",
+        "[module.app]\ndepends_on = [\"missing\"]\n",
     )
     .unwrap();
     let error = load(root.path()).unwrap_err();

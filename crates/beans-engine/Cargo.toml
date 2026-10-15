@@ -10,3 +10,11 @@ beans-core.workspace = true
 beans-lang-java.workspace = true
 beans-platform-jvm.workspace = true
 crossbeam-channel.workspace = true
+log.workspace = true
+rusqlite.workspace = true
+
+[dev-dependencies]
+beans-testing.workspace = true
+beans-workspace-toml.workspace = true
+tempfile.workspace = true
+zip.workspace = true

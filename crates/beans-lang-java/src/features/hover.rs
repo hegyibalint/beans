@@ -1,40 +1,39 @@
-use beans_core::features::hover::{HoverProvider, HoverRequest, HoverResponse};
+use beans_core::features::hover::{HoverRequest, HoverResponse};
 
-use crate::{engine::JavaLanguage, model::type_references::type_reference_at};
+use crate::{model::type_references::type_reference_at, model_query::JavaModelQuery};
 
 use super::JavaFeatureContext;
 
-impl<'request> HoverProvider<JavaFeatureContext<'_>, HoverRequest<'request>, HoverResponse>
-    for JavaLanguage
-{
-    /// Shows the complete type as written at a modeled position; resolution is not wired yet.
-    fn hover(
-        &self,
-        context: &JavaFeatureContext<'_>,
-        request: &HoverRequest<'request>,
-    ) -> Option<HoverResponse> {
-        let file = self.file(context.scope.revision(), request.source)?;
-        let occurrence = type_reference_at(file, request.offset)?;
-        Some(HoverResponse::new(
-            request
-                .contents
-                .get(occurrence.type_range.start()..occurrence.type_range.end())?,
-            occurrence.range,
-        ))
-    }
+/// Shows the complete type as written at a modeled position; resolution is not wired yet.
+pub fn hover<Q: JavaModelQuery>(
+    context: &JavaFeatureContext<'_, Q>,
+    request: &HoverRequest<'_>,
+) -> Result<Option<HoverResponse>, String> {
+    let Some(file) = context.models.java_file(request.source)? else {
+        return Ok(None);
+    };
+    let Some(occurrence) = type_reference_at(&file, request.offset) else {
+        return Ok(None);
+    };
+    let Some(contents) = request
+        .contents
+        .get(occurrence.type_range.start()..occurrence.type_range.end())
+    else {
+        return Ok(None);
+    };
+    Ok(Some(HoverResponse::new(contents, occurrence.range)))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lowering::lower_into;
+    use crate::{lowering::lower_into, testing::Models};
     use beans_core::{
         classpath::Unrestricted,
         query_scope::QueryScope,
         resource::{ResourceId, ResourceRoot},
         revision::Revision,
     };
-    use beans_platform_jvm::JvmPlatform;
 
     fn source_id() -> ResourceId {
         ResourceId::new(ResourceRoot::Virtual {
@@ -44,16 +43,17 @@ mod tests {
     }
 
     fn hover(
-        engine: &JavaLanguage,
+        engine: &Models,
         revision: Revision,
         source: &ResourceId,
         contents: &str,
         offset: usize,
     ) -> Option<HoverResponse> {
-        engine.hover(
+        let models = engine.model_query(revision);
+        super::hover(
             &JavaFeatureContext {
+                models: &models,
                 scope: QueryScope::new(revision, &Unrestricted),
-                jvm: &JvmPlatform::default(),
             },
             &HoverRequest {
                 source,
@@ -61,6 +61,33 @@ mod tests {
                 offset,
             },
         )
+        .unwrap()
+    }
+
+    #[test]
+    fn hover_reads_the_supplied_models() {
+        let source = source_id();
+        let contents = "class C extends Supplied {}";
+        let revision = Revision::new(1);
+        let mut stored = Models::new();
+        stored.store(revision, lower_into(contents), source.clone());
+        let models = stored.model_query(revision);
+
+        let response = super::hover(
+            &JavaFeatureContext {
+                models: &models,
+                scope: QueryScope::new(revision, &Unrestricted),
+            },
+            &HoverRequest {
+                source: &source,
+                contents,
+                offset: contents.find("Supplied").unwrap(),
+            },
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(response.contents(), "Supplied");
     }
 
     #[test]
@@ -68,7 +95,7 @@ mod tests {
         let source = source_id();
         let old = "class C extends Former {}";
         let new = "class C extends New {}";
-        let mut engine = JavaLanguage::default();
+        let mut engine = Models::new();
         engine.store(Revision::new(1), lower_into(old), source.clone());
         engine.store(Revision::new(2), lower_into(new), source.clone());
         engine.remove(Revision::new(3), source.clone());
@@ -86,7 +113,7 @@ mod tests {
     #[test]
     fn nested_type_argument_has_its_own_hover() {
         let contents = "class C extends Outer<String>.Inner {}";
-        let mut engine = JavaLanguage::default();
+        let mut engine = Models::new();
         let revision = Revision::new(1);
         let source = source_id();
         engine.store(revision, lower_into(contents), source.clone());
@@ -114,7 +141,7 @@ mod tests {
     #[test]
     fn simple_type_hover_includes_its_type_arguments() {
         let contents = "class C extends Simple<Whatever> {}";
-        let mut engine = JavaLanguage::default();
+        let mut engine = Models::new();
         let revision = Revision::new(1);
         let source = source_id();
         engine.store(revision, lower_into(contents), source.clone());
@@ -138,7 +165,7 @@ mod tests {
     #[test]
     fn qualified_type_hover_includes_every_segment_and_its_arguments() {
         let contents = "class C extends Qualified<Asd>.Type<Asd2> {}";
-        let mut engine = JavaLanguage::default();
+        let mut engine = Models::new();
         let revision = Revision::new(1);
         let source = source_id();
         engine.store(revision, lower_into(contents), source.clone());
@@ -172,7 +199,7 @@ mod tests {
     #[test]
     fn array_type_hover_includes_its_dimensions() {
         let contents = "class C { int[] counts; Simple<Whatever>[] values; }";
-        let mut engine = JavaLanguage::default();
+        let mut engine = Models::new();
         let revision = Revision::new(1);
         let source = source_id();
         engine.store(revision, lower_into(contents), source.clone());

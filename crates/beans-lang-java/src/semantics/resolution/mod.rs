@@ -130,12 +130,11 @@ pub use self::{
     result::{JavaTypeCandidate, ResolutionFailure, TypeCandidate, TypeParameterHandle},
 };
 use crate::model::{File, nodes::NodeIndex, references::TypeRef};
-use beans_core::resource::ResourceId;
-use beans_core::revision::Revision;
+use beans_core::{resolution::TypeDefinitionQuery, resource::ResourceId, revision::Revision};
 
 pub struct Context<'a> {
     /// Borrowed query over visible Java and JVM types; `None` limits lookup to this file.
-    definitions: Option<&'a dyn query::TypeCandidateQuery>,
+    definitions: Option<&'a dyn TypeDefinitionQuery<TypeCandidate>>,
     revision: Revision,
     source: &'a ResourceId,
     file: &'a File,
@@ -162,7 +161,10 @@ impl<'a> Context<'a> {
     }
 
     /// Supplies the visible Java and JVM definitions for compilation-unit lookup.
-    pub fn with_definitions(mut self, definitions: &'a dyn query::TypeCandidateQuery) -> Self {
+    pub fn with_definitions(
+        mut self,
+        definitions: &'a dyn TypeDefinitionQuery<TypeCandidate>,
+    ) -> Self {
         self.definitions = Some(definitions);
         self
     }

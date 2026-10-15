@@ -5,7 +5,16 @@ use crate::features::Features;
 
 #[test]
 fn initialization_preserves_all_client_capabilities() {
+    let root = tempfile::tempdir().unwrap();
     let params = InitializeParams {
+        workspace_folders: Some(vec![lsp_types::WorkspaceFolder {
+            uri: url::Url::from_directory_path(root.path())
+                .unwrap()
+                .as_str()
+                .parse()
+                .unwrap(),
+            name: "test".into(),
+        }]),
         capabilities: serde_json::from_value(json!({
             "workspace": {"workspaceFolders": true, "configuration": true},
             "textDocument": {

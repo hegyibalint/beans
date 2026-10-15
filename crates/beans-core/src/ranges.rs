@@ -1,7 +1,10 @@
 use std::hash::{Hash, Hasher};
 
+use serde::{Deserialize, Serialize};
+
 /// A half-open range of byte offsets in source content.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(into = "(usize, usize)", try_from = "(usize, usize)")]
 pub struct ByteRange {
     start: usize,
     end: usize,
@@ -26,11 +29,28 @@ impl ByteRange {
     }
 }
 
+impl From<ByteRange> for (usize, usize) {
+    fn from(range: ByteRange) -> Self {
+        (range.start, range.end)
+    }
+}
+
+impl TryFrom<(usize, usize)> for ByteRange {
+    type Error = &'static str;
+
+    fn try_from((start, end): (usize, usize)) -> Result<Self, Self::Error> {
+        if start > end {
+            return Err("a byte range cannot end before it starts");
+        }
+        Ok(Self { start, end })
+    }
+}
+
 /// A semantic value annotated with its source range.
 ///
 /// Equality and hashing use only the value; compare `range()` explicitly when
 /// source position is part of the question.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Spanned<T> {
     value: T,
     range: ByteRange,
@@ -70,7 +90,17 @@ impl<T: Hash> Hash for Spanned<T> {
 
 #[cfg(test)]
 mod tests {
+    use serde::Deserialize;
+
     use super::{ByteRange, Spanned};
+
+    #[test]
+    fn deserialization_rejects_reversed_ranges_without_panicking() {
+        let deserializer = serde::de::value::SeqDeserializer::<_, serde::de::value::Error>::new(
+            [8_usize, 7].into_iter(),
+        );
+        assert!(ByteRange::deserialize(deserializer).is_err());
+    }
 
     #[test]
     fn ranges_include_their_start_and_exclude_their_end() {

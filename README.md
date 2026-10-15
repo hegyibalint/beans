@@ -32,12 +32,31 @@ Beans is not primarily a language server. It is a language processing and indexi
 
 The idea is to allow a community to form around Beans by making it convenient for third-party tools or libraries to consume its knowledge.
 
+### Current implementation
+
+Engine owns an inbox and revisioned SQLite storage, opened at a caller-supplied
+database path. Java document open/edit processing publishes models and matching
+content atomically; Engine hover and definition calls use pinned SQL snapshots.
+An explicit `Engine::start()` launches the resource-event worker, which publishes
+Java sources and JVM classes/containers through a separate writer connection.
+`Engine::subscribe()` observes received events and `ResourceProcessed` completions
+through independent unbounded queues; listeners must drain their queues promptly.
+The LSP starts Engine, imports workspace sources, forwards document open/edit
+notifications, and serves hover and definition requests through Engine. The host
+creates `.beans/index.sqlite` beneath the workspace root (the first local root in
+a multi-root session), or uses an explicit `BEANS_LSP_DATABASE_PATH`. Database
+startup failure is fatal. Navigation coordinates use the target content from the
+same historical revision as the returned declaration.
+
+Document deletion, live/saved views, and descriptor watching remain deferred.
+Closed document models are retained in the database for now.
+
 ### Debugging the language server
 
 Diagnostic logs go to stderr, with a UTC timestamp and the emitting crate's name:
 
 ```text
-2026-01-01T12:00:00.123Z [beans-workspace-toml] Loaded /project/beans.toml: units=2
+2026-01-01T12:00:00.123Z [beans-workspace-toml] Loaded /project/beans.toml: modules=2
 ```
 
 The default level is `warn`. Set `RUST_LOG=beans=info` to include informational

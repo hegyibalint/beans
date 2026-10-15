@@ -8,11 +8,16 @@ use crate::model::open_document::OpenDocument;
 impl Features {
     pub(crate) fn did_open(&mut self, params: DidOpenTextDocumentParams) {
         let document = OpenDocument::from(params.text_document);
-        self.engine.process_document(
-            resource_for_uri(&document.uri),
-            &document.language_id,
-            &document.text,
-        );
+        if let Some(engine) = &mut self.engine {
+            if let Err(error) = engine.document_open(
+                resource_for_uri(&document.uri),
+                &document.language_id,
+                &document.text,
+            ) {
+                log::error!("cannot publish {}: {error}", document.uri.as_str());
+                return;
+            }
+        }
         self.open_documents
             .insert(document.uri.as_str().into(), document);
     }
@@ -31,35 +36,23 @@ impl Features {
         if change.range.is_some() {
             return;
         }
+        if let Some(engine) = &mut self.engine {
+            if let Err(error) = engine.document_edit(
+                resource_for_uri(&document.uri),
+                &document.language_id,
+                &change.text,
+            ) {
+                log::error!("cannot publish {}: {error}", document.uri.as_str());
+                return;
+            }
+        }
         document.version = params.text_document.version;
         document.text = change.text;
-        self.engine.process_document(
-            resource_for_uri(&document.uri),
-            &document.language_id,
-            &document.text,
-        );
     }
 
     pub(crate) fn did_close(&mut self, params: DidCloseTextDocumentParams) {
-        if self
-            .open_documents
-            .remove(params.text_document.uri.as_str())
-            .is_some_and(|document| document.language_id == "java")
-        {
-            if let Some(indexed) = self
-                .workspace_documents
-                .get(params.text_document.uri.as_str())
-            {
-                self.engine.process_document(
-                    resource_for_uri(&indexed.uri),
-                    &indexed.language_id,
-                    &indexed.text,
-                );
-            } else {
-                self.engine
-                    .close_document(resource_for_uri(&params.text_document.uri));
-            }
-        }
+        self.open_documents
+            .remove(params.text_document.uri.as_str());
     }
 }
 
@@ -91,17 +84,50 @@ mod tests {
                 text: text.into(),
             }],
         };
-        let opened_revision = session.engine.revision();
         session.did_change(change(2, "class C extends New {}"));
-        let updated_revision = session.engine.revision();
         session.did_change(change(1, "class C extends Stale {}"));
 
         assert_eq!(
             session.open_documents.get(uri.as_str()).unwrap().text,
             "class C extends New {}"
         );
-        assert!(updated_revision > opened_revision);
-        assert_eq!(session.engine.revision(), updated_revision);
+        assert_eq!(session.open_documents.get(uri.as_str()).unwrap().version, 2);
+    }
+
+    #[test]
+    fn untitled_documents_keep_their_language_id_without_a_filename() {
+        let uri: Uri = "untitled:Untitled-1".parse().unwrap();
+        let mut session = Features::default();
+        let open = |language: &str| DidOpenTextDocumentParams {
+            text_document: TextDocumentItem::new(
+                uri.clone(),
+                language.into(),
+                1,
+                "class Example {}".into(),
+            ),
+        };
+        let close = || DidCloseTextDocumentParams {
+            text_document: TextDocumentIdentifier::new(uri.clone()),
+        };
+
+        session.did_open(open("plaintext"));
+        assert_eq!(
+            session
+                .open_documents
+                .get(uri.as_str())
+                .unwrap()
+                .language_id,
+            "plaintext"
+        );
+        session.did_close(close());
+
+        session.did_open(open("java"));
+        let document = session.open_documents.get(uri.as_str()).unwrap();
+        assert_eq!(document.language_id, "java");
+        assert_eq!(document.text, "class Example {}");
+
+        session.did_close(close());
+        assert!(!session.open_documents.contains_key(uri.as_str()));
     }
 
     #[test]

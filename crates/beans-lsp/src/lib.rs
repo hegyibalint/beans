@@ -1,4 +1,4 @@
-//! LSP lifecycle and protocol dispatch around the Beans engine.
+//! LSP protocol handling and adapters for Engine language features.
 
 mod features;
 mod model;

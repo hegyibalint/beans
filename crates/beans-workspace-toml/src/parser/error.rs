@@ -4,7 +4,7 @@ use std::{fmt, io, path::PathBuf};
 pub enum ParseError {
     Toml(toml::de::Error),
     Root { path: PathBuf, error: io::Error },
-    UnknownDependency { unit: String, dependency: String },
+    UnknownDependency { module: String, dependency: String },
 }
 
 impl fmt::Display for ParseError {
@@ -18,8 +18,11 @@ impl fmt::Display for ParseError {
                     path.display()
                 )
             }
-            Self::UnknownDependency { unit, dependency } => {
-                write!(f, "unit {unit:?} depends on unknown unit {dependency:?}")
+            Self::UnknownDependency { module, dependency } => {
+                write!(
+                    f,
+                    "module {module:?} depends on unknown module {dependency:?}"
+                )
             }
         }
     }

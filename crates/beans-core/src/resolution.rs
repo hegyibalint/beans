@@ -1,8 +1,5 @@
 use crate::names::Name;
 
 pub trait TypeDefinitionQuery<Handle> {
-    fn find_types<'query>(
-        &'query self,
-        name: &'query Name,
-    ) -> impl Iterator<Item = Handle> + 'query;
+    fn find_types(&self, name: &Name) -> Result<Vec<Handle>, String>;
 }

@@ -1,14 +1,17 @@
 //! Java implementations of protocol-neutral editor features.
 
 use beans_core::query_scope::QueryScope;
-use beans_platform_jvm::JvmPlatform;
+
+use crate::model_query::JavaModelQuery;
+
+pub use hover::hover;
+pub use navigation::goto_definition;
 
 mod hover;
 mod navigation;
 
-/// Binds Java feature queries to a scope and the platform supplying JVM candidates.
 #[derive(Clone, Copy)]
-pub struct JavaFeatureContext<'a> {
+pub struct JavaFeatureContext<'a, Q: JavaModelQuery> {
+    pub models: &'a Q,
     pub scope: QueryScope<'a>,
-    pub jvm: &'a JvmPlatform,
 }

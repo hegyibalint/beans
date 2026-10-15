@@ -20,7 +20,10 @@ export function activate(context: ExtensionContext) {
   };
 
   const clientOptions: LanguageClientOptions = {
-    documentSelector: [{ scheme: "file", language: "java" }],
+    documentSelector: [
+      { scheme: "file", language: "java" },
+      { scheme: "untitled", language: "java" },
+    ],
   };
 
   client = new LanguageClient(

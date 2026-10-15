@@ -4,8 +4,8 @@ use std::{
 };
 
 use crate::{
-    engine::TomlWorkspace,
-    model::{Descriptor, Project, Unit},
+    TomlWorkspace,
+    model::{Descriptor, Module, Project},
     paths::normalize,
 };
 
@@ -16,8 +16,8 @@ pub const DESCRIPTOR: &str = "beans.toml";
 
 /// Read a workspace's descriptor. Absence is not an error; a present but
 /// unreadable or invalid descriptor is never silently replaced with a fallback.
-/// A nonempty `BEANS_WORKSPACE_TOML_JAVA_HOME` overrides `jdk_home` for every
-/// unit. Relative override paths are resolved against the workspace root.
+/// A nonempty `BEANS_WORKSPACE_TOML_JAVA_HOME` overrides the project's `jdk_home`.
+/// Relative override paths are resolved against the workspace root.
 pub fn load(root: &Path) -> Result<Option<TomlWorkspace>, LoadError> {
     let path = root.join(DESCRIPTOR);
     let contents = match fs::read_to_string(&path) {
@@ -44,16 +44,16 @@ pub fn load(root: &Path) -> Result<Option<TomlWorkspace>, LoadError> {
         );
     }
     log::info!(
-        "Loaded {}: units={}",
+        "Loaded {}: modules={}",
         path.display(),
-        workspace.model().units.len()
+        workspace.model().modules.len()
     );
     Ok(Some(workspace))
 }
 
-/// Parse the v0.2 descriptor format and resolve paths against `root`.
+/// Parse the descriptor and resolve paths against `root`.
 /// A relative root is made absolute using the current directory; inputs need
-/// not exist. Unknown fields and dependencies naming absent units are errors.
+/// not exist. Unknown fields and dependencies naming absent modules are errors.
 /// Unlike [`load`], this does not read environment overrides.
 pub fn parse(contents: &str, root: &Path) -> Result<TomlWorkspace, ParseError> {
     parse_with_jdk_override(contents, root, None)
@@ -65,12 +65,12 @@ pub(super) fn parse_with_jdk_override(
     jdk_override: Option<&Path>,
 ) -> Result<TomlWorkspace, ParseError> {
     let jdk_override = jdk_override.filter(|path| !path.as_os_str().is_empty());
-    let Descriptor { jdk_home, unit } = toml::from_str(contents).map_err(ParseError::Toml)?;
-    for (id, descriptor) in &unit {
+    let Descriptor { jdk_home, module } = toml::from_str(contents).map_err(ParseError::Toml)?;
+    for (id, descriptor) in &module {
         for dependency in &descriptor.depends_on {
-            if !unit.contains_key(dependency) {
+            if !module.contains_key(dependency) {
                 return Err(ParseError::UnknownDependency {
-                    unit: id.clone(),
+                    module: id.clone(),
                     dependency: dependency.clone(),
                 });
             }
@@ -83,20 +83,20 @@ pub(super) fn parse_with_jdk_override(
         })?,
     );
     let resolve = |path: &Path| normalize(&root.join(path));
-    let units = unit
+    let jdk_home = jdk_override.or(jdk_home.as_deref()).map(resolve);
+    let modules = module
         .into_iter()
-        .map(|(id, unit)| {
-            let unit = Unit {
-                sources: unit.sources.iter().map(|path| resolve(path)).collect(),
-                depends_on: unit.depends_on,
-                classpath: unit.classpath.iter().map(|path| resolve(path)).collect(),
-                jdk_home: jdk_override
-                    .or(unit.jdk_home.as_deref())
-                    .or(jdk_home.as_deref())
-                    .map(resolve),
+        .map(|(id, module)| {
+            let module = Module {
+                sources: module.sources.iter().map(|path| resolve(path)).collect(),
+                depends_on: module.depends_on,
             };
-            (id, unit)
+            (id, module)
         })
         .collect();
-    Ok(TomlWorkspace::new(Project { root, units }))
+    Ok(TomlWorkspace::new(Project {
+        root,
+        jdk_home,
+        modules,
+    }))
 }

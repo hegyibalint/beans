@@ -1,46 +1,50 @@
 //! Application coordination, independent of editor protocols.
 
-use beans_core::{events::Event, revision::Revision};
-use beans_lang_java::engine::JavaLanguage;
-use beans_platform_jvm::JvmPlatform;
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+    thread::JoinHandle,
+};
+
+use crate::storage::Storage;
+use beans_core::events::Event;
+use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
 
 mod documents;
+mod event;
 mod features;
+pub mod storage;
 
 #[cfg(test)]
 mod tests;
 
 pub struct Engine {
-    // Monotonic version where we are.
-    revision: Revision,
+    // Sqlite storage
+    storage: Storage,
 
-    // Language verticals
-    jvm: JvmPlatform,
-    java: JavaLanguage,
-
-    // Event bus
+    // Event loop
     sender: Sender<Event>,
-    events: Receiver<Event>,
+    receiver: Receiver<Event>,
+    listeners: Arc<Mutex<Vec<Sender<Event>>>>,
+    shutdown: Sender<()>,
+    stopping: Receiver<()>,
+    worker: Option<JoinHandle<()>>,
 }
 
 impl Engine {
-    pub fn new() -> Self {
-        let (sender, events) = unbounded();
-        let jvm = JvmPlatform::new();
-        let java = JavaLanguage::new();
-
-        Self {
-            revision: Revision::default(),
-            java,
-            jvm,
+    pub fn new(database_path: &Path) -> Result<Self, String> {
+        let storage = Storage::new(database_path)?;
+        let (sender, receiver) = unbounded();
+        let (shutdown, stopping) = bounded(1);
+        Ok(Self {
+            storage,
             sender,
-            events,
-        }
-    }
-
-    pub fn revision(&self) -> Revision {
-        self.revision
+            receiver,
+            listeners: Arc::new(Mutex::new(Vec::new())),
+            shutdown,
+            stopping,
+            worker: None,
+        })
     }
 
     pub fn sender(&self) -> Sender<Event> {

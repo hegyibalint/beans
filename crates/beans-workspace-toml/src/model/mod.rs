@@ -1,7 +1,7 @@
 mod descriptor;
+mod module;
 mod project;
-mod unit;
 
 pub(crate) use descriptor::Descriptor;
+pub use module::Module;
 pub use project::Project;
-pub use unit::Unit;

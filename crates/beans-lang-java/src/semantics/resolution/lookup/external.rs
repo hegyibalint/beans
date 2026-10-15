@@ -1,10 +1,7 @@
 use crate::model::{imports::ImportType, references::TypeNameComponent};
-use beans_core::{names::Name, ranges::Spanned};
+use beans_core::{names::Name, ranges::Spanned, resolution::TypeDefinitionQuery};
 
-use super::super::{
-    Context, ResolutionFailure, TypeCandidate, query::TypeCandidateQuery,
-    result::classify_candidates,
-};
+use super::super::{Context, ResolutionFailure, TypeCandidate, result::classify_candidates};
 
 /// Resolves names outside the current compilation unit through the visible definitions.
 /// The query searches Java and JVM definitions together; lookup decides JLS precedence.
@@ -58,13 +55,24 @@ pub(in crate::semantics::resolution) fn lookup_external(
     // (JLS §6.5.5.2). Only the complete canonical type name can be queried here.
     if segments.len() > 1 {
         let written = append(&[], segments);
-        if let Some(candidate) = classify_candidates(definitions.candidates(&written).into_iter())?
-        {
+        if let Some(candidate) = classify_candidates(
+            definitions
+                .find_types(&written)
+                .map_err(ResolutionFailure::Query)?
+                .into_iter(),
+        )? {
             return Ok(Some(candidate));
         }
         for prefix_len in 1..segments.len() {
             let prefix = append(&[], &segments[..prefix_len]);
-            if classify_candidates(definitions.candidates(&prefix).into_iter())?.is_some() {
+            if classify_candidates(
+                definitions
+                    .find_types(&prefix)
+                    .map_err(ResolutionFailure::Query)?
+                    .into_iter(),
+            )?
+            .is_some()
+            {
                 return Err(ResolutionFailure::Partial);
             }
         }
@@ -75,13 +83,16 @@ pub(in crate::semantics::resolution) fn lookup_external(
 
 /// A bound prefix commits to this tier even if its qualified suffix is missing.
 fn lookup_paths(
-    definitions: &dyn TypeCandidateQuery,
+    definitions: &dyn TypeDefinitionQuery<TypeCandidate>,
     paths: impl Iterator<Item = Name>,
     suffix: &[Spanned<TypeNameComponent>],
 ) -> Result<Option<TypeCandidate>, ResolutionFailure> {
     let mut owners = Vec::<(Name, TypeCandidate)>::new();
     for path in paths {
-        for candidate in definitions.candidates(&path) {
+        for candidate in definitions
+            .find_types(&path)
+            .map_err(ResolutionFailure::Query)?
+        {
             if !owners.iter().any(|(_, known)| known == &candidate) {
                 owners.push((path.clone(), candidate));
             }
@@ -102,8 +113,13 @@ fn lookup_paths(
         .find(|(_, candidate)| candidate == &owner)
         .expect("classified owner must have a path");
     let qualified = append(path.as_slice(), suffix);
-    let member = classify_candidates(definitions.candidates(&qualified).into_iter())?
-        .ok_or(ResolutionFailure::Partial)?;
+    let member = classify_candidates(
+        definitions
+            .find_types(&qualified)
+            .map_err(ResolutionFailure::Query)?
+            .into_iter(),
+    )?
+    .ok_or(ResolutionFailure::Partial)?;
     Ok(Some(member))
 }
 
