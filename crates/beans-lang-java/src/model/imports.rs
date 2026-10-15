@@ -1,8 +1,9 @@
 use beans_core::names::Name;
+use serde::Serialize;
 
 use super::references::TypeRef;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Import {
     name: Name,
     typ: ImportType,
@@ -52,7 +53,7 @@ impl Import {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum ImportType {
     /// JLS 7.5.1 Single-Type-Import Declarations
     ///

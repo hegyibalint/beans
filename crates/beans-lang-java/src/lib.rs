@@ -4,5 +4,6 @@ pub mod features;
 pub mod lowering;
 pub mod model;
 pub mod semantics;
+pub mod storage;
 
 pub use lowering::lower_into;

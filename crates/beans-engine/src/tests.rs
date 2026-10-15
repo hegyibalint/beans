@@ -34,7 +34,7 @@ fn recreating_an_engine_preserves_the_workspace_cache() {
         let engine = Engine::new(root.path()).unwrap();
         engine
             .storage
-            .execute("INSERT INTO entries VALUES (1, 1, 0, X'01', NULL)", [])
+            .execute("INSERT INTO entries VALUES (1, 1, 0, '{}', NULL)", [])
             .unwrap();
     }
     let engine = Engine::new(root.path()).unwrap();

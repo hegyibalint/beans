@@ -1,4 +1,5 @@
 use beans_core::names::Name;
+use serde::Serialize;
 
 use super::{
     imports::Import,
@@ -6,7 +7,7 @@ use super::{
 };
 
 /// Represents a whole `.java` file.
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct File {
     /// Package components; empty for the unnamed package (JLS §7.4.2).
     pub package_name: Name,

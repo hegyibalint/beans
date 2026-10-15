@@ -3,8 +3,9 @@ pub mod methods;
 pub mod types;
 
 use self::{fields::FieldDeclaration, methods::MethodDeclaration, types::TypeDeclaration};
+use serde::Serialize;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct NodeIndex(usize);
 
 impl NodeIndex {
@@ -17,7 +18,7 @@ impl NodeIndex {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub enum NodeKind {
     CompilationUnit,
     Type(TypeDeclaration),
@@ -35,7 +36,7 @@ impl NodeKind {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Node {
     parent: Option<NodeIndex>,
     children: Vec<NodeIndex>,
