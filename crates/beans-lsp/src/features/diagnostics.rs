@@ -42,8 +42,4 @@ impl Features {
             })
             .collect()
     }
-
-    pub(crate) fn revision(&self) -> beans_core::revision::Revision {
-        self.engine.revision()
-    }
 }

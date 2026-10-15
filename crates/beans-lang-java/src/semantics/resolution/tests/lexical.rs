@@ -3,7 +3,6 @@ use crate::model::{
     nodes::{NodeIndex, NodeKind},
     references::TypeRef,
 };
-use beans_core::revision::Revision;
 use beans_core::{location::Location, names::Name};
 
 use crate::semantics::resolution::{
@@ -31,13 +30,7 @@ fn resolve_field(file: &File, field_name: &str) -> Result<TypeCandidate, Resolut
         })
         .expect("expected field");
     let source = Location::file("/Test.java");
-    let ctx = Context::new(
-        Revision::new(1),
-        &source,
-        file,
-        field.0,
-        field.1.declared_type.value(),
-    );
+    let ctx = Context::new(&source, file, field.0, field.1.declared_type.value());
 
     resolve(&ctx)
 }
@@ -188,13 +181,7 @@ fn an_empty_named_reference_is_invalid() {
     let type_ref = TypeRef::Named {
         segments: Vec::new(),
     };
-    let ctx = Context::new(
-        Revision::new(1),
-        &source,
-        &file,
-        File::ROOT_NODE_ID,
-        &type_ref,
-    );
+    let ctx = Context::new(&source, &file, File::ROOT_NODE_ID, &type_ref);
 
     assert_eq!(resolve(&ctx), Err(ResolutionFailure::InvalidTypeRef));
 }

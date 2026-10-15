@@ -8,9 +8,7 @@ use crate::{
     },
     testing::Models,
 };
-use beans_core::{
-    classpath::Unrestricted, location::Location, query_scope::QueryScope, revision::Revision,
-};
+use beans_core::{classpath::Unrestricted, location::Location, query_scope::QueryScope};
 use beans_platform_jvm::JvmPlatform;
 use beans_testing::support::class_bytes;
 use tempfile::NamedTempFile;
@@ -30,10 +28,9 @@ impl Fixture {
     fn new(current: &str, other_files: &[(&str, &str)]) -> Self {
         let mut java = Models::new();
         let source = Location::file("/src/Use.java");
-        java.store(Revision::new(1), java.process(current), source.clone());
+        java.store(java.process(current), source.clone());
         for (name, text) in other_files {
             java.store(
-                Revision::new(1),
                 java.process(text),
                 Location::file(format!("/src/{name}.java")),
             );
@@ -50,9 +47,7 @@ impl Fixture {
         jvm: &JvmPlatform,
         occurrence: Occurrence,
     ) -> Result<TypeCandidate, ResolutionFailure> {
-        let java = self
-            .java
-            .query(QueryScope::new(Revision::new(1), &Unrestricted));
+        let java = self.java.query(QueryScope::new(&Unrestricted));
         let definitions = ResolutionQuery::new(&java, jvm);
         let file = java.file(&self.source).unwrap().unwrap();
         let (index, reference) = file
@@ -72,8 +67,8 @@ impl Fixture {
                 _ => None,
             })
             .unwrap();
-        let ctx = Context::new(Revision::new(1), &self.source, &file, index, reference)
-            .with_definitions(&definitions);
+        let ctx =
+            Context::new(&self.source, &file, index, reference).with_definitions(&definitions);
         match occurrence {
             Occurrence::Field => resolve(&ctx),
             Occurrence::Supertype => resolve_supertype(&ctx),
@@ -81,9 +76,7 @@ impl Fixture {
     }
 
     fn expected(&self, name: &str) -> TypeCandidate {
-        let query = self
-            .java
-            .query(QueryScope::new(Revision::new(1), &Unrestricted));
+        let query = self.java.query(QueryScope::new(&Unrestricted));
         let entry = query
             .find_type(&name.split('.').map(str::to_owned).collect())
             .unwrap()
@@ -95,11 +88,10 @@ impl Fixture {
 }
 
 fn jvm_class(binary_name: &str) -> (NamedTempFile, JvmPlatform) {
-    let revision = Revision::new(1);
     let mut file = NamedTempFile::new().unwrap();
     file.write_all(&class_bytes(binary_name)).unwrap();
     let mut jvm = JvmPlatform::new();
-    jvm.process(revision, file.path().to_owned()).unwrap();
+    jvm.process(file.path().to_owned()).unwrap();
     (file, jvm)
 }
 

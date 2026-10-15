@@ -1,7 +1,6 @@
 use crate::model::{File, nodes::types::TypeParameter};
 use crate::semantics::DeclarationHandle;
 use beans_core::location::Location;
-use beans_core::revision::RevisionEntry;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeParameterHandle {
@@ -42,7 +41,7 @@ pub enum ResolutionFailure {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeCandidate {
     Java(JavaTypeCandidate),
-    Jvm(RevisionEntry<Location>),
+    Jvm(Location),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

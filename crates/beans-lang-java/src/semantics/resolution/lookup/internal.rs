@@ -198,7 +198,7 @@ fn is_inherited_member_type(ctx: &Context<'_>, candidate: &TypeCandidate) -> boo
     let TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) = candidate else {
         return false;
     };
-    if handle.revision() != ctx.revision || handle.source() != ctx.source {
+    if handle.source() != ctx.source {
         return false;
     }
 
@@ -217,7 +217,7 @@ fn candidate_name<'a>(ctx: &'a Context<'_>, candidate: &TypeCandidate) -> Option
         JavaTypeCandidate::Declaration(handle) => handle,
         JavaTypeCandidate::TypeParameter(handle) => handle.owner(),
     };
-    if owner.revision() != ctx.revision || owner.source() != ctx.source {
+    if owner.source() != ctx.source {
         return None;
     }
 

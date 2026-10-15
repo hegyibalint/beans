@@ -1,4 +1,3 @@
-use beans_core::revision::Revision;
 use lsp_server::Notification;
 use serde_json::{Value, json};
 
@@ -43,10 +42,6 @@ fn failed_open_reports_an_error_and_the_server_can_recover() {
         &open(&mut server, "class C extends Target {}"),
         "publication rejected",
     );
-    assert_eq!(
-        server.features.as_ref().unwrap().revision(),
-        Revision::default()
-    );
     assert_eq!(hover(&mut server).result, Some(Value::Null));
     let count: i64 = connection
         .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
@@ -81,19 +76,11 @@ fn failed_changes_keep_the_last_published_document_and_allow_retry() {
     };
     assert_reported(&server.notify(change()), "change rejected");
     assert_eq!(
-        server.features.as_ref().unwrap().revision(),
-        Revision::new(1)
-    );
-    assert_eq!(
         hover(&mut server).result.unwrap()["contents"]["value"],
         "Former"
     );
     connection.execute("DROP TRIGGER reject_type", []).unwrap();
     server.notify(change());
-    assert_eq!(
-        server.features.as_ref().unwrap().revision(),
-        Revision::new(2)
-    );
     assert_eq!(
         hover(&mut server).result.unwrap()["contents"]["value"],
         "Latest"
@@ -105,7 +92,7 @@ fn failed_close_does_not_discard_the_open_document() {
     let (root, mut server) = server();
     open(&mut server, "class C extends Target {}");
     let connection = beans_engine::storage::open(&root.path().join(".beans/models")).unwrap();
-    connection.execute_batch("CREATE TRIGGER reject_removal BEFORE INSERT ON entries WHEN NEW.model IS NULL BEGIN SELECT RAISE(ABORT, 'close rejected'); END;").unwrap();
+    connection.execute_batch("CREATE TRIGGER reject_removal BEFORE DELETE ON entries BEGIN SELECT RAISE(ABORT, 'close rejected'); END;").unwrap();
     let close = || {
         Notification::new(
             "textDocument/didClose".into(),

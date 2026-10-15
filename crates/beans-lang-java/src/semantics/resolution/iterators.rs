@@ -84,20 +84,19 @@ pub(super) fn local_declaration_handle<'a>(
     let TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) = candidate else {
         return None;
     };
-    (handle.revision() == ctx.revision && handle.source() == ctx.source).then_some(handle)
+    (handle.source() == ctx.source).then_some(handle)
 }
 
 pub(super) fn local_type_candidate(ctx: &Context<'_>, index: NodeIndex) -> Option<TypeCandidate> {
     ctx.file.node(index)?.kind().as_type()?;
     Some(TypeCandidate::Java(JavaTypeCandidate::Declaration(
-        DeclarationHandle::new(ctx.revision, ctx.source.clone(), index),
+        DeclarationHandle::new(ctx.source.clone(), index),
     )))
 }
 
 #[cfg(test)]
 mod tests {
     use crate::model::{File, nodes::NodeIndex};
-    use beans_core::revision::Revision;
     use beans_core::{location::Location, names::Name};
 
     use super::*;
@@ -120,18 +119,15 @@ mod tests {
             "class Outer { class Base {} interface First {} interface Second {} class Child extends Base implements First, Second {} }",
         );
         let source = Location::file("/Test.java");
-        let revision = Revision::new(1);
         let child = type_index(&file, &["Outer", "Child"]);
         let declaration = file.node(child).unwrap().kind().as_type().unwrap();
         let ctx = Context::new(
-            revision,
             &source,
             &file,
             child,
             declaration.declared_superclass.as_ref().unwrap().value(),
         );
         let owner = TypeCandidate::Java(JavaTypeCandidate::Declaration(DeclarationHandle::new(
-            revision,
             source.clone(),
             child,
         )));

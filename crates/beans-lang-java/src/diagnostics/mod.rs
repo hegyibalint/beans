@@ -45,6 +45,6 @@ impl JavaLanguage {
         file: &File,
     ) -> Result<Vec<Diagnostic>, String> {
         let definitions = ResolutionQuery::new(java, jvm);
-        unresolved_types::collect(file, java.revision(), source, &definitions)
+        unresolved_types::collect(file, source, &definitions)
     }
 }

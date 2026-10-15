@@ -1,9 +1,4 @@
-use beans_core::{
-    classpath::Unrestricted,
-    location::Location,
-    query_scope::QueryScope,
-    revision::{Revision, RevisionEntry},
-};
+use beans_core::{classpath::Unrestricted, location::Location, query_scope::QueryScope};
 use beans_lang_java::{engine::JavaLanguage, model::File, query::JavaQuery, storage};
 use rusqlite::Connection;
 
@@ -34,24 +29,15 @@ impl Models {
         JavaLanguage::new().process(contents)
     }
 
-    pub fn store(
-        &mut self,
-        revision: Revision,
-        file: File,
-        source: Location,
-    ) -> RevisionEntry<Location> {
+    pub fn store(&mut self, file: File, source: Location) {
         let transaction = self.connection.transaction().unwrap();
-        storage::store(&transaction, revision, &file, &source, "").unwrap();
+        storage::store(&transaction, &file, &source, "").unwrap();
         transaction.commit().unwrap();
-        RevisionEntry {
-            revision,
-            key: source,
-        }
     }
 
-    pub fn remove(&mut self, revision: Revision, source: Location) {
+    pub fn remove(&mut self, source: Location) {
         let transaction = self.connection.transaction().unwrap();
-        storage::remove(&transaction, revision, &source).unwrap();
+        storage::remove(&transaction, &source).unwrap();
         transaction.commit().unwrap();
     }
 
@@ -59,8 +45,8 @@ impl Models {
         JavaQuery::new(&self.connection, scope)
     }
 
-    pub fn file(&self, revision: Revision, source: &Location) -> Option<File> {
-        self.query(QueryScope::new(revision, &Unrestricted))
+    pub fn file(&self, source: &Location) -> Option<File> {
+        self.query(QueryScope::new(&Unrestricted))
             .file(source)
             .unwrap()
     }

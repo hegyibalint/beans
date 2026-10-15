@@ -2,7 +2,6 @@ use crate::model::{
     File,
     nodes::{NodeIndex, NodeKind},
 };
-use beans_core::revision::Revision;
 use beans_core::{location::Location, names::Name};
 
 use crate::semantics::resolution::{
@@ -30,13 +29,7 @@ fn resolve_field(file: &File, field_name: &str) -> Result<TypeCandidate, Resolut
         })
         .expect("expected field");
     let source = Location::file("/Test.java");
-    let ctx = Context::new(
-        Revision::new(1),
-        &source,
-        file,
-        field_index,
-        field.declared_type.value(),
-    );
+    let ctx = Context::new(&source, file, field_index, field.declared_type.value());
 
     resolve(&ctx)
 }

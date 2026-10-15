@@ -51,13 +51,12 @@ fn parses_each_container_format_without_retaining_classes() {
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(&bytes).unwrap();
         let mut platform = JvmPlatform::default();
-        let revision = Revision::new(1);
 
-        platform.process(revision, file.path().to_owned()).unwrap();
+        platform.process(file.path().to_owned()).unwrap();
 
         assert!(
             platform
-                .find_classes(QueryScope::new(revision, &Unrestricted), "example/Foo")
+                .find_classes(QueryScope::new(&Unrestricted), "example/Foo")
                 .is_empty()
         );
     }
@@ -68,12 +67,11 @@ fn recognized_empty_container_does_not_fall_through() {
     let mut file = NamedTempFile::new().unwrap();
     file.write_all(&jar_bytes(None)).unwrap();
     let mut platform = JvmPlatform::new();
-    let revision = Revision::new(1);
 
-    platform.process(revision, file.path().to_owned()).unwrap();
+    platform.process(file.path().to_owned()).unwrap();
     assert!(
         platform
-            .find_classes(QueryScope::new(revision, &Unrestricted), "example/Foo")
+            .find_classes(QueryScope::new(&Unrestricted), "example/Foo")
             .is_empty()
     );
 }
@@ -89,11 +87,7 @@ fn reports_unknown_formats_and_preserves_recognized_errors() {
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(bytes).unwrap();
         let mut platform = JvmPlatform::default();
-        let revision = Revision::new(1);
-
-        let error = platform
-            .process(revision, file.path().to_owned())
-            .unwrap_err();
+        let error = platform.process(file.path().to_owned()).unwrap_err();
 
         assert_eq!(error.contains("unrecognized container format"), !recognized);
     }
@@ -112,14 +106,12 @@ fn imports_each_jdk_runtime_layout() {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, bytes).unwrap();
         let mut platform = JvmPlatform::default();
-        let revision = Revision::new(1);
-
         assert_eq!(jdk_artifacts(home.path()).unwrap(), vec![path.clone()]);
-        platform.process_jdk_home(revision, home.path()).unwrap();
+        platform.process_jdk_home(home.path()).unwrap();
 
         assert!(
             platform
-                .find_classes(QueryScope::new(revision, &Unrestricted), "example/Foo")
+                .find_classes(QueryScope::new(&Unrestricted), "example/Foo")
                 .is_empty()
         );
     }
@@ -145,9 +137,7 @@ fn invalid_existing_runtime_does_not_fall_back() {
     std::fs::write(home.path().join("jre/lib/rt.jar"), jar_bytes(None)).unwrap();
     let mut platform = JvmPlatform::default();
 
-    let error = platform
-        .process_jdk_home(Revision::new(1), home.path())
-        .unwrap_err();
+    let error = platform.process_jdk_home(home.path()).unwrap_err();
 
     assert!(error.contains("lib/modules"));
     assert!(error.contains("unrecognized container format"));
@@ -181,18 +171,16 @@ fn legacy_layouts_import_optional_tools() {
         std::fs::write(&runtime, jar_bytes(Some(&class_bytes("example/Runtime")))).unwrap();
         std::fs::write(&tools, jar_bytes(Some(&class_bytes("example/Tools")))).unwrap();
         let mut platform = JvmPlatform::default();
-        let revision = Revision::new(1);
-
         assert_eq!(
             jdk_artifacts(home.path()).unwrap(),
             vec![runtime.clone(), tools.clone()]
         );
-        platform.process_jdk_home(revision, home.path()).unwrap();
+        platform.process_jdk_home(home.path()).unwrap();
 
         for name in ["example/Runtime", "example/Tools"] {
             assert!(
                 platform
-                    .find_classes(QueryScope::new(revision, &Unrestricted), name)
+                    .find_classes(QueryScope::new(&Unrestricted), name)
                     .is_empty()
             );
         }
@@ -209,13 +197,11 @@ fn modern_layout_ignores_legacy_artifacts() {
     std::fs::write(home.path().join("jre/lib/rt.jar"), b"invalid").unwrap();
     std::fs::write(home.path().join("lib/rt.jar"), b"invalid").unwrap();
     let mut platform = JvmPlatform::default();
-    let revision = Revision::new(1);
-
     assert_eq!(jdk_artifacts(home.path()).unwrap(), vec![runtime]);
-    platform.process_jdk_home(revision, home.path()).unwrap();
+    platform.process_jdk_home(home.path()).unwrap();
     assert!(
         platform
-            .find_classes(QueryScope::new(revision, &Unrestricted), "example/Foo")
+            .find_classes(QueryScope::new(&Unrestricted), "example/Foo")
             .is_empty()
     );
 }
@@ -256,9 +242,7 @@ fn parsing_optional_artifact_errors_are_not_ignored() {
     std::fs::write(home.path().join("lib/tools.jar"), b"invalid tools").unwrap();
     let mut platform = JvmPlatform::default();
 
-    let error = platform
-        .process_jdk_home(Revision::new(1), home.path())
-        .unwrap_err();
+    let error = platform.process_jdk_home(home.path()).unwrap_err();
     assert!(error.contains("lib/tools.jar"));
     assert!(error.contains("unrecognized container format"));
 }

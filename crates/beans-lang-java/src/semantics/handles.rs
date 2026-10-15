@@ -1,26 +1,17 @@
-use beans_core::{location::Location, revision::Revision};
+use beans_core::location::Location;
 
 use crate::model::nodes::NodeIndex;
 
-/// An address in this vertical's storage, not a pinned snapshot.
+/// Identifies a declaration within the caller's database snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DeclarationHandle {
-    revision: Revision,
     source: Location,
     node_index: NodeIndex,
 }
 
 impl DeclarationHandle {
-    pub fn new(revision: Revision, source: Location, node_index: NodeIndex) -> Self {
-        Self {
-            revision,
-            source,
-            node_index,
-        }
-    }
-
-    pub fn revision(&self) -> Revision {
-        self.revision
+    pub fn new(source: Location, node_index: NodeIndex) -> Self {
+        Self { source, node_index }
     }
 
     pub fn source(&self) -> &Location {

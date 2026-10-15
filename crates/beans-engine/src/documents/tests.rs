@@ -6,19 +6,24 @@ use beans_core::{
     location::{Location, LocationEntry},
     query_scope::QueryScope,
     ranges::ByteRange,
-    revision::Revision,
 };
 use beans_lang_java::{model::File, query::JavaQuery};
 
 use crate::Engine;
 
 fn file(engine: &Engine, source: &Location) -> Option<File> {
-    JavaQuery::new(
-        &engine.storage,
-        QueryScope::new(engine.revision(), &Unrestricted),
-    )
-    .file(source)
-    .unwrap()
+    JavaQuery::new(&engine.storage, QueryScope::new(&Unrestricted))
+        .file(source)
+        .unwrap()
+}
+
+fn count(engine: &Engine, table: &str) -> i64 {
+    engine
+        .storage
+        .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+            row.get(0)
+        })
+        .unwrap()
 }
 
 #[test]
@@ -31,14 +36,15 @@ fn accepts_only_supported_source_files() {
 }
 
 #[test]
-fn processing_java_source_commits_its_model_and_revision() {
+fn processing_java_source_commits_its_model() {
     let root = tempfile::tempdir().unwrap();
     let mut engine = Engine::new(root.path()).unwrap();
     let source = Location::file("/src/example/Example.java");
-    engine
-        .process(source.clone(), "package example; public class Example {}")
-        .unwrap();
-    assert_eq!(engine.revision(), Revision::new(1));
+    assert!(
+        engine
+            .process(source.clone(), "package example; public class Example {}")
+            .unwrap()
+    );
     assert_eq!(
         file(&engine, &source).unwrap().package_name.as_slice(),
         ["example"]
@@ -54,9 +60,11 @@ fn virtual_documents_keep_their_identity_through_replacement_and_removal() {
         ("class C extends First {}", 21),
         ("class C extends Second {}", 22),
     ] {
-        engine
-            .process_document(source.clone(), "java", contents)
-            .unwrap();
+        assert!(
+            engine
+                .process_document(source.clone(), "java", contents)
+                .unwrap()
+        );
         let response = engine
             .feature_hover(&HoverRequest {
                 source: &source,
@@ -67,71 +75,107 @@ fn virtual_documents_keep_their_identity_through_replacement_and_removal() {
             .unwrap();
         assert_eq!(response.range(), ByteRange::new(16, end));
         assert!(file(&engine, &Location::file("/Example.java")).is_none());
+        assert_eq!(count(&engine, "entries"), 1);
+        assert_eq!(count(&engine, "locations"), 1);
     }
-    engine.close_document(source.clone()).unwrap();
-    assert_eq!(engine.revision(), Revision::new(3));
+    assert!(engine.close_document(source.clone()).unwrap());
     assert!(file(&engine, &source).is_none());
-    let old = JavaQuery::new(
-        &engine.storage,
-        QueryScope::new(Revision::new(1), &Unrestricted),
-    );
-    assert!(old.file(&source).unwrap().is_some());
+    assert!(!engine.close_document(source).unwrap());
+    for table in ["entries", "locations", "java_types"] {
+        assert_eq!(count(&engine, table), 0);
+    }
 }
 
 #[test]
-fn unsupported_source_inputs_do_not_advance_the_revision() {
+fn unsupported_inputs_report_no_change_and_write_nothing() {
     let root = tempfile::tempdir().unwrap();
     let mut engine = Engine::new(root.path()).unwrap();
     let virtual_source = Location::new(LocationEntry::Virtual("untitled:Example.java".into()));
-    engine
-        .process(Location::file("/README.md"), "not Java")
-        .unwrap();
-    engine
-        .process(virtual_source.clone(), "class C extends T {}")
-        .unwrap();
-    engine
-        .process(
-            Location::file("/sources.jar").entry(LocationEntry::Container("Example.java".into())),
-            "class C extends T {}",
-        )
-        .unwrap();
-    engine
-        .process_document(virtual_source.clone(), "plaintext", "class C extends T {}")
-        .unwrap();
-    assert_eq!(engine.revision(), Revision::default());
-    assert!(file(&engine, &virtual_source).is_none());
+    assert!(
+        !engine
+            .process(Location::file("/README.md"), "not Java")
+            .unwrap()
+    );
+    assert!(
+        !engine
+            .process(virtual_source.clone(), "class C extends T {}")
+            .unwrap()
+    );
+    assert!(
+        !engine
+            .process(
+                Location::file("/sources.jar")
+                    .entry(LocationEntry::Container("Example.java".into())),
+                "class C extends T {}"
+            )
+            .unwrap()
+    );
+    assert!(
+        !engine
+            .process_document(virtual_source, "plaintext", "class C extends T {}")
+            .unwrap()
+    );
+    assert_eq!(count(&engine, "entries"), 0);
 }
 
 #[test]
-fn failed_publication_rolls_back_model_locations_and_indexes_without_advancing() {
+fn failed_publication_restores_the_previous_model_and_indexes() {
     let root = tempfile::tempdir().unwrap();
     let mut engine = Engine::new(root.path()).unwrap();
     let source = Location::file("/Example.java");
     engine.process(source.clone(), "class Original {}").unwrap();
+    let original = serde_json::to_value(file(&engine, &source).unwrap()).unwrap();
     engine.storage.execute_batch("CREATE TRIGGER reject_type BEFORE INSERT ON java_types BEGIN SELECT RAISE(ABORT, 'type rejected'); END;").unwrap();
-    let error = engine
-        .process(source.clone(), "class Replacement {}")
-        .unwrap_err();
-    assert!(error.contains("type rejected"));
-    assert_eq!(engine.revision(), Revision::new(1));
-    let query = JavaQuery::new(
-        &engine.storage,
-        QueryScope::new(engine.revision(), &Unrestricted),
+    assert!(
+        engine
+            .process(source.clone(), "class Replacement {}")
+            .unwrap_err()
+            .contains("type rejected")
     );
-    assert!(query.file(&source).unwrap().is_some());
+    assert_eq!(
+        serde_json::to_value(file(&engine, &source).unwrap()).unwrap(),
+        original
+    );
+    let query = JavaQuery::new(&engine.storage, QueryScope::new(&Unrestricted));
+    assert_eq!(
+        query
+            .find_type(&["Original".to_owned()].into_iter().collect())
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        query
+            .find_type(&["Replacement".to_owned()].into_iter().collect())
+            .unwrap()
+            .is_empty()
+    );
     for table in ["entries", "locations", "java_types"] {
-        let count: i64 = engine
-            .storage
-            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(count, 1);
+        assert_eq!(count(&engine, table), 1);
     }
 }
 
 #[test]
-fn reopening_resumes_revisions_and_reads_persisted_models() {
+fn failed_deletion_preserves_the_model_and_its_dependents() {
+    let root = tempfile::tempdir().unwrap();
+    let mut engine = Engine::new(root.path()).unwrap();
+    let source = Location::file("/Example.java");
+    engine.process(source.clone(), "class Example {}").unwrap();
+    engine.storage.execute_batch("CREATE TRIGGER reject_type_deletion BEFORE DELETE ON java_types BEGIN SELECT RAISE(ABORT, 'deletion rejected'); END;").unwrap();
+    assert!(
+        engine
+            .close_document(source.clone())
+            .unwrap_err()
+            .contains("deletion rejected")
+    );
+    assert!(file(&engine, &source).is_some());
+    for table in ["entries", "locations", "java_types"] {
+        assert_eq!(count(&engine, table), 1);
+    }
+}
+
+#[test]
+fn reopening_reads_and_replaces_the_persisted_model() {
     let root = tempfile::tempdir().unwrap();
     let source = Location::file("/Example.java");
     {
@@ -139,28 +183,23 @@ fn reopening_resumes_revisions_and_reads_persisted_models() {
         engine.process(source.clone(), "class Original {}").unwrap();
     }
     let mut engine = Engine::new(root.path()).unwrap();
-    assert_eq!(engine.revision(), Revision::new(1));
     assert!(file(&engine, &source).is_some());
-    engine.process(source, "class Replacement {}").unwrap();
-    assert_eq!(engine.revision(), Revision::new(2));
-}
-
-#[test]
-fn revision_overflow_is_a_recoverable_processing_error() {
-    let root = tempfile::tempdir().unwrap();
-    let mut engine = Engine::new(root.path()).unwrap();
     engine
-        .storage
-        .execute(
-            "INSERT INTO entries (revision, model_kind, model) VALUES (?1, 0, '{}')",
-            [i64::MAX],
-        )
+        .process(source.clone(), "class Replacement {}")
         .unwrap();
-    assert_eq!(
-        engine
-            .process(Location::file("/Example.java"), "class Example {}")
-            .unwrap_err(),
-        "revision overflow"
+    let query = JavaQuery::new(&engine.storage, QueryScope::new(&Unrestricted));
+    assert!(
+        query
+            .find_type(&["Original".to_owned()].into_iter().collect())
+            .unwrap()
+            .is_empty()
     );
-    assert_eq!(engine.revision(), Revision::default());
+    assert_eq!(
+        query
+            .find_type(&["Replacement".to_owned()].into_iter().collect())
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(count(&engine, "entries"), 1);
 }

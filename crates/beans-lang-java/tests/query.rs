@@ -2,11 +2,11 @@
 mod testing;
 use testing::Models;
 
+use beans_core::query_scope::QueryScope;
 use beans_core::{
     classpath::{Classpath, Unrestricted},
     location::Location,
 };
-use beans_core::{query_scope::QueryScope, revision::Revision};
 use beans_lang_java::{
     lowering::lower_into,
     model::nodes::NodeKind,
@@ -17,38 +17,32 @@ use beans_lang_java::{
 use beans_platform_jvm::JvmPlatform;
 
 #[test]
-fn deletion_keeps_older_models_readable() {
+fn deletion_removes_the_model() {
     let mut models = Models::new();
     let source = Location::file("/Example.java");
-    models.store(
-        Revision::new(1),
-        models.process("class Example {}"),
-        source.clone(),
-    );
-    models.remove(Revision::new(2), source.clone());
-    assert!(models.file(Revision::new(1), &source).is_some());
-    assert!(models.file(Revision::new(2), &source).is_none());
+    models.store(models.process("class Example {}"), source.clone());
+    assert!(models.file(&source).is_some());
+    models.remove(source.clone());
+    assert!(models.file(&source).is_none());
 }
 
 #[test]
 fn stored_models_can_be_resolved_using_the_engines_query() {
     let mut engine = Models::new();
-    let revision = Revision::new(3);
-    let entry = engine.store(
-        revision,
+    let source = Location::file("/src/app/Use.java");
+    engine.store(
         lower_into("package app; class Target {} class Use { Target target; }"),
-        Location::file("/src/app/Use.java"),
+        source.clone(),
     );
     let classpath = Unrestricted;
-    let query = engine.query(QueryScope::new(entry.revision, &classpath));
+    let query = engine.query(QueryScope::new(&classpath));
 
-    assert_eq!(query.revision(), revision);
     assert!(std::ptr::eq(
         query.classpath(),
         &classpath as &dyn Classpath
     ));
     let file = query
-        .file(&entry.key)
+        .file(&source)
         .unwrap()
         .expect("expected the stored model");
     let (node_index, type_ref) = file
@@ -61,7 +55,7 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
         })
         .expect("expected target field");
 
-    let ctx = Context::new(revision, &entry.key, &file, node_index, type_ref.value());
+    let ctx = Context::new(&source, &file, node_index, type_ref.value());
     let TypeCandidate::Java(JavaTypeCandidate::Declaration(declaration)) = resolve(&ctx).unwrap()
     else {
         panic!("expected a Java declaration");
@@ -72,27 +66,24 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
         .expect("expected a readable declaration handle");
 
     assert_eq!(target.name(), Some("Target"));
-    assert_eq!(declaration.source(), &entry.key);
+    assert_eq!(declaration.source(), &source);
 }
 
 #[test]
 fn an_imported_type_resolves_to_another_stored_source_file() {
     let mut engine = Models::new();
-    let revision = Revision::new(1);
     let use_source = Location::file("/src/p/Use.java");
     let target_source = Location::file("/src/q/Target.java");
     engine.store(
-        revision,
         lower_into("package p; import q.Target; class Use { Target field; }"),
         use_source.clone(),
     );
     engine.store(
-        revision,
         lower_into("package q; public class Target {}"),
         target_source.clone(),
     );
     let classpath = Unrestricted;
-    let java = engine.query(QueryScope::new(revision, &classpath));
+    let java = engine.query(QueryScope::new(&classpath));
     let jvm = JvmPlatform::default();
     let definitions = ResolutionQuery::new(&java, &jvm);
     let file = java.file(&use_source).unwrap().unwrap();
@@ -103,14 +94,8 @@ fn an_imported_type_resolves_to_another_stored_source_file() {
             _ => None,
         })
         .unwrap();
-    let ctx = Context::new(
-        revision,
-        &use_source,
-        &file,
-        field.0,
-        field.1.declared_type.value(),
-    )
-    .with_definitions(&definitions);
+    let ctx = Context::new(&use_source, &file, field.0, field.1.declared_type.value())
+        .with_definitions(&definitions);
 
     let TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) = resolve(&ctx).unwrap() else {
         panic!("expected a stored Java type");

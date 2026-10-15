@@ -1,29 +1,35 @@
-use beans_core::{
-    location::{Location, LocationEntry},
-    revision::Revision,
-};
+use beans_core::location::{Location, LocationEntry};
 use rusqlite::{Transaction, params};
 
-use crate::model::{File, nodes::NodeKind};
+use crate::{
+    model::{File, nodes::NodeKind},
+    query::entry_id,
+};
 
 pub const SCHEMA: &str = include_str!("storage/schema.sql");
 
-/// Stores one model version; the caller must roll back the transaction on error.
+/// Replaces the current model; the caller must roll back the transaction on error.
 pub fn store(
     transaction: &Transaction<'_>,
-    revision: Revision,
     file: &File,
     location: &Location,
     contents: &str,
 ) -> Result<i64, String> {
     let model = serde_json::to_string(file).map_err(|error| error.to_string())?;
-    let id = insert(
-        transaction,
-        revision,
-        Some(&model),
-        location,
-        Some(contents),
-    )?;
+    let id = if let Some(id) = entry_id(transaction, location)? {
+        transaction
+            .execute(
+                "UPDATE entries SET model = ?1, content = ?2 WHERE id = ?3",
+                params![model, contents.as_bytes(), id],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute("DELETE FROM java_types WHERE entry_id = ?1", [id])
+            .map_err(|error| error.to_string())?;
+        id
+    } else {
+        insert(transaction, &model, location, contents)?
+    };
     let mut insert = transaction
         .prepare("INSERT INTO java_types (entry_id, node_index, name) VALUES (?1, ?2, ?3)")
         .map_err(|error| error.to_string())?;
@@ -43,12 +49,14 @@ pub fn store(
     Ok(id)
 }
 
-pub fn remove(
-    transaction: &Transaction<'_>,
-    revision: Revision,
-    location: &Location,
-) -> Result<i64, String> {
-    insert(transaction, revision, None, location, None)
+pub fn remove(transaction: &Transaction<'_>, location: &Location) -> Result<bool, String> {
+    let Some(id) = entry_id(transaction, location)? else {
+        return Ok(false);
+    };
+    transaction
+        .execute("DELETE FROM entries WHERE id = ?1", [id])
+        .map(|count| count != 0)
+        .map_err(|error| error.to_string())
 }
 
 pub(crate) fn components(location: &Location) -> Result<Vec<(&str, &str)>, String> {
@@ -69,16 +77,15 @@ pub(crate) fn components(location: &Location) -> Result<Vec<(&str, &str)>, Strin
 
 fn insert(
     transaction: &Transaction<'_>,
-    revision: Revision,
-    model: Option<&str>,
+    model: &str,
     location: &Location,
-    contents: Option<&str>,
+    contents: &str,
 ) -> Result<i64, String> {
     let components = components(location)?;
     transaction
         .execute(
-            "INSERT INTO entries (revision, model_kind, model, content) VALUES (?1, 1, ?2, ?3)",
-            params![revision.as_i64(), model, contents.map(str::as_bytes)],
+            "INSERT INTO entries (model_kind, model, content) VALUES (1, ?1, ?2)",
+            params![model, contents.as_bytes()],
         )
         .map_err(|error| error.to_string())?;
     let id = transaction.last_insert_rowid();

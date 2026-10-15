@@ -3,7 +3,6 @@ use beans_core::{
     location::Location,
     ranges::ByteRange,
     resolution::TypeDefinitionQuery,
-    revision::Revision,
     source::SourceSpan,
 };
 
@@ -42,13 +41,9 @@ impl<'request>
                 target: SourceSpan::new(source.clone(), range),
             }));
         }
-        let Some((origin_range, candidate)) = resolve_field_type_at(
-            &file,
-            context.scope.revision(),
-            source,
-            offset,
-            Some(&definitions),
-        ) else {
+        let Some((origin_range, candidate)) =
+            resolve_field_type_at(&file, source, offset, Some(&definitions))
+        else {
             return Ok(None);
         };
         let candidate = match candidate {
@@ -94,7 +89,6 @@ fn type_parameter_declaration_at(file: &File, offset: usize) -> Option<ByteRange
 /// A missing occurrence is distinct from an occurrence whose name fails resolution.
 fn resolve_field_type_at(
     file: &File,
-    revision: Revision,
     source: &Location,
     offset: usize,
     definitions: Option<&dyn TypeDefinitionQuery<TypeCandidate>>,
@@ -144,7 +138,7 @@ fn resolve_field_type_at(
         Some((entry.index, prefix, origin_range))
     })?;
 
-    let mut ctx = Context::new(revision, source, file, index, &prefix);
+    let mut ctx = Context::new(source, file, index, &prefix);
     if let Some(definitions) = definitions {
         ctx = ctx.with_definitions(definitions);
     }
@@ -165,17 +159,12 @@ mod tests {
         Location::new(LocationEntry::Virtual("untitled:Example.java".into()))
     }
 
-    fn definition_at(
-        java: &Models,
-        revision: Revision,
-        source: &Location,
-        offset: usize,
-    ) -> Option<SourceSpan> {
+    fn definition_at(java: &Models, source: &Location, offset: usize) -> Option<SourceSpan> {
         JavaLanguage::new()
             .goto_definition(
                 &JavaFeatureContext {
                     connection: &java.connection,
-                    scope: QueryScope::new(revision, &Unrestricted),
+                    scope: QueryScope::new(&Unrestricted),
                     jvm: &JvmPlatform::default(),
                 },
                 &DefinitionRequest { source, offset },
@@ -190,14 +179,8 @@ mod tests {
         text: &str,
         type_name: &str,
     ) -> Option<Result<TypeCandidate, ResolutionFailure>> {
-        resolve_field_type_at(
-            file,
-            Revision::new(1),
-            source,
-            text.rfind(type_name).unwrap(),
-            None,
-        )
-        .map(|(_, result)| result)
+        resolve_field_type_at(file, source, text.rfind(type_name).unwrap(), None)
+            .map(|(_, result)| result)
     }
 
     #[test]
@@ -213,7 +196,6 @@ mod tests {
         else {
             panic!("expected the field type to resolve to a Java declaration");
         };
-        assert_eq!(handle.revision(), Revision::new(1));
         assert_eq!(handle.source(), &source);
         assert_eq!(handle.node_index(), member_index);
     }
@@ -221,14 +203,13 @@ mod tests {
     #[test]
     fn resolved_field_type_projects_to_its_declaration_name() {
         let text = "class Outer { class Member {} Member field; }";
-        let revision = Revision::new(1);
         let source = source_id();
         let mut java = Models::new();
-        java.store(revision, lower_into(text), source.clone());
+        java.store(lower_into(text), source.clone());
         let name_start = text.find("Member").unwrap();
 
         assert_eq!(
-            definition_at(&java, revision, &source, text.rfind("Member").unwrap()),
+            definition_at(&java, &source, text.rfind("Member").unwrap()),
             Some(SourceSpan::new(
                 source,
                 ByteRange::new(name_start, name_start + "Member".len()),
@@ -239,10 +220,9 @@ mod tests {
     #[test]
     fn qualified_field_type_navigates_each_component_to_its_own_declaration() {
         let text = "class Box<T> { class Slot<U> {} } class Example { Box<String>.Slot<Integer> nested; Box<? extends Number> numbers; }";
-        let revision = Revision::new(1);
         let source = source_id();
         let mut java = Models::new();
-        java.store(revision, lower_into(text), source.clone());
+        java.store(lower_into(text), source.clone());
         let box_name = text.find("class Box").unwrap() + "class ".len();
         let slot_name = text.find("class Slot").unwrap() + "class ".len();
 
@@ -252,7 +232,7 @@ mod tests {
             (text.find("Box<?").unwrap(), box_name, "Box"),
         ] {
             assert_eq!(
-                definition_at(&java, revision, &source, use_offset),
+                definition_at(&java, &source, use_offset),
                 Some(SourceSpan::new(
                     source.clone(),
                     ByteRange::new(target_offset, target_offset + name.len()),
@@ -261,7 +241,7 @@ mod tests {
             );
         }
         assert_eq!(
-            definition_at(&java, revision, &source, text.find(".Slot").unwrap()),
+            definition_at(&java, &source, text.find(".Slot").unwrap()),
             None
         );
     }
@@ -269,10 +249,9 @@ mod tests {
     #[test]
     fn generic_components_and_their_arguments_navigate_independently() {
         let text = "class A {} class B {} class First<T> { class Second<U> {} } class Use { First<A>.Second<B> field; }";
-        let revision = Revision::new(1);
         let source = source_id();
         let mut java = Models::new();
-        java.store(revision, lower_into(text), source.clone());
+        java.store(lower_into(text), source.clone());
 
         let first = text.find("First<A>").unwrap();
         let second = text.find("Second<B>").unwrap();
@@ -298,7 +277,7 @@ mod tests {
                 .goto_definition(
                     &JavaFeatureContext {
                         connection: &java.connection,
-                        scope: QueryScope::new(revision, &Unrestricted),
+                        scope: QueryScope::new(&Unrestricted),
                         jvm: &JvmPlatform::default(),
                     },
                     &DefinitionRequest {
@@ -315,7 +294,7 @@ mod tests {
             );
         }
         assert_eq!(
-            definition_at(&java, revision, &source, first + "First<A>".len()),
+            definition_at(&java, &source, first + "First<A>".len()),
             None
         );
     }
@@ -324,15 +303,14 @@ mod tests {
     fn field_type_parameter_navigates_to_its_declaration_name() {
         // JLS §6.3 and §6.5.5.1: the class type parameter is in scope in its body.
         let text = "class Example<T extends Labelled> { T label; }";
-        let revision = Revision::new(1);
         let source = source_id();
         let mut java = Models::new();
-        java.store(revision, lower_into(text), source.clone());
+        java.store(lower_into(text), source.clone());
         let declaration = text.find("<T").unwrap() + 1;
         let use_offset = text.find("T label").unwrap();
-        let file = java.file(revision, &source).unwrap();
+        let file = java.file(&source).unwrap();
         assert!(matches!(
-            resolve_field_type_at(&file, revision, &source, use_offset, None),
+            resolve_field_type_at(&file, &source, use_offset, None),
             Some((
                 _,
                 Ok(TypeCandidate::Java(JavaTypeCandidate::TypeParameter(_)))
@@ -340,7 +318,7 @@ mod tests {
         ));
 
         assert_eq!(
-            definition_at(&java, revision, &source, use_offset),
+            definition_at(&java, &source, use_offset),
             Some(SourceSpan::new(
                 source,
                 ByteRange::new(declaration, declaration + 1),
@@ -351,17 +329,16 @@ mod tests {
     #[test]
     fn type_parameter_declaration_names_navigate_to_themselves() {
         let text = "class Box<T, U extends Labelled> { U label; }";
-        let revision = Revision::new(1);
         let source = source_id();
         let mut java = Models::new();
-        java.store(revision, lower_into(text), source.clone());
+        java.store(lower_into(text), source.clone());
 
         for offset in [
             text.find("<T").unwrap() + 1,
             text.find("U extends").unwrap(),
         ] {
             assert_eq!(
-                definition_at(&java, revision, &source, offset),
+                definition_at(&java, &source, offset),
                 Some(SourceSpan::new(
                     source.clone(),
                     ByteRange::new(offset, offset + 1)
@@ -369,7 +346,7 @@ mod tests {
             );
         }
         assert_eq!(
-            definition_at(&java, revision, &source, text.find("<T").unwrap() + 2),
+            definition_at(&java, &source, text.find("<T").unwrap() + 2),
             Some(SourceSpan::new(
                 source.clone(),
                 ByteRange::new(text.find("<T").unwrap() + 1, text.find("<T").unwrap() + 2)
@@ -379,17 +356,16 @@ mod tests {
             text.find("<T").unwrap(),
             text.find("U extends").unwrap() + 2,
         ] {
-            assert_eq!(definition_at(&java, revision, &source, offset), None);
+            assert_eq!(definition_at(&java, &source, offset), None);
         }
     }
 
     #[test]
     fn field_type_end_positions_navigate_when_entered_from_the_right() {
         let text = "class Box<T> { class Slot<U> {} T value; Box<String>.Slot<Integer> nested; }";
-        let revision = Revision::new(1);
         let source = source_id();
         let mut java = Models::new();
-        java.store(revision, lower_into(text), source.clone());
+        java.store(lower_into(text), source.clone());
 
         for (use_start, target_start, name) in [
             (
@@ -409,7 +385,7 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                definition_at(&java, revision, &source, use_start + name.len()),
+                definition_at(&java, &source, use_start + name.len()),
                 Some(SourceSpan::new(
                     source.clone(),
                     ByteRange::new(target_start, target_start + name.len())
@@ -424,8 +400,7 @@ mod tests {
         let text = "class Outer { class Member {} Member field; int count; }";
         let file = lower_into(text);
         let source = source_id();
-        let at_offset =
-            |offset| resolve_field_type_at(&file, Revision::new(1), &source, offset, None);
+        let at_offset = |offset| resolve_field_type_at(&file, &source, offset, None);
 
         for offset in [
             text.find("class").unwrap(),

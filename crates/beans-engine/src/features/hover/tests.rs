@@ -1,4 +1,4 @@
-use beans_core::{features::HoverRequest, location::Location, revision::Revision};
+use beans_core::{features::HoverRequest, location::Location};
 
 use crate::Engine;
 
@@ -25,20 +25,15 @@ fn hover_only_requires_a_request() {
 }
 
 #[test]
-fn hover_uses_the_engines_current_revision() {
+fn hover_uses_the_current_model() {
     let root = tempfile::tempdir().unwrap();
     let mut engine = Engine::new(root.path()).unwrap();
     let source = Location::file("/src/Example.java");
-    let versions = [
-        (Revision::new(1), "class C extends Former {}", "Former"),
-        (Revision::new(2), "class C extends Latest {}", "Latest"),
-    ];
-    for (_, contents, _) in versions {
+    for (contents, expected) in [
+        ("class C extends Former {}", "Former"),
+        ("class C extends Latest {}", "Latest"),
+    ] {
         engine.process(source.clone(), contents).unwrap();
-    }
-
-    for (revision, contents, expected) in versions {
-        engine.revision = revision;
         let response = engine
             .feature_hover(&HoverRequest {
                 source: &source,

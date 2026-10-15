@@ -1,6 +1,5 @@
 use std::fs;
 
-use beans_core::revision::Revision;
 use url::Url;
 
 use crate::features::Features;
@@ -26,7 +25,6 @@ fn a_descriptor_limits_ingestion_to_declared_sources() {
     let features = Features::initialize(&params(&[root.path()])).unwrap();
 
     assert_eq!(features.workspace_documents.len(), 1);
-    assert_eq!(features.engine.revision(), Revision::new(1));
     let uri = Url::from_file_path(root.path().join("src/Included.java")).unwrap();
     assert!(features.workspace_documents.contains_key(uri.as_str()));
 }

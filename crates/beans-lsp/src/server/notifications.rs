@@ -15,15 +15,14 @@ impl Server {
             return Vec::new();
         }
         let features = self.features.as_mut().unwrap();
-        let revision = features.revision();
         let mut closed = None;
         let result = match notification.method.as_str() {
             DidOpenTextDocument::METHOD => notification
                 .extract(DidOpenTextDocument::METHOD)
-                .map_or(Ok(()), |params| features.did_open(params)),
+                .map_or(Ok(false), |params| features.did_open(params)),
             DidChangeTextDocument::METHOD => notification
                 .extract(DidChangeTextDocument::METHOD)
-                .map_or(Ok(()), |params| features.did_change(params)),
+                .map_or(Ok(false), |params| features.did_change(params)),
             DidCloseTextDocument::METHOD => {
                 match notification
                     .extract::<lsp_types::DidCloseTextDocumentParams>(DidCloseTextDocument::METHOD)
@@ -32,16 +31,17 @@ impl Server {
                         closed = Some(params.text_document.uri.clone());
                         features.did_close(params)
                     }
-                    Err(_) => Ok(()),
+                    Err(_) => Ok(false),
                 }
             }
-            _ => Ok(()),
+            _ => Ok(false),
         };
-        if let Err(error) = result {
-            return vec![report_error(error)];
-        }
+        let changed = match result {
+            Ok(changed) => changed,
+            Err(error) => return vec![report_error(error)],
+        };
         let mut publications = Vec::new();
-        if features.revision() != revision {
+        if changed {
             if let Some(uri) = closed {
                 publications.push(PublishDiagnosticsParams::new(uri, Vec::new(), None));
             }

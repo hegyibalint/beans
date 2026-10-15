@@ -6,44 +6,47 @@ use super::{Features, source_locations::resource_for_uri};
 use crate::model::open_document::OpenDocument;
 
 impl Features {
-    pub(crate) fn did_open(&mut self, params: DidOpenTextDocumentParams) -> Result<(), String> {
+    pub(crate) fn did_open(&mut self, params: DidOpenTextDocumentParams) -> Result<bool, String> {
         let document = OpenDocument::from(params.text_document);
-        self.engine.process_document(
+        let changed = self.engine.process_document(
             resource_for_uri(&document.uri),
             &document.language_id,
             &document.text,
         )?;
         self.open_documents
             .insert(document.uri.as_str().into(), document);
-        Ok(())
+        Ok(changed)
     }
 
-    pub(crate) fn did_change(&mut self, params: DidChangeTextDocumentParams) -> Result<(), String> {
+    pub(crate) fn did_change(
+        &mut self,
+        params: DidChangeTextDocumentParams,
+    ) -> Result<bool, String> {
         let Some(document) = self
             .open_documents
             .get_mut(params.text_document.uri.as_str())
         else {
-            return Ok(());
+            return Ok(false);
         };
         if params.text_document.version <= document.version || params.content_changes.len() != 1 {
-            return Ok(());
+            return Ok(false);
         }
         let change = params.content_changes.into_iter().next().unwrap();
         if change.range.is_some() {
-            return Ok(());
+            return Ok(false);
         }
-        self.engine.process_document(
+        let changed = self.engine.process_document(
             resource_for_uri(&document.uri),
             &document.language_id,
             &change.text,
         )?;
         document.version = params.text_document.version;
         document.text = change.text;
-        Ok(())
+        Ok(changed)
     }
 
-    pub(crate) fn did_close(&mut self, params: DidCloseTextDocumentParams) -> Result<(), String> {
-        if self
+    pub(crate) fn did_close(&mut self, params: DidCloseTextDocumentParams) -> Result<bool, String> {
+        let changed = if self
             .open_documents
             .get(params.text_document.uri.as_str())
             .is_some_and(|document| document.language_id == "java")
@@ -56,15 +59,17 @@ impl Features {
                     resource_for_uri(&indexed.uri),
                     &indexed.language_id,
                     &indexed.text,
-                )?;
+                )?
             } else {
                 self.engine
-                    .close_document(resource_for_uri(&params.text_document.uri))?;
+                    .close_document(resource_for_uri(&params.text_document.uri))?
             }
-        }
+        } else {
+            false
+        };
         self.open_documents
             .remove(params.text_document.uri.as_str());
-        Ok(())
+        Ok(changed)
     }
 }
 
@@ -98,21 +103,22 @@ mod tests {
                 text: text.into(),
             }],
         };
-        let opened_revision = session.engine.revision();
-        session
-            .did_change(change(2, "class C extends New {}"))
-            .unwrap();
-        let updated_revision = session.engine.revision();
-        session
-            .did_change(change(1, "class C extends Stale {}"))
-            .unwrap();
+        assert!(
+            session
+                .did_change(change(2, "class C extends New {}"))
+                .unwrap()
+        );
+        assert!(
+            !session
+                .did_change(change(1, "class C extends Stale {}"))
+                .unwrap()
+        );
 
         assert_eq!(
             session.open_documents.get(uri.as_str()).unwrap().text,
             "class C extends New {}"
         );
-        assert!(updated_revision > opened_revision);
-        assert_eq!(session.engine.revision(), updated_revision);
+        assert_eq!(session.open_documents.get(uri.as_str()).unwrap().version, 2);
     }
 
     #[test]

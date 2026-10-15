@@ -22,15 +22,14 @@ impl Workspace for Unrestricted {
 /// Until a workspace is configured, every stored source is visible.
 ///
 /// ```
-/// use beans_core::{query_scope::QueryScope, revision::Revision};
+/// use beans_core::query_scope::QueryScope;
 /// use beans_workspace::Workspaces;
 ///
 /// fn scope<'a>(
 ///     workspaces: &'a Workspaces,
 ///     uri: &str,
-///     revision: Revision,
 /// ) -> QueryScope<'a> {
-///     QueryScope::new(revision, workspaces.classpath_for(uri))
+///     QueryScope::new(workspaces.classpath_for(uri))
 /// }
 /// ```
 #[derive(Default)]

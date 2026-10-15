@@ -131,12 +131,11 @@ pub use self::{
 };
 use crate::model::{File, nodes::NodeIndex, references::TypeRef};
 use beans_core::location::Location;
-use beans_core::{resolution::TypeDefinitionQuery, revision::Revision};
+use beans_core::resolution::TypeDefinitionQuery;
 
 pub struct Context<'a> {
     /// Borrowed query over visible Java and JVM types; `None` limits lookup to this file.
     definitions: Option<&'a dyn TypeDefinitionQuery<TypeCandidate>>,
-    revision: Revision,
     source: &'a Location,
     file: &'a File,
     node_index: NodeIndex,
@@ -145,7 +144,6 @@ pub struct Context<'a> {
 
 impl<'a> Context<'a> {
     pub fn new(
-        revision: Revision,
         source: &'a Location,
         file: &'a File,
         node_index: NodeIndex,
@@ -153,7 +151,6 @@ impl<'a> Context<'a> {
     ) -> Self {
         Self {
             definitions: None,
-            revision,
             source,
             file,
             node_index,
@@ -173,7 +170,6 @@ impl<'a> Context<'a> {
     fn for_type_ref<'b>(&'b self, node_index: NodeIndex, type_ref: &'b TypeRef) -> Context<'b> {
         Context {
             definitions: self.definitions,
-            revision: self.revision,
             source: self.source,
             file: self.file,
             node_index,

@@ -1,18 +1,8 @@
 use std::thread;
 
-use beans_core::{
-    events::{Event, JavaHomeFound},
-    revision::Revision,
-};
+use beans_core::events::{Event, JavaHomeFound};
 
 use super::Engine;
-
-#[test]
-fn a_new_engine_starts_at_the_default_revision() {
-    let root = tempfile::tempdir().unwrap();
-    let engine = Engine::new(root.path()).unwrap();
-    assert_eq!(engine.revision(), Revision::default());
-}
 
 #[test]
 fn an_engine_creates_and_owns_the_workspace_cache() {
@@ -34,7 +24,7 @@ fn recreating_an_engine_preserves_the_workspace_cache() {
         let engine = Engine::new(root.path()).unwrap();
         engine
             .storage
-            .execute("INSERT INTO entries VALUES (1, 1, 0, '{}', NULL)", [])
+            .execute("INSERT INTO entries VALUES (1, 0, '{}', NULL)", [])
             .unwrap();
     }
     let engine = Engine::new(root.path()).unwrap();

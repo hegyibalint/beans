@@ -2,7 +2,7 @@
 
 use std::{fs, path::Path};
 
-use beans_core::{events::Event, revision::Revision};
+use beans_core::events::Event;
 use beans_lang_java::engine::JavaLanguage;
 use beans_platform_jvm::JvmPlatform;
 use crossbeam_channel::{Receiver, Sender, unbounded};
@@ -17,9 +17,6 @@ pub mod storage;
 mod tests;
 
 pub struct Engine {
-    // Monotonic version where we are.
-    revision: Revision,
-
     storage: Connection,
 
     // Language verticals
@@ -37,32 +34,17 @@ impl Engine {
         fs::create_dir_all(&directory)
             .map_err(|error| format!("{}: {error}", directory.display()))?;
         let storage = storage::open(&directory.join("models"))?;
-        let revision = storage
-            .query_row(
-                "SELECT COALESCE(MAX(revision), 0) FROM entries",
-                [],
-                |row| row.get::<_, i64>(0),
-            )
-            .map_err(|error| error.to_string())?;
-        if revision < 0 {
-            return Err("negative database revision".into());
-        }
         let (sender, events) = unbounded();
         let jvm = JvmPlatform::new();
         let java = JavaLanguage::new();
 
         Ok(Self {
-            revision: Revision::new(revision),
             storage,
             java,
             jvm,
             sender,
             events,
         })
-    }
-
-    pub fn revision(&self) -> Revision {
-        self.revision
     }
 
     pub fn sender(&self) -> Sender<Event> {

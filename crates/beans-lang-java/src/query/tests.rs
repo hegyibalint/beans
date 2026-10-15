@@ -4,7 +4,6 @@ use beans_core::{
     location::{Location, LocationEntry},
     names::Name,
     query_scope::QueryScope,
-    revision::Revision,
 };
 
 fn name(text: &str) -> Name {
@@ -19,8 +18,8 @@ fn decoded_models_preserve_the_lowered_tree_and_ranges() {
         "package p; import java.util.List; class Café<T> { List<? extends T[]> value; class Nested {} }",
     );
     let expected = serde_json::to_value(&file).unwrap();
-    models.store(Revision::new(1), file, source.clone());
-    let query = models.query(QueryScope::new(Revision::new(1), &Unrestricted));
+    models.store(file, source.clone());
+    let query = models.query(QueryScope::new(&Unrestricted));
     let decoded = query.file(&source).unwrap().unwrap();
     assert_eq!(serde_json::to_value(decoded).unwrap(), expected);
 }
@@ -30,12 +29,11 @@ fn indexed_lookup_returns_handles_for_nested_and_duplicate_declarations() {
     let mut models = Models::new();
     for source in ["/one.java", "/two.java"] {
         models.store(
-            Revision::new(1),
             lower_into("package p.q; class Outer { class Member {} class Member {} }"),
             Location::file(source),
         );
     }
-    let query = models.query(QueryScope::new(Revision::new(1), &Unrestricted));
+    let query = models.query(QueryScope::new(&Unrestricted));
     let handles = query.find_type(&name("p.q.Outer.Member")).unwrap();
     assert_eq!(handles.len(), 4);
     assert_eq!(handles[0].source(), handles[1].source());
@@ -51,65 +49,59 @@ fn indexed_lookup_returns_handles_for_nested_and_duplicate_declarations() {
 }
 
 #[test]
-fn replacements_and_deletions_hide_old_names_without_erasing_history() {
+fn replacements_and_deletions_remove_old_models_and_names() {
     let mut models = Models::new();
     let source = Location::file("/Example.java");
-    models.store(
-        Revision::new(1),
-        lower_into("class First {}"),
-        source.clone(),
+    models.store(lower_into("class First {}"), source.clone());
+    assert_eq!(
+        models
+            .query(QueryScope::new(&Unrestricted))
+            .find_type(&name("First"))
+            .unwrap()
+            .len(),
+        1
     );
-    models.store(
-        Revision::new(2),
-        lower_into("class Second {}"),
-        source.clone(),
-    );
-    models.remove(Revision::new(3), source.clone());
-    for (revision, expected) in [
-        (1, Some("First")),
-        (2, Some("Second")),
-        (3, None),
-        (9, None),
-    ] {
-        let query = models.query(QueryScope::new(Revision::new(revision), &Unrestricted));
-        assert_eq!(query.file(&source).unwrap().is_some(), expected.is_some());
-        for candidate in ["First", "Second"] {
-            assert_eq!(
-                query.find_type(&name(candidate)).unwrap().len(),
-                usize::from(expected == Some(candidate))
-            );
+    models.store(lower_into("class Second {}"), source.clone());
+    {
+        let query = models.query(QueryScope::new(&Unrestricted));
+        assert!(query.find_type(&name("First")).unwrap().is_empty());
+        assert_eq!(query.find_type(&name("Second")).unwrap().len(), 1);
+        let count: i64 = models
+            .connection
+            .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+    models.remove(source.clone());
+    {
+        let query = models.query(QueryScope::new(&Unrestricted));
+        assert!(query.file(&source).unwrap().is_none());
+        assert!(query.find_type(&name("First")).unwrap().is_empty());
+        assert!(query.find_type(&name("Second")).unwrap().is_empty());
+        for table in ["entries", "locations", "java_types"] {
+            let count: i64 = models
+                .connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 0);
         }
     }
-    models.store(
-        Revision::new(4),
-        lower_into("class Third {}"),
-        source.clone(),
-    );
-    let query = models.query(QueryScope::new(Revision::new(4), &Unrestricted));
+    models.store(lower_into("class Third {}"), source.clone());
+    let query = models.query(QueryScope::new(&Unrestricted));
     assert_eq!(query.find_type(&name("Third")).unwrap().len(), 1);
     assert!(query.find_type(&name("First")).unwrap().is_empty());
-    assert_eq!(
-        query
-            .declaration(&crate::semantics::DeclarationHandle::new(
-                Revision::new(1),
-                source,
-                crate::model::nodes::NodeIndex::new(1)
-            ))
-            .unwrap()
-            .unwrap()
-            .name(),
-        Some("First")
-    );
 }
 
 #[test]
-fn the_last_write_wins_when_revisions_are_equal() {
+fn repeated_writes_keep_only_the_current_model() {
     let mut models = Models::new();
     let source = Location::file("/Example.java");
     for text in ["class Former {}", "class Latest {}"] {
-        models.store(Revision::new(1), lower_into(text), source.clone());
+        models.store(lower_into(text), source.clone());
     }
-    let query = models.query(QueryScope::new(Revision::new(1), &Unrestricted));
+    let query = models.query(QueryScope::new(&Unrestricted));
     assert!(query.find_type(&name("Former")).unwrap().is_empty());
     assert_eq!(query.find_type(&name("Latest")).unwrap().len(), 1);
 }
@@ -129,12 +121,11 @@ fn locations_keep_component_kinds_boundaries_and_verbatim_values() {
     ];
     for (index, source) in sources.iter().enumerate() {
         models.store(
-            Revision::new(1),
             lower_into(&format!("class Type{index} {{}}")),
             source.clone(),
         );
     }
-    let query = models.query(QueryScope::new(Revision::new(1), &Unrestricted));
+    let query = models.query(QueryScope::new(&Unrestricted));
     for (index, source) in sources.iter().enumerate() {
         let handle = query
             .find_type(&name(&format!("Type{index}")))
@@ -158,12 +149,8 @@ fn classpath_filters_discovery_but_not_direct_model_reads() {
     }
     let mut models = Models::new();
     let source = Location::file("/Example.java");
-    models.store(
-        Revision::new(1),
-        lower_into("class Example {}"),
-        source.clone(),
-    );
-    let query = models.query(QueryScope::new(Revision::new(1), &NoSources));
+    models.store(lower_into("class Example {}"), source.clone());
+    let query = models.query(QueryScope::new(&NoSources));
     assert!(query.file(&source).unwrap().is_some());
     assert!(query.find_type(&name("Example")).unwrap().is_empty());
 }
@@ -172,12 +159,10 @@ fn classpath_filters_discovery_but_not_direct_model_reads() {
 fn indexed_lookup_does_not_decode_unrelated_models() {
     let mut models = Models::new();
     models.store(
-        Revision::new(1),
         lower_into("class Healthy {}"),
         Location::file("/Healthy.java"),
     );
     models.store(
-        Revision::new(1),
         lower_into("class Broken {}"),
         Location::file("/Broken.java"),
     );
@@ -185,7 +170,7 @@ fn indexed_lookup_does_not_decode_unrelated_models() {
         .connection
         .execute("UPDATE entries SET model = '{}' WHERE id = 2", [])
         .unwrap();
-    let query = models.query(QueryScope::new(Revision::new(1), &Unrestricted));
+    let query = models.query(QueryScope::new(&Unrestricted));
     let handle = query.find_type(&name("Healthy")).unwrap().remove(0);
     assert_eq!(
         query.declaration(&handle).unwrap().unwrap().name(),
@@ -197,11 +182,7 @@ fn indexed_lookup_does_not_decode_unrelated_models() {
 fn invalid_models_return_errors_instead_of_panicking_during_traversal() {
     let mut models = Models::new();
     let source = Location::file("/Example.java");
-    models.store(
-        Revision::new(1),
-        lower_into("class Example {}"),
-        source.clone(),
-    );
+    models.store(lower_into("class Example {}"), source.clone());
     for payload in [
         "{}",
         "{\"package_name\":{\"components\":[]},\"imports\":[],\"nodes\":[]}",
@@ -212,7 +193,7 @@ fn invalid_models_return_errors_instead_of_panicking_during_traversal() {
             .unwrap();
         assert!(
             models
-                .query(QueryScope::new(Revision::new(1), &Unrestricted))
+                .query(QueryScope::new(&Unrestricted))
                 .file(&source)
                 .is_err()
         );

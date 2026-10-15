@@ -14,12 +14,12 @@ impl Engine {
         self.java.accept(path)
     }
 
-    pub fn process(&mut self, source: Location, contents: &str) -> Result<(), String> {
+    pub fn process(&mut self, source: Location, contents: &str) -> Result<bool, String> {
         let [LocationEntry::File(path)] = source.entries.as_slice() else {
-            return Ok(());
+            return Ok(false);
         };
         if !self.accept(path) {
-            return Ok(());
+            return Ok(false);
         }
         self.process_document(source, "java", contents)
     }
@@ -29,48 +29,27 @@ impl Engine {
         source: Location,
         language_id: &str,
         contents: &str,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         if language_id != "java" {
-            return Ok(());
+            return Ok(false);
         }
         let model = self.java.process(contents);
         let transaction = self
             .storage
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
-        let revision = next_revision(&transaction)?;
-        storage::store(&transaction, revision, &model, &source, contents)?;
+        storage::store(&transaction, &model, &source, contents)?;
         transaction.commit().map_err(|error| error.to_string())?;
-        self.revision = revision;
-        Ok(())
+        Ok(true)
     }
 
-    pub fn close_document(&mut self, source: Location) -> Result<(), String> {
+    pub fn close_document(&mut self, source: Location) -> Result<bool, String> {
         let transaction = self
             .storage
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
-        let revision = next_revision(&transaction)?;
-        storage::remove(&transaction, revision, &source)?;
+        let changed = storage::remove(&transaction, &source)?;
         transaction.commit().map_err(|error| error.to_string())?;
-        self.revision = revision;
-        Ok(())
+        Ok(changed)
     }
-}
-
-fn next_revision(
-    transaction: &rusqlite::Transaction<'_>,
-) -> Result<beans_core::revision::Revision, String> {
-    let latest: i64 = transaction
-        .query_row(
-            "SELECT COALESCE(MAX(revision), 0) FROM entries",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|error| error.to_string())?;
-    if latest < 0 {
-        return Err("negative database revision".into());
-    }
-    let next = latest.checked_add(1).ok_or("revision overflow")?;
-    Ok(beans_core::revision::Revision::new(next))
 }

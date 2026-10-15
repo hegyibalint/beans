@@ -9,5 +9,4 @@ pub mod names;
 pub mod query_scope;
 pub mod ranges;
 pub mod resolution;
-pub mod revision;
 pub mod source;

@@ -21,7 +21,7 @@ impl Engine {
             .map_err(|error| error.to_string())?;
         let context = JavaFeatureContext {
             connection: &transaction,
-            scope: QueryScope::new(self.revision, &Unrestricted),
+            scope: QueryScope::new(&Unrestricted),
             jvm: &self.jvm,
         };
         self.java.hover(&context, request)

@@ -11,7 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use beans_core::{location::Location, revision::Revision};
+use beans_core::location::Location;
 
 use crate::model::class::Class;
 
@@ -23,26 +23,26 @@ impl JvmPlatform {
         Self::default()
     }
 
-    pub fn process_jdk_home(&mut self, revision: Revision, home: &Path) -> Result<(), String> {
+    pub fn process_jdk_home(&mut self, home: &Path) -> Result<(), String> {
         for artifact in jdk_artifacts(home)? {
-            self.process(revision, artifact)?;
+            self.process(artifact)?;
         }
         Ok(())
     }
 
-    pub fn process(&mut self, revision: Revision, path: PathBuf) -> Result<(), String> {
+    pub fn process(&mut self, path: PathBuf) -> Result<(), String> {
         let mut file =
             std::fs::File::open(&path).map_err(|error| format!("{}: {error}", path.display()))?;
         let resource_id = Location::file(path);
 
         if let Some(entries) = container::class::process(&resource_id, &mut file)? {
-            return self.store(revision, entries);
+            return self.store(entries);
         }
         if let Some(entries) = container::jar::process(&resource_id, &mut file)? {
-            return self.store(revision, entries);
+            return self.store(entries);
         }
         if let Some(entries) = container::jimage::process(&resource_id, &mut file)? {
-            return self.store(revision, entries);
+            return self.store(entries);
         }
 
         Err(format!("{resource_id:?}: unrecognized container format"))
@@ -50,7 +50,6 @@ impl JvmPlatform {
 
     fn store(
         &mut self,
-        _revision: Revision,
         entries: impl Iterator<Item = Result<(Location, Class), String>>,
     ) -> Result<(), String> {
         for entry in entries {

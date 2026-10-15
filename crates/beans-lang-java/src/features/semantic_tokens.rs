@@ -1,7 +1,6 @@
 use beans_core::{
     location::Location,
     ranges::{ByteRange, Spanned},
-    revision::Revision,
 };
 
 use crate::{
@@ -14,15 +13,11 @@ impl JavaLanguage {
     pub fn type_tokens(
         &self,
         connection: &rusqlite::Connection,
-        revision: Revision,
         source: &Location,
     ) -> Result<Vec<ByteRange>, String> {
         let java = JavaQuery::new(
             connection,
-            beans_core::query_scope::QueryScope::new(
-                revision,
-                &beans_core::classpath::Unrestricted,
-            ),
+            beans_core::query_scope::QueryScope::new(&beans_core::classpath::Unrestricted),
         );
         let Some(file) = java.file(source)? else {
             return Ok(Vec::new());

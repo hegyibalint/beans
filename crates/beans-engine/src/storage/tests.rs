@@ -40,7 +40,7 @@ fn matching_version_preserves_cached_data() {
     {
         let connection = open(&path).unwrap();
         connection
-            .execute("INSERT INTO entries VALUES (1, 1, 0, '{}', NULL)", [])
+            .execute("INSERT INTO entries VALUES (1, 0, '{}', NULL)", [])
             .unwrap();
     }
     let connection = open(&path).unwrap();
@@ -52,11 +52,11 @@ fn matching_version_preserves_cached_data() {
 fn model_payloads_must_be_valid_json_text() {
     let root = tempdir().unwrap();
     let connection = open(&root.path().join("models.sqlite")).unwrap();
-    for model in ["'not JSON'", "'{broken}'", "X'7B7D'"] {
+    for model in ["'not JSON'", "'{broken}'", "X'7B7D'", "NULL"] {
         assert!(
             connection
                 .execute(
-                    &format!("INSERT INTO entries VALUES (1, 1, 0, {model}, NULL)"),
+                    &format!("INSERT INTO entries VALUES (1, 0, {model}, NULL)"),
                     [],
                 )
                 .is_err()
@@ -83,7 +83,7 @@ fn blob_model_caches_are_reset_instead_of_migrated() {
     assert_eq!(version(&connection), SCHEMA_VERSION);
     assert_eq!(count(&connection, "entries"), 0);
     connection
-        .execute("INSERT INTO entries VALUES (1, 1, 0, '{}', NULL)", [])
+        .execute("INSERT INTO entries VALUES (1, 0, '{}', NULL)", [])
         .unwrap();
 }
 
@@ -176,11 +176,11 @@ fn locations_preserve_order_kinds_and_values_after_reopening() {
         let connection = open(&path).unwrap();
         connection
             .execute_batch(
-                "INSERT INTO entries VALUES (1, 1, 0, '{}', NULL);
+                "INSERT INTO entries VALUES (1, 0, '{}', NULL);
                  INSERT INTO locations VALUES (1, 2, 'container', 'p/C.class');
                  INSERT INTO locations VALUES (1, 0, 'file', '/project/app.zip');
                  INSERT INTO locations VALUES (1, 1, 'container', 'lib/a.jar');
-                 INSERT INTO entries VALUES (2, 1, 1, '{}', X'03');
+                 INSERT INTO entries VALUES (2, 1, '{}', X'03');
                  INSERT INTO locations VALUES (2, 0, 'virtual', 'UNTITLED:My%20Type.java');",
             )
             .unwrap();
@@ -219,7 +219,7 @@ fn locations_require_an_owner_and_unique_nonnegative_positions() {
     let root = tempdir().unwrap();
     let connection = open(&root.path().join("models.sqlite")).unwrap();
     connection
-        .execute_batch("INSERT INTO entries VALUES (1, 1, 0, '{}', NULL)")
+        .execute_batch("INSERT INTO entries VALUES (1, 0, '{}', NULL)")
         .unwrap();
     for (owner, position, kind) in [(2, 0, "file"), (1, -1, "file"), (1, 0, "unknown")] {
         assert!(
@@ -256,7 +256,7 @@ fn resetting_a_cache_with_linked_locations_removes_both_tables() {
         let mut connection = open(&path).unwrap();
         connection
             .execute_batch(
-                "INSERT INTO entries VALUES (1, 1, 0, '{}', NULL);
+                "INSERT INTO entries VALUES (1, 0, '{}', NULL);
              INSERT INTO locations VALUES (1, 0, 'file', '/project/C.class');",
             )
             .unwrap();

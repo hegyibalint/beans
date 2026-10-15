@@ -2,7 +2,6 @@ use beans_core::{
     location::Location,
     ranges::{ByteRange, Spanned},
     resolution::TypeDefinitionQuery,
-    revision::Revision,
 };
 
 use crate::{
@@ -14,7 +13,6 @@ use super::{Diagnostic, DiagnosticSeverity};
 
 pub(super) fn collect(
     file: &File,
-    revision: Revision,
     source: &Location,
     definitions: &dyn TypeDefinitionQuery<TypeCandidate>,
 ) -> Result<Vec<Diagnostic>, String> {
@@ -26,7 +24,7 @@ pub(super) fn collect(
         let mut references = Vec::new();
         collect_named_references(&field.declared_type, &mut references);
         for reference in references {
-            let context = Context::new(revision, source, file, entry.index, reference.value())
+            let context = Context::new(source, file, entry.index, reference.value())
                 .with_definitions(definitions);
             // Partial resolution can mean missing resolver support, not invalid Java.
             match resolve(&context) {

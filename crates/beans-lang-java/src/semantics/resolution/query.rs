@@ -22,7 +22,7 @@ impl TypeDefinitionQuery<TypeCandidate> for ResolutionQuery<'_> {
             .find_types(name)?
             .into_iter()
             .map(|handle| TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)));
-        let scope = QueryScope::new(self.java.revision(), self.java.classpath());
+        let scope = QueryScope::new(self.java.classpath());
         // JVMS §4.2.1: internal names use '/'; canonical member-name conversion is not wired.
         let binary_name = name.as_slice().join("/");
         let jvm = self
@@ -38,19 +38,17 @@ impl TypeDefinitionQuery<TypeCandidate> for ResolutionQuery<'_> {
 mod tests {
     use super::*;
     use crate::testing::Models;
-    use beans_core::{classpath::Unrestricted, location::Location, revision::Revision};
+    use beans_core::{classpath::Unrestricted, location::Location};
 
     #[test]
     fn native_java_addresses_are_wrapped_as_candidates() {
-        let revision = Revision::new(1);
         let name = Name::new(vec!["example".into(), "Example".into()]);
         let mut models = Models::new();
         models.store(
-            revision,
             models.process("package example; class Example {}"),
             Location::file("/src/Example.java"),
         );
-        let java = models.query(QueryScope::new(revision, &Unrestricted));
+        let java = models.query(QueryScope::new(&Unrestricted));
         let address = java.find_types(&name).unwrap().remove(0);
         let jvm = JvmPlatform::new();
         let query = ResolutionQuery::new(&java, &jvm);
@@ -67,7 +65,7 @@ mod tests {
             .connection
             .execute("DROP TABLE java_types", [])
             .unwrap();
-        let java = models.query(QueryScope::new(Revision::new(1), &Unrestricted));
+        let java = models.query(QueryScope::new(&Unrestricted));
         let jvm = JvmPlatform::new();
         let query = ResolutionQuery::new(&java, &jvm);
         assert!(
