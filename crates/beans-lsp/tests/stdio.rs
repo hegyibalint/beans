@@ -1,7 +1,6 @@
 use std::{
     fs,
     io::{BufReader, Read},
-    path::Path,
     process::{Command, Stdio},
     sync::mpsc,
     thread,
@@ -31,11 +30,27 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../examples/playground")
-        .canonicalize()
-        .unwrap();
-    let workspace_uri = Url::from_directory_path(&root).unwrap().to_string();
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path();
+    fs::create_dir_all(root.join("src/demo")).unwrap();
+    fs::create_dir_all(root.join("src/library")).unwrap();
+    for (path, contents) in [
+        (
+            "beans.toml",
+            include_str!("../../../examples/playground/beans.toml"),
+        ),
+        (
+            "src/demo/Example.java",
+            include_str!("../../../examples/playground/src/demo/Example.java"),
+        ),
+        (
+            "src/library/Widget.java",
+            include_str!("../../../examples/playground/src/library/Widget.java"),
+        ),
+    ] {
+        fs::write(root.join(path), contents).unwrap();
+    }
+    let workspace_uri = Url::from_directory_path(root).unwrap().to_string();
     let mut stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
     let mut stderr = child.stderr.take().unwrap();

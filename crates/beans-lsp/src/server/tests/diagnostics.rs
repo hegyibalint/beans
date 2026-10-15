@@ -2,7 +2,7 @@ use lsp_server::Notification;
 use lsp_types::PublishDiagnosticsParams;
 use serde_json::{Value, json};
 
-use super::{Lifecycle, server};
+use super::server;
 use crate::server::Server;
 
 fn notify(server: &mut Server, method: &str, params: Value) -> Vec<PublishDiagnosticsParams> {
@@ -28,7 +28,7 @@ fn open(server: &mut Server, uri: &str, text: &str) -> Vec<PublishDiagnosticsPar
 
 #[test]
 fn open_change_and_close_publish_versioned_utf16_diagnostics() {
-    let mut server = server(Lifecycle::Running);
+    let (_root, mut server) = server();
     let uri = "untitled:Example.java";
     let text = "class Example { /* 😀 */ Missing value; }";
     let publications = open(&mut server, uri, text);
@@ -79,7 +79,7 @@ fn open_change_and_close_publish_versioned_utf16_diagnostics() {
 
 #[test]
 fn changes_in_another_document_refresh_open_dependents() {
-    let mut server = server(Lifecycle::Running);
+    let (_root, mut server) = server();
     let uri = "untitled:Example.java";
     assert_eq!(
         open(&mut server, uri, "class Example { Missing value; }")[0]
@@ -111,7 +111,7 @@ fn changes_in_another_document_refresh_open_dependents() {
 
 #[test]
 fn rejected_changes_and_other_languages_do_not_publish() {
-    let mut server = server(Lifecycle::Running);
+    let (_root, mut server) = server();
     let uri = "untitled:Example.java";
     open(&mut server, uri, "class Example { Missing value; }");
     assert!(

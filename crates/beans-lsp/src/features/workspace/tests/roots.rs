@@ -1,42 +1,47 @@
-use std::{
-    collections::BTreeSet,
-    path::{Path, PathBuf},
-};
+use std::path::PathBuf;
 
 use lsp_types::InitializeParams;
 use serde_json::json;
 
-use super::super::workspace_roots;
+use super::super::workspace_root;
 
 #[test]
 fn workspace_folders_supersede_the_legacy_root() {
     let params: InitializeParams = serde_json::from_value(json!({
         "capabilities": {},
         "rootUri": "file:///legacy",
-        "workspaceFolders": [
-            {"uri": "file:///one", "name": "one"},
-            {"uri": "file:///two", "name": "two"},
-            {"uri": "file:///one", "name": "duplicate"},
-        ]
+        "workspaceFolders": [{"uri": "file:///project", "name": "project"}]
     }))
     .unwrap();
 
-    assert_eq!(
-        workspace_roots(&params),
-        BTreeSet::from([PathBuf::from("/one"), PathBuf::from("/two")])
-    );
+    assert_eq!(workspace_root(&params).unwrap(), PathBuf::from("/project"));
 }
 
 #[test]
-fn an_explicit_empty_folder_list_does_not_fall_back_to_root_uri() {
-    // LSP 3.17 #workspace_workspaceFolders distinguishes an empty workspace
-    // from a single-file session; workspaceFolders replaces rootUri.
-    let params: InitializeParams = serde_json::from_value(json!({
-        "capabilities": {}, "rootUri": "file:///legacy", "workspaceFolders": []
-    }))
-    .unwrap();
-
-    assert!(workspace_roots(&params).is_empty());
+fn empty_missing_and_multiple_workspace_folders_are_rejected() {
+    for value in [
+        json!({"capabilities": {}}),
+        json!({"capabilities": {}, "rootUri": null, "workspaceFolders": null}),
+        json!({"capabilities": {}, "rootUri": "file:///legacy", "workspaceFolders": []}),
+        json!({"capabilities": {}, "workspaceFolders": [
+            {"uri": "file:///one", "name": "one"},
+            {"uri": "file:///two", "name": "two"}
+        ]}),
+        json!({"capabilities": {}, "workspaceFolders": [
+            {"uri": "file:///one", "name": "one"},
+            {"uri": "file:///one", "name": "duplicate"}
+        ]}),
+        json!({"capabilities": {}, "workspaceFolders": [
+            {"uri": "file:///one", "name": "one"},
+            {"uri": "ssh://host/two", "name": "two"}
+        ]}),
+    ] {
+        let params: InitializeParams = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            workspace_root(&params).unwrap_err(),
+            "expected exactly one workspace folder"
+        );
+    }
 }
 
 #[test]
@@ -46,15 +51,12 @@ fn root_uri_is_used_when_workspace_folders_are_absent_or_null() {
         json!({"capabilities": {}, "rootUri": "file:///legacy", "workspaceFolders": null}),
     ] {
         let params: InitializeParams = serde_json::from_value(value).unwrap();
-        assert_eq!(
-            workspace_roots(&params),
-            BTreeSet::from([PathBuf::from("/legacy")])
-        );
+        assert_eq!(workspace_root(&params).unwrap(), PathBuf::from("/legacy"));
     }
 }
 
 #[test]
-fn non_file_folders_are_not_scanned_as_local_paths() {
+fn non_file_roots_are_rejected_instead_of_using_the_legacy_root() {
     for uri in ["ssh://host/project", "beans-jvm:///project"] {
         let params: InitializeParams = serde_json::from_value(json!({
             "capabilities": {},
@@ -63,7 +65,11 @@ fn non_file_folders_are_not_scanned_as_local_paths() {
         }))
         .unwrap();
 
-        assert!(workspace_roots(&params).is_empty(), "{uri}");
+        assert!(
+            workspace_root(&params)
+                .unwrap_err()
+                .contains("local file URI")
+        );
     }
 }
 
@@ -76,7 +82,7 @@ fn encoded_folder_uris_are_decoded_before_import() {
     .unwrap();
 
     assert_eq!(
-        workspace_roots(&params),
-        BTreeSet::from([Path::new("/my project").to_path_buf()])
+        workspace_root(&params).unwrap(),
+        PathBuf::from("/my project")
     );
 }

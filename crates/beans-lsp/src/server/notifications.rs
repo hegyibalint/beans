@@ -7,21 +7,25 @@ use lsp_types::{
     },
 };
 
-use super::Server;
+use super::{Lifecycle, Server};
 
 impl Server {
     pub(super) fn notify(&mut self, notification: Notification) -> Vec<Notification> {
-        let revision = self.features.revision();
+        if !matches!(self.lifecycle, Lifecycle::Running) {
+            return Vec::new();
+        }
+        let features = self.features.as_mut().unwrap();
+        let revision = features.revision();
         let mut publications = Vec::new();
         match notification.method.as_str() {
             DidOpenTextDocument::METHOD => {
                 if let Ok(params) = notification.extract(DidOpenTextDocument::METHOD) {
-                    self.features.did_open(params);
+                    features.did_open(params);
                 }
             }
             DidChangeTextDocument::METHOD => {
                 if let Ok(params) = notification.extract(DidChangeTextDocument::METHOD) {
-                    self.features.did_change(params);
+                    features.did_change(params);
                 }
             }
             DidCloseTextDocument::METHOD => {
@@ -29,16 +33,16 @@ impl Server {
                     .extract::<lsp_types::DidCloseTextDocumentParams>(DidCloseTextDocument::METHOD)
                 {
                     let uri = params.text_document.uri.clone();
-                    self.features.did_close(params);
-                    if self.features.revision() != revision {
+                    features.did_close(params);
+                    if features.revision() != revision {
                         publications.push(PublishDiagnosticsParams::new(uri, Vec::new(), None));
                     }
                 }
             }
             _ => {}
         }
-        if self.features.revision() != revision {
-            publications.extend(self.features.diagnostics());
+        if features.revision() != revision {
+            publications.extend(features.diagnostics());
         }
         publications
             .into_iter()

@@ -83,7 +83,7 @@ mod tests {
     #[test]
     fn locations_preserve_the_open_documents_uri_spelling() {
         let uri: Uri = "file:///src/%54arget.java".parse().unwrap();
-        let mut features = Features::default();
+        let (_root, mut features) = crate::features::test_features();
         features.open_documents.insert(
             uri.as_str().into(),
             OpenDocument::new(uri.clone(), "java".into(), 1, "class Target {}".into()),
@@ -107,8 +107,9 @@ mod tests {
     fn nested_resources_have_no_source_location_yet() {
         let source =
             Location::file("/library.jar").entry(LocationEntry::Container("Target.class".into()));
+        let (_root, features) = crate::features::test_features();
         assert!(
-            Features::default()
+            features
                 .location_for_span(SourceSpan::new(source, ByteRange::new(0, 1)))
                 .is_none()
         );
@@ -136,7 +137,8 @@ mod tests {
         let uri = Url::from_file_path(&path).unwrap().to_string();
         let target = &fixture.spans[0];
 
-        let location = Features::default()
+        let (_root, features) = crate::features::test_features();
+        let location = features
             .location_for_span(SourceSpan::new(
                 Location::file(path),
                 ByteRange::new(target.start, target.end),

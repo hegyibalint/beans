@@ -5,7 +5,7 @@ use serde_json::json;
 
 #[test]
 fn hover_requests_reach_features_and_closed_documents_return_null() {
-    let mut server = server(Lifecycle::Running);
+    let (_root, mut server) = server();
     let uri = "untitled:Example.java";
     let fixture = Template::parse("class C extends <cur>Box {}");
     server.notify(Notification::new(
@@ -36,12 +36,9 @@ fn hover_requests_reach_features_and_closed_documents_return_null() {
 
 #[test]
 fn invalid_hover_parameters_are_rejected() {
+    let (_root, mut server) = server();
     assert_error(
-        request(
-            &mut server(Lifecycle::Running),
-            "textDocument/hover",
-            Value::Null,
-        ),
+        request(&mut server, "textDocument/hover", Value::Null),
         ErrorCode::InvalidParams,
     );
 }

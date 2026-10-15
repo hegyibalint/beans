@@ -9,12 +9,66 @@ use super::Engine;
 
 #[test]
 fn a_new_engine_starts_at_the_default_revision() {
-    assert_eq!(Engine::new().revision(), Revision::default());
+    let root = tempfile::tempdir().unwrap();
+    let engine = Engine::new(root.path()).unwrap();
+    assert_eq!(engine.revision(), Revision::default());
+}
+
+#[test]
+fn an_engine_creates_and_owns_the_workspace_cache() {
+    let root = tempfile::tempdir().unwrap();
+    let engine = Engine::new(root.path()).unwrap();
+
+    assert!(root.path().join(".beans/models").is_file());
+    let entries: i64 = engine
+        .storage
+        .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(entries, 0);
+}
+
+#[test]
+fn recreating_an_engine_preserves_the_workspace_cache() {
+    let root = tempfile::tempdir().unwrap();
+    {
+        let engine = Engine::new(root.path()).unwrap();
+        engine
+            .storage
+            .execute("INSERT INTO entries VALUES (1, 1, 0, X'01', NULL)", [])
+            .unwrap();
+    }
+    let engine = Engine::new(root.path()).unwrap();
+    let entries: i64 = engine
+        .storage
+        .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(entries, 1);
+}
+
+#[test]
+fn cache_directory_creation_errors_are_returned() {
+    let root = tempfile::tempdir().unwrap();
+    let directory = root.path().join(".beans");
+    std::fs::write(&directory, "blocked").unwrap();
+
+    let error = Engine::new(root.path()).err().unwrap();
+    assert!(error.contains(&directory.display().to_string()));
+}
+
+#[test]
+fn cache_opening_errors_are_returned() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join(".beans/models");
+    std::fs::create_dir_all(&path).unwrap();
+
+    let error = Engine::new(root.path()).err().unwrap();
+    assert!(error.contains(&path.display().to_string()));
 }
 
 #[test]
 fn producers_share_one_engine_inbox() {
-    let engine = Engine::new();
+    let root = tempfile::tempdir().unwrap();
+    let engine = Engine::new(root.path()).unwrap();
     let first = engine.sender();
     let second = engine.sender();
 
@@ -38,7 +92,8 @@ fn producers_share_one_engine_inbox() {
 
 #[test]
 fn a_producer_can_send_without_borrowing_the_engine() {
-    let engine = Engine::new();
+    let root = tempfile::tempdir().unwrap();
+    let engine = Engine::new(root.path()).unwrap();
     let sender = engine.sender();
     thread::spawn(move || {
         sender

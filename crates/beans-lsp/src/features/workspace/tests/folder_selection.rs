@@ -1,59 +1,35 @@
 use std::fs;
 
-use beans_core::revision::Revision;
-use url::Url;
-
 use crate::features::Features;
 
 use super::params;
 
 #[test]
-fn overlapping_folders_index_each_source_once() {
+fn overlapping_workspace_folders_are_rejected_before_creating_caches() {
     let root = tempfile::tempdir().unwrap();
     let nested = root.path().join("nested");
-    fs::create_dir_all(nested.join("src")).unwrap();
-    fs::write(nested.join("src/Example.java"), "").unwrap();
-    fs::write(nested.join("Other.java"), "").unwrap();
-    fs::write(
-        root.path().join("beans.toml"),
-        "[unit.main]\nsources = [\"nested/src\"]\n",
-    )
-    .unwrap();
-    let mut features = Features::default();
+    fs::create_dir(&nested).unwrap();
 
-    features
-        .initialize(&params(&[root.path(), &nested]))
+    let error = Features::initialize(&params(&[root.path(), &nested]))
+        .err()
         .unwrap();
 
-    assert_eq!(features.workspace_documents.len(), 2);
-    assert_eq!(features.engine.revision(), Revision::new(2));
-    for path in [nested.join("src/Example.java"), nested.join("Other.java")] {
-        let uri = Url::from_file_path(path).unwrap();
-        assert!(features.workspace_documents.contains_key(uri.as_str()));
-    }
+    assert_eq!(error, "expected exactly one workspace folder");
+    assert!(!root.path().join(".beans").exists());
+    assert!(!nested.join(".beans").exists());
 }
 
 #[test]
-fn unit_ids_are_local_to_each_imported_folder() {
+fn independent_workspace_folders_are_rejected_before_creating_caches() {
     let root = tempfile::tempdir().unwrap();
     let one = root.path().join("one");
     let two = root.path().join("two");
-    for folder in [&one, &two] {
-        fs::create_dir_all(folder.join("src")).unwrap();
-        fs::write(folder.join("src/Example.java"), "").unwrap();
-        fs::write(
-            folder.join("beans.toml"),
-            "[unit.main]\nsources = [\"src\"]\n",
-        )
-        .unwrap();
-    }
-    let mut features = Features::default();
+    fs::create_dir(&one).unwrap();
+    fs::create_dir(&two).unwrap();
 
-    features.initialize(&params(&[&one, &two])).unwrap();
+    let error = Features::initialize(&params(&[&one, &two])).err().unwrap();
 
-    assert_eq!(features.workspace_documents.len(), 2);
-    for folder in [&one, &two] {
-        let uri = Url::from_file_path(folder.join("src/Example.java")).unwrap();
-        assert!(features.workspace_documents.contains_key(uri.as_str()));
-    }
+    assert_eq!(error, "expected exactly one workspace folder");
+    assert!(!one.join(".beans").exists());
+    assert!(!two.join(".beans").exists());
 }

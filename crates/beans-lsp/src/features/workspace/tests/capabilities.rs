@@ -5,6 +5,7 @@ use crate::features::Features;
 
 #[test]
 fn initialization_preserves_all_client_capabilities() {
+    let root = tempfile::tempdir().unwrap();
     let params = InitializeParams {
         capabilities: serde_json::from_value(json!({
             "workspace": {"workspaceFolders": true, "configuration": true},
@@ -17,11 +18,9 @@ fn initialization_preserves_all_client_capabilities() {
             "experimental": {"beans": {"enabled": true}}
         }))
         .unwrap(),
-        ..InitializeParams::default()
+        ..super::params(&[root.path()])
     };
-    let mut features = Features::default();
-
-    features.initialize(&params).unwrap();
+    let features = Features::initialize(&params).unwrap();
 
     assert_eq!(features.client_capabilities, params.capabilities);
 }

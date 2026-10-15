@@ -42,7 +42,7 @@ mod tests {
     fn hover_response_uses_plaintext_and_utf16_coordinates() {
         let uri: Uri = "untitled:Example.java".parse().unwrap();
         let text = "class Café /*😀*/ extends Box<Café> {}";
-        let mut features = Features::default();
+        let (_root, mut features) = crate::features::test_features();
         features.did_open(DidOpenTextDocumentParams {
             text_document: TextDocumentItem::new(uri.clone(), "java".into(), 1, text.into()),
         });

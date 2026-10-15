@@ -21,11 +21,23 @@ fn position(fixture: &Template, offset: usize) -> Value {
     json!({"line": line, "character": character})
 }
 
-fn server(lifecycle: Lifecycle) -> Server {
-    Server {
-        lifecycle,
-        ..Server::default()
-    }
+fn server() -> (tempfile::TempDir, Server) {
+    let (root, features) = crate::features::test_features();
+    let server = Server {
+        lifecycle: Lifecycle::Running,
+        features: Some(features),
+    };
+    (root, server)
+}
+
+fn initialize_params(root: &std::path::Path) -> Value {
+    json!({
+        "capabilities": {},
+        "workspaceFolders": [{
+            "uri": url::Url::from_directory_path(root).unwrap().as_str(),
+            "name": "test"
+        }]
+    })
 }
 
 fn request(server: &mut Server, method: &str, params: Value) -> Response {

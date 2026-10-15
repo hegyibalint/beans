@@ -74,7 +74,7 @@ mod tests {
     #[test]
     fn full_changes_replace_the_document_and_stale_versions_do_not() {
         let uri: Uri = "untitled:Example.java".parse().unwrap();
-        let mut session = Features::default();
+        let (_root, mut session) = crate::features::test_features();
         session.did_open(DidOpenTextDocumentParams {
             text_document: TextDocumentItem::new(
                 uri.clone(),
@@ -107,7 +107,7 @@ mod tests {
     #[test]
     fn opening_and_closing_tracks_the_document() {
         let uri: Uri = "file:///Example.java".parse().unwrap();
-        let mut session = Features::default();
+        let (_root, mut session) = crate::features::test_features();
 
         session.did_open(DidOpenTextDocumentParams {
             text_document: TextDocumentItem::new(

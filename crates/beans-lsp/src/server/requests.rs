@@ -4,11 +4,12 @@ use lsp_types::{
     GotoDefinitionParams, HoverParams, InitializeParams, InitializeResult, OneOf,
     SemanticTokenType, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
     SemanticTokensParams, ServerCapabilities, ServerInfo, TextDocumentSyncKind,
-    TextDocumentSyncOptions, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
+    TextDocumentSyncOptions,
     request::{GotoDefinition, HoverRequest, Request as _},
 };
 
 use super::{Lifecycle, Server};
+use crate::features::Features;
 
 impl Server {
     pub(super) fn respond(&mut self, request: Request) -> Response {
@@ -16,14 +17,18 @@ impl Server {
             (Lifecycle::Uninitialized, "initialize") => {
                 match serde_json::from_value::<InitializeParams>(request.params) {
                     Ok(params) => {
-                        if let Err(error) = self.features.initialize(&params) {
-                            log::error!("Workspace import failed: {error}");
-                            return Response::new_err(
-                                request.id,
-                                ErrorCode::RequestFailed as i32,
-                                error.to_string(),
-                            );
-                        }
+                        let features = match Features::initialize(&params) {
+                            Ok(features) => features,
+                            Err(error) => {
+                                log::error!("Initialization failed: {error}");
+                                return Response::new_err(
+                                    request.id,
+                                    ErrorCode::RequestFailed as i32,
+                                    error,
+                                );
+                            }
+                        };
+                        self.features = Some(features);
                         self.lifecycle = Lifecycle::Running;
                         return Response::new_ok(
                             request.id,
@@ -42,15 +47,6 @@ impl Server {
                                         }
                                         .into(),
                                     ),
-                                    workspace: Some(WorkspaceServerCapabilities {
-                                        workspace_folders: Some(
-                                            WorkspaceFoldersServerCapabilities {
-                                                supported: Some(true),
-                                                ..WorkspaceFoldersServerCapabilities::default()
-                                            },
-                                        ),
-                                        ..WorkspaceServerCapabilities::default()
-                                    }),
                                     text_document_sync: Some(
                                         TextDocumentSyncOptions {
                                             open_close: Some(true),
@@ -91,9 +87,13 @@ impl Server {
             }
             (Lifecycle::Running, GotoDefinition::METHOD) => {
                 return match serde_json::from_value::<GotoDefinitionParams>(request.params) {
-                    Ok(params) => {
-                        Response::new_ok(request.id, self.features.goto_definition(&(), &params))
-                    }
+                    Ok(params) => Response::new_ok(
+                        request.id,
+                        self.features
+                            .as_ref()
+                            .unwrap()
+                            .goto_definition(&(), &params),
+                    ),
                     Err(error) => Response::new_err(
                         request.id,
                         ErrorCode::InvalidParams as i32,
@@ -103,7 +103,10 @@ impl Server {
             }
             (Lifecycle::Running, HoverRequest::METHOD) => {
                 return match serde_json::from_value::<HoverParams>(request.params) {
-                    Ok(params) => Response::new_ok(request.id, self.features.hover(&(), &params)),
+                    Ok(params) => Response::new_ok(
+                        request.id,
+                        self.features.as_ref().unwrap().hover(&(), &params),
+                    ),
                     Err(error) => Response::new_err(
                         request.id,
                         ErrorCode::InvalidParams as i32,
@@ -113,9 +116,10 @@ impl Server {
             }
             (Lifecycle::Running, "textDocument/semanticTokens/full") => {
                 return match serde_json::from_value::<SemanticTokensParams>(request.params) {
-                    Ok(params) => {
-                        Response::new_ok(request.id, self.features.semantic_tokens(&params))
-                    }
+                    Ok(params) => Response::new_ok(
+                        request.id,
+                        self.features.as_ref().unwrap().semantic_tokens(&params),
+                    ),
                     Err(error) => Response::new_err(
                         request.id,
                         ErrorCode::InvalidParams as i32,

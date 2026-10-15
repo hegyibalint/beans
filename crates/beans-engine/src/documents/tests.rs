@@ -11,7 +11,8 @@ use crate::Engine;
 
 #[test]
 fn accepts_only_supported_source_files() {
-    let engine = Engine::new();
+    let root = tempfile::tempdir().unwrap();
+    let engine = Engine::new(root.path()).unwrap();
 
     assert!(engine.accept(Path::new("src/Example.java")));
     assert!(!engine.accept(Path::new("README.md")));
@@ -20,7 +21,8 @@ fn accepts_only_supported_source_files() {
 
 #[test]
 fn processing_java_source_advances_the_revision_and_stores_its_model() {
-    let mut engine = Engine::new();
+    let root = tempfile::tempdir().unwrap();
+    let mut engine = Engine::new(root.path()).unwrap();
     let source = Location::file("/src/example/Example.java");
 
     engine.process(source.clone(), "package example; public class Example {}");
@@ -32,7 +34,8 @@ fn processing_java_source_advances_the_revision_and_stores_its_model() {
 
 #[test]
 fn virtual_documents_keep_their_identity_through_replacement_and_removal() {
-    let mut engine = Engine::new();
+    let root = tempfile::tempdir().unwrap();
+    let mut engine = Engine::new(root.path()).unwrap();
     let source = Location::new(LocationEntry::Virtual("untitled:Example.java".into()));
 
     for (contents, end) in [
@@ -63,7 +66,8 @@ fn virtual_documents_keep_their_identity_through_replacement_and_removal() {
 
 #[test]
 fn unsupported_source_inputs_do_not_advance_the_revision() {
-    let mut engine = Engine::new();
+    let root = tempfile::tempdir().unwrap();
+    let mut engine = Engine::new(root.path()).unwrap();
     let virtual_source = Location::new(LocationEntry::Virtual("untitled:Example.java".into()));
 
     engine.process(Location::file("/README.md"), "not Java");

@@ -4,7 +4,8 @@ use crate::Engine;
 
 #[test]
 fn hover_only_requires_a_request() {
-    let mut engine = Engine::new();
+    let root = tempfile::tempdir().unwrap();
+    let mut engine = Engine::new(root.path()).unwrap();
     let source = Location::file("/src/Example.java");
     let contents = "class C extends Target {}";
     let model = engine.java.process(contents);
@@ -26,7 +27,8 @@ fn hover_only_requires_a_request() {
 
 #[test]
 fn hover_uses_the_engines_current_revision() {
-    let mut engine = Engine::new();
+    let root = tempfile::tempdir().unwrap();
+    let mut engine = Engine::new(root.path()).unwrap();
     let source = Location::file("/src/Example.java");
     let versions = [
         (Revision::new(1), "class C extends Former {}", "Former"),
@@ -52,7 +54,8 @@ fn hover_uses_the_engines_current_revision() {
 
 #[test]
 fn hover_of_an_unknown_resource_returns_none() {
-    let engine = Engine::new();
+    let root = tempfile::tempdir().unwrap();
+    let engine = Engine::new(root.path()).unwrap();
     let source = Location::file("/src/Missing.java");
 
     assert!(

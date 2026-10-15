@@ -5,50 +5,50 @@ use std::{
 };
 
 use beans_core::location::Location;
-use beans_workspace_toml::{LoadError, load};
+use beans_engine::Engine;
+use beans_workspace_toml::load;
 use lsp_types::{InitializeParams, Uri};
 use url::Url;
 
 use super::{Features, OpenDocument};
 
 impl Features {
-    pub(crate) fn initialize(&mut self, params: &InitializeParams) -> Result<(), LoadError> {
-        // Validate every descriptor before changing semantic or workspace state.
-        let imports: Vec<_> = workspace_roots(params)
-            .into_iter()
-            .map(|root| load(&root).map(|backend| (root, backend)))
-            .collect::<Result<_, _>>()?;
-
-        self.client_capabilities = params.capabilities.clone();
+    pub(crate) fn initialize(params: &InitializeParams) -> Result<Self, String> {
+        let root = workspace_root(params)?;
+        let backend = load(&root).map_err(|error| error.to_string())?;
+        let mut features = Self {
+            engine: Engine::new(&root)?,
+            client_capabilities: params.capabilities.clone(),
+            open_documents: Default::default(),
+            workspace_documents: Default::default(),
+        };
         let mut files = BTreeSet::new();
-        for (root, backend) in imports {
-            match backend {
-                Some(backend) => {
-                    let project = backend.model();
-                    let source_roots: BTreeSet<_> = project
-                        .units
-                        .values()
-                        .flat_map(|unit| unit.sources.iter().cloned())
-                        .collect();
-                    files.extend(source_roots.iter().flat_map(|root| workspace_files(root)));
-                    if project
-                        .units
-                        .values()
-                        .any(|unit| !unit.classpath.is_empty() || unit.jdk_home.is_some())
-                    {
-                        log::warn!(
-                            "{}: classpath and JDK ingestion is not implemented yet",
-                            root.display()
-                        );
-                    }
-                }
-                None => {
-                    files.extend(workspace_files(&root));
+        match backend {
+            Some(backend) => {
+                let project = backend.model();
+                let source_roots: BTreeSet<_> = project
+                    .units
+                    .values()
+                    .flat_map(|unit| unit.sources.iter().cloned())
+                    .collect();
+                files.extend(source_roots.iter().flat_map(|root| workspace_files(root)));
+                if project
+                    .units
+                    .values()
+                    .any(|unit| !unit.classpath.is_empty() || unit.jdk_home.is_some())
+                {
+                    log::warn!(
+                        "{}: classpath and JDK ingestion is not implemented yet",
+                        root.display()
+                    );
                 }
             }
+            None => {
+                files.extend(workspace_files(&root));
+            }
         }
-        self.ingest_files(files);
-        Ok(())
+        features.ingest_files(files);
+        Ok(features)
     }
 
     fn ingest_files(&mut self, files: BTreeSet<PathBuf>) {
@@ -77,23 +77,23 @@ impl Features {
     }
 }
 
-fn workspace_roots(params: &InitializeParams) -> BTreeSet<PathBuf> {
-    if let Some(folders) = &params.workspace_folders {
-        folders
-            .iter()
-            .filter_map(|folder| workspace_path(&folder.uri))
-            .collect()
+fn workspace_root(params: &InitializeParams) -> Result<PathBuf, String> {
+    // LSP 3.17 #initialize: workspaceFolders supersedes deprecated rootUri;
+    // an explicit empty list is an empty workspace, not a fallback request.
+    let uri = if let Some(folders) = &params.workspace_folders {
+        let [folder] = folders.as_slice() else {
+            return Err("expected exactly one workspace folder".into());
+        };
+        &folder.uri
     } else {
-        // LSP 3.17 #initialize: workspaceFolders supersedes deprecated rootUri;
-        // an explicit empty list is an empty workspace, not a fallback request.
         #[allow(deprecated)]
         params
             .root_uri
             .as_ref()
-            .and_then(workspace_path)
-            .into_iter()
-            .collect()
-    }
+            .ok_or("expected exactly one workspace folder")?
+    };
+    workspace_path(uri)
+        .ok_or_else(|| format!("workspace root must be a local file URI: {}", uri.as_str()))
 }
 
 fn workspace_path(workspace_uri: &Uri) -> Option<PathBuf> {

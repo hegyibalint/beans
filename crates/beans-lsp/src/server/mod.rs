@@ -25,7 +25,7 @@ enum Lifecycle {
 #[derive(Default)]
 pub struct Server {
     lifecycle: Lifecycle,
-    features: Features,
+    features: Option<Features>,
 }
 
 impl Server {

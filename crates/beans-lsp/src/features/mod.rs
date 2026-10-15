@@ -20,13 +20,20 @@ pub(crate) struct Features {
     workspace_documents: HashMap<String, OpenDocument>,
 }
 
-impl Default for Features {
-    fn default() -> Self {
-        Self {
-            engine: Engine::new(),
-            client_capabilities: ClientCapabilities::default(),
-            open_documents: HashMap::new(),
-            workspace_documents: HashMap::new(),
-        }
-    }
+#[cfg(test)]
+pub(crate) fn test_features() -> (tempfile::TempDir, Features) {
+    let root = tempfile::tempdir().unwrap();
+    let params = lsp_types::InitializeParams {
+        workspace_folders: Some(vec![lsp_types::WorkspaceFolder {
+            uri: url::Url::from_directory_path(root.path())
+                .unwrap()
+                .as_str()
+                .parse()
+                .unwrap(),
+            name: "test".into(),
+        }]),
+        ..lsp_types::InitializeParams::default()
+    };
+    let features = Features::initialize(&params).unwrap();
+    (root, features)
 }

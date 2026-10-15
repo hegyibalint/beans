@@ -57,7 +57,7 @@ mod tests {
         for use_uri in ["file:///src/Use.java", "BEANS-jvm:///library/Use.class"] {
             let target_uri = "file:///library/Target.java";
             let text = "import library.Target; class Use { Target field; }";
-            let mut features = Features::default();
+            let (_root, mut features) = crate::features::test_features();
             for (uri, contents) in [
                 (use_uri, text),
                 (target_uri, "package library; public class Target {}"),

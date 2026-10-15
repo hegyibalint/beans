@@ -11,7 +11,7 @@ use url::Url;
 
 #[test]
 fn definition_request_returns_a_utf16_target_location() {
-    let mut server = server(Lifecycle::Running);
+    let (_root, mut server) = server();
     let uri = "untitled:Example.java";
     let fixture =
         Template::parse("class Café /*😀*/ { class <span>Target</span> {} <cur>Target field; }");
@@ -45,12 +45,11 @@ fn definition_request_returns_a_utf16_target_location() {
 
 #[test]
 fn definition_link_uses_the_source_range_when_the_client_supports_it() {
+    let root = tempfile::tempdir().unwrap();
+    let mut params = initialize_params(root.path());
+    params["capabilities"] = json!({"textDocument": {"definition": {"linkSupport": true}}});
     let mut server = Server::default();
-    let initialized = request(
-        &mut server,
-        "initialize",
-        json!({"capabilities": {"textDocument": {"definition": {"linkSupport": true}}}}),
-    );
+    let initialized = request(&mut server, "initialize", params);
     assert!(initialized.error.is_none());
 
     let uri = "untitled:Example.java";
@@ -153,8 +152,9 @@ fn definition_location_uses_unopened_workspace_file_text() {
 
 #[test]
 fn goto_definition_without_an_open_document_returns_null() {
+    let (_root, mut server) = server();
     let response = request(
-        &mut server(Lifecycle::Running),
+        &mut server,
         "textDocument/definition",
         json!({"textDocument": {"uri": "untitled:Example.java"},
                "position": {"line": 0, "character": 0}}),
@@ -165,12 +165,9 @@ fn goto_definition_without_an_open_document_returns_null() {
 
 #[test]
 fn invalid_goto_definition_parameters_are_rejected() {
+    let (_root, mut server) = server();
     assert_error(
-        request(
-            &mut server(Lifecycle::Running),
-            "textDocument/definition",
-            Value::Null,
-        ),
+        request(&mut server, "textDocument/definition", Value::Null),
         ErrorCode::InvalidParams,
     );
 }

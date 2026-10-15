@@ -2,12 +2,14 @@ use lsp_server::Notification;
 use lsp_types::SemanticTokens;
 use serde_json::json;
 
-use super::{Lifecycle, request, server};
+use super::{initialize_params, request, server};
+use crate::server::Server;
 
 #[test]
 fn initialization_advertises_full_type_tokens_only() {
-    let mut server = server(Lifecycle::Uninitialized);
-    let response = request(&mut server, "initialize", json!({"capabilities": {}}));
+    let root = tempfile::tempdir().unwrap();
+    let mut server = Server::default();
+    let response = request(&mut server, "initialize", initialize_params(root.path()));
     let provider = &response.result.unwrap()["capabilities"]["semanticTokensProvider"];
     assert_eq!(
         provider["legend"],
@@ -19,7 +21,7 @@ fn initialization_advertises_full_type_tokens_only() {
 
 #[test]
 fn field_type_identifiers_are_sorted_and_utf16_encoded() {
-    let mut server = server(Lifecycle::Running);
+    let (_root, mut server) = server();
     let uri = "untitled:Example.java";
     let text = "class Example { /* 😀 */ Box<Missing[]>[] a; Café b;\n pkg.Widget<? extends Absent> c; int[] counts; }";
     server.notify(Notification::new(
@@ -82,7 +84,7 @@ fn field_type_identifiers_are_sorted_and_utf16_encoded() {
 
 #[test]
 fn missing_documents_and_invalid_parameters_are_handled() {
-    let mut server = server(Lifecycle::Running);
+    let (_root, mut server) = server();
     let response = request(
         &mut server,
         "textDocument/semanticTokens/full",

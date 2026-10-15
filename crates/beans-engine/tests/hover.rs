@@ -6,7 +6,8 @@ use beans_engine::Engine;
 
 #[test]
 fn java_hover_reaches_the_shared_feature_contract() {
-    let mut engine = Engine::new();
+    let root = tempfile::tempdir().unwrap();
+    let mut engine = Engine::new(root.path()).unwrap();
     let source = Location::new(LocationEntry::Virtual("untitled:Example.java".into()));
     let contents = "class C extends Target {}";
     engine.process_document(source.clone(), "java", contents);

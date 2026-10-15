@@ -23,9 +23,7 @@ fn a_descriptor_limits_ingestion_to_declared_sources() {
     "#,
     )
     .unwrap();
-    let mut features = Features::default();
-
-    features.initialize(&params(&[root.path()])).unwrap();
+    let features = Features::initialize(&params(&[root.path()])).unwrap();
 
     assert_eq!(features.workspace_documents.len(), 1);
     assert_eq!(features.engine.revision(), Revision::new(1));
@@ -46,9 +44,7 @@ fn declared_sources_outside_the_project_root_are_indexed() {
         "[unit.main]\nsources = [\"../shared\"]\n",
     )
     .unwrap();
-    let mut features = Features::default();
-
-    features.initialize(&params(&[&project])).unwrap();
+    let features = Features::initialize(&params(&[&project])).unwrap();
 
     let uri = Url::from_file_path(shared.join("Included.java")).unwrap();
     assert!(features.workspace_documents.contains_key(uri.as_str()));
@@ -58,9 +54,7 @@ fn declared_sources_outside_the_project_root_are_indexed() {
 fn an_absent_descriptor_keeps_fallback_ingestion() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("Example.java"), "").unwrap();
-    let mut features = Features::default();
-
-    features.initialize(&params(&[root.path()])).unwrap();
+    let features = Features::initialize(&params(&[root.path()])).unwrap();
 
     assert_eq!(features.workspace_documents.len(), 1);
     let uri = Url::from_file_path(root.path().join("Example.java")).unwrap();
@@ -68,32 +62,19 @@ fn an_absent_descriptor_keeps_fallback_ingestion() {
 }
 
 #[test]
-fn a_bad_descriptor_prevents_partial_imports_in_other_folders() {
+fn a_bad_descriptor_prevents_cache_creation() {
     let root = tempfile::tempdir().unwrap();
-    let valid = root.path().join("a-valid");
-    let invalid = root.path().join("b-invalid");
-    fs::create_dir(&valid).unwrap();
-    fs::create_dir(&invalid).unwrap();
-    fs::write(valid.join("Example.java"), "").unwrap();
-    fs::write(valid.join("beans.toml"), "[unit.main]\nsources = [\".\"]\n").unwrap();
+    fs::write(root.path().join("Example.java"), "").unwrap();
     fs::write(
-        invalid.join("beans.toml"),
+        root.path().join("beans.toml"),
         "[unit.main]\ndepends_on = [\"missing\"]\n",
     )
     .unwrap();
-    let mut features = Features::default();
 
-    let error = features
-        .initialize(&params(&[&valid, &invalid]))
-        .unwrap_err();
+    let error = Features::initialize(&params(&[root.path()])).err().unwrap();
 
-    assert!(
-        error
-            .to_string()
-            .contains(&invalid.join("beans.toml").display().to_string())
-    );
-    assert!(features.workspace_documents.is_empty());
-    assert_eq!(features.engine.revision(), Revision::default());
+    assert!(error.contains(&root.path().join("beans.toml").display().to_string()));
+    assert!(!root.path().join(".beans").exists());
 }
 
 #[test]
@@ -104,8 +85,7 @@ fn configured_binary_inputs_are_not_ingested_as_source_text() {
         "[unit.main]\nclasspath = [\"lib.jar\"]\njdk_home = \"jdk\"\n",
     )
     .unwrap();
-    let mut features = Features::default();
+    let features = Features::initialize(&params(&[root.path()])).unwrap();
 
-    features.initialize(&params(&[root.path()])).unwrap();
     assert!(features.workspace_documents.is_empty());
 }
