@@ -4,10 +4,11 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 struct Installation {
+    version: String,
     install_path: PathBuf,
 }
 
-pub fn list() -> Result<Vec<PathBuf>, String> {
+pub fn list(version_prefix: &str) -> Result<Vec<PathBuf>, String> {
     let output = Command::new("mise")
         .args(["ls", "java", "--installed", "--json"])
         .output()
@@ -24,6 +25,7 @@ pub fn list() -> Result<Vec<PathBuf>, String> {
         .map_err(|error| format!("invalid mise JDK list: {error}"))?;
     Ok(installations
         .into_iter()
+        .filter(|installation| installation.version.starts_with(version_prefix))
         .map(|installation| installation.install_path)
         .collect())
 }

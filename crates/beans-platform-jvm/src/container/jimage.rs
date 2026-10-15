@@ -426,11 +426,11 @@ mod tests {
     }
 
     #[test]
-    fn reads_classes_from_latest_mise_jdk() {
-        let home = beans_testing::support::jdks::list()
+    fn reads_classes_from_mise_jdk_21() {
+        let home = beans_testing::support::jdks::list("temurin-21.")
             .unwrap()
             .pop()
-            .expect("mise has no installed JDKs");
+            .expect("Temurin JDK 21 is required; run mise install");
         let image = home.join("lib/modules");
         let file = std::fs::File::open(&image).unwrap();
         let id = ResourceId::file(image);
