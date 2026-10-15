@@ -8,9 +8,7 @@ fn hover_only_requires_a_request() {
     let mut engine = Engine::new(root.path()).unwrap();
     let source = Location::file("/src/Example.java");
     let contents = "class C extends Target {}";
-    let model = engine.java.process(contents);
-    engine.revision = Revision::new(1);
-    engine.java.store(engine.revision, model, source.clone());
+    engine.process(source.clone(), contents).unwrap();
 
     let response = engine
         .feature_hover(&HoverRequest {
@@ -18,6 +16,7 @@ fn hover_only_requires_a_request() {
             contents,
             offset: contents.find("Target").unwrap(),
         })
+        .unwrap()
         .unwrap();
 
     assert_eq!(response.contents(), "Target");
@@ -34,9 +33,8 @@ fn hover_uses_the_engines_current_revision() {
         (Revision::new(1), "class C extends Former {}", "Former"),
         (Revision::new(2), "class C extends Latest {}", "Latest"),
     ];
-    for (revision, contents, _) in versions {
-        let model = engine.java.process(contents);
-        engine.java.store(revision, model, source.clone());
+    for (_, contents, _) in versions {
+        engine.process(source.clone(), contents).unwrap();
     }
 
     for (revision, contents, expected) in versions {
@@ -47,6 +45,7 @@ fn hover_uses_the_engines_current_revision() {
                 contents,
                 offset: contents.find(expected).unwrap(),
             })
+            .unwrap()
             .unwrap();
         assert_eq!(response.contents(), expected);
     }
@@ -65,6 +64,7 @@ fn hover_of_an_unknown_resource_returns_none() {
                 contents: "class C extends Target {}",
                 offset: 16,
             })
+            .unwrap()
             .is_none()
     );
 }

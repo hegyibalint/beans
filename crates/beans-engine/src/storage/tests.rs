@@ -1,7 +1,7 @@
 use rusqlite::Connection;
 use tempfile::tempdir;
 
-use super::{SCHEMA_VERSION, initialize, open};
+use super::{SCHEMA_VERSION, initialize, open, schema};
 
 #[test]
 fn startup_initializes_and_configures_the_database() {
@@ -263,7 +263,7 @@ fn resetting_a_cache_with_linked_locations_removes_both_tables() {
         connection
             .pragma_update(None, "user_version", SCHEMA_VERSION - 1)
             .unwrap();
-        initialize(&mut connection, include_str!("schema.sql")).unwrap();
+        initialize(&mut connection, &schema()).unwrap();
         assert_eq!(count(&connection, "entries"), 0);
         assert_eq!(count(&connection, "locations"), 0);
     }

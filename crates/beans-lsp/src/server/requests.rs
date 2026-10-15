@@ -87,13 +87,17 @@ impl Server {
             }
             (Lifecycle::Running, GotoDefinition::METHOD) => {
                 return match serde_json::from_value::<GotoDefinitionParams>(request.params) {
-                    Ok(params) => Response::new_ok(
-                        request.id,
-                        self.features
-                            .as_ref()
-                            .unwrap()
-                            .goto_definition(&(), &params),
-                    ),
+                    Ok(params) => match self
+                        .features
+                        .as_ref()
+                        .unwrap()
+                        .goto_definition(&(), &params)
+                    {
+                        Ok(result) => Response::new_ok(request.id, result),
+                        Err(error) => {
+                            Response::new_err(request.id, ErrorCode::RequestFailed as i32, error)
+                        }
+                    },
                     Err(error) => Response::new_err(
                         request.id,
                         ErrorCode::InvalidParams as i32,
@@ -103,10 +107,12 @@ impl Server {
             }
             (Lifecycle::Running, HoverRequest::METHOD) => {
                 return match serde_json::from_value::<HoverParams>(request.params) {
-                    Ok(params) => Response::new_ok(
-                        request.id,
-                        self.features.as_ref().unwrap().hover(&(), &params),
-                    ),
+                    Ok(params) => match self.features.as_ref().unwrap().hover(&(), &params) {
+                        Ok(result) => Response::new_ok(request.id, result),
+                        Err(error) => {
+                            Response::new_err(request.id, ErrorCode::RequestFailed as i32, error)
+                        }
+                    },
                     Err(error) => Response::new_err(
                         request.id,
                         ErrorCode::InvalidParams as i32,
@@ -116,10 +122,12 @@ impl Server {
             }
             (Lifecycle::Running, "textDocument/semanticTokens/full") => {
                 return match serde_json::from_value::<SemanticTokensParams>(request.params) {
-                    Ok(params) => Response::new_ok(
-                        request.id,
-                        self.features.as_ref().unwrap().semantic_tokens(&params),
-                    ),
+                    Ok(params) => match self.features.as_ref().unwrap().semantic_tokens(&params) {
+                        Ok(result) => Response::new_ok(request.id, result),
+                        Err(error) => {
+                            Response::new_err(request.id, ErrorCode::RequestFailed as i32, error)
+                        }
+                    },
                     Err(error) => Response::new_err(
                         request.id,
                         ErrorCode::InvalidParams as i32,

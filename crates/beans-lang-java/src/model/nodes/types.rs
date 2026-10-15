@@ -1,16 +1,16 @@
 use beans_core::ranges::Spanned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::model::references::{self, TypeRef};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AccessLevel {
     Public,
     Protected,
     Private,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Kind {
     Class,
     Enum,
@@ -19,7 +19,7 @@ pub enum Kind {
     AnnotationInterface,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Modifier {
     Abstract,
     Static,
@@ -31,7 +31,7 @@ pub enum Modifier {
 
 /// Represents a single type parameter used in a type declaration.
 /// For example, `<A extends org.foo.Bar<String>>`
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TypeParameter {
     /// The name of the placeholder.
     /// Often used ones are `T`, `A`, etc...
@@ -40,7 +40,7 @@ pub struct TypeParameter {
     pub bounds: Vec<references::TypeBound>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TypeDeclaration {
     pub name: Option<Spanned<String>>,
     pub type_parameters: Vec<TypeParameter>,

@@ -12,14 +12,11 @@ use std::{
 };
 
 use beans_core::{location::Location, revision::Revision};
-use beans_storage::RevisionedStorage;
 
 use crate::model::class::Class;
 
 #[derive(Default)]
-pub struct JvmPlatform {
-    classes: RevisionedStorage<Location, Class>,
-}
+pub struct JvmPlatform;
 
 impl JvmPlatform {
     pub fn new() -> Self {
@@ -53,12 +50,11 @@ impl JvmPlatform {
 
     fn store(
         &mut self,
-        revision: Revision,
+        _revision: Revision,
         entries: impl Iterator<Item = Result<(Location, Class), String>>,
     ) -> Result<(), String> {
         for entry in entries {
-            let (id, class) = entry?;
-            self.classes.put(revision, id, class);
+            entry?;
         }
 
         Ok(())

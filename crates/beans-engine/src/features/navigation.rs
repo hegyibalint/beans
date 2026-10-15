@@ -11,8 +11,13 @@ impl Engine {
     pub fn feature_goto_definition(
         &self,
         request: &DefinitionRequest<'_>,
-    ) -> Option<NavigationResult> {
+    ) -> Result<Option<NavigationResult>, String> {
+        let transaction = self
+            .storage
+            .unchecked_transaction()
+            .map_err(|error| error.to_string())?;
         let context = JavaFeatureContext {
+            connection: &transaction,
             scope: QueryScope::new(self.revision, &Unrestricted),
             jvm: &self.jvm,
         };

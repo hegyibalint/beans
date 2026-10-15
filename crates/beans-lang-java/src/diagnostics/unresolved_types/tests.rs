@@ -7,17 +7,21 @@ use crate::{
     diagnostics::{Diagnostic, DiagnosticSeverity},
     engine::JavaLanguage,
     lower_into,
+    testing::Models,
 };
 
 fn diagnostics(text: &str) -> Vec<Diagnostic> {
-    let mut java = JavaLanguage::new();
+    let mut java = Models::new();
     let source = Location::file("/Example.java");
     java.store(Revision::new(1), lower_into(text), source.clone());
-    java.diagnostics(
-        QueryScope::new(Revision::new(1), &Unrestricted),
-        &JvmPlatform::default(),
-        &source,
-    )
+    JavaLanguage::new()
+        .diagnostics(
+            &java.connection,
+            QueryScope::new(Revision::new(1), &Unrestricted),
+            &JvmPlatform::default(),
+            &source,
+        )
+        .unwrap()
 }
 
 #[test]
@@ -76,7 +80,7 @@ fn partial_ambiguous_and_unmodeled_positions_are_silent() {
 
 #[test]
 fn diagnostics_follow_the_requested_revision_and_cross_file_declarations() {
-    let mut java = JavaLanguage::new();
+    let mut java = Models::new();
     let source = Location::file("/Example.java");
     let other = Location::file("/Missing.java");
     java.store(
@@ -93,12 +97,15 @@ fn diagnostics_follow_the_requested_revision_and_cross_file_declarations() {
     java.remove(Revision::new(4), source.clone());
     for (revision, expected) in [(1, 1), (2, 0), (3, 1), (4, 0)] {
         assert_eq!(
-            java.diagnostics(
-                QueryScope::new(Revision::new(revision), &Unrestricted),
-                &JvmPlatform::default(),
-                &source,
-            )
-            .len(),
+            JavaLanguage::new()
+                .diagnostics(
+                    &java.connection,
+                    QueryScope::new(Revision::new(revision), &Unrestricted),
+                    &JvmPlatform::default(),
+                    &source,
+                )
+                .unwrap()
+                .len(),
             expected,
             "revision {revision}"
         );

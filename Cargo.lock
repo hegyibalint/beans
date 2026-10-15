@@ -37,7 +37,6 @@ version = "0.0.1"
 dependencies = [
  "beans-core",
  "beans-platform-jvm",
- "beans-storage",
  "beans-testing",
  "rusqlite",
  "serde",
@@ -69,19 +68,11 @@ name = "beans-platform-jvm"
 version = "0.0.1"
 dependencies = [
  "beans-core",
- "beans-storage",
  "beans-testing",
  "cafebabe",
  "cesu8",
  "tempfile",
  "zip",
-]
-
-[[package]]
-name = "beans-storage"
-version = "0.0.1"
-dependencies = [
- "beans-core",
 ]
 
 [[package]]

@@ -47,11 +47,11 @@ impl Features {
                 files.extend(workspace_files(&root));
             }
         }
-        features.ingest_files(files);
+        features.ingest_files(files)?;
         Ok(features)
     }
 
-    fn ingest_files(&mut self, files: BTreeSet<PathBuf>) {
+    fn ingest_files(&mut self, files: BTreeSet<PathBuf>) -> Result<(), String> {
         let mut count = 0;
         for path in files {
             if !self.engine.accept(&path) {
@@ -66,7 +66,7 @@ impl Features {
             let Ok(document_uri) = uri.as_str().parse() else {
                 continue;
             };
-            self.engine.process(Location::file(path), &text);
+            self.engine.process(Location::file(path), &text)?;
             self.workspace_documents.insert(
                 uri.as_str().into(),
                 OpenDocument::new(document_uri, "java".into(), 0, text),
@@ -74,6 +74,7 @@ impl Features {
             count += 1;
         }
         log::debug!("Indexed {count} workspace sources");
+        Ok(())
     }
 }
 

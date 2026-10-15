@@ -8,18 +8,25 @@ impl DefinitionProvider<(), GotoDefinitionParams, GotoDefinitionResponse> for Fe
         &self,
         _context: &(),
         params: &GotoDefinitionParams,
-    ) -> Option<GotoDefinitionResponse> {
+    ) -> Result<Option<GotoDefinitionResponse>, String> {
         let position = &params.text_document_position_params;
-        let document = self
-            .open_documents
-            .get(position.text_document.uri.as_str())?;
-        let offset = document.byte_offset(position.position)?;
+        let Some(document) = self.open_documents.get(position.text_document.uri.as_str()) else {
+            return Ok(None);
+        };
+        let Some(offset) = document.byte_offset(position.position) else {
+            return Ok(None);
+        };
         let source = resource_for_uri(&document.uri);
-        let definition = self.engine.feature_goto_definition(&DefinitionRequest {
+        let Some(definition) = self.engine.feature_goto_definition(&DefinitionRequest {
             source: &source,
             offset,
-        })?;
-        let location = self.location_for_span(definition.target)?;
+        })?
+        else {
+            return Ok(None);
+        };
+        let Some(location) = self.location_for_span(definition.target) else {
+            return Ok(None);
+        };
         // LSP 3.17 #textDocument_definition: links require client support.
         let link_support = self
             .client_capabilities
@@ -29,19 +36,19 @@ impl DefinitionProvider<(), GotoDefinitionParams, GotoDefinitionResponse> for Fe
             .and_then(|definition| definition.link_support)
             .unwrap_or(false);
         if !link_support {
-            return Some(GotoDefinitionResponse::Scalar(location));
+            return Ok(Some(GotoDefinitionResponse::Scalar(location)));
         }
 
         let origin_selection_range = document
             .position(definition.origin_range.start())
             .zip(document.position(definition.origin_range.end()))
             .map(|(start, end)| Range::new(start, end));
-        Some(GotoDefinitionResponse::Link(vec![LocationLink {
+        Ok(Some(GotoDefinitionResponse::Link(vec![LocationLink {
             origin_selection_range,
             target_uri: location.uri,
             target_range: location.range,
             target_selection_range: location.range,
-        }]))
+        }])))
     }
 }
 
@@ -62,14 +69,16 @@ mod tests {
                 (use_uri, text),
                 (target_uri, "package library; public class Target {}"),
             ] {
-                features.did_open(DidOpenTextDocumentParams {
-                    text_document: TextDocumentItem::new(
-                        uri.parse().unwrap(),
-                        "java".into(),
-                        1,
-                        contents.into(),
-                    ),
-                });
+                features
+                    .did_open(DidOpenTextDocumentParams {
+                        text_document: TextDocumentItem::new(
+                            uri.parse().unwrap(),
+                            "java".into(),
+                            1,
+                            contents.into(),
+                        ),
+                    })
+                    .unwrap();
             }
             let params = json!({
                 "textDocument": {"uri": use_uri},
@@ -77,6 +86,7 @@ mod tests {
             });
             let definition = features
                 .goto_definition(&(), &serde_json::from_value(params.clone()).unwrap())
+                .unwrap()
                 .unwrap();
             let GotoDefinitionResponse::Scalar(location) = definition else {
                 panic!("expected a target location");
@@ -85,6 +95,7 @@ mod tests {
             assert!(
                 features
                     .hover(&(), &serde_json::from_value(params).unwrap())
+                    .unwrap()
                     .is_some()
             );
         }

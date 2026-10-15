@@ -6,44 +6,46 @@ use super::{Features, source_locations::resource_for_uri};
 use crate::model::open_document::OpenDocument;
 
 impl Features {
-    pub(crate) fn did_open(&mut self, params: DidOpenTextDocumentParams) {
+    pub(crate) fn did_open(&mut self, params: DidOpenTextDocumentParams) -> Result<(), String> {
         let document = OpenDocument::from(params.text_document);
         self.engine.process_document(
             resource_for_uri(&document.uri),
             &document.language_id,
             &document.text,
-        );
+        )?;
         self.open_documents
             .insert(document.uri.as_str().into(), document);
+        Ok(())
     }
 
-    pub(crate) fn did_change(&mut self, params: DidChangeTextDocumentParams) {
+    pub(crate) fn did_change(&mut self, params: DidChangeTextDocumentParams) -> Result<(), String> {
         let Some(document) = self
             .open_documents
             .get_mut(params.text_document.uri.as_str())
         else {
-            return;
+            return Ok(());
         };
         if params.text_document.version <= document.version || params.content_changes.len() != 1 {
-            return;
+            return Ok(());
         }
         let change = params.content_changes.into_iter().next().unwrap();
         if change.range.is_some() {
-            return;
+            return Ok(());
         }
-        document.version = params.text_document.version;
-        document.text = change.text;
         self.engine.process_document(
             resource_for_uri(&document.uri),
             &document.language_id,
-            &document.text,
-        );
+            &change.text,
+        )?;
+        document.version = params.text_document.version;
+        document.text = change.text;
+        Ok(())
     }
 
-    pub(crate) fn did_close(&mut self, params: DidCloseTextDocumentParams) {
+    pub(crate) fn did_close(&mut self, params: DidCloseTextDocumentParams) -> Result<(), String> {
         if self
             .open_documents
-            .remove(params.text_document.uri.as_str())
+            .get(params.text_document.uri.as_str())
             .is_some_and(|document| document.language_id == "java")
         {
             if let Some(indexed) = self
@@ -54,12 +56,15 @@ impl Features {
                     resource_for_uri(&indexed.uri),
                     &indexed.language_id,
                     &indexed.text,
-                );
+                )?;
             } else {
                 self.engine
-                    .close_document(resource_for_uri(&params.text_document.uri));
+                    .close_document(resource_for_uri(&params.text_document.uri))?;
             }
         }
+        self.open_documents
+            .remove(params.text_document.uri.as_str());
+        Ok(())
     }
 }
 
@@ -75,14 +80,16 @@ mod tests {
     fn full_changes_replace_the_document_and_stale_versions_do_not() {
         let uri: Uri = "untitled:Example.java".parse().unwrap();
         let (_root, mut session) = crate::features::test_features();
-        session.did_open(DidOpenTextDocumentParams {
-            text_document: TextDocumentItem::new(
-                uri.clone(),
-                "java".into(),
-                1,
-                "class C extends Old {}".into(),
-            ),
-        });
+        session
+            .did_open(DidOpenTextDocumentParams {
+                text_document: TextDocumentItem::new(
+                    uri.clone(),
+                    "java".into(),
+                    1,
+                    "class C extends Old {}".into(),
+                ),
+            })
+            .unwrap();
         let change = |version, text: &str| DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier::new(uri.clone(), version),
             content_changes: vec![TextDocumentContentChangeEvent {
@@ -92,9 +99,13 @@ mod tests {
             }],
         };
         let opened_revision = session.engine.revision();
-        session.did_change(change(2, "class C extends New {}"));
+        session
+            .did_change(change(2, "class C extends New {}"))
+            .unwrap();
         let updated_revision = session.engine.revision();
-        session.did_change(change(1, "class C extends Stale {}"));
+        session
+            .did_change(change(1, "class C extends Stale {}"))
+            .unwrap();
 
         assert_eq!(
             session.open_documents.get(uri.as_str()).unwrap().text,
@@ -109,22 +120,26 @@ mod tests {
         let uri: Uri = "file:///Example.java".parse().unwrap();
         let (_root, mut session) = crate::features::test_features();
 
-        session.did_open(DidOpenTextDocumentParams {
-            text_document: TextDocumentItem::new(
-                uri.clone(),
-                "java".into(),
-                1,
-                "class Example {}".into(),
-            ),
-        });
+        session
+            .did_open(DidOpenTextDocumentParams {
+                text_document: TextDocumentItem::new(
+                    uri.clone(),
+                    "java".into(),
+                    1,
+                    "class Example {}".into(),
+                ),
+            })
+            .unwrap();
         assert_eq!(
             session.open_documents.get(uri.as_str()).unwrap().text,
             "class Example {}"
         );
 
-        session.did_close(DidCloseTextDocumentParams {
-            text_document: TextDocumentIdentifier::new(uri.clone()),
-        });
+        session
+            .did_close(DidCloseTextDocumentParams {
+                text_document: TextDocumentIdentifier::new(uri.clone()),
+            })
+            .unwrap();
         assert!(!session.open_documents.contains_key(uri.as_str()));
     }
 }

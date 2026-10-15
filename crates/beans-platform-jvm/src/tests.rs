@@ -1,7 +1,6 @@
 use std::io::{Cursor, Write};
 
-use beans_core::{classpath::Unrestricted, location::LocationEntry, query_scope::QueryScope};
-use beans_storage::RevisionEntry;
+use beans_core::{classpath::Unrestricted, query_scope::QueryScope};
 use beans_testing::support::class_bytes;
 use tempfile::NamedTempFile;
 use zip::{ZipWriter, write::SimpleFileOptions};
@@ -46,13 +45,9 @@ fn jimage_bytes(class: &[u8]) -> Vec<u8> {
 }
 
 #[test]
-fn stores_classes_from_each_container_format() {
+fn parses_each_container_format_without_retaining_classes() {
     let class = class_bytes("example/Foo");
-    for (bytes, entry) in [
-        (class.clone(), None),
-        (jar_bytes(Some(&class)), Some("example/Foo.class")),
-        (jimage_bytes(&class), Some("/java.base/example/Foo.class")),
-    ] {
+    for bytes in [class.clone(), jar_bytes(Some(&class)), jimage_bytes(&class)] {
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(&bytes).unwrap();
         let mut platform = JvmPlatform::default();
@@ -60,22 +55,11 @@ fn stores_classes_from_each_container_format() {
 
         platform.process(revision, file.path().to_owned()).unwrap();
 
-        let mut id = Location::file(file.path());
-        if let Some(entry) = entry {
-            id = id.entry(LocationEntry::Container(entry.into()));
-        }
-        assert_eq!(
-            platform.find_classes(QueryScope::new(revision, &Unrestricted), "example/Foo"),
-            vec![RevisionEntry {
-                revision,
-                key: id.clone(),
-            }]
+        assert!(
+            platform
+                .find_classes(QueryScope::new(revision, &Unrestricted), "example/Foo")
+                .is_empty()
         );
-        assert_eq!(
-            platform.classes.get(revision, &id).unwrap().name,
-            "example/Foo"
-        );
-        assert_eq!(platform.classes.iter(revision).count(), 1);
     }
 }
 
@@ -87,8 +71,11 @@ fn recognized_empty_container_does_not_fall_through() {
     let revision = Revision::new(1);
 
     platform.process(revision, file.path().to_owned()).unwrap();
-
-    assert_eq!(platform.classes.iter(revision).count(), 0);
+    assert!(
+        platform
+            .find_classes(QueryScope::new(revision, &Unrestricted), "example/Foo")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -109,25 +96,16 @@ fn reports_unknown_formats_and_preserves_recognized_errors() {
             .unwrap_err();
 
         assert_eq!(error.contains("unrecognized container format"), !recognized);
-        assert_eq!(platform.classes.iter(revision).count(), 0);
     }
 }
 
 #[test]
 fn imports_each_jdk_runtime_layout() {
     let class = class_bytes("example/Foo");
-    for (relative, bytes, entry) in [
-        (
-            "lib/modules",
-            jimage_bytes(&class),
-            "/java.base/example/Foo.class",
-        ),
-        (
-            "jre/lib/rt.jar",
-            jar_bytes(Some(&class)),
-            "example/Foo.class",
-        ),
-        ("lib/rt.jar", jar_bytes(Some(&class)), "example/Foo.class"),
+    for (relative, bytes) in [
+        ("lib/modules", jimage_bytes(&class)),
+        ("jre/lib/rt.jar", jar_bytes(Some(&class))),
+        ("lib/rt.jar", jar_bytes(Some(&class))),
     ] {
         let home = tempfile::tempdir().unwrap();
         let path = home.path().join(relative);
@@ -139,12 +117,11 @@ fn imports_each_jdk_runtime_layout() {
         assert_eq!(jdk_artifacts(home.path()).unwrap(), vec![path.clone()]);
         platform.process_jdk_home(revision, home.path()).unwrap();
 
-        let id = Location::file(path).entry(LocationEntry::Container(entry.into()));
-        assert_eq!(
-            platform.classes.get(revision, &id).unwrap().name,
-            "example/Foo"
+        assert!(
+            platform
+                .find_classes(QueryScope::new(revision, &Unrestricted), "example/Foo")
+                .is_empty()
         );
-        assert_eq!(platform.classes.iter(revision).count(), 1);
     }
 }
 
@@ -212,12 +189,13 @@ fn legacy_layouts_import_optional_tools() {
         );
         platform.process_jdk_home(revision, home.path()).unwrap();
 
-        for (artifact, name) in [(runtime, "example/Runtime"), (tools, "example/Tools")] {
-            let id = Location::file(artifact)
-                .entry(LocationEntry::Container("example/Foo.class".into()));
-            assert_eq!(platform.classes.get(revision, &id).unwrap().name, name);
+        for name in ["example/Runtime", "example/Tools"] {
+            assert!(
+                platform
+                    .find_classes(QueryScope::new(revision, &Unrestricted), name)
+                    .is_empty()
+            );
         }
-        assert_eq!(platform.classes.iter(revision).count(), 2);
     }
 }
 
@@ -235,7 +213,11 @@ fn modern_layout_ignores_legacy_artifacts() {
 
     assert_eq!(jdk_artifacts(home.path()).unwrap(), vec![runtime]);
     platform.process_jdk_home(revision, home.path()).unwrap();
-    assert_eq!(platform.classes.iter(revision).count(), 1);
+    assert!(
+        platform
+            .find_classes(QueryScope::new(revision, &Unrestricted), "example/Foo")
+            .is_empty()
+    );
 }
 
 #[test]

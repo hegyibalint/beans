@@ -10,7 +10,9 @@ fn java_hover_reaches_the_shared_feature_contract() {
     let mut engine = Engine::new(root.path()).unwrap();
     let source = Location::new(LocationEntry::Virtual("untitled:Example.java".into()));
     let contents = "class C extends Target {}";
-    engine.process_document(source.clone(), "java", contents);
+    engine
+        .process_document(source.clone(), "java", contents)
+        .unwrap();
 
     let info = engine
         .feature_hover(&HoverRequest {
@@ -18,6 +20,7 @@ fn java_hover_reaches_the_shared_feature_contract() {
             contents,
             offset: 16,
         })
+        .unwrap()
         .unwrap();
 
     assert_eq!(info.contents(), "Target");
@@ -30,6 +33,7 @@ fn java_hover_reaches_the_shared_feature_contract() {
                 contents,
                 offset: 16,
             })
+            .unwrap()
             .is_none()
     );
 }

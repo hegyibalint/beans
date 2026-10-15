@@ -37,12 +37,22 @@ impl Engine {
         fs::create_dir_all(&directory)
             .map_err(|error| format!("{}: {error}", directory.display()))?;
         let storage = storage::open(&directory.join("models"))?;
+        let revision = storage
+            .query_row(
+                "SELECT COALESCE(MAX(revision), 0) FROM entries",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if revision < 0 {
+            return Err("negative database revision".into());
+        }
         let (sender, events) = unbounded();
         let jvm = JvmPlatform::new();
         let java = JavaLanguage::new();
 
         Ok(Self {
-            revision: Revision::default(),
+            revision: Revision::new(revision),
             storage,
             java,
             jvm,

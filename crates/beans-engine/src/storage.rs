@@ -2,7 +2,7 @@ use std::{path::Path, time::Duration};
 
 use rusqlite::{Connection, TransactionBehavior};
 
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 /// Opens a file-backed cache. The caller chooses its location and creates its parent directory.
 pub fn open(path: &Path) -> Result<Connection, String> {
@@ -11,7 +11,7 @@ pub fn open(path: &Path) -> Result<Connection, String> {
     connection
         .busy_timeout(Duration::from_secs(5))
         .map_err(|error| error.to_string())?;
-    initialize(&mut connection, include_str!("storage/schema.sql"))?;
+    initialize(&mut connection, &schema())?;
     connection
         .pragma_update(None, "foreign_keys", true)
         .map_err(|error| error.to_string())?;
@@ -25,6 +25,14 @@ pub fn open(path: &Path) -> Result<Connection, String> {
         return Err(format!("expected SQLite WAL mode, got {mode}"));
     }
     Ok(connection)
+}
+
+fn schema() -> String {
+    [
+        include_str!("storage/schema.sql"),
+        beans_lang_java::storage::SCHEMA,
+    ]
+    .join("\n")
 }
 
 fn initialize(connection: &mut Connection, schema: &str) -> Result<(), String> {

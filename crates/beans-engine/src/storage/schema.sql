@@ -2,9 +2,10 @@ CREATE TABLE entries (
     id INTEGER PRIMARY KEY,
     revision INTEGER NOT NULL CHECK (revision >= 0),
     model_kind INTEGER NOT NULL CHECK (model_kind IN (0, 1)),
-    model TEXT NOT NULL CHECK (json_valid(model)),
+    model TEXT CHECK (model IS NULL OR json_valid(model)),
     content BLOB,
-    CHECK (model_kind <> 1 OR content IS NOT NULL)
+    CHECK (model IS NULL OR model_kind <> 1 OR content IS NOT NULL),
+    CHECK (model IS NOT NULL OR content IS NULL)
 ) STRICT;
 
 CREATE TABLE locations (

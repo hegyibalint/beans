@@ -19,8 +19,12 @@ fn imported_type_navigation_is_unrestricted_for_file_and_virtual_documents() {
     ] {
         let root = tempfile::tempdir().unwrap();
         let mut engine = Engine::new(root.path()).unwrap();
-        engine.process_document(source.clone(), "java", use_text);
-        engine.process_document(target.clone(), "java", target_text);
+        engine
+            .process_document(source.clone(), "java", use_text)
+            .unwrap();
+        engine
+            .process_document(target.clone(), "java", target_text)
+            .unwrap();
 
         assert_eq!(
             engine
@@ -28,6 +32,7 @@ fn imported_type_navigation_is_unrestricted_for_file_and_virtual_documents() {
                     source: &source,
                     offset: use_text.rfind("Target").unwrap(),
                 })
+                .unwrap()
                 .map(|definition| definition.target),
             Some(SourceSpan::new(
                 target.clone(),

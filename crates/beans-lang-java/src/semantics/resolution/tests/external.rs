@@ -1,18 +1,17 @@
 use std::io::Write;
 
 use crate::{
-    engine::JavaLanguage,
     model::nodes::NodeKind,
     semantics::resolution::{
         Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, query::ResolutionQuery,
         resolve, resolve_supertype,
     },
+    testing::Models,
 };
 use beans_core::{
     classpath::Unrestricted, location::Location, query_scope::QueryScope, revision::Revision,
 };
 use beans_platform_jvm::JvmPlatform;
-use beans_storage::RevisionEntry;
 use beans_testing::support::class_bytes;
 use tempfile::NamedTempFile;
 
@@ -23,13 +22,13 @@ enum Occurrence {
 }
 
 struct Fixture {
-    java: JavaLanguage,
+    java: Models,
     source: Location,
 }
 
 impl Fixture {
     fn new(current: &str, other_files: &[(&str, &str)]) -> Self {
-        let mut java = JavaLanguage::default();
+        let mut java = Models::new();
         let source = Location::file("/src/Use.java");
         java.store(Revision::new(1), java.process(current), source.clone());
         for (name, text) in other_files {
@@ -55,7 +54,7 @@ impl Fixture {
             .java
             .query(QueryScope::new(Revision::new(1), &Unrestricted));
         let definitions = ResolutionQuery::new(&java, jvm);
-        let file = java.file(&self.source).unwrap();
+        let file = java.file(&self.source).unwrap().unwrap();
         let (index, reference) = file
             .iter_nodes()
             .find_map(|entry| match (occurrence, entry.node.kind()) {
@@ -73,7 +72,7 @@ impl Fixture {
                 _ => None,
             })
             .unwrap();
-        let ctx = Context::new(Revision::new(1), &self.source, file, index, reference)
+        let ctx = Context::new(Revision::new(1), &self.source, &file, index, reference)
             .with_definitions(&definitions);
         match occurrence {
             Occurrence::Field => resolve(&ctx),
@@ -87,26 +86,21 @@ impl Fixture {
             .query(QueryScope::new(Revision::new(1), &Unrestricted));
         let entry = query
             .find_type(&name.split('.').map(str::to_owned).collect())
+            .unwrap()
             .into_iter()
             .next()
             .expect("expected a stored Java type");
-        TypeCandidate::Java(JavaTypeCandidate::Declaration(
-            query.declaration_handle(entry.source, entry.node_index),
-        ))
+        TypeCandidate::Java(JavaTypeCandidate::Declaration(entry))
     }
 }
 
-fn jvm_class(binary_name: &str) -> (NamedTempFile, JvmPlatform, RevisionEntry<Location>) {
+fn jvm_class(binary_name: &str) -> (NamedTempFile, JvmPlatform) {
     let revision = Revision::new(1);
     let mut file = NamedTempFile::new().unwrap();
     file.write_all(&class_bytes(binary_name)).unwrap();
     let mut jvm = JvmPlatform::new();
     jvm.process(revision, file.path().to_owned()).unwrap();
-    let address = RevisionEntry {
-        revision,
-        key: Location::file(file.path()),
-    };
-    (file, jvm, address)
+    (file, jvm)
 }
 
 #[test]
@@ -254,36 +248,30 @@ fn imported_superclass_uses_the_same_external_query() {
 }
 
 #[test]
-fn the_query_can_supply_a_jvm_candidate_without_a_java_definition() {
+fn jvm_candidates_are_unavailable_until_persistence_is_implemented() {
     let fixture = Fixture::new("package p; import q.Foo; class Use { Foo field; }", &[]);
-    let (_file, jvm, address) = jvm_class("q/Foo");
-    assert_eq!(fixture.resolve(&jvm), Ok(TypeCandidate::Jvm(address)));
+    let (_file, jvm) = jvm_class("q/Foo");
+    assert_eq!(fixture.resolve(&jvm), Err(ResolutionFailure::NotFound));
 }
 
 #[test]
-fn a_jvm_single_import_shadows_a_java_type_in_the_current_package() {
+fn deferred_jvm_candidates_do_not_shadow_java_types() {
     let fixture = Fixture::new(
         "package p; import q.Foo; class Use { Foo field; }",
         &[("Foo", "package p; class Foo {}")],
     );
-    let (_file, jvm, address) = jvm_class("q/Foo");
-    assert_eq!(fixture.resolve(&jvm), Ok(TypeCandidate::Jvm(address)));
+    let (_file, jvm) = jvm_class("q/Foo");
+    assert_eq!(fixture.resolve(&jvm), Ok(fixture.expected("p.Foo")));
 }
 
 #[test]
-fn java_and_jvm_definitions_at_the_same_tier_are_not_silently_preferred() {
+fn deferred_jvm_candidates_do_not_make_java_types_ambiguous() {
     let fixture = Fixture::new(
         "package p; import q.Foo; class Use { Foo field; }",
         &[("Foo", "package q; public class Foo {}")],
     );
-    let (_file, jvm, address) = jvm_class("q/Foo");
-    let Err(ResolutionFailure::Ambiguous(candidates)) = fixture.resolve(&jvm) else {
-        panic!("expected two distinct definitions");
-    };
-    assert_eq!(
-        candidates,
-        [fixture.expected("q.Foo"), TypeCandidate::Jvm(address)]
-    );
+    let (_file, jvm) = jvm_class("q/Foo");
+    assert_eq!(fixture.resolve(&jvm), Ok(fixture.expected("q.Foo")));
 }
 
 #[test]

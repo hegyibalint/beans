@@ -1,9 +1,9 @@
 use lsp_server::Notification;
 use lsp_types::{
-    PublishDiagnosticsParams,
+    MessageType, PublishDiagnosticsParams, ShowMessageParams,
     notification::{
         DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, Notification as _,
-        PublishDiagnostics,
+        PublishDiagnostics, ShowMessage,
     },
 };
 
@@ -16,37 +16,54 @@ impl Server {
         }
         let features = self.features.as_mut().unwrap();
         let revision = features.revision();
-        let mut publications = Vec::new();
-        match notification.method.as_str() {
-            DidOpenTextDocument::METHOD => {
-                if let Ok(params) = notification.extract(DidOpenTextDocument::METHOD) {
-                    features.did_open(params);
-                }
-            }
-            DidChangeTextDocument::METHOD => {
-                if let Ok(params) = notification.extract(DidChangeTextDocument::METHOD) {
-                    features.did_change(params);
-                }
-            }
+        let mut closed = None;
+        let result = match notification.method.as_str() {
+            DidOpenTextDocument::METHOD => notification
+                .extract(DidOpenTextDocument::METHOD)
+                .map_or(Ok(()), |params| features.did_open(params)),
+            DidChangeTextDocument::METHOD => notification
+                .extract(DidChangeTextDocument::METHOD)
+                .map_or(Ok(()), |params| features.did_change(params)),
             DidCloseTextDocument::METHOD => {
-                if let Ok(params) = notification
+                match notification
                     .extract::<lsp_types::DidCloseTextDocumentParams>(DidCloseTextDocument::METHOD)
                 {
-                    let uri = params.text_document.uri.clone();
-                    features.did_close(params);
-                    if features.revision() != revision {
-                        publications.push(PublishDiagnosticsParams::new(uri, Vec::new(), None));
+                    Ok(params) => {
+                        closed = Some(params.text_document.uri.clone());
+                        features.did_close(params)
                     }
+                    Err(_) => Ok(()),
                 }
             }
-            _ => {}
+            _ => Ok(()),
+        };
+        if let Err(error) = result {
+            return vec![report_error(error)];
         }
+        let mut publications = Vec::new();
         if features.revision() != revision {
-            publications.extend(features.diagnostics());
+            if let Some(uri) = closed {
+                publications.push(PublishDiagnosticsParams::new(uri, Vec::new(), None));
+            }
+            match features.diagnostics() {
+                Ok(diagnostics) => publications.extend(diagnostics),
+                Err(error) => return vec![report_error(error)],
+            }
         }
         publications
             .into_iter()
             .map(|params| Notification::new(PublishDiagnostics::METHOD.into(), params))
             .collect()
     }
+}
+
+fn report_error(error: String) -> Notification {
+    log::error!("Document processing failed: {error}");
+    Notification::new(
+        ShowMessage::METHOD.into(),
+        ShowMessageParams {
+            typ: MessageType::ERROR,
+            message: format!("Beans: {error}"),
+        },
+    )
 }

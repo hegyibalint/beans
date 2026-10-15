@@ -7,7 +7,6 @@ license.workspace = true
 
 [dependencies]
 beans-core.workspace = true
-beans-storage.workspace = true
 cafebabe.workspace = true
 cesu8.workspace = true
 zip.workspace = true

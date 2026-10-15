@@ -207,6 +207,81 @@ fn non_utf8_file_locations_are_rejected_instead_of_changed() {
     assert_eq!(count(&connection, "locations"), 0);
 }
 
+#[test]
+fn read_transactions_keep_a_consistent_snapshot_during_publication() {
+    use beans_core::{classpath::Unrestricted, query_scope::QueryScope};
+    use beans_lang_java::query::JavaQuery;
+
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("models.sqlite");
+    let source = Location::file("/Example.java");
+    let mut writer = open(&path).unwrap();
+    {
+        let transaction = writer.transaction().unwrap();
+        store(
+            &transaction,
+            Revision::new(1),
+            &lower_into("class Former {}"),
+            &source,
+            "class Former {}",
+        )
+        .unwrap();
+        transaction.commit().unwrap();
+    }
+    let mut reader = open(&path).unwrap();
+    {
+        let transaction = reader.transaction().unwrap();
+        let query = JavaQuery::new(
+            &transaction,
+            QueryScope::new(Revision::new(2), &Unrestricted),
+        );
+        assert_eq!(
+            query
+                .find_type(&Name::new(vec!["Former".into()]))
+                .unwrap()
+                .len(),
+            1
+        );
+        let publication = writer.transaction().unwrap();
+        store(
+            &publication,
+            Revision::new(2),
+            &lower_into("class Latest {}"),
+            &source,
+            "class Latest {}",
+        )
+        .unwrap();
+        publication.commit().unwrap();
+        assert_eq!(
+            query
+                .find_type(&Name::new(vec!["Former".into()]))
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            query
+                .find_type(&Name::new(vec!["Latest".into()]))
+                .unwrap()
+                .is_empty()
+        );
+    }
+    let query = JavaQuery::new(&reader, QueryScope::new(Revision::new(2), &Unrestricted));
+    assert!(
+        query
+            .find_type(&Name::new(vec!["Former".into()]))
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        query
+            .find_type(&Name::new(vec!["Latest".into()]))
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
 fn count(connection: &Connection, table: &str) -> i64 {
     connection
         .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {

@@ -19,6 +19,13 @@ impl Revision {
     }
 }
 
+/// A key at a revision, not a pinned or immutable snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RevisionEntry<K> {
+    pub revision: Revision,
+    pub key: K,
+}
+
 #[cfg(test)]
 mod tests {
     use super::Revision;

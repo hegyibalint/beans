@@ -1,9 +1,9 @@
 use std::hash::{Hash, Hasher};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A half-open range of byte offsets in source content.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ByteRange {
     start: usize,
     end: usize,
@@ -32,7 +32,7 @@ impl ByteRange {
 ///
 /// Equality and hashing use only the value; compare `range()` explicitly when
 /// source position is part of the question.
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Spanned<T> {
     value: T,
     range: ByteRange,

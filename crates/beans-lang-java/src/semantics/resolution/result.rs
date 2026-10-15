@@ -1,7 +1,7 @@
 use crate::model::{File, nodes::types::TypeParameter};
 use crate::semantics::DeclarationHandle;
 use beans_core::location::Location;
-use beans_storage::RevisionEntry;
+use beans_core::revision::RevisionEntry;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeParameterHandle {
@@ -30,6 +30,7 @@ impl TypeParameterHandle {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolutionFailure {
+    Query(String),
     NotFound,
     Partial,
     InvalidTypeRef,

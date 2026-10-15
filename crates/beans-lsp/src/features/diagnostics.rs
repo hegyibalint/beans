@@ -4,7 +4,7 @@ use lsp_types::{Diagnostic, NumberOrString, PublishDiagnosticsParams, Range};
 use super::{Features, source_locations::resource_for_uri};
 
 impl Features {
-    pub(crate) fn diagnostics(&self) -> Vec<PublishDiagnosticsParams> {
+    pub(crate) fn diagnostics(&self) -> Result<Vec<PublishDiagnosticsParams>, String> {
         let mut documents: Vec<_> = self
             .open_documents
             .values()
@@ -16,7 +16,7 @@ impl Features {
             .map(|document| {
                 let diagnostics = self
                     .engine
-                    .diagnostics(&resource_for_uri(&document.uri))
+                    .diagnostics(&resource_for_uri(&document.uri))?
                     .into_iter()
                     .filter_map(|diagnostic| {
                         Some(Diagnostic {
@@ -34,11 +34,11 @@ impl Features {
                         })
                     })
                     .collect();
-                PublishDiagnosticsParams::new(
+                Ok(PublishDiagnosticsParams::new(
                     document.uri.clone(),
                     diagnostics,
                     Some(document.version),
-                )
+                ))
             })
             .collect()
     }

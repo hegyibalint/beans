@@ -6,7 +6,6 @@ members = [
     "crates/beans-lang-java",
     "crates/beans-lsp",
     "crates/beans-platform-jvm",
-    "crates/beans-storage",
     "crates/beans-testing",
     "crates/beans-workspace",
     "crates/beans-workspace-toml",
@@ -23,7 +22,6 @@ beans-core = { path = "crates/beans-core" }
 beans-engine = { path = "crates/beans-engine" }
 beans-lang-java = { path = "crates/beans-lang-java" }
 beans-platform-jvm = { path = "crates/beans-platform-jvm" }
-beans-storage = { path = "crates/beans-storage" }
 beans-testing = { path = "crates/beans-testing" }
 beans-workspace = { path = "crates/beans-workspace" }
 beans-workspace-toml = { path = "crates/beans-workspace-toml" }

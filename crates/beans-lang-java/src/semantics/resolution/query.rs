@@ -1,4 +1,4 @@
-use crate::engine::query::JavaQuery;
+use crate::query::JavaQuery;
 use beans_core::{names::Name, query_scope::QueryScope, resolution::TypeDefinitionQuery};
 use beans_platform_jvm::JvmPlatform;
 
@@ -15,20 +15,12 @@ impl<'a> ResolutionQuery<'a> {
     }
 }
 
-/// Object-safe view of the combined query for a resolver context. `TypeDefinitionQuery`
-/// returns an opaque iterator, so it cannot be borrowed as a trait object.
-pub trait TypeCandidateQuery {
-    fn candidates(&self, name: &Name) -> Vec<TypeCandidate>;
-}
-
 impl TypeDefinitionQuery<TypeCandidate> for ResolutionQuery<'_> {
-    fn find_types<'query>(
-        &'query self,
-        name: &'query Name,
-    ) -> impl Iterator<Item = TypeCandidate> + 'query {
+    fn find_types(&self, name: &Name) -> Result<Vec<TypeCandidate>, String> {
         let java = self
             .java
-            .find_types(name)
+            .find_types(name)?
+            .into_iter()
             .map(|handle| TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)));
         let scope = QueryScope::new(self.java.revision(), self.java.classpath());
         // JVMS §4.2.1: internal names use '/'; canonical member-name conversion is not wired.
@@ -38,108 +30,50 @@ impl TypeDefinitionQuery<TypeCandidate> for ResolutionQuery<'_> {
             .find_classes(scope, &binary_name)
             .into_iter()
             .map(TypeCandidate::Jvm);
-
-        java.chain(jvm)
-    }
-}
-
-impl TypeCandidateQuery for ResolutionQuery<'_> {
-    fn candidates(&self, name: &Name) -> Vec<TypeCandidate> {
-        TypeDefinitionQuery::find_types(self, name).collect()
+        Ok(java.chain(jvm).collect())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
-
-    use beans_core::{
-        classpath::{Classpath, Unrestricted},
-        location::Location,
-        revision::Revision,
-    };
-    use beans_storage::RevisionEntry;
-    use beans_testing::support::class_bytes;
-    use tempfile::NamedTempFile;
-
-    use crate::engine::JavaLanguage;
-
     use super::*;
+    use crate::testing::Models;
+    use beans_core::{classpath::Unrestricted, location::Location, revision::Revision};
 
     #[test]
-    fn native_definition_addresses_are_wrapped_and_chained_in_query_order() {
+    fn native_java_addresses_are_wrapped_as_candidates() {
         let revision = Revision::new(1);
         let name = Name::new(vec!["example".into(), "Example".into()]);
-        let mut language = JavaLanguage::new();
-        language.store(
+        let mut models = Models::new();
+        models.store(
             revision,
-            language.process("package example; class Example {}"),
+            models.process("package example; class Example {}"),
             Location::file("/src/Example.java"),
         );
-        let mut file = NamedTempFile::new().unwrap();
-        file.write_all(&class_bytes("example/Example")).unwrap();
-        let mut platform = JvmPlatform::new();
-        platform.process(revision, file.path().to_owned()).unwrap();
-        let java = language.query(QueryScope::new(revision, &Unrestricted));
-        let java_address = java.find_types(&name).next().unwrap();
-        let query = ResolutionQuery::new(&java, &platform);
-
-        let candidates: Vec<_> = query.find_types(&name).collect();
-
+        let java = models.query(QueryScope::new(revision, &Unrestricted));
+        let address = java.find_types(&name).unwrap().remove(0);
+        let jvm = JvmPlatform::new();
+        let query = ResolutionQuery::new(&java, &jvm);
         assert_eq!(
-            candidates,
-            [
-                TypeCandidate::Java(JavaTypeCandidate::Declaration(java_address)),
-                TypeCandidate::Jvm(RevisionEntry {
-                    revision,
-                    key: Location::file(file.path()),
-                }),
-            ]
+            query.find_types(&name).unwrap(),
+            [TypeCandidate::Java(JavaTypeCandidate::Declaration(address))]
         );
     }
 
     #[test]
-    fn jvm_candidates_use_the_java_queries_revision_and_classpath() {
-        struct Visibility(bool);
-
-        impl Classpath for Visibility {
-            fn contains_source(&self, _resource: &Location) -> bool {
-                true
-            }
-
-            fn contains_class(&self, _resource: &Location) -> bool {
-                self.0
-            }
-        }
-
-        let mut file = NamedTempFile::new().unwrap();
-        file.write_all(&class_bytes("example/Example")).unwrap();
-        let mut platform = JvmPlatform::new();
-        platform
-            .process(Revision::new(5), file.path().to_owned())
+    fn storage_errors_are_not_missing_candidates() {
+        let models = Models::new();
+        models
+            .connection
+            .execute("DROP TABLE java_types", [])
             .unwrap();
-        let language = JavaLanguage::new();
-        let name = Name::new(vec!["example".into(), "Example".into()]);
-
-        for (revision, visible, expected) in [(4, true, false), (7, false, false), (7, true, true)]
-        {
-            let classpath = Visibility(visible);
-            let revision = Revision::new(revision);
-            let java = language.query(QueryScope::new(revision, &classpath));
-            let query = ResolutionQuery::new(&java, &platform);
-            let candidates = query.candidates(&name);
-
-            if expected {
-                assert_eq!(
-                    candidates,
-                    vec![TypeCandidate::Jvm(RevisionEntry {
-                        revision,
-                        key: Location::file(file.path()),
-                    })]
-                );
-            } else {
-                assert!(candidates.is_empty());
-            }
-        }
+        let java = models.query(QueryScope::new(Revision::new(1), &Unrestricted));
+        let jvm = JvmPlatform::new();
+        let query = ResolutionQuery::new(&java, &jvm);
+        assert!(
+            query
+                .find_types(&Name::new(vec!["Missing".into()]))
+                .is_err()
+        );
     }
 }

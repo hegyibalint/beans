@@ -1,5 +1,5 @@
 use beans_core::names::Name;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::{
     imports::Import,
@@ -7,7 +7,7 @@ use super::{
 };
 
 /// Represents a whole `.java` file.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct File {
     /// Package components; empty for the unnamed package (JLS §7.4.2).
     pub package_name: Name,
@@ -103,6 +103,41 @@ impl File {
         let mut matches = Vec::new();
         self.collect_type_matches(Self::ROOT_NODE_ID, type_path, &mut matches);
         matches
+    }
+
+    // Decoding bypasses add_node, so restore its tree invariants before traversal.
+    pub(crate) fn validate_nodes(&self) -> Result<(), String> {
+        let Some(root) = self.nodes.first() else {
+            return Err("missing Java compilation unit".into());
+        };
+        if root.parent().is_some() || !matches!(root.kind(), NodeKind::CompilationUnit) {
+            return Err("invalid Java compilation unit".into());
+        }
+        let mut linked = vec![false; self.nodes.len()];
+        linked[0] = true;
+        for entry in self.iter_nodes() {
+            if entry.index != Self::ROOT_NODE_ID {
+                let parent = entry.node.parent().ok_or("missing Java node parent")?;
+                if parent.as_usize() >= entry.index.as_usize()
+                    || matches!(entry.node.kind(), NodeKind::CompilationUnit)
+                {
+                    return Err("invalid Java node parent".into());
+                }
+            }
+            for child in entry.node.iter_children() {
+                let Some(node) = self.node(child) else {
+                    return Err("invalid Java child index".into());
+                };
+                if node.parent() != Some(entry.index) || linked[child.as_usize()] {
+                    return Err("invalid Java child link".into());
+                }
+                linked[child.as_usize()] = true;
+            }
+        }
+        if linked.iter().any(|linked| !linked) {
+            return Err("unlinked Java node".into());
+        }
+        Ok(())
     }
 
     fn collect_type_matches<'a>(

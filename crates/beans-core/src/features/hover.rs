@@ -4,7 +4,7 @@ use crate::{location::Location, ranges::ByteRange};
 /// Protocol facets can use protocol types without introducing a core dependency on them.
 /// Unsupported requests and positions without hover information return `None`.
 pub trait HoverProvider<C: ?Sized, Request: ?Sized, Response> {
-    fn hover(&self, context: &C, request: &Request) -> Option<Response>;
+    fn hover(&self, context: &C, request: &Request) -> Result<Option<Response>, String>;
 }
 
 /// A position in caller-supplied source text, which must match the queried model.

@@ -11,8 +11,16 @@ use crate::Engine;
 mod tests;
 
 impl Engine {
-    pub fn feature_hover(&self, request: &HoverRequest<'_>) -> Option<HoverResponse> {
+    pub fn feature_hover(
+        &self,
+        request: &HoverRequest<'_>,
+    ) -> Result<Option<HoverResponse>, String> {
+        let transaction = self
+            .storage
+            .unchecked_transaction()
+            .map_err(|error| error.to_string())?;
         let context = JavaFeatureContext {
+            connection: &transaction,
             scope: QueryScope::new(self.revision, &Unrestricted),
             jvm: &self.jvm,
         };

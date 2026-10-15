@@ -7,12 +7,25 @@ use beans_core::{
 use crate::{
     engine::JavaLanguage,
     model::{nodes::NodeKind, references::TypeRef},
+    query::JavaQuery,
 };
 
 impl JavaLanguage {
-    pub fn type_tokens(&self, revision: Revision, source: &Location) -> Vec<ByteRange> {
-        let Some(file) = self.file(revision, source) else {
-            return Vec::new();
+    pub fn type_tokens(
+        &self,
+        connection: &rusqlite::Connection,
+        revision: Revision,
+        source: &Location,
+    ) -> Result<Vec<ByteRange>, String> {
+        let java = JavaQuery::new(
+            connection,
+            beans_core::query_scope::QueryScope::new(
+                revision,
+                &beans_core::classpath::Unrestricted,
+            ),
+        );
+        let Some(file) = java.file(source)? else {
+            return Ok(Vec::new());
         };
         let mut ranges = Vec::new();
         for entry in file.iter_nodes() {
@@ -21,7 +34,7 @@ impl JavaLanguage {
             }
         }
         ranges.sort_by_key(|range| range.start());
-        ranges
+        Ok(ranges)
     }
 }
 

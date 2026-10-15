@@ -2,6 +2,7 @@ use beans_core::{
     features::navigation::{DefinitionProvider, DefinitionRequest, NavigationResult},
     location::Location,
     ranges::ByteRange,
+    resolution::TypeDefinitionQuery,
     revision::Revision,
     source::SourceSpan,
 };
@@ -9,9 +10,9 @@ use beans_core::{
 use crate::{
     engine::JavaLanguage,
     model::{File, nodes::NodeKind, references::TypeRef, type_references::find_in_reference},
+    query::JavaQuery,
     semantics::resolution::{
-        Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate,
-        query::{ResolutionQuery, TypeCandidateQuery},
+        Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, query::ResolutionQuery,
         resolve,
     },
 };
@@ -27,45 +28,57 @@ impl<'request>
         &self,
         context: &JavaFeatureContext<'_>,
         request: &DefinitionRequest<'request>,
-    ) -> Option<NavigationResult> {
+    ) -> Result<Option<NavigationResult>, String> {
         let source = request.source;
         let offset = request.offset;
-        let java = self.query(context.scope);
+        let java = JavaQuery::new(context.connection, context.scope);
         let definitions = ResolutionQuery::new(&java, context.jvm);
-        let file = java.file(source)?;
-        if let Some(range) = type_parameter_declaration_at(file, offset) {
-            return Some(NavigationResult {
+        let Some(file) = java.file(source)? else {
+            return Ok(None);
+        };
+        if let Some(range) = type_parameter_declaration_at(&file, offset) {
+            return Ok(Some(NavigationResult {
                 origin_range: range,
                 target: SourceSpan::new(source.clone(), range),
-            });
+            }));
         }
-        let (origin_range, candidate) = resolve_field_type_at(
-            file,
+        let Some((origin_range, candidate)) = resolve_field_type_at(
+            &file,
             context.scope.revision(),
             source,
             offset,
             Some(&definitions),
-        )?;
-        let target = match candidate.ok()? {
+        ) else {
+            return Ok(None);
+        };
+        let candidate = match candidate {
+            Ok(candidate) => candidate,
+            Err(ResolutionFailure::Query(error)) => return Err(error),
+            Err(_) => return Ok(None),
+        };
+        let target = match candidate {
             TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) => {
-                let declaration = self
-                    .file(handle.revision(), handle.source())?
-                    .node(handle.node_index())?
-                    .kind()
-                    .as_type()?;
-                SourceSpan::new(handle.source().clone(), declaration.name.as_ref()?.range())
+                java.declaration(&handle)?.and_then(|declaration| {
+                    declaration
+                        .name
+                        .map(|name| SourceSpan::new(handle.source().clone(), name.range()))
+                })
             }
             TypeCandidate::Java(JavaTypeCandidate::TypeParameter(handle)) => {
                 let owner = handle.owner();
-                let file = self.file(owner.revision(), owner.source())?;
-                SourceSpan::new(owner.source().clone(), handle.parameter(file)?.name.range())
+                let file = java.file(owner.source())?;
+                file.and_then(|file| {
+                    handle.parameter(&file).map(|parameter| {
+                        SourceSpan::new(owner.source().clone(), parameter.name.range())
+                    })
+                })
             }
-            TypeCandidate::Jvm(_) => return None,
+            TypeCandidate::Jvm(_) => None,
         };
-        Some(NavigationResult {
+        Ok(target.map(|target| NavigationResult {
             origin_range,
             target,
-        })
+        }))
     }
 }
 
@@ -84,7 +97,7 @@ fn resolve_field_type_at(
     revision: Revision,
     source: &Location,
     offset: usize,
-    definitions: Option<&dyn TypeCandidateQuery>,
+    definitions: Option<&dyn TypeDefinitionQuery<TypeCandidate>>,
 ) -> Option<(ByteRange, Result<TypeCandidate, ResolutionFailure>)> {
     // JLS §8.3: a field declares a type separately from its variable name.
     let (index, prefix, origin_range) = file.iter_nodes().find_map(|entry| {
@@ -141,7 +154,7 @@ fn resolve_field_type_at(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{lowering::lower_into, semantics::resolution::ResolutionFailure};
+    use crate::{lowering::lower_into, semantics::resolution::ResolutionFailure, testing::Models};
     use beans_core::location::LocationEntry;
     use beans_core::{
         classpath::Unrestricted, names::Name, query_scope::QueryScope, ranges::ByteRange,
@@ -153,19 +166,22 @@ mod tests {
     }
 
     fn definition_at(
-        java: &JavaLanguage,
+        java: &Models,
         revision: Revision,
         source: &Location,
         offset: usize,
     ) -> Option<SourceSpan> {
-        java.goto_definition(
-            &JavaFeatureContext {
-                scope: QueryScope::new(revision, &Unrestricted),
-                jvm: &JvmPlatform::default(),
-            },
-            &DefinitionRequest { source, offset },
-        )
-        .map(|definition| definition.target)
+        JavaLanguage::new()
+            .goto_definition(
+                &JavaFeatureContext {
+                    connection: &java.connection,
+                    scope: QueryScope::new(revision, &Unrestricted),
+                    jvm: &JvmPlatform::default(),
+                },
+                &DefinitionRequest { source, offset },
+            )
+            .unwrap()
+            .map(|definition| definition.target)
     }
 
     fn at<'a>(
@@ -207,7 +223,7 @@ mod tests {
         let text = "class Outer { class Member {} Member field; }";
         let revision = Revision::new(1);
         let source = source_id();
-        let mut java = JavaLanguage::default();
+        let mut java = Models::new();
         java.store(revision, lower_into(text), source.clone());
         let name_start = text.find("Member").unwrap();
 
@@ -225,7 +241,7 @@ mod tests {
         let text = "class Box<T> { class Slot<U> {} } class Example { Box<String>.Slot<Integer> nested; Box<? extends Number> numbers; }";
         let revision = Revision::new(1);
         let source = source_id();
-        let mut java = JavaLanguage::default();
+        let mut java = Models::new();
         java.store(revision, lower_into(text), source.clone());
         let box_name = text.find("class Box").unwrap() + "class ".len();
         let slot_name = text.find("class Slot").unwrap() + "class ".len();
@@ -255,7 +271,7 @@ mod tests {
         let text = "class A {} class B {} class First<T> { class Second<U> {} } class Use { First<A>.Second<B> field; }";
         let revision = Revision::new(1);
         let source = source_id();
-        let mut java = JavaLanguage::default();
+        let mut java = Models::new();
         java.store(revision, lower_into(text), source.clone());
 
         let first = text.find("First<A>").unwrap();
@@ -278,9 +294,10 @@ mod tests {
             (second + "Second<B>".len() - 1, "Second", "Second<B>"), // >
             (second + "Second<".len(), "B", "B"),
         ] {
-            let definition = java
+            let definition = JavaLanguage::new()
                 .goto_definition(
                     &JavaFeatureContext {
+                        connection: &java.connection,
                         scope: QueryScope::new(revision, &Unrestricted),
                         jvm: &JvmPlatform::default(),
                     },
@@ -289,6 +306,7 @@ mod tests {
                         offset,
                     },
                 )
+                .unwrap()
                 .unwrap();
             assert_eq!(Some(definition.target), declaration(name));
             assert_eq!(
@@ -308,13 +326,13 @@ mod tests {
         let text = "class Example<T extends Labelled> { T label; }";
         let revision = Revision::new(1);
         let source = source_id();
-        let mut java = JavaLanguage::default();
+        let mut java = Models::new();
         java.store(revision, lower_into(text), source.clone());
         let declaration = text.find("<T").unwrap() + 1;
         let use_offset = text.find("T label").unwrap();
         let file = java.file(revision, &source).unwrap();
         assert!(matches!(
-            resolve_field_type_at(file, revision, &source, use_offset, None),
+            resolve_field_type_at(&file, revision, &source, use_offset, None),
             Some((
                 _,
                 Ok(TypeCandidate::Java(JavaTypeCandidate::TypeParameter(_)))
@@ -335,7 +353,7 @@ mod tests {
         let text = "class Box<T, U extends Labelled> { U label; }";
         let revision = Revision::new(1);
         let source = source_id();
-        let mut java = JavaLanguage::default();
+        let mut java = Models::new();
         java.store(revision, lower_into(text), source.clone());
 
         for offset in [
@@ -370,7 +388,7 @@ mod tests {
         let text = "class Box<T> { class Slot<U> {} T value; Box<String>.Slot<Integer> nested; }";
         let revision = Revision::new(1);
         let source = source_id();
-        let mut java = JavaLanguage::default();
+        let mut java = Models::new();
         java.store(revision, lower_into(text), source.clone());
 
         for (use_start, target_start, name) in [
