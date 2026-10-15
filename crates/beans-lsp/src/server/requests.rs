@@ -2,8 +2,9 @@ use beans_core::features::{DefinitionProvider, HoverProvider};
 use lsp_server::{ErrorCode, Request, Response};
 use lsp_types::{
     GotoDefinitionParams, HoverParams, InitializeParams, InitializeResult, OneOf,
-    ServerCapabilities, ServerInfo, TextDocumentSyncKind, TextDocumentSyncOptions,
-    WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
+    SemanticTokenType, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+    SemanticTokensParams, ServerCapabilities, ServerInfo, TextDocumentSyncKind,
+    TextDocumentSyncOptions, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
     request::{GotoDefinition, HoverRequest, Request as _},
 };
 
@@ -30,6 +31,17 @@ impl Server {
                                 capabilities: ServerCapabilities {
                                     definition_provider: Some(OneOf::Left(true)),
                                     hover_provider: Some(true.into()),
+                                    semantic_tokens_provider: Some(
+                                        SemanticTokensOptions {
+                                            legend: SemanticTokensLegend {
+                                                token_types: vec![SemanticTokenType::TYPE],
+                                                token_modifiers: Vec::new(),
+                                            },
+                                            full: Some(SemanticTokensFullOptions::Bool(true)),
+                                            ..SemanticTokensOptions::default()
+                                        }
+                                        .into(),
+                                    ),
                                     workspace: Some(WorkspaceServerCapabilities {
                                         workspace_folders: Some(
                                             WorkspaceFoldersServerCapabilities {
@@ -92,6 +104,18 @@ impl Server {
             (Lifecycle::Running, HoverRequest::METHOD) => {
                 return match serde_json::from_value::<HoverParams>(request.params) {
                     Ok(params) => Response::new_ok(request.id, self.features.hover(&(), &params)),
+                    Err(error) => Response::new_err(
+                        request.id,
+                        ErrorCode::InvalidParams as i32,
+                        error.to_string(),
+                    ),
+                };
+            }
+            (Lifecycle::Running, "textDocument/semanticTokens/full") => {
+                return match serde_json::from_value::<SemanticTokensParams>(request.params) {
+                    Ok(params) => {
+                        Response::new_ok(request.id, self.features.semantic_tokens(&params))
+                    }
                     Err(error) => Response::new_err(
                         request.id,
                         ErrorCode::InvalidParams as i32,

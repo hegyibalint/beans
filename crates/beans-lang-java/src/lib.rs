@@ -1,3 +1,4 @@
+pub mod diagnostics;
 pub mod engine;
 pub mod features;
 pub mod lowering;

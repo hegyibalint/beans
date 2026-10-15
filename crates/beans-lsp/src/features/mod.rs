@@ -5,8 +5,10 @@ use lsp_types::ClientCapabilities;
 
 use crate::model::open_document::OpenDocument;
 
+mod diagnostics;
 mod document_synchronization;
 mod language_features;
+mod semantic_tokens;
 mod source_locations;
 mod workspace;
 

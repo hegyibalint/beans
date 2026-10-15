@@ -15,6 +15,7 @@ fn initialization_advertises_open_and_close_synchronization() {
     assert_eq!(
         result["capabilities"],
         json!({"definitionProvider": true, "hoverProvider": true,
+               "semanticTokensProvider": {"legend": {"tokenTypes": ["type"], "tokenModifiers": []}, "full": true},
                "textDocumentSync": {"openClose": true, "change": 1},
                "workspace": {"workspaceFolders": {"supported": true}}})
     );

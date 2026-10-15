@@ -5,6 +5,7 @@ use beans_lang_java::engine::JavaLanguage;
 use beans_platform_jvm::JvmPlatform;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 
+pub mod diagnostics;
 mod documents;
 mod features;
 

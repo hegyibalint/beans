@@ -1,0 +1,2 @@
+[unit.demo]
+sources = ["src"]

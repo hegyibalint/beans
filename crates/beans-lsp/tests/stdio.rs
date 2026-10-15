@@ -67,11 +67,20 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
                         "uri": "file:///Example.java",
                         "languageId": "java",
                         "version": 1,
-                        "text": "class Example {}"
+                        "text": "class Example { Missing value; }"
                     }
                 }),
             ))
             .write(&mut stdin)?;
+            let Some(Message::Notification(publication)) = Message::read(&mut stdout)? else {
+                panic!("expected diagnostics publication");
+            };
+            assert_eq!(publication.method, "textDocument/publishDiagnostics");
+            assert_eq!(publication.params["version"], 1);
+            assert_eq!(
+                publication.params["diagnostics"][0]["message"],
+                "cannot find type: Missing"
+            );
             Message::Request(Request::new(4.into(), "unknown/method".into(), ()))
                 .write(&mut stdin)?;
             let Some(Message::Response(response)) = Message::read(&mut stdout)? else {
@@ -84,6 +93,12 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
                 json!({"textDocument": {"uri": "file:///Example.java"}}),
             ))
             .write(&mut stdin)?;
+            let Some(Message::Notification(publication)) = Message::read(&mut stdout)? else {
+                panic!("expected diagnostics to clear on close");
+            };
+            assert_eq!(publication.method, "textDocument/publishDiagnostics");
+            assert_eq!(publication.params["diagnostics"], json!([]));
+            assert!(publication.params.get("version").is_none());
             Message::Notification(Notification::new("$/unknown".into(), ())).write(&mut stdin)?;
             Message::Request(Request::new(2.into(), "shutdown".into(), ())).write(&mut stdin)?;
             let Some(Message::Response(response)) = Message::read(&mut stdout)? else {
@@ -138,7 +153,8 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
         .collect();
     assert!(entries.iter().any(|entry| entry["direction"] == "incoming"
         && entry["message"]["method"] == "textDocument/didOpen"
-        && entry["message"]["params"]["textDocument"]["text"] == "class Example {}"));
+        && entry["message"]["params"]["textDocument"]["text"]
+            == "class Example { Missing value; }"));
     assert!(entries.iter().any(|entry| entry["direction"] == "outgoing"
         && entry["message"]["id"] == 1
         && entry["message"]["result"]["serverInfo"]["name"] == "beans"));

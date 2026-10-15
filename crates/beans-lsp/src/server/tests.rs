@@ -1,6 +1,8 @@
+mod diagnostics;
 mod goto_definition;
 mod hover;
 mod lifecycle;
+mod semantic_tokens;
 mod workspace_import;
 
 use super::{Lifecycle, Server};

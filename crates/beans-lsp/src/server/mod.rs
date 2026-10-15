@@ -50,7 +50,13 @@ impl Server {
                         _ => Err(io::Error::other("exit received before shutdown")),
                     };
                 }
-                Message::Notification(notification) => self.notify(notification),
+                Message::Notification(notification) => {
+                    for notification in self.notify(notification) {
+                        let message = Message::Notification(notification);
+                        log.record("outgoing", &message)?;
+                        connection.sender.send(message).map_err(io::Error::other)?;
+                    }
+                }
                 // There are no outgoing requests, so responses need no dispatch yet.
                 Message::Response(_) => {}
             }
