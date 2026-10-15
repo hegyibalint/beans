@@ -1,4 +1,4 @@
-use beans_core::{query_scope::QueryScope, ranges::ByteRange, resource::ResourceId};
+use beans_core::{location::Location, query_scope::QueryScope, ranges::ByteRange};
 use beans_platform_jvm::JvmPlatform;
 
 use crate::{engine::JavaLanguage, semantics::resolution::query::ResolutionQuery};
@@ -23,7 +23,7 @@ impl JavaLanguage {
         &self,
         scope: QueryScope<'_>,
         jvm: &JvmPlatform,
-        source: &ResourceId,
+        source: &Location,
     ) -> Vec<Diagnostic> {
         let java = self.query(scope);
         let Some(file) = java.file(source) else {

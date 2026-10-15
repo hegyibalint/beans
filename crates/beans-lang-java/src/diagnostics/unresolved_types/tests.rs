@@ -1,5 +1,5 @@
 use beans_core::{
-    classpath::Unrestricted, query_scope::QueryScope, resource::ResourceId, revision::Revision,
+    classpath::Unrestricted, location::Location, query_scope::QueryScope, revision::Revision,
 };
 use beans_platform_jvm::JvmPlatform;
 
@@ -11,7 +11,7 @@ use crate::{
 
 fn diagnostics(text: &str) -> Vec<Diagnostic> {
     let mut java = JavaLanguage::new();
-    let source = ResourceId::file("/Example.java");
+    let source = Location::file("/Example.java");
     java.store(Revision::new(1), lower_into(text), source.clone());
     java.diagnostics(
         QueryScope::new(Revision::new(1), &Unrestricted),
@@ -77,8 +77,8 @@ fn partial_ambiguous_and_unmodeled_positions_are_silent() {
 #[test]
 fn diagnostics_follow_the_requested_revision_and_cross_file_declarations() {
     let mut java = JavaLanguage::new();
-    let source = ResourceId::file("/Example.java");
-    let other = ResourceId::file("/Missing.java");
+    let source = Location::file("/Example.java");
+    let other = Location::file("/Missing.java");
     java.store(
         Revision::new(1),
         lower_into("class Example { Missing value; }"),

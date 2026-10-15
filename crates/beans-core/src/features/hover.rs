@@ -1,4 +1,4 @@
-use crate::{ranges::ByteRange, resource::ResourceId};
+use crate::{location::Location, ranges::ByteRange};
 
 /// Supplies hover information using the implementation's context and request/response types.
 /// Protocol facets can use protocol types without introducing a core dependency on them.
@@ -10,7 +10,7 @@ pub trait HoverProvider<C: ?Sized, Request: ?Sized, Response> {
 /// A position in caller-supplied source text, which must match the queried model.
 /// Offsets and ranges use UTF-8 bytes; protocol facets handle coordinate conversion.
 pub struct HoverRequest<'a> {
-    pub source: &'a ResourceId,
+    pub source: &'a Location,
     pub contents: &'a str,
     pub offset: usize,
 }

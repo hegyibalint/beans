@@ -1,13 +1,13 @@
 use beans_core::{
     classpath::Classpath,
-    resource::{ResourceEntry, ResourceId, ResourceRoot},
+    location::{Location, LocationEntry},
 };
 
 use super::{classpath, unit};
 use crate::model::Unit;
 
-fn file(path: &str) -> ResourceId {
-    ResourceId::new(ResourceRoot::File { path: path.into() })
+fn file(path: &str) -> Location {
+    Location::new(LocationEntry::File(path.into()))
 }
 
 #[test]
@@ -56,10 +56,10 @@ fn source_entries_in_archives_are_not_supported_even_under_source_roots() {
     let archive = file("/project/src/lib.jar");
     for container in [
         archive.clone(),
-        archive.entry(ResourceEntry("nested.jar".into())),
+        archive.entry(LocationEntry::Container("nested.jar".into())),
     ] {
-        let source = container.entry(ResourceEntry("p/Foo.java".into()));
-        let binary = container.entry(ResourceEntry("p/Foo.class".into()));
+        let source = container.entry(LocationEntry::Container("p/Foo.java".into()));
+        let binary = container.entry(LocationEntry::Container("p/Foo.class".into()));
         assert!(!classpath.contains_source(&source));
         assert!(!classpath.contains_source(&binary));
         assert!(classpath.contains_class(&binary));

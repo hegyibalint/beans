@@ -30,23 +30,20 @@ mod tests {
     use crate::lowering::lower_into;
     use beans_core::{
         classpath::Unrestricted,
+        location::{Location, LocationEntry},
         query_scope::QueryScope,
-        resource::{ResourceId, ResourceRoot},
         revision::Revision,
     };
     use beans_platform_jvm::JvmPlatform;
 
-    fn source_id() -> ResourceId {
-        ResourceId::new(ResourceRoot::Virtual {
-            provider: "test".into(),
-            key: "untitled:Example.java".into(),
-        })
+    fn source_id() -> Location {
+        Location::new(LocationEntry::Virtual("untitled:Example.java".into()))
     }
 
     fn hover(
         engine: &JavaLanguage,
         revision: Revision,
-        source: &ResourceId,
+        source: &Location,
         contents: &str,
         offset: usize,
     ) -> Option<HoverResponse> {
@@ -103,7 +100,7 @@ mod tests {
             hover(
                 &engine,
                 revision,
-                &ResourceId::file("C.class"),
+                &Location::file("C.class"),
                 contents,
                 offset
             )

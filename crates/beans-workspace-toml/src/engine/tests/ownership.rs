@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
-use beans_core::resource::{ResourceEntry, ResourceId, ResourceRoot};
+use beans_core::location::{Location, LocationEntry};
 use beans_workspace::Workspace;
 
 use crate::{
@@ -8,8 +8,8 @@ use crate::{
     model::{Project, Unit},
 };
 
-fn entry(path: &str, name: &str) -> ResourceId {
-    ResourceId::new(ResourceRoot::File { path: path.into() }).entry(ResourceEntry(name.into()))
+fn entry(path: &str, name: &str) -> Location {
+    Location::new(LocationEntry::File(path.into())).entry(LocationEntry::Container(name.into()))
 }
 
 fn unit(sources: &[&str], artifact: &str) -> Unit {

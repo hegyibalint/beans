@@ -1,6 +1,6 @@
 use crate::model::{File, nodes::types::TypeParameter};
 use crate::semantics::DeclarationHandle;
-use beans_core::resource::ResourceId;
+use beans_core::location::Location;
 use beans_storage::RevisionEntry;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -41,7 +41,7 @@ pub enum ResolutionFailure {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeCandidate {
     Java(JavaTypeCandidate),
-    Jvm(RevisionEntry<ResourceId>),
+    Jvm(RevisionEntry<Location>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

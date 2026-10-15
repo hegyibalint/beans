@@ -1,16 +1,16 @@
 //! Positions and ranges in source content.
 
-use crate::{ranges::ByteRange, resource::ResourceId};
+use crate::{location::Location, ranges::ByteRange};
 
 /// A byte range in content identified by its resource.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceSpan {
-    pub resource: ResourceId,
+    pub resource: Location,
     pub range: ByteRange,
 }
 
 impl SourceSpan {
-    pub fn new(resource: ResourceId, range: ByteRange) -> Self {
+    pub fn new(resource: Location, range: ByteRange) -> Self {
         Self { resource, range }
     }
 }

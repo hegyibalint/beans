@@ -1,24 +1,21 @@
 use beans_core::{
     features::DefinitionRequest,
+    location::{Location, LocationEntry},
     ranges::ByteRange,
-    resource::{ResourceId, ResourceRoot},
     source::SourceSpan,
 };
 use beans_engine::Engine;
 
 #[test]
 fn imported_type_navigation_is_unrestricted_for_file_and_virtual_documents() {
-    let target = ResourceId::file("/other/q/Target.java");
+    let target = Location::file("/other/q/Target.java");
     let use_text = "package p; import q.Target; class Use { Target field; }";
     let target_text = "package q; public class Target {}";
     let name_start = target_text.find("Target").unwrap();
 
     for source in [
-        ResourceId::file("/src/p/Use.java"),
-        ResourceId::new(ResourceRoot::Virtual {
-            provider: "test".into(),
-            key: "Use.java".into(),
-        }),
+        Location::file("/src/p/Use.java"),
+        Location::new(LocationEntry::Virtual("untitled:Use.java".into())),
     ] {
         let mut engine = Engine::new();
         engine.process_document(source.clone(), "java", use_text);

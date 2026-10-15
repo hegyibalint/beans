@@ -1,6 +1,6 @@
 use beans_core::{
+    location::Location,
     ranges::{ByteRange, Spanned},
-    resource::ResourceId,
     revision::Revision,
 };
 
@@ -10,7 +10,7 @@ use crate::{
 };
 
 impl JavaLanguage {
-    pub fn type_tokens(&self, revision: Revision, source: &ResourceId) -> Vec<ByteRange> {
+    pub fn type_tokens(&self, revision: Revision, source: &Location) -> Vec<ByteRange> {
         let Some(file) = self.file(revision, source) else {
             return Vec::new();
         };

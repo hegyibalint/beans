@@ -9,7 +9,7 @@ use crate::{
     },
 };
 use beans_core::{
-    classpath::Unrestricted, query_scope::QueryScope, resource::ResourceId, revision::Revision,
+    classpath::Unrestricted, location::Location, query_scope::QueryScope, revision::Revision,
 };
 use beans_platform_jvm::JvmPlatform;
 use beans_storage::RevisionEntry;
@@ -24,19 +24,19 @@ enum Occurrence {
 
 struct Fixture {
     java: JavaLanguage,
-    source: ResourceId,
+    source: Location,
 }
 
 impl Fixture {
     fn new(current: &str, other_files: &[(&str, &str)]) -> Self {
         let mut java = JavaLanguage::default();
-        let source = ResourceId::file("/src/Use.java");
+        let source = Location::file("/src/Use.java");
         java.store(Revision::new(1), java.process(current), source.clone());
         for (name, text) in other_files {
             java.store(
                 Revision::new(1),
                 java.process(text),
-                ResourceId::file(format!("/src/{name}.java")),
+                Location::file(format!("/src/{name}.java")),
             );
         }
         Self { java, source }
@@ -96,7 +96,7 @@ impl Fixture {
     }
 }
 
-fn jvm_class(binary_name: &str) -> (NamedTempFile, JvmPlatform, RevisionEntry<ResourceId>) {
+fn jvm_class(binary_name: &str) -> (NamedTempFile, JvmPlatform, RevisionEntry<Location>) {
     let revision = Revision::new(1);
     let mut file = NamedTempFile::new().unwrap();
     file.write_all(&class_bytes(binary_name)).unwrap();
@@ -104,7 +104,7 @@ fn jvm_class(binary_name: &str) -> (NamedTempFile, JvmPlatform, RevisionEntry<Re
     jvm.process(revision, file.path().to_owned()).unwrap();
     let address = RevisionEntry {
         revision,
-        key: ResourceId::file(file.path()),
+        key: Location::file(file.path()),
     };
     (file, jvm, address)
 }

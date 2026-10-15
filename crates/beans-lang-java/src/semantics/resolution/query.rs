@@ -55,7 +55,7 @@ mod tests {
 
     use beans_core::{
         classpath::{Classpath, Unrestricted},
-        resource::ResourceId,
+        location::Location,
         revision::Revision,
     };
     use beans_storage::RevisionEntry;
@@ -74,7 +74,7 @@ mod tests {
         language.store(
             revision,
             language.process("package example; class Example {}"),
-            ResourceId::file("/src/Example.java"),
+            Location::file("/src/Example.java"),
         );
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(&class_bytes("example/Example")).unwrap();
@@ -92,7 +92,7 @@ mod tests {
                 TypeCandidate::Java(JavaTypeCandidate::Declaration(java_address)),
                 TypeCandidate::Jvm(RevisionEntry {
                     revision,
-                    key: ResourceId::file(file.path()),
+                    key: Location::file(file.path()),
                 }),
             ]
         );
@@ -103,11 +103,11 @@ mod tests {
         struct Visibility(bool);
 
         impl Classpath for Visibility {
-            fn contains_source(&self, _resource: &ResourceId) -> bool {
+            fn contains_source(&self, _resource: &Location) -> bool {
                 true
             }
 
-            fn contains_class(&self, _resource: &ResourceId) -> bool {
+            fn contains_class(&self, _resource: &Location) -> bool {
                 self.0
             }
         }
@@ -134,7 +134,7 @@ mod tests {
                     candidates,
                     vec![TypeCandidate::Jvm(RevisionEntry {
                         revision,
-                        key: ResourceId::file(file.path()),
+                        key: Location::file(file.path()),
                     })]
                 );
             } else {

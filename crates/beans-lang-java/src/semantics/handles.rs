@@ -1,4 +1,4 @@
-use beans_core::{resource::ResourceId, revision::Revision};
+use beans_core::{location::Location, revision::Revision};
 
 use crate::model::nodes::NodeIndex;
 
@@ -6,12 +6,12 @@ use crate::model::nodes::NodeIndex;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DeclarationHandle {
     revision: Revision,
-    source: ResourceId,
+    source: Location,
     node_index: NodeIndex,
 }
 
 impl DeclarationHandle {
-    pub fn new(revision: Revision, source: ResourceId, node_index: NodeIndex) -> Self {
+    pub fn new(revision: Revision, source: Location, node_index: NodeIndex) -> Self {
         Self {
             revision,
             source,
@@ -23,7 +23,7 @@ impl DeclarationHandle {
         self.revision
     }
 
-    pub fn source(&self) -> &ResourceId {
+    pub fn source(&self) -> &Location {
         &self.source
     }
 

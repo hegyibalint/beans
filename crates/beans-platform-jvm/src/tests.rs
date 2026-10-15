@@ -1,6 +1,6 @@
 use std::io::{Cursor, Write};
 
-use beans_core::{classpath::Unrestricted, query_scope::QueryScope, resource::ResourceEntry};
+use beans_core::{classpath::Unrestricted, location::LocationEntry, query_scope::QueryScope};
 use beans_storage::RevisionEntry;
 use beans_testing::support::class_bytes;
 use tempfile::NamedTempFile;
@@ -60,9 +60,9 @@ fn stores_classes_from_each_container_format() {
 
         platform.process(revision, file.path().to_owned()).unwrap();
 
-        let mut id = ResourceId::file(file.path());
+        let mut id = Location::file(file.path());
         if let Some(entry) = entry {
-            id = id.entry(ResourceEntry(entry.into()));
+            id = id.entry(LocationEntry::Container(entry.into()));
         }
         assert_eq!(
             platform.find_classes(QueryScope::new(revision, &Unrestricted), "example/Foo"),
@@ -139,7 +139,7 @@ fn imports_each_jdk_runtime_layout() {
         assert_eq!(jdk_artifacts(home.path()).unwrap(), vec![path.clone()]);
         platform.process_jdk_home(revision, home.path()).unwrap();
 
-        let id = ResourceId::file(path).entry(ResourceEntry(entry.into()));
+        let id = Location::file(path).entry(LocationEntry::Container(entry.into()));
         assert_eq!(
             platform.classes.get(revision, &id).unwrap().name,
             "example/Foo"
@@ -213,7 +213,8 @@ fn legacy_layouts_import_optional_tools() {
         platform.process_jdk_home(revision, home.path()).unwrap();
 
         for (artifact, name) in [(runtime, "example/Runtime"), (tools, "example/Tools")] {
-            let id = ResourceId::file(artifact).entry(ResourceEntry("example/Foo.class".into()));
+            let id = Location::file(artifact)
+                .entry(LocationEntry::Container("example/Foo.class".into()));
             assert_eq!(platform.classes.get(revision, &id).unwrap().name, name);
         }
         assert_eq!(platform.classes.iter(revision).count(), 2);

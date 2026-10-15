@@ -1,14 +1,14 @@
 use std::io::{Read, Seek};
 
-use beans_core::resource::{ResourceEntry, ResourceId};
+use beans_core::location::{Location, LocationEntry};
 use zip::ZipArchive;
 
 use crate::model::class::Class;
 
 pub fn process(
-    id: &ResourceId,
+    id: &Location,
     mut reader: impl Read + Seek,
-) -> Result<Option<impl Iterator<Item = Result<(ResourceId, Class), String>>>, String> {
+) -> Result<Option<impl Iterator<Item = Result<(Location, Class), String>>>, String> {
     // Local file header, empty archive, or ZIP64 end record.
     if !matches!(
         super::magic(&mut reader).map_err(|error| format!("{id:?}: {error}"))?,
@@ -31,7 +31,7 @@ pub fn process(
             return None;
         }
 
-        let entry_id = id.entry(ResourceEntry(entry.name().to_owned()));
+        let entry_id = id.entry(LocationEntry::Container(entry.name().to_owned()));
         crate::parser::parse(entry)
             .map_err(|error| format!("{entry_id:?}: {error}"))
             .map(|class| class.map(|class| (entry_id, class)))

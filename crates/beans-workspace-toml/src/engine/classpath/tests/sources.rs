@@ -1,12 +1,12 @@
 use beans_core::{
     classpath::Classpath,
-    resource::{ResourceId, ResourceRoot},
+    location::{Location, LocationEntry},
 };
 
 use super::{classpath, unit};
 
-fn file(path: &str) -> ResourceId {
-    ResourceId::new(ResourceRoot::File { path: path.into() })
+fn file(path: &str) -> Location {
+    Location::new(LocationEntry::File(path.into()))
 }
 
 #[test]
@@ -66,11 +66,10 @@ fn source_paths_are_not_uri_encoded() {
 #[test]
 fn virtual_resources_cannot_masquerade_as_local_files() {
     let classpath = classpath(unit(&["/project/src"]), &[]);
-    for provider in ["untitled", "beans-jvm", "file"] {
-        let resource = ResourceId::new(ResourceRoot::Virtual {
-            provider: provider.into(),
-            key: "/project/src/Future.java".into(),
-        });
+    for scheme in ["untitled", "beans-jvm", "file"] {
+        let resource = Location::new(LocationEntry::Virtual(format!(
+            "{scheme}:///project/src/Future.java"
+        )));
         assert!(!classpath.contains_source(&resource));
         assert!(!classpath.contains_class(&resource));
     }

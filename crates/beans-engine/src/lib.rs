@@ -8,6 +8,7 @@ use crossbeam_channel::{Receiver, Sender, unbounded};
 pub mod diagnostics;
 mod documents;
 mod features;
+pub mod storage;
 
 #[cfg(test)]
 mod tests;

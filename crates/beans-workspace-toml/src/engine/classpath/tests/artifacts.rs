@@ -1,17 +1,17 @@
 use beans_core::{
     classpath::Classpath,
-    resource::{ResourceEntry, ResourceId, ResourceRoot},
+    location::{Location, LocationEntry},
 };
 
 use super::{classpath, unit};
 use crate::model::Unit;
 
-fn file(path: &str) -> ResourceId {
-    ResourceId::new(ResourceRoot::File { path: path.into() })
+fn file(path: &str) -> Location {
+    Location::new(LocationEntry::File(path.into()))
 }
 
-fn entry(path: &str, name: &str) -> ResourceId {
-    file(path).entry(ResourceEntry(name.into()))
+fn entry(path: &str, name: &str) -> Location {
+    file(path).entry(LocationEntry::Container(name.into()))
 }
 
 #[test]
@@ -92,9 +92,10 @@ fn nested_entries_follow_the_explicitly_included_outer_artifact() {
         },
         &[],
     );
-    let nested =
-        entry("/project/app.zip", "lib/a.jar").entry(ResourceEntry("p/Feature.class".into()));
-    let other = entry("/other/app.zip", "lib/a.jar").entry(ResourceEntry("p/Feature.class".into()));
+    let nested = entry("/project/app.zip", "lib/a.jar")
+        .entry(LocationEntry::Container("p/Feature.class".into()));
+    let other = entry("/other/app.zip", "lib/a.jar")
+        .entry(LocationEntry::Container("p/Feature.class".into()));
     assert!(classpath.contains_class(&nested));
     assert!(!classpath.contains_class(&other));
 }

@@ -4,25 +4,25 @@ use crate::model::{
 };
 pub use crate::semantics::DeclarationHandle;
 use beans_core::resolution::TypeDefinitionQuery;
-use beans_core::{classpath::Classpath, names::Name, resource::ResourceId};
+use beans_core::{classpath::Classpath, location::Location, names::Name};
 use beans_core::{query_scope::QueryScope, revision::Revision};
 use beans_storage::RevisionedStorage;
 
 #[derive(Debug, Clone, Copy)]
 pub struct JavaTypeEntry<'a> {
-    pub source: &'a ResourceId,
+    pub source: &'a Location,
     pub file: &'a File,
     pub node_index: NodeIndex,
     pub declaration: &'a TypeDeclaration,
 }
 
 pub struct JavaQuery<'a> {
-    files: &'a RevisionedStorage<ResourceId, File>,
+    files: &'a RevisionedStorage<Location, File>,
     scope: QueryScope<'a>,
 }
 
 impl<'a> JavaQuery<'a> {
-    pub fn new(files: &'a RevisionedStorage<ResourceId, File>, scope: QueryScope<'a>) -> Self {
+    pub fn new(files: &'a RevisionedStorage<Location, File>, scope: QueryScope<'a>) -> Self {
         Self { files, scope }
     }
 
@@ -35,14 +35,14 @@ impl<'a> JavaQuery<'a> {
     }
 
     /// Reads a stored model at this revision, without applying classpath visibility.
-    pub fn file(&self, source: &ResourceId) -> Option<&'a File> {
+    pub fn file(&self, source: &Location) -> Option<&'a File> {
         self.files.get(self.scope.revision(), source)
     }
 
     /// The caller supplies a declaration index from this source at the query's revision.
     pub fn declaration_handle(
         &self,
-        source: &ResourceId,
+        source: &Location,
         node_index: NodeIndex,
     ) -> DeclarationHandle {
         DeclarationHandle::new(self.scope.revision(), source.clone(), node_index)
@@ -99,43 +99,40 @@ impl TypeDefinitionQuery<DeclarationHandle> for JavaQuery<'_> {
 mod tests {
     use super::*;
     use beans_core::classpath::Unrestricted;
-    use beans_core::resource::ResourceRoot;
+    use beans_core::location::LocationEntry;
 
     fn name(name: &str) -> Name {
         name.split('.').map(str::to_owned).collect()
     }
 
-    fn source_at(path: &str) -> ResourceId {
-        ResourceId::file(std::env::current_dir().unwrap().join(path))
+    fn source_at(path: &str) -> Location {
+        Location::file(std::env::current_dir().unwrap().join(path))
     }
 
-    fn virtual_source(key: &str) -> ResourceId {
-        ResourceId::new(ResourceRoot::Virtual {
-            provider: "test".into(),
-            key: key.into(),
-        })
+    fn virtual_source(key: &str) -> Location {
+        Location::new(LocationEntry::Virtual(key.into()))
     }
 
     struct NoSources;
 
     impl Classpath for NoSources {
-        fn contains_source(&self, _source: &ResourceId) -> bool {
+        fn contains_source(&self, _source: &Location) -> bool {
             false
         }
 
-        fn contains_class(&self, _source: &ResourceId) -> bool {
+        fn contains_class(&self, _source: &Location) -> bool {
             false
         }
     }
 
-    struct SelectedSource<'a>(&'a ResourceId);
+    struct SelectedSource<'a>(&'a Location);
 
     impl Classpath for SelectedSource<'_> {
-        fn contains_source(&self, source: &ResourceId) -> bool {
+        fn contains_source(&self, source: &Location) -> bool {
             source == self.0
         }
 
-        fn contains_class(&self, _source: &ResourceId) -> bool {
+        fn contains_class(&self, _source: &Location) -> bool {
             false
         }
     }
@@ -215,7 +212,7 @@ mod tests {
         assert!(
             found
                 .iter()
-                .all(|entry| matches!(entry.source.root, ResourceRoot::File { .. }))
+                .all(|entry| matches!(entry.source.entries.as_slice(), [LocationEntry::File(_)]))
         );
     }
 
@@ -225,7 +222,7 @@ mod tests {
         let revision = Revision::new(1);
         files.put(
             revision,
-            ResourceId::file("src/Example.class"),
+            Location::file("src/Example.class"),
             crate::lower_into("package p; class Example {}"),
         );
         let classpath = Unrestricted;
@@ -285,7 +282,7 @@ mod tests {
             source_at("src/Target.java"),
             source_at("elsewhere/Target.java"),
             virtual_source("untitled:Target.java"),
-            ResourceId::file("src/Target.class"),
+            Location::file("src/Target.class"),
         ] {
             files.put(
                 revision,

@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use beans_core::resource::ResourceId;
+use beans_core::location::Location;
 use beans_workspace_toml::{LoadError, load};
 use lsp_types::{InitializeParams, Uri};
 use url::Url;
@@ -66,7 +66,7 @@ impl Features {
             let Ok(document_uri) = uri.as_str().parse() else {
                 continue;
             };
-            self.engine.process(ResourceId::file(path), &text);
+            self.engine.process(Location::file(path), &text);
             self.workspace_documents.insert(
                 uri.as_str().into(),
                 OpenDocument::new(document_uri, "java".into(), 0, text),

@@ -3,7 +3,7 @@ use crate::model::{
     nodes::{NodeIndex, NodeKind},
 };
 use beans_core::revision::Revision;
-use beans_core::{names::Name, resource::ResourceId};
+use beans_core::{location::Location, names::Name};
 
 use crate::semantics::resolution::{
     Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, resolve,
@@ -29,7 +29,7 @@ fn resolve_field(file: &File, field_name: &str) -> Result<TypeCandidate, Resolut
             _ => None,
         })
         .expect("expected field");
-    let source = ResourceId::file("/Test.java");
+    let source = Location::file("/Test.java");
     let ctx = Context::new(
         Revision::new(1),
         &source,

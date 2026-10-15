@@ -1,6 +1,6 @@
 use beans_core::{
+    location::Location,
     ranges::{ByteRange, Spanned},
-    resource::ResourceId,
     revision::Revision,
 };
 
@@ -14,7 +14,7 @@ use super::{Diagnostic, DiagnosticSeverity};
 pub(super) fn collect(
     file: &File,
     revision: Revision,
-    source: &ResourceId,
+    source: &Location,
     definitions: &dyn TypeCandidateQuery,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();

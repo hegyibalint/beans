@@ -1,7 +1,7 @@
 use beans_core::{
     features::navigation::{DefinitionProvider, DefinitionRequest, NavigationResult},
+    location::Location,
     ranges::ByteRange,
-    resource::ResourceId,
     revision::Revision,
     source::SourceSpan,
 };
@@ -82,7 +82,7 @@ fn type_parameter_declaration_at(file: &File, offset: usize) -> Option<ByteRange
 fn resolve_field_type_at(
     file: &File,
     revision: Revision,
-    source: &ResourceId,
+    source: &Location,
     offset: usize,
     definitions: Option<&dyn TypeCandidateQuery>,
 ) -> Option<(ByteRange, Result<TypeCandidate, ResolutionFailure>)> {
@@ -142,23 +142,20 @@ fn resolve_field_type_at(
 mod tests {
     use super::*;
     use crate::{lowering::lower_into, semantics::resolution::ResolutionFailure};
-    use beans_core::resource::ResourceRoot;
+    use beans_core::location::LocationEntry;
     use beans_core::{
         classpath::Unrestricted, names::Name, query_scope::QueryScope, ranges::ByteRange,
     };
     use beans_platform_jvm::JvmPlatform;
 
-    fn source_id() -> ResourceId {
-        ResourceId::new(ResourceRoot::Virtual {
-            provider: "test".into(),
-            key: "untitled:Example.java".into(),
-        })
+    fn source_id() -> Location {
+        Location::new(LocationEntry::Virtual("untitled:Example.java".into()))
     }
 
     fn definition_at(
         java: &JavaLanguage,
         revision: Revision,
-        source: &ResourceId,
+        source: &Location,
         offset: usize,
     ) -> Option<SourceSpan> {
         java.goto_definition(
@@ -173,7 +170,7 @@ mod tests {
 
     fn at<'a>(
         file: &'a File,
-        source: &'a ResourceId,
+        source: &'a Location,
         text: &str,
         type_name: &str,
     ) -> Option<Result<TypeCandidate, ResolutionFailure>> {

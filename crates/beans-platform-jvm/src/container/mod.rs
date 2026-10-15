@@ -29,7 +29,7 @@ fn magic(reader: &mut (impl Read + Seek)) -> Result<Option<[u8; 4]>, String> {
 mod tests {
     use std::io::Cursor;
 
-    use beans_core::resource::ResourceId;
+    use beans_core::location::Location;
 
     use super::*;
 
@@ -48,19 +48,19 @@ mod tests {
             reader.set_position(7);
 
             assert!(
-                class::process(&ResourceId::file("input"), &mut reader)
+                class::process(&Location::file("input"), &mut reader)
                     .unwrap()
                     .is_none()
             );
             assert_eq!(reader.position(), 7);
             assert!(
-                jar::process(&ResourceId::file("input"), &mut reader)
+                jar::process(&Location::file("input"), &mut reader)
                     .unwrap()
                     .is_none()
             );
             assert_eq!(reader.position(), 7);
             assert!(
-                jimage::process(&ResourceId::file("input"), &mut reader)
+                jimage::process(&Location::file("input"), &mut reader)
                     .unwrap()
                     .is_none()
             );
@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn readers_decline_other_container_formats() {
-        let id = ResourceId::file("input");
+        let id = Location::file("input");
         let class_magic = [0xCA, 0xFE, 0xBA, 0xBE];
         let jar_magic = *b"PK\x03\x04";
         let image_magic = [0xDA, 0xDA, 0xFE, 0xCA];
@@ -122,8 +122,8 @@ mod tests {
         }
 
         let mut reader = BrokenReader(Cursor::new(Vec::new()));
-        assert!(class::process(&ResourceId::file("input"), &mut reader).is_err());
-        assert!(jar::process(&ResourceId::file("input"), &mut reader).is_err());
-        assert!(jimage::process(&ResourceId::file("input"), &mut reader).is_err());
+        assert!(class::process(&Location::file("input"), &mut reader).is_err());
+        assert!(jar::process(&Location::file("input"), &mut reader).is_err());
+        assert!(jimage::process(&Location::file("input"), &mut reader).is_err());
     }
 }

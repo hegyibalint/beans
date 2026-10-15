@@ -1,11 +1,11 @@
-use beans_core::{features::HoverRequest, resource::ResourceId, revision::Revision};
+use beans_core::{features::HoverRequest, location::Location, revision::Revision};
 
 use crate::Engine;
 
 #[test]
 fn hover_only_requires_a_request() {
     let mut engine = Engine::new();
-    let source = ResourceId::file("/src/Example.java");
+    let source = Location::file("/src/Example.java");
     let contents = "class C extends Target {}";
     let model = engine.java.process(contents);
     engine.revision = Revision::new(1);
@@ -27,7 +27,7 @@ fn hover_only_requires_a_request() {
 #[test]
 fn hover_uses_the_engines_current_revision() {
     let mut engine = Engine::new();
-    let source = ResourceId::file("/src/Example.java");
+    let source = Location::file("/src/Example.java");
     let versions = [
         (Revision::new(1), "class C extends Former {}", "Former"),
         (Revision::new(2), "class C extends Latest {}", "Latest"),
@@ -53,7 +53,7 @@ fn hover_uses_the_engines_current_revision() {
 #[test]
 fn hover_of_an_unknown_resource_returns_none() {
     let engine = Engine::new();
-    let source = ResourceId::file("/src/Missing.java");
+    let source = Location::file("/src/Missing.java");
 
     assert!(
         engine

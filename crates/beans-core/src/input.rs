@@ -1,21 +1,19 @@
-use crate::resource::ResourceId;
+use crate::location::Location;
 
 #[derive(Debug, Clone)]
 pub struct Input<'a> {
-    pub resource: ResourceId,
+    pub resource: Location,
     pub contents: &'a [u8],
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resource::{ResourceEntry, ResourceRoot};
+    use crate::location::LocationEntry;
 
     #[test]
     fn different_contents_can_belong_to_the_same_resource() {
-        let resource = ResourceId::new(ResourceRoot::File {
-            path: "/src/Example.java".into(),
-        });
+        let resource = Location::new(LocationEntry::File("/src/Example.java".into()));
         let before = Input {
             resource: resource.clone(),
             contents: b"class Example {}",
@@ -32,10 +30,8 @@ mod tests {
     fn nested_resources_can_carry_binary_contents() {
         let contents = [0xca, 0xfe, 0xba, 0xbe];
         let input = Input {
-            resource: ResourceId::new(ResourceRoot::File {
-                path: "/library.jar".into(),
-            })
-            .entry(ResourceEntry("Example.class".into())),
+            resource: Location::new(LocationEntry::File("/library.jar".into()))
+                .entry(LocationEntry::Container("Example.class".into())),
             contents: &contents,
         };
         assert_eq!(input.contents.as_ptr(), contents.as_ptr());

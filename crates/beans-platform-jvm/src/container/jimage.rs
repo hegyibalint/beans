@@ -3,7 +3,7 @@ use std::{
     io::{Read, Seek, SeekFrom},
 };
 
-use beans_core::resource::{ResourceEntry, ResourceId};
+use beans_core::location::{Location, LocationEntry};
 
 use crate::model::class::Class;
 
@@ -95,7 +95,7 @@ fn string(strings: &[u8], offset: u64) -> Result<Cow<'_, str>, String> {
 }
 
 #[derive(Debug)]
-struct Location {
+struct ImageLocation {
     module: u64,
     parent: u64,
     base: u64,
@@ -106,15 +106,15 @@ struct Location {
     preview_flags: u64,
 }
 
-impl Location {
+impl ImageLocation {
     fn class(
         &self,
-        id: &ResourceId,
+        id: &Location,
         reader: &mut (impl Read + Seek),
         strings: &[u8],
         resources_start: u64,
         file_size: u64,
-    ) -> Result<Option<(ResourceId, Class)>, String> {
+    ) -> Result<Option<(Location, Class)>, String> {
         if self.compressed_size != 0 {
             return Err("compressed jimage resources are unsupported".into());
         }
@@ -137,7 +137,7 @@ impl Location {
         }
         name.push_str(&base);
         name.push_str(".class");
-        let entry_id = id.entry(ResourceEntry(name));
+        let entry_id = id.entry(LocationEntry::Container(name));
 
         // Location offsets are relative to the resource section, not the file.
         let start = resources_start
@@ -165,7 +165,7 @@ impl Location {
     }
 
     fn parse(mut reader: impl Read) -> Result<Self, String> {
-        // Omitted attributes default to zero. See OpenJDK imageFile.hpp, ImageLocation.
+        // Omitted attributes default to zero. See OpenJDK imageFile.hpp, Location.
         let mut attributes = [0; 9];
         loop {
             let mut tag = [0];
@@ -208,9 +208,9 @@ impl Location {
 }
 
 pub fn process(
-    id: &ResourceId,
+    id: &Location,
     mut reader: impl Read + Seek,
-) -> Result<Option<impl Iterator<Item = Result<(ResourceId, Class), String>>>, String> {
+) -> Result<Option<impl Iterator<Item = Result<(Location, Class), String>>>, String> {
     if !matches!(
         super::magic(&mut reader).map_err(|error| format!("{id:?}: {error}"))?,
         Some([0xCA, 0xFE, 0xDA, 0xDA] | [0xDA, 0xDA, 0xFE, 0xCA])
@@ -271,7 +271,7 @@ pub fn process(
                 let bytes = index[locations_start..strings_start]
                     .get(offset as usize..)
                     .ok_or("jimage location offset out of bounds")?;
-                let location = Location::parse(bytes)?;
+                let location = ImageLocation::parse(bytes)?;
                 location.class(
                     id,
                     &mut reader,
@@ -419,9 +419,9 @@ mod tests {
     fn recognized_images_never_fall_back() {
         for encode in [u32::to_le_bytes, u32::to_be_bytes] {
             let truncated = encode(0xCAFEDADA);
-            assert!(process(&ResourceId::file("modules"), Cursor::new(truncated)).is_err());
+            assert!(process(&Location::file("modules"), Cursor::new(truncated)).is_err());
             let unsupported = header_bytes(encode, 0x00020000);
-            assert!(process(&ResourceId::file("modules"), Cursor::new(unsupported)).is_err());
+            assert!(process(&Location::file("modules"), Cursor::new(unsupported)).is_err());
         }
     }
 
@@ -433,7 +433,7 @@ mod tests {
             .expect("Temurin JDK 21 is required; run mise install");
         let image = home.join("lib/modules");
         let file = std::fs::File::open(&image).unwrap();
-        let id = ResourceId::file(image);
+        let id = Location::file(image);
         let entries = process(&id, file).unwrap().unwrap();
         let mut count = 0;
         let mut found_object = false;
@@ -443,7 +443,9 @@ mod tests {
             if class.name == "java/lang/Object" {
                 assert_eq!(
                     entry_id,
-                    id.entry(ResourceEntry("/java.base/java/lang/Object.class".into()))
+                    id.entry(LocationEntry::Container(
+                        "/java.base/java/lang/Object.class".into()
+                    ))
                 );
                 found_object = true;
             }
@@ -454,7 +456,7 @@ mod tests {
 
     #[test]
     fn reads_the_example_location() {
-        let location = Location::parse(location_bytes().as_slice()).unwrap();
+        let location = ImageLocation::parse(location_bytes().as_slice()).unwrap();
         assert_eq!(location.module, 1);
         assert_eq!(location.parent, 11);
         assert_eq!(location.base, 21);
@@ -468,17 +470,17 @@ mod tests {
     #[test]
     fn reads_eight_byte_values_and_preview_flags() {
         let bytes = [0x2F, 1, 2, 3, 4, 5, 6, 7, 8, 0x40, 3, 0];
-        let location = Location::parse(bytes.as_slice()).unwrap();
+        let location = ImageLocation::parse(bytes.as_slice()).unwrap();
         assert_eq!(location.resource_offset, 0x0102030405060708);
         assert_eq!(location.preview_flags, 3);
     }
 
     #[test]
     fn rejects_invalid_and_truncated_locations() {
-        assert!(Location::parse([0x48, 1, 0].as_slice()).is_err());
+        assert!(ImageLocation::parse([0x48, 1, 0].as_slice()).is_err());
         let bytes = location_bytes();
         for length in 0..bytes.len() {
-            assert!(Location::parse(&bytes[..length]).is_err());
+            assert!(ImageLocation::parse(&bytes[..length]).is_err());
         }
     }
 
@@ -489,7 +491,7 @@ mod tests {
             let locations_size = Header::parse(bytes.as_slice()).unwrap().locations_size;
             for offset in [locations_size, locations_size + 1, u32::MAX] {
                 bytes[40..44].copy_from_slice(&encode(offset));
-                let id = ResourceId::file("modules");
+                let id = Location::file("modules");
                 let mut entries = process(&id, Cursor::new(&bytes)).unwrap().unwrap();
                 assert!(entries.next().unwrap().is_err());
             }
@@ -500,7 +502,7 @@ mod tests {
     fn rejects_compressed_resources() {
         for encode in [u32::to_le_bytes, u32::to_be_bytes] {
             let bytes = image_bytes(encode, 42, 0, class_bytes().len() as u64);
-            let id = ResourceId::file("modules");
+            let id = Location::file("modules");
             let mut entries = process(&id, Cursor::new(bytes)).unwrap().unwrap();
             let error = entries.next().unwrap().err().unwrap();
             assert!(error.contains("location 1: compressed jimage resources are unsupported"));
@@ -512,13 +514,16 @@ mod tests {
         for encode in [u32::to_le_bytes, u32::to_be_bytes] {
             let mut bytes = image_bytes(encode, 0, 0, class_bytes().len() as u64);
             bytes.extend([0xAA; 16]);
-            let id = ResourceId::file("outer.zip").entry(ResourceEntry("lib/modules".into()));
+            let id =
+                Location::file("outer.zip").entry(LocationEntry::Container("lib/modules".into()));
             let mut entries = process(&id, Cursor::new(bytes)).unwrap().unwrap();
             let (entry_id, class) = entries.next().unwrap().unwrap();
             assert_eq!(class.name, "java/lang/Object");
             assert_eq!(
                 entry_id,
-                id.entry(ResourceEntry("/java.base/java/lang/Object.class".into()))
+                id.entry(LocationEntry::Container(
+                    "/java.base/java/lang/Object.class".into()
+                ))
             );
             assert!(entries.next().is_none());
         }
@@ -528,7 +533,7 @@ mod tests {
     fn rejects_truncated_images() {
         let bytes = image_bytes(u32::to_le_bytes, 0, 0, class_bytes().len() as u64);
         for length in 0..bytes.len() {
-            match process(&ResourceId::file("modules"), Cursor::new(&bytes[..length])) {
+            match process(&Location::file("modules"), Cursor::new(&bytes[..length])) {
                 Err(_) => {}
                 Ok(None) => assert!(length < 4),
                 Ok(Some(mut entries)) => assert!(entries.next().unwrap().is_err()),
@@ -540,7 +545,7 @@ mod tests {
     fn rejects_resource_range_overflow() {
         for (offset, size) in [(u64::MAX, 1), (0, u64::MAX)] {
             let bytes = image_bytes(u32::to_le_bytes, 0, offset, size);
-            let id = ResourceId::file("modules");
+            let id = Location::file("modules");
             let mut entries = process(&id, Cursor::new(bytes)).unwrap().unwrap();
             assert!(entries.next().unwrap().err().unwrap().contains("overflow"));
         }
@@ -563,11 +568,11 @@ mod tests {
     #[test]
     fn skips_non_class_resources() {
         let strings = b"\0java.base\0java/lang\0Object\0txt\0";
-        let mut location = Location::parse(location_bytes().as_slice()).unwrap();
+        let mut location = ImageLocation::parse(location_bytes().as_slice()).unwrap();
         location.module = u64::MAX;
         let result = location
             .class(
-                &ResourceId::file("modules"),
+                &Location::file("modules"),
                 &mut Cursor::new([]),
                 strings,
                 0,

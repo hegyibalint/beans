@@ -1,18 +1,18 @@
 use std::{borrow::Cow, fs};
 
 use beans_core::{
-    resource::{ResourceId, ResourceRoot},
+    location::{Location, LocationEntry},
     source::SourceSpan,
 };
-use lsp_types::{Location, Range, Uri};
+use lsp_types::{Location as LspSourceSpan, Range, Uri};
 use url::Url;
 
 use super::Features;
 use crate::model::open_document::OpenDocument;
 
 impl Features {
-    pub(crate) fn location_for_span(&self, span: SourceSpan) -> Option<Location> {
-        if !span.resource.entries.is_empty() {
+    pub(crate) fn location_for_span(&self, span: SourceSpan) -> Option<LspSourceSpan> {
+        if span.resource.entries.len() != 1 {
             return None;
         }
         let document = self
@@ -23,14 +23,14 @@ impl Features {
         let (uri, text) = if let Some(document) = document {
             (document.uri.clone(), Cow::Borrowed(document.text.as_str()))
         } else {
-            let ResourceRoot::File { path } = &span.resource.root else {
+            let Some(LocationEntry::File(path)) = span.resource.entries.first() else {
                 return None;
             };
             let uri = Url::from_file_path(path).ok()?.as_str().parse().ok()?;
             (uri, Cow::Owned(fs::read_to_string(path).ok()?))
         };
 
-        Some(Location::new(
+        Some(LspSourceSpan::new(
             uri,
             Range::new(
                 OpenDocument::position_in(&text, span.range.start())?,
@@ -40,18 +40,15 @@ impl Features {
     }
 }
 
-pub(super) fn resource_for_uri(uri: &Uri) -> ResourceId {
+pub(super) fn resource_for_uri(uri: &Uri) -> Location {
     if let Some(path) = Url::parse(uri.as_str())
         .ok()
         .filter(|uri| uri.scheme() == "file")
         .and_then(|uri| uri.to_file_path().ok())
     {
-        return ResourceId::file(path);
+        return Location::file(path);
     }
-    ResourceId::new(ResourceRoot::Virtual {
-        provider: "lsp".into(),
-        key: uri.as_str().into(),
-    })
+    Location::new(LocationEntry::Virtual(uri.as_str().into()))
 }
 
 #[cfg(test)]
@@ -62,7 +59,7 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use beans_core::{ranges::ByteRange, resource::ResourceEntry, source::SourceSpan};
+    use beans_core::{location::LocationEntry, ranges::ByteRange, source::SourceSpan};
     use beans_testing::template::Template;
     use lsp_types::{Position, Range};
 
@@ -71,10 +68,7 @@ mod tests {
     #[test]
     fn file_uris_become_file_resources() {
         let uri = "file:///src/My%20Type.java".parse().unwrap();
-        assert_eq!(
-            resource_for_uri(&uri),
-            ResourceId::file("/src/My Type.java")
-        );
+        assert_eq!(resource_for_uri(&uri), Location::file("/src/My Type.java"));
     }
 
     #[test]
@@ -82,10 +76,7 @@ mod tests {
         let uri: Uri = "BEANS-jvm:///library/Use.class".parse().unwrap();
         assert_eq!(
             resource_for_uri(&uri),
-            ResourceId::new(ResourceRoot::Virtual {
-                provider: "lsp".into(),
-                key: uri.as_str().into(),
-            })
+            Location::new(LocationEntry::Virtual(uri.as_str().into()))
         );
     }
 
@@ -100,7 +91,7 @@ mod tests {
 
         let location = features
             .location_for_span(SourceSpan::new(
-                ResourceId::file("/src/Target.java"),
+                Location::file("/src/Target.java"),
                 ByteRange::new(6, 12),
             ))
             .unwrap();
@@ -114,7 +105,8 @@ mod tests {
 
     #[test]
     fn nested_resources_have_no_source_location_yet() {
-        let source = ResourceId::file("/library.jar").entry(ResourceEntry("Target.class".into()));
+        let source =
+            Location::file("/library.jar").entry(LocationEntry::Container("Target.class".into()));
         assert!(
             Features::default()
                 .location_for_span(SourceSpan::new(source, ByteRange::new(0, 1)))
@@ -146,7 +138,7 @@ mod tests {
 
         let location = Features::default()
             .location_for_span(SourceSpan::new(
-                ResourceId::file(path),
+                Location::file(path),
                 ByteRange::new(target.start, target.end),
             ))
             .unwrap();

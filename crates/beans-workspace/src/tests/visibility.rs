@@ -1,15 +1,13 @@
 use beans_core::{
     classpath::Classpath,
-    resource::{ResourceEntry, ResourceId, ResourceRoot},
+    location::{Location, LocationEntry},
 };
 
 use crate::{Workspace, Workspaces};
 
-fn library_entry() -> ResourceId {
-    ResourceId::new(ResourceRoot::File {
-        path: "/library.jar".into(),
-    })
-    .entry(ResourceEntry("Example.class".into()))
+fn library_entry() -> Location {
+    Location::new(LocationEntry::File("/library.jar".into()))
+        .entry(LocationEntry::Container("Example.class".into()))
 }
 
 #[test]
@@ -30,14 +28,14 @@ fn unconfigured_workspaces_supply_unrestricted_visibility_for_document_uris() {
 fn configured_workspaces_forward_the_document_uri_and_borrow_backend_visibility() {
     struct SelectedSource {
         document: String,
-        visible: ResourceId,
+        visible: Location,
     }
     impl Classpath for SelectedSource {
-        fn contains_source(&self, _source: &ResourceId) -> bool {
+        fn contains_source(&self, _source: &Location) -> bool {
             false
         }
 
-        fn contains_class(&self, source: &ResourceId) -> bool {
+        fn contains_class(&self, source: &Location) -> bool {
             source == &self.visible
         }
     }
@@ -59,8 +57,8 @@ fn configured_workspaces_forward_the_document_uri_and_borrow_backend_visibility(
     assert!(!classpath.contains_source(&visible));
     assert!(classpath.contains_class(&visible));
     assert!(
-        !classpath.contains_class(&ResourceId::new(ResourceRoot::File {
-            path: "/unrelated/Other.java".into(),
-        }))
+        !classpath.contains_class(&Location::new(LocationEntry::File(
+            "/unrelated/Other.java".into()
+        )))
     );
 }

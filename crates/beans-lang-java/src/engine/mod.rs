@@ -4,7 +4,7 @@ use std::path::Path;
 
 use self::query::JavaQuery;
 use crate::{lowering::lower_into, model::File};
-use beans_core::resource::ResourceId;
+use beans_core::location::Location;
 use beans_core::{query_scope::QueryScope, revision::Revision};
 use beans_storage::{RevisionEntry, RevisionedStorage};
 
@@ -12,7 +12,7 @@ pub mod query;
 
 #[derive(Default)]
 pub struct JavaLanguage {
-    files: RevisionedStorage<ResourceId, File>,
+    files: RevisionedStorage<Location, File>,
 }
 
 impl JavaLanguage {
@@ -30,11 +30,11 @@ impl JavaLanguage {
     }
 
     /// Reads a stored Java file at the requested revision.
-    pub fn file(&self, revision: Revision, source: &ResourceId) -> Option<&File> {
+    pub fn file(&self, revision: Revision, source: &Location) -> Option<&File> {
         self.files.get(revision, source)
     }
 
-    pub fn remove(&mut self, revision: Revision, source: ResourceId) {
+    pub fn remove(&mut self, revision: Revision, source: Location) {
         self.files.remove(revision, source);
     }
 
@@ -42,8 +42,8 @@ impl JavaLanguage {
         &mut self,
         revision: Revision,
         model: File,
-        source: ResourceId,
-    ) -> RevisionEntry<ResourceId> {
+        source: Location,
+    ) -> RevisionEntry<Location> {
         self.files.put(revision, source, model)
     }
 
@@ -51,7 +51,7 @@ impl JavaLanguage {
         JavaQuery::new(&self.files, scope)
     }
 
-    pub fn analyse(&self, _entry: &RevisionEntry<ResourceId>, _scope: QueryScope<'_>) {
+    pub fn analyse(&self, _entry: &RevisionEntry<Location>, _scope: QueryScope<'_>) {
         todo!("analysis is not implemented")
     }
 }
@@ -84,7 +84,7 @@ mod tests {
     fn store_returns_the_address_of_the_supplied_model() {
         let mut engine = JavaLanguage::default();
         let revision = Revision::default();
-        let source = ResourceId::file("/Example.java");
+        let source = Location::file("/Example.java");
         let mut model = File::new();
         model.package_name = Name::new(vec!["example".into()]);
 

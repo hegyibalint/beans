@@ -11,14 +11,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use beans_core::{resource::ResourceId, revision::Revision};
+use beans_core::{location::Location, revision::Revision};
 use beans_storage::RevisionedStorage;
 
 use crate::model::class::Class;
 
 #[derive(Default)]
 pub struct JvmPlatform {
-    classes: RevisionedStorage<ResourceId, Class>,
+    classes: RevisionedStorage<Location, Class>,
 }
 
 impl JvmPlatform {
@@ -36,7 +36,7 @@ impl JvmPlatform {
     pub fn process(&mut self, revision: Revision, path: PathBuf) -> Result<(), String> {
         let mut file =
             std::fs::File::open(&path).map_err(|error| format!("{}: {error}", path.display()))?;
-        let resource_id = ResourceId::file(path);
+        let resource_id = Location::file(path);
 
         if let Some(entries) = container::class::process(&resource_id, &mut file)? {
             return self.store(revision, entries);
@@ -54,7 +54,7 @@ impl JvmPlatform {
     fn store(
         &mut self,
         revision: Revision,
-        entries: impl Iterator<Item = Result<(ResourceId, Class), String>>,
+        entries: impl Iterator<Item = Result<(Location, Class), String>>,
     ) -> Result<(), String> {
         for entry in entries {
             let (id, class) = entry?;

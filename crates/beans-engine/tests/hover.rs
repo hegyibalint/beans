@@ -1,16 +1,13 @@
 use beans_core::{
     features::HoverRequest,
-    resource::{ResourceId, ResourceRoot},
+    location::{Location, LocationEntry},
 };
 use beans_engine::Engine;
 
 #[test]
 fn java_hover_reaches_the_shared_feature_contract() {
     let mut engine = Engine::new();
-    let source = ResourceId::new(ResourceRoot::Virtual {
-        provider: "test".into(),
-        key: "untitled:Example.java".into(),
-    });
+    let source = Location::new(LocationEntry::Virtual("untitled:Example.java".into()));
     let contents = "class C extends Target {}";
     engine.process_document(source.clone(), "java", contents);
 
@@ -28,7 +25,7 @@ fn java_hover_reaches_the_shared_feature_contract() {
     assert!(
         engine
             .feature_hover(&HoverRequest {
-                source: &ResourceId::file("/README.md"),
+                source: &Location::file("/README.md"),
                 contents,
                 offset: 16,
             })

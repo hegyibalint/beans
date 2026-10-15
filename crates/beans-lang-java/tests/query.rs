@@ -1,6 +1,6 @@
 use beans_core::{
     classpath::{Classpath, Unrestricted},
-    resource::ResourceId,
+    location::Location,
 };
 use beans_core::{query_scope::QueryScope, revision::Revision};
 use beans_lang_java::{
@@ -20,7 +20,7 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
     let entry = engine.store(
         revision,
         lower_into("package app; class Target {} class Use { Target target; }"),
-        ResourceId::file("/src/app/Use.java"),
+        Location::file("/src/app/Use.java"),
     );
     let classpath = Unrestricted;
     let query = engine.query(QueryScope::new(entry.revision, &classpath));
@@ -58,8 +58,8 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
 fn an_imported_type_resolves_to_another_stored_source_file() {
     let mut engine = JavaLanguage::default();
     let revision = Revision::new(1);
-    let use_source = ResourceId::file("/src/p/Use.java");
-    let target_source = ResourceId::file("/src/q/Target.java");
+    let use_source = Location::file("/src/p/Use.java");
+    let target_source = Location::file("/src/q/Target.java");
     engine.store(
         revision,
         lower_into("package p; import q.Target; class Use { Target field; }"),

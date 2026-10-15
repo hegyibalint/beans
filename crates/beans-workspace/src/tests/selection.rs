@@ -1,19 +1,16 @@
 use beans_core::{
     classpath::{Classpath, Unrestricted},
-    resource::{ResourceEntry, ResourceId, ResourceRoot},
+    location::{Location, LocationEntry},
 };
 
 use crate::{Workspace, Workspaces};
 
-fn entry(name: &str) -> ResourceId {
-    ResourceId::new(ResourceRoot::Virtual {
-        provider: "test".into(),
-        key: name.into(),
-    })
-    .entry(ResourceEntry("Example.class".into()))
+fn entry(name: &str) -> Location {
+    Location::new(LocationEntry::Virtual(name.into()))
+        .entry(LocationEntry::Container("Example.class".into()))
 }
 
-struct Visible(ResourceId);
+struct Visible(Location);
 
 impl Visible {
     fn new(name: &str) -> Self {
@@ -22,11 +19,11 @@ impl Visible {
 }
 
 impl Classpath for Visible {
-    fn contains_source(&self, _source: &ResourceId) -> bool {
+    fn contains_source(&self, _source: &Location) -> bool {
         false
     }
 
-    fn contains_class(&self, source: &ResourceId) -> bool {
+    fn contains_class(&self, source: &Location) -> bool {
         source == &self.0
     }
 }
