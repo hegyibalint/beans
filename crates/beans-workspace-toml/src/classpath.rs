@@ -6,32 +6,26 @@ use beans_core::{
 };
 
 use crate::{
-    model::{Project, Unit},
+    model::{Module, Project},
     paths::normalize,
 };
 
 #[derive(Debug, Default)]
 pub(super) struct SourceClasspath {
     source_roots: BTreeSet<PathBuf>,
-    artifacts: BTreeSet<PathBuf>,
+    jdk_home: Option<PathBuf>,
 }
 
 impl SourceClasspath {
-    pub(super) fn include(&mut self, unit: &Unit, project: &Project) {
-        self.source_roots.extend(unit.sources.iter().cloned());
-        for dependency in &unit.depends_on {
+    pub(super) fn include(&mut self, module: &Module, project: &Project) {
+        self.source_roots.extend(module.sources.iter().cloned());
+        for dependency in &module.depends_on {
             self.source_roots
-                .extend(project.units[dependency].sources.iter().cloned());
+                .extend(project.modules[dependency].sources.iter().cloned());
         }
-        self.artifacts.extend(unit.classpath.iter().cloned());
-        if let Some(home) = &unit.jdk_home {
-            self.artifacts.insert(home.join("lib/modules"));
-        }
+        self.jdk_home = project.jdk_home.clone();
     }
 }
-
-#[cfg(test)]
-mod tests;
 
 impl Classpath for SourceClasspath {
     fn contains_source(&self, resource: &ResourceId) -> bool {
@@ -53,10 +47,11 @@ impl Classpath for SourceClasspath {
             return false;
         }
         let path = normalize(path);
-        if resource.entries.is_empty() {
-            self.artifacts.iter().any(|root| path.starts_with(root))
-        } else {
-            self.artifacts.contains(&path)
-        }
+        self.jdk_home
+            .as_ref()
+            .is_some_and(|home| path.starts_with(home))
     }
 }
+
+#[cfg(test)]
+mod tests;

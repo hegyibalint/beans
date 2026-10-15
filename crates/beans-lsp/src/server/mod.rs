@@ -26,6 +26,8 @@ enum Lifecycle {
 pub struct Server {
     lifecycle: Lifecycle,
     features: Features,
+    #[cfg(test)]
+    test_workspace: Option<tempfile::TempDir>,
 }
 
 impl Server {
@@ -39,7 +41,7 @@ impl Server {
             log.record("incoming", &message)?;
             match message {
                 Message::Request(request) => {
-                    let response: Message = self.respond(request).into();
+                    let response: Message = self.respond(request).map_err(io::Error::other)?.into();
                     log.record("outgoing", &response)?;
                     connection.sender.send(response).map_err(io::Error::other)?;
                 }

@@ -8,15 +8,20 @@ use super::JavaFeatureContext;
 pub fn hover<Q: JavaModelQuery>(
     context: &JavaFeatureContext<'_, Q>,
     request: &HoverRequest<'_>,
-) -> Option<HoverResponse> {
-    let file = context.models.java_file(request.source)?;
-    let occurrence = type_reference_at(file, request.offset)?;
-    Some(HoverResponse::new(
-        request
-            .contents
-            .get(occurrence.type_range.start()..occurrence.type_range.end())?,
-        occurrence.range,
-    ))
+) -> Result<Option<HoverResponse>, String> {
+    let Some(file) = context.models.java_file(request.source)? else {
+        return Ok(None);
+    };
+    let Some(occurrence) = type_reference_at(&file, request.offset) else {
+        return Ok(None);
+    };
+    let Some(contents) = request
+        .contents
+        .get(occurrence.type_range.start()..occurrence.type_range.end())
+    else {
+        return Ok(None);
+    };
+    Ok(Some(HoverResponse::new(contents, occurrence.range)))
 }
 
 #[cfg(test)]
@@ -56,6 +61,7 @@ mod tests {
                 offset,
             },
         )
+        .unwrap()
     }
 
     #[test]
@@ -78,6 +84,7 @@ mod tests {
                 offset: contents.find("Supplied").unwrap(),
             },
         )
+        .unwrap()
         .unwrap();
 
         assert_eq!(response.contents(), "Supplied");

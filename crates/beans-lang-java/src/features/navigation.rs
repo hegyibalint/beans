@@ -1,6 +1,7 @@
 use beans_core::{
     features::navigation::{DefinitionRequest, NavigationResult},
     ranges::ByteRange,
+    resolution::TypeDefinitionQuery,
     resource::ResourceId,
     revision::Revision,
     source::SourceSpan,
@@ -13,8 +14,7 @@ use crate::{
     model_query::JavaModelQuery,
     query::JavaQuery,
     semantics::resolution::{
-        Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate,
-        query::{ResolutionQuery, TypeCandidateQuery},
+        Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, query::ResolutionQuery,
         resolve,
     },
 };
@@ -25,46 +25,59 @@ use super::JavaFeatureContext;
 pub fn goto_definition<Q: JavaModelQuery + JvmModelQuery>(
     context: &JavaFeatureContext<'_, Q>,
     request: &DefinitionRequest<'_>,
-) -> Option<NavigationResult> {
+) -> Result<Option<NavigationResult>, String> {
     let source = request.source;
     let offset = request.offset;
     let java = JavaQuery::new(context.models, context.scope);
     let definitions = ResolutionQuery::new(&java, context.models);
-    let file = context.models.java_file(source)?;
-    if let Some(range) = type_parameter_declaration_at(file, offset) {
-        return Some(NavigationResult {
+    let Some(file) = context.models.java_file(source)? else {
+        return Ok(None);
+    };
+    if let Some(range) = type_parameter_declaration_at(&file, offset) {
+        return Ok(Some(NavigationResult {
+            revision: context.scope.revision(),
             origin_range: range,
             target: SourceSpan::new(source.clone(), range),
-        });
+        }));
     }
-    let (origin_range, candidate) = resolve_field_type_at(
-        file,
+    let Some((origin_range, candidate)) = resolve_field_type_at(
+        &file,
         context.scope.revision(),
         source,
         offset,
         Some(&definitions),
-    )?;
-    let target = match candidate.ok()? {
+    ) else {
+        return Ok(None);
+    };
+    let candidate = match candidate {
+        Ok(candidate) => candidate,
+        Err(ResolutionFailure::Query(error)) => return Err(error),
+        Err(_) => return Ok(None),
+    };
+    let target = match candidate {
         TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) => {
-            let declaration = context
-                .models
-                .java_file(handle.source())?
-                .node(handle.node_index())?
-                .kind()
-                .as_type()?;
-            SourceSpan::new(handle.source().clone(), declaration.name.as_ref()?.range())
+            java.declaration(&handle)?.and_then(|declaration| {
+                declaration
+                    .name
+                    .map(|name| SourceSpan::new(handle.source().clone(), name.range()))
+            })
         }
         TypeCandidate::Java(JavaTypeCandidate::TypeParameter(handle)) => {
             let owner = handle.owner();
-            let file = context.models.java_file(owner.source())?;
-            SourceSpan::new(owner.source().clone(), handle.parameter(file)?.name.range())
+            let Some(file) = context.models.java_file(owner.source())? else {
+                return Ok(None);
+            };
+            handle
+                .parameter(&file)
+                .map(|parameter| SourceSpan::new(owner.source().clone(), parameter.name.range()))
         }
-        TypeCandidate::Jvm(_) => return None,
+        TypeCandidate::Jvm(_) => None,
     };
-    Some(NavigationResult {
+    Ok(target.map(|target| NavigationResult {
+        revision: context.scope.revision(),
         origin_range,
         target,
-    })
+    }))
 }
 
 /// A type parameter declaration already identifies its own definition (JLS §4.4).
@@ -82,7 +95,7 @@ fn resolve_field_type_at(
     revision: Revision,
     source: &ResourceId,
     offset: usize,
-    definitions: Option<&dyn TypeCandidateQuery>,
+    definitions: Option<&dyn TypeDefinitionQuery<TypeCandidate>>,
 ) -> Option<(ByteRange, Result<TypeCandidate, ResolutionFailure>)> {
     // JLS §8.3: a field declares a type separately from its variable name.
     let (index, prefix, origin_range) = file.iter_nodes().find_map(|entry| {
@@ -166,6 +179,7 @@ mod tests {
             },
             &DefinitionRequest { source, offset },
         )
+        .unwrap()
         .map(|definition| definition.target)
     }
 
@@ -223,6 +237,7 @@ mod tests {
                 offset: text.rfind("Member").unwrap(),
             },
         )
+        .unwrap()
         .unwrap();
 
         assert_eq!(
@@ -321,6 +336,7 @@ mod tests {
                     offset,
                 },
             )
+            .unwrap()
             .unwrap();
             assert_eq!(Some(definition.target), declaration(name));
             assert_eq!(

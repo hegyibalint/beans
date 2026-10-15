@@ -8,18 +8,18 @@ pub fn find_classes(
     models: &impl JvmModelQuery,
     scope: QueryScope<'_>,
     binary_name: &str,
-) -> Vec<RevisionEntry<ResourceId>> {
+) -> Result<Vec<RevisionEntry<ResourceId>>, String> {
     let mut found = Vec::new();
-    for (resource, class) in models.jvm_classes() {
-        if class.name != binary_name || !scope.classpath().contains_class(resource) {
+    for (resource, class) in models.jvm_classes()? {
+        if class.name != binary_name || !scope.classpath().contains_class(&resource) {
             continue;
         }
         found.push(RevisionEntry {
             revision: scope.revision(),
-            key: resource.clone(),
+            key: resource,
         });
     }
-    found
+    Ok(found)
 }
 
 #[cfg(test)]

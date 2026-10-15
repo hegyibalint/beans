@@ -1,11 +1,12 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
-use super::Unit;
+use super::Module;
 
 /// The resolved descriptor. All paths are absolute and lexically normalized.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Project {
     pub root: PathBuf,
-    /// Units keyed by descriptor ID, in deterministic order.
-    pub units: BTreeMap<String, Unit>,
+    pub jdk_home: Option<PathBuf>,
+    /// Modules keyed by descriptor ID, in deterministic order.
+    pub modules: BTreeMap<String, Module>,
 }

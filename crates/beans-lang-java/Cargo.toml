@@ -9,6 +9,8 @@ license.workspace = true
 beans-core.workspace = true
 beans-platform-jvm.workspace = true
 beans-storage.workspace = true
+postcard.workspace = true
+serde.workspace = true
 tree-sitter.workspace = true
 tree-sitter-java.workspace = true
 

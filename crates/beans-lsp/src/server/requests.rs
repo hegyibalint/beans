@@ -1,106 +1,131 @@
-use beans_core::features::{DefinitionProvider, HoverProvider};
 use lsp_server::{ErrorCode, Request, Response};
 use lsp_types::{
-    GotoDefinitionParams, HoverParams, InitializeParams, InitializeResult, OneOf,
-    ServerCapabilities, ServerInfo, TextDocumentSyncKind, TextDocumentSyncOptions,
-    WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
-    request::{GotoDefinition, HoverRequest, Request as _},
+    GotoDefinitionParams, HoverParams, InitializeParams, InitializeResult, ServerCapabilities,
+    ServerInfo, TextDocumentSyncKind, TextDocumentSyncOptions, WorkspaceFoldersServerCapabilities,
+    WorkspaceServerCapabilities,
 };
 
 use super::{Lifecycle, Server};
+use crate::features::InitializeError;
 
 impl Server {
-    pub(super) fn respond(&mut self, request: Request) -> Response {
-        let error = match (&self.lifecycle, request.method.as_str()) {
+    pub(super) fn respond(&mut self, request: Request) -> Result<Response, String> {
+        match (&self.lifecycle, request.method.as_str()) {
             (Lifecycle::Uninitialized, "initialize") => {
-                match serde_json::from_value::<InitializeParams>(request.params) {
-                    Ok(params) => {
-                        if let Err(error) = self.features.initialize(&params) {
-                            log::error!("Workspace import failed: {error}");
-                            return Response::new_err(
-                                request.id,
-                                ErrorCode::RequestFailed as i32,
-                                error.to_string(),
-                            );
-                        }
-                        self.lifecycle = Lifecycle::Running;
-                        return Response::new_ok(
-                            request.id,
-                            InitializeResult {
-                                capabilities: ServerCapabilities {
-                                    definition_provider: Some(OneOf::Left(true)),
-                                    hover_provider: Some(true.into()),
-                                    workspace: Some(WorkspaceServerCapabilities {
-                                        workspace_folders: Some(
-                                            WorkspaceFoldersServerCapabilities {
-                                                supported: Some(true),
-                                                ..WorkspaceFoldersServerCapabilities::default()
-                                            },
-                                        ),
-                                        ..WorkspaceServerCapabilities::default()
-                                    }),
-                                    text_document_sync: Some(
-                                        TextDocumentSyncOptions {
-                                            open_close: Some(true),
-                                            change: Some(TextDocumentSyncKind::FULL),
-                                            ..TextDocumentSyncOptions::default()
-                                        }
-                                        .into(),
-                                    ),
-                                    ..ServerCapabilities::default()
-                                },
-                                server_info: Some(ServerInfo {
-                                    name: "beans".into(),
-                                    version: Some(env!("CARGO_PKG_VERSION").into()),
-                                }),
-                            },
-                        );
-                    }
+                let params = match serde_json::from_value::<InitializeParams>(request.params) {
+                    Ok(params) => params,
                     Err(error) => {
-                        return Response::new_err(
+                        return Ok(Response::new_err(
                             request.id,
                             ErrorCode::InvalidParams as i32,
                             error.to_string(),
-                        );
+                        ));
+                    }
+                };
+                match self.features.initialize(&params) {
+                    Ok(()) => {}
+                    Err(InitializeError::Workspace(error)) => {
+                        return Ok(Response::new_err(
+                            request.id,
+                            ErrorCode::RequestFailed as i32,
+                            error,
+                        ));
+                    }
+                    Err(InitializeError::Storage(error)) => {
+                        return Err(format!("cannot start Engine storage: {error}"));
                     }
                 }
+                self.lifecycle = Lifecycle::Running;
+                Ok(Response::new_ok(
+                    request.id,
+                    InitializeResult {
+                        capabilities: ServerCapabilities {
+                            hover_provider: Some(true.into()),
+                            definition_provider: Some(lsp_types::OneOf::Left(true)),
+                            workspace: Some(WorkspaceServerCapabilities {
+                                workspace_folders: Some(WorkspaceFoldersServerCapabilities {
+                                    supported: Some(true),
+                                    ..Default::default()
+                                }),
+                                ..Default::default()
+                            }),
+                            text_document_sync: Some(
+                                TextDocumentSyncOptions {
+                                    open_close: Some(true),
+                                    change: Some(TextDocumentSyncKind::FULL),
+                                    ..Default::default()
+                                }
+                                .into(),
+                            ),
+                            ..Default::default()
+                        },
+                        server_info: Some(ServerInfo {
+                            name: "beans".into(),
+                            version: Some(env!("CARGO_PKG_VERSION").into()),
+                        }),
+                    },
+                ))
             }
-            (Lifecycle::Uninitialized, _) => {
-                (ErrorCode::ServerNotInitialized, "server is not initialized")
-            }
-            // LSP #shutdown requires InvalidRequest for all subsequent requests.
-            (Lifecycle::Shutdown, _) => (ErrorCode::InvalidRequest, "server has shut down"),
-            (Lifecycle::Running, "initialize") => {
-                (ErrorCode::InvalidRequest, "server is already initialized")
-            }
+            (Lifecycle::Uninitialized, _) => Ok(Response::new_err(
+                request.id,
+                ErrorCode::ServerNotInitialized as i32,
+                "server is not initialized".into(),
+            )),
+            (Lifecycle::Shutdown, _) => Ok(Response::new_err(
+                request.id,
+                ErrorCode::InvalidRequest as i32,
+                "server has shut down".into(),
+            )),
+            (Lifecycle::Running, "initialize") => Ok(Response::new_err(
+                request.id,
+                ErrorCode::InvalidRequest as i32,
+                "server is already initialized".into(),
+            )),
             (Lifecycle::Running, "shutdown") => {
                 self.lifecycle = Lifecycle::Shutdown;
-                return Response::new_ok(request.id, ());
+                Ok(Response::new_ok(request.id, ()))
             }
-            (Lifecycle::Running, GotoDefinition::METHOD) => {
-                return match serde_json::from_value::<GotoDefinitionParams>(request.params) {
-                    Ok(params) => {
-                        Response::new_ok(request.id, self.features.goto_definition(&(), &params))
+            (Lifecycle::Running, "textDocument/hover") => {
+                let params = match serde_json::from_value::<HoverParams>(request.params) {
+                    Ok(params) => params,
+                    Err(error) => {
+                        return Ok(Response::new_err(
+                            request.id,
+                            ErrorCode::InvalidParams as i32,
+                            error.to_string(),
+                        ));
                     }
-                    Err(error) => Response::new_err(
-                        request.id,
-                        ErrorCode::InvalidParams as i32,
-                        error.to_string(),
-                    ),
                 };
+                Ok(match self.features.hover(&params) {
+                    Ok(hover) => Response::new_ok(request.id, hover),
+                    Err(error) => {
+                        Response::new_err(request.id, ErrorCode::RequestFailed as i32, error)
+                    }
+                })
             }
-            (Lifecycle::Running, HoverRequest::METHOD) => {
-                return match serde_json::from_value::<HoverParams>(request.params) {
-                    Ok(params) => Response::new_ok(request.id, self.features.hover(&(), &params)),
-                    Err(error) => Response::new_err(
-                        request.id,
-                        ErrorCode::InvalidParams as i32,
-                        error.to_string(),
-                    ),
+            (Lifecycle::Running, "textDocument/definition") => {
+                let params = match serde_json::from_value::<GotoDefinitionParams>(request.params) {
+                    Ok(params) => params,
+                    Err(error) => {
+                        return Ok(Response::new_err(
+                            request.id,
+                            ErrorCode::InvalidParams as i32,
+                            error.to_string(),
+                        ));
+                    }
                 };
+                Ok(match self.features.goto_definition(&params) {
+                    Ok(definition) => Response::new_ok(request.id, definition),
+                    Err(error) => {
+                        Response::new_err(request.id, ErrorCode::RequestFailed as i32, error)
+                    }
+                })
             }
-            (Lifecycle::Running, _) => (ErrorCode::MethodNotFound, "unsupported method"),
-        };
-        Response::new_err(request.id, error.0 as i32, error.1.into())
+            (Lifecycle::Running, _) => Ok(Response::new_err(
+                request.id,
+                ErrorCode::MethodNotFound as i32,
+                "unsupported method".into(),
+            )),
+        }
     }
 }

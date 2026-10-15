@@ -6,6 +6,7 @@ use beans_core::resource::ResourceId;
 
 use crate::model::File;
 
+pub mod codec;
 pub mod features;
 pub mod lowering;
 pub mod model;

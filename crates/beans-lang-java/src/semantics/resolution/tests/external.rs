@@ -56,7 +56,7 @@ impl Fixture {
         let java = JavaQuery::new(&models, QueryScope::new(Revision::new(1), &Unrestricted));
         let classes = jvm.model_query(Revision::new(1));
         let definitions = ResolutionQuery::new(&java, &classes);
-        let file = java.file(&self.source).unwrap();
+        let file = java.file(&self.source).unwrap().unwrap();
         let (index, reference) = file
             .iter_nodes()
             .find_map(|entry| match (occurrence, entry.node.kind()) {
@@ -74,7 +74,7 @@ impl Fixture {
                 _ => None,
             })
             .unwrap();
-        let ctx = Context::new(Revision::new(1), &self.source, file, index, reference)
+        let ctx = Context::new(Revision::new(1), &self.source, &file, index, reference)
             .with_definitions(&definitions);
         match occurrence {
             Occurrence::Field => resolve(&ctx),
@@ -87,12 +87,11 @@ impl Fixture {
         let query = JavaQuery::new(&models, QueryScope::new(Revision::new(1), &Unrestricted));
         let entry = query
             .find_type(&name.split('.').map(str::to_owned).collect())
+            .unwrap()
             .into_iter()
             .next()
             .expect("expected a stored Java type");
-        TypeCandidate::Java(JavaTypeCandidate::Declaration(
-            query.declaration_handle(entry.source, entry.node_index),
-        ))
+        TypeCandidate::Java(JavaTypeCandidate::Declaration(entry))
     }
 }
 

@@ -30,6 +30,7 @@ impl TypeParameterHandle {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolutionFailure {
+    Query(String),
     NotFound,
     Partial,
     InvalidTypeRef,

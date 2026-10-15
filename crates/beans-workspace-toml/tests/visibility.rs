@@ -8,14 +8,14 @@ use beans_workspace_toml::parse;
 fn descriptor_visibility_reaches_the_workspaces_facade() {
     let backend = parse(
         r#"
-        [unit.app]
+        [module.app]
         sources = ["app/src"]
         depends_on = ["lib"]
 
-        [unit.lib]
+        [module.lib]
         sources = ["lib/src"]
 
-        [unit.other]
+        [module.other]
         sources = ["other/src"]
     "#,
         Path::new("/project"),

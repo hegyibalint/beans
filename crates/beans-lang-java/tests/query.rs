@@ -22,23 +22,30 @@ struct Models {
 }
 
 impl JavaModelQuery for Models {
-    fn java_file(&self, source: &ResourceId) -> Option<&File> {
-        self.files.get(source)
+    fn java_file(&self, source: &ResourceId) -> Result<Option<File>, String> {
+        self.files.get(source).map(copy_file).transpose()
     }
 
-    fn java_files(&self) -> impl Iterator<Item = (&ResourceId, &File)> {
-        self.files.iter()
+    fn java_files(&self) -> Result<Vec<(ResourceId, File)>, String> {
+        self.files
+            .iter()
+            .map(|(source, file)| Ok((source.clone(), copy_file(file)?)))
+            .collect()
     }
 }
 
 impl JvmModelQuery for Models {
-    fn jvm_class(&self, _source: &ResourceId) -> Option<&Class> {
-        None
+    fn jvm_class(&self, _source: &ResourceId) -> Result<Option<Class>, String> {
+        Ok(None)
     }
 
-    fn jvm_classes(&self) -> impl Iterator<Item = (&ResourceId, &Class)> {
-        std::iter::empty()
+    fn jvm_classes(&self) -> Result<Vec<(ResourceId, Class)>, String> {
+        Ok(Vec::new())
     }
+}
+
+fn copy_file(file: &File) -> Result<File, String> {
+    beans_lang_java::codec::decode(&beans_lang_java::codec::encode(file)?)
 }
 
 #[test]
@@ -59,7 +66,10 @@ fn supplied_models_can_be_resolved_using_the_java_query() {
         query.classpath(),
         &classpath as &dyn Classpath
     ));
-    let file = query.file(&source).expect("expected the supplied model");
+    let file = query
+        .file(&source)
+        .unwrap()
+        .expect("expected the supplied model");
     let (node_index, type_ref) = file
         .iter_nodes()
         .find_map(|entry| match entry.node.kind() {
@@ -69,17 +79,18 @@ fn supplied_models_can_be_resolved_using_the_java_query() {
             _ => None,
         })
         .expect("expected target field");
-    let ctx = Context::new(revision, &source, file, node_index, type_ref.value());
+    let ctx = Context::new(revision, &source, &file, node_index, type_ref.value());
     let TypeCandidate::Java(JavaTypeCandidate::Declaration(declaration)) = resolve(&ctx).unwrap()
     else {
         panic!("expected a Java declaration");
     };
     let target = query
         .declaration(&declaration)
+        .unwrap()
         .expect("expected a readable declaration handle");
 
-    assert_eq!(target.declaration.name(), Some("Target"));
-    assert_eq!(target.source, &source);
+    assert_eq!(target.name(), Some("Target"));
+    assert_eq!(declaration.source(), &source);
 }
 
 #[test]
@@ -102,7 +113,7 @@ fn an_imported_type_resolves_to_another_supplied_source_file() {
     let classpath = Unrestricted;
     let java = JavaQuery::new(&models, QueryScope::new(revision, &classpath));
     let definitions = ResolutionQuery::new(&java, &models);
-    let file = java.file(&use_source).unwrap();
+    let file = java.file(&use_source).unwrap().unwrap();
     let field = file
         .iter_nodes()
         .find_map(|entry| match entry.node.kind() {
@@ -113,7 +124,7 @@ fn an_imported_type_resolves_to_another_supplied_source_file() {
     let ctx = Context::new(
         revision,
         &use_source,
-        file,
+        &file,
         field.0,
         field.1.declared_type.value(),
     )
@@ -124,7 +135,7 @@ fn an_imported_type_resolves_to_another_supplied_source_file() {
     };
     assert_eq!(handle.source(), &target_source);
     assert_eq!(
-        java.declaration(&handle).unwrap().declaration.name(),
+        java.declaration(&handle).unwrap().unwrap().name(),
         Some("Target")
     );
 }

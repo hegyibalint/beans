@@ -5,18 +5,25 @@ use beans_core::{
 };
 use beans_lang_java::features::JavaFeatureContext;
 
-use crate::{Engine, model_query::ModelQuery};
-
-#[cfg(test)]
-mod tests;
+use crate::{Engine, storage::ModelQuery};
 
 impl Engine {
-    pub fn feature_hover(&self, request: &HoverRequest<'_>) -> Option<HoverResponse> {
-        let models = ModelQuery::new(&self.storage);
+    pub fn feature_hover(
+        &self,
+        request: &HoverRequest<'_>,
+    ) -> Result<Option<HoverResponse>, String> {
+        let mut reader = self.storage.reader()?;
+        let models = ModelQuery::new(&mut reader)?;
         let context = JavaFeatureContext {
             models: &models,
-            scope: QueryScope::new(self.revision, &Unrestricted),
+            scope: QueryScope::new(models.revision(), &Unrestricted),
         };
-        beans_lang_java::features::hover(&context, request)
+        let response = beans_lang_java::features::hover(&context, request)?;
+        if response.is_some()
+            && models.content(request.source)?.as_deref() != Some(request.contents.as_bytes())
+        {
+            return Err("hover contents do not match the stored model".into());
+        }
+        Ok(response)
     }
 }

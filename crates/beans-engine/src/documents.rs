@@ -1,51 +1,57 @@
-use beans_core::resource::{ResourceId, ResourceRoot};
-
-use crate::{
-    Engine,
-    storage::{Content, Entry, Model},
+use beans_core::{
+    resource::{ResourceId, ResourceRoot},
+    revision::Revision,
 };
 
+use crate::Engine;
+
 impl Engine {
-    pub fn document_open(&mut self, source: ResourceId, language_id: &str, contents: &str) {
-        self.document_process(source, language_id, contents);
+    pub fn document_open(
+        &mut self,
+        source: ResourceId,
+        language_id: &str,
+        contents: &str,
+    ) -> Result<Option<Revision>, String> {
+        self.document_process(source, language_id, contents)
     }
 
-    pub fn document_edit(&mut self, source: ResourceId, language_id: &str, contents: &str) {
-        self.document_process(source, language_id, contents);
+    pub fn document_edit(
+        &mut self,
+        source: ResourceId,
+        language_id: &str,
+        contents: &str,
+    ) -> Result<Option<Revision>, String> {
+        self.document_process(source, language_id, contents)
     }
 
-    pub fn document_close(&mut self, source: ResourceId) {
-        self.revision.advance();
-        self.storage.remove(&source);
-    }
-
-    pub fn process(&mut self, source: ResourceId, contents: &str) {
+    pub fn process(
+        &mut self,
+        source: ResourceId,
+        contents: &str,
+    ) -> Result<Option<Revision>, String> {
         let ResourceRoot::File { path } = &source.root else {
-            return;
+            return Ok(None);
         };
         if !source.entries.is_empty() || !beans_lang_java::accept(path) {
-            return;
+            return Ok(None);
         }
-        self.document_process(source, "java", contents);
+        self.document_process(source, "java", contents)
     }
 
-    fn document_process(&mut self, source: ResourceId, language_id: &str, contents: &str) {
+    fn document_process(
+        &mut self,
+        source: ResourceId,
+        language_id: &str,
+        contents: &str,
+    ) -> Result<Option<Revision>, String> {
         if language_id != "java" {
-            return;
+            return Ok(None);
         }
-        let Some(model) = beans_lang_java::process(&source, contents) else {
-            return;
+        let Some(file) = beans_lang_java::process(&source, contents) else {
+            return Ok(None);
         };
-        self.revision.advance();
-        self.storage.insert(
-            source,
-            Entry {
-                model: Model::Java(model),
-                content: Some(Content::Stored(contents.as_bytes().to_vec())),
-            },
-        );
+        self.storage
+            .publish_java(&source, &file, contents)
+            .map(Some)
     }
 }
-
-#[cfg(test)]
-mod tests;

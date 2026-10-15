@@ -7,14 +7,12 @@ use serde::Deserialize;
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct Descriptor {
     pub jdk_home: Option<PathBuf>,
-    pub unit: BTreeMap<String, DescriptorUnit>,
+    pub module: BTreeMap<String, DescriptorModule>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub(crate) struct DescriptorUnit {
+pub(crate) struct DescriptorModule {
     pub sources: Vec<PathBuf>,
     pub depends_on: Vec<String>,
-    pub classpath: Vec<PathBuf>,
-    pub jdk_home: Option<PathBuf>,
 }

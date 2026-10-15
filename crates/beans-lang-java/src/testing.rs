@@ -57,23 +57,48 @@ impl<'a> ModelQuery<'a> {
 }
 
 impl JvmModelQuery for ModelQuery<'_> {
-    fn jvm_class(&self, source: &ResourceId) -> Option<&Class> {
-        self.classes?.get(self.revision, source)
+    fn jvm_class(&self, source: &ResourceId) -> Result<Option<Class>, String> {
+        Ok(self
+            .classes
+            .and_then(|classes| classes.get(self.revision, source))
+            .map(|class| Class {
+                name: class.name.clone(),
+            }))
     }
 
-    fn jvm_classes(&self) -> impl Iterator<Item = (&ResourceId, &Class)> {
-        self.classes
+    fn jvm_classes(&self) -> Result<Vec<(ResourceId, Class)>, String> {
+        Ok(self
+            .classes
             .into_iter()
             .flat_map(|classes| classes.iter(self.revision))
+            .map(|(source, class)| {
+                (
+                    source.clone(),
+                    Class {
+                        name: class.name.clone(),
+                    },
+                )
+            })
+            .collect())
     }
 }
 
 impl JavaModelQuery for ModelQuery<'_> {
-    fn java_file(&self, source: &ResourceId) -> Option<&File> {
-        self.files.get(self.revision, source)
+    fn java_file(&self, source: &ResourceId) -> Result<Option<File>, String> {
+        self.files
+            .get(self.revision, source)
+            .map(copy_file)
+            .transpose()
     }
 
-    fn java_files(&self) -> impl Iterator<Item = (&ResourceId, &File)> {
-        self.files.iter(self.revision)
+    fn java_files(&self) -> Result<Vec<(ResourceId, File)>, String> {
+        self.files
+            .iter(self.revision)
+            .map(|(source, file)| Ok((source.clone(), copy_file(file)?)))
+            .collect()
     }
+}
+
+fn copy_file(file: &File) -> Result<File, String> {
+    crate::codec::decode(&crate::codec::encode(file)?)
 }

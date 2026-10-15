@@ -15,37 +15,23 @@ impl<'a, J: JavaModelQuery, P: JvmModelQuery> ResolutionQuery<'a, J, P> {
     }
 }
 
-/// Object-safe view of the combined query for a resolver context. `TypeDefinitionQuery`
-/// returns an opaque iterator, so it cannot be borrowed as a trait object.
-pub trait TypeCandidateQuery {
-    fn candidates(&self, name: &Name) -> Vec<TypeCandidate>;
-}
-
 impl<J: JavaModelQuery, P: JvmModelQuery> TypeDefinitionQuery<TypeCandidate>
     for ResolutionQuery<'_, J, P>
 {
-    fn find_types<'query>(
-        &'query self,
-        name: &'query Name,
-    ) -> impl Iterator<Item = TypeCandidate> + 'query {
+    fn find_types(&self, name: &Name) -> Result<Vec<TypeCandidate>, String> {
         let java = self
             .java
-            .find_types(name)
+            .find_types(name)?
+            .into_iter()
             .map(|handle| TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)));
         let scope = QueryScope::new(self.java.revision(), self.java.classpath());
         // JVMS §4.2.1: internal names use '/'; canonical member-name conversion is not wired.
         let binary_name = name.as_slice().join("/");
-        let jvm = beans_platform_jvm::find_classes(self.jvm, scope, &binary_name)
+        let jvm = beans_platform_jvm::find_classes(self.jvm, scope, &binary_name)?
             .into_iter()
             .map(TypeCandidate::Jvm);
 
-        java.chain(jvm)
-    }
-}
-
-impl<J: JavaModelQuery, P: JvmModelQuery> TypeCandidateQuery for ResolutionQuery<'_, J, P> {
-    fn candidates(&self, name: &Name) -> Vec<TypeCandidate> {
-        TypeDefinitionQuery::find_types(self, name).collect()
+        Ok(java.chain(jvm).collect())
     }
 }
 
@@ -88,10 +74,10 @@ mod tests {
         }
         let models = language.model_query(revision);
         let java = JavaQuery::new(&models, QueryScope::new(revision, &Unrestricted));
-        let java_address = java.find_types(&name).next().unwrap();
+        let java_address = java.find_types(&name).unwrap().into_iter().next().unwrap();
         let query = ResolutionQuery::new(&java, &models);
 
-        let candidates: Vec<_> = query.find_types(&name).collect();
+        let candidates = query.find_types(&name).unwrap();
 
         assert_eq!(
             candidates,
@@ -139,7 +125,7 @@ mod tests {
             let models = language.model_query(revision);
             let java = JavaQuery::new(&models, QueryScope::new(revision, &classpath));
             let query = ResolutionQuery::new(&java, &models);
-            let candidates = query.candidates(&name);
+            let candidates = query.find_types(&name).unwrap();
 
             if expected {
                 assert_eq!(

@@ -14,12 +14,25 @@ struct Models<'a> {
 }
 
 impl JvmModelQuery for Models<'_> {
-    fn jvm_class(&self, source: &ResourceId) -> Option<&Class> {
-        self.classes.get(self.revision, source)
+    fn jvm_class(&self, source: &ResourceId) -> Result<Option<Class>, String> {
+        Ok(self.classes.get(self.revision, source).map(|class| Class {
+            name: class.name.clone(),
+        }))
     }
 
-    fn jvm_classes(&self) -> impl Iterator<Item = (&ResourceId, &Class)> {
-        self.classes.iter(self.revision)
+    fn jvm_classes(&self) -> Result<Vec<(ResourceId, Class)>, String> {
+        Ok(self
+            .classes
+            .iter(self.revision)
+            .map(|(source, class)| {
+                (
+                    source.clone(),
+                    Class {
+                        name: class.name.clone(),
+                    },
+                )
+            })
+            .collect())
     }
 }
 
@@ -42,7 +55,7 @@ fn lookup_requires_an_exact_internal_binary_name() {
     let scope = QueryScope::new(revision, &Unrestricted);
 
     assert_eq!(
-        find_classes(&models, scope, "example/Outer$Inner"),
+        find_classes(&models, scope, "example/Outer$Inner").unwrap(),
         vec![RevisionEntry {
             revision,
             key: resource
@@ -56,7 +69,10 @@ fn lookup_requires_an_exact_internal_binary_name() {
         "example/Missing",
         "",
     ] {
-        assert!(find_classes(&models, scope, name).is_empty(), "{name}");
+        assert!(
+            find_classes(&models, scope, name).unwrap().is_empty(),
+            "{name}"
+        );
     }
 }
 
@@ -93,16 +109,21 @@ fn lookup_uses_provider_selected_models_after_replacement_and_removal() {
             revision: Revision::new(selected_revision),
         };
         assert_eq!(
-            models.jvm_class(&resource).map(|class| class.name.as_str()),
+            models
+                .jvm_class(&resource)
+                .unwrap()
+                .map(|class| class.name)
+                .as_deref(),
             expected
         );
         assert!(
             models
                 .jvm_class(&ResourceId::file("/Missing.class"))
+                .unwrap()
                 .is_none()
         );
         for name in ["example/Former", "example/Latest"] {
-            let addresses = find_classes(&models, scope, name);
+            let addresses = find_classes(&models, scope, name).unwrap();
             if expected == Some(name) {
                 assert_eq!(
                     addresses,
@@ -143,7 +164,8 @@ fn duplicate_binary_names_retain_their_distinct_resource_addresses() {
         &models,
         QueryScope::new(revision, &Unrestricted),
         "example/Foo",
-    );
+    )
+    .unwrap();
 
     assert_eq!(addresses.len(), 2);
     for resource in resources {
@@ -191,7 +213,8 @@ fn lookup_applies_class_visibility_not_source_visibility() {
             &models,
             QueryScope::new(revision, &classpath),
             "example/Foo"
-        ),
+        )
+        .unwrap(),
         vec![RevisionEntry {
             revision,
             key: visible
