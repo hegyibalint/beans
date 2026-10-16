@@ -2,6 +2,7 @@ mod container;
 mod model;
 mod parser;
 mod query;
+pub mod storage;
 
 #[cfg(test)]
 mod tests;
@@ -13,7 +14,7 @@ use std::{
 
 use beans_core::location::Location;
 
-use crate::model::class::Class;
+pub use crate::model::class::Class;
 
 #[derive(Default)]
 pub struct JvmPlatform;

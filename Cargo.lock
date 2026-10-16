@@ -72,6 +72,9 @@ dependencies = [
  "beans-testing",
  "cafebabe",
  "cesu8",
+ "rusqlite",
+ "serde",
+ "serde_json",
  "tempfile",
  "zip",
 ]
