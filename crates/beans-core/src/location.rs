@@ -1,6 +1,10 @@
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+use serde::{Deserialize, Serialize};
+
+/// Stored as a JSON array in `models.location`, without an `entries` wrapper.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Location {
     pub entries: Vec<LocationEntry>,
 }
@@ -23,7 +27,7 @@ impl Location {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum LocationEntry {
     File(PathBuf),
     Virtual(String),
@@ -103,6 +107,33 @@ mod tests {
             Location::new(LocationEntry::Container(value.into())),
         ];
         assert_eq!(HashSet::from(locations).len(), 3);
+    }
+
+    #[test]
+    fn serde_preserves_location_structure_and_values() {
+        let location = Location::file("relative/../sources.jar")
+            .entry(container("p/C.java"))
+            .entry(LocationEntry::Virtual(
+                "UNTITLED:My%20Type😀\"\\\n.java".into(),
+            ));
+        let json = serde_json::to_value(&location).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!([
+                {"File": "relative/../sources.jar"},
+                {"Container": "p/C.java"},
+                {"Virtual": "UNTITLED:My%20Type😀\"\\\n.java"},
+            ])
+        );
+        assert_eq!(serde_json::from_value::<Location>(json).unwrap(), location);
+    }
+
+    #[test]
+    fn serde_round_trips_empty_locations() {
+        let location = Location { entries: vec![] };
+        let json = serde_json::to_string(&location).unwrap();
+        assert_eq!(json, "[]");
+        assert_eq!(serde_json::from_str::<Location>(&json).unwrap(), location);
     }
 
     fn container(name: &str) -> LocationEntry {

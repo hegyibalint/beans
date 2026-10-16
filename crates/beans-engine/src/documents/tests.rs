@@ -75,13 +75,12 @@ fn virtual_documents_keep_their_identity_through_replacement_and_removal() {
             .unwrap();
         assert_eq!(response.range(), ByteRange::new(16, end));
         assert!(file(&engine, &Location::file("/Example.java")).is_none());
-        assert_eq!(count(&engine, "entries"), 1);
-        assert_eq!(count(&engine, "locations"), 1);
+        assert_eq!(count(&engine, "models"), 1);
     }
     assert!(engine.close_document(source.clone()).unwrap());
     assert!(file(&engine, &source).is_none());
     assert!(!engine.close_document(source).unwrap());
-    for table in ["entries", "locations", "java_types"] {
+    for table in ["models", "java_types"] {
         assert_eq!(count(&engine, table), 0);
     }
 }
@@ -115,7 +114,7 @@ fn unsupported_inputs_report_no_change_and_write_nothing() {
             .process_document(virtual_source, "plaintext", "class C extends T {}")
             .unwrap()
     );
-    assert_eq!(count(&engine, "entries"), 0);
+    assert_eq!(count(&engine, "models"), 0);
 }
 
 #[test]
@@ -150,7 +149,7 @@ fn failed_publication_restores_the_previous_model_and_indexes() {
             .unwrap()
             .is_empty()
     );
-    for table in ["entries", "locations", "java_types"] {
+    for table in ["models", "java_types"] {
         assert_eq!(count(&engine, table), 1);
     }
 }
@@ -169,7 +168,7 @@ fn failed_deletion_preserves_the_model_and_its_dependents() {
             .contains("deletion rejected")
     );
     assert!(file(&engine, &source).is_some());
-    for table in ["entries", "locations", "java_types"] {
+    for table in ["models", "java_types"] {
         assert_eq!(count(&engine, table), 1);
     }
 }
@@ -201,5 +200,5 @@ fn reopening_reads_and_replaces_the_persisted_model() {
             .len(),
         1
     );
-    assert_eq!(count(&engine, "entries"), 1);
+    assert_eq!(count(&engine, "models"), 1);
 }

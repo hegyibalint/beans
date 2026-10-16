@@ -1,20 +1,14 @@
 use beans_core::{
-    classpath::Classpath,
-    location::{Location, LocationEntry},
-    names::Name,
-    query_scope::QueryScope,
+    classpath::Classpath, location::Location, names::Name, query_scope::QueryScope,
     resolution::TypeDefinitionQuery,
 };
 use rusqlite::{Connection, OptionalExtension};
 
-pub use crate::semantics::DeclarationHandle;
-use crate::{
-    model::{
-        File,
-        nodes::{NodeIndex, types::TypeDeclaration},
-    },
-    storage,
+use crate::model::{
+    File,
+    nodes::{NodeIndex, types::TypeDeclaration},
 };
+pub use crate::semantics::DeclarationHandle;
 
 pub struct JavaQuery<'a> {
     connection: &'a Connection,
@@ -30,13 +24,13 @@ impl<'a> JavaQuery<'a> {
         self.scope.classpath()
     }
 
-    pub fn file(&self, source: &Location) -> Result<Option<File>, String> {
-        let Some(id) = entry_id(self.connection, source)? else {
+    pub fn file(&self, location: &Location) -> Result<Option<File>, String> {
+        let Some(id) = model_id(self.connection, location)? else {
             return Ok(None);
         };
         let model: String = self
             .connection
-            .query_row("SELECT model FROM entries WHERE id = ?1", [id], |row| {
+            .query_row("SELECT model FROM models WHERE id = ?1", [id], |row| {
                 row.get(0)
             })
             .map_err(|error| error.to_string())?;
@@ -68,8 +62,8 @@ impl<'a> JavaQuery<'a> {
         if !name.is_valid() || name.is_empty() {
             return Ok(Vec::new());
         }
-        let sql = "SELECT entry_id, node_index FROM java_types WHERE name = ?1
-                   ORDER BY entry_id, node_index";
+        let sql = "SELECT model_id, node_index FROM java_types WHERE name = ?1
+                   ORDER BY model_id, node_index";
         let mut statement = self
             .connection
             .prepare(sql)
@@ -93,26 +87,13 @@ impl<'a> JavaQuery<'a> {
     }
 
     fn location(&self, id: i64) -> Result<Location, String> {
-        let mut statement = self
+        let location: String = self
             .connection
-            .prepare("SELECT kind, value FROM locations WHERE entry_id = ?1 ORDER BY position")
-            .map_err(|error| error.to_string())?;
-        let rows = statement
-            .query_map([id], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            .query_row("SELECT location FROM models WHERE id = ?1", [id], |row| {
+                row.get(0)
             })
             .map_err(|error| error.to_string())?;
-        let mut entries = Vec::new();
-        for row in rows {
-            let (kind, value) = row.map_err(|error| error.to_string())?;
-            entries.push(match kind.as_str() {
-                "file" => LocationEntry::File(value.into()),
-                "virtual" => LocationEntry::Virtual(value),
-                "container" => LocationEntry::Container(value),
-                _ => return Err(format!("unknown location kind: {kind}")),
-            });
-        }
-        Ok(Location { entries })
+        serde_json::from_str(&location).map_err(|error| error.to_string())
     }
 }
 
@@ -122,16 +103,14 @@ impl TypeDefinitionQuery<DeclarationHandle> for JavaQuery<'_> {
     }
 }
 
-pub(crate) fn entry_id(connection: &Connection, source: &Location) -> Result<Option<i64>, String> {
-    let location =
-        serde_json::to_string(&storage::components(source)?).map_err(|error| error.to_string())?;
+pub(crate) fn model_id(
+    connection: &Connection,
+    location: &Location,
+) -> Result<Option<i64>, String> {
     connection
         .query_row(
-            "SELECT id FROM entries WHERE model_kind = 1 AND (
-            SELECT json_group_array(json_array(kind, value) ORDER BY position)
-            FROM locations WHERE entry_id = entries.id
-        ) = ?1",
-            [location],
+            "SELECT id FROM models WHERE model_kind = 1 AND location = ?1",
+            [serde_json::to_string(location).map_err(|error| error.to_string())?],
             |row| row.get(0),
         )
         .optional()

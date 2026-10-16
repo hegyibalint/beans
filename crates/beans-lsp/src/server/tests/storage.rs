@@ -44,7 +44,7 @@ fn failed_open_reports_an_error_and_the_server_can_recover() {
     );
     assert_eq!(hover(&mut server).result, Some(Value::Null));
     let count: i64 = connection
-        .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
+        .query_row("SELECT COUNT(*) FROM models", [], |row| row.get(0))
         .unwrap();
     assert_eq!(count, 0);
     connection.execute("DROP TRIGGER reject_type", []).unwrap();
@@ -92,7 +92,7 @@ fn failed_close_does_not_discard_the_open_document() {
     let (root, mut server) = server();
     open(&mut server, "class C extends Target {}");
     let connection = beans_engine::storage::open(&root.path().join(".beans/models")).unwrap();
-    connection.execute_batch("CREATE TRIGGER reject_removal BEFORE DELETE ON entries BEGIN SELECT RAISE(ABORT, 'close rejected'); END;").unwrap();
+    connection.execute_batch("CREATE TRIGGER reject_removal BEFORE DELETE ON models BEGIN SELECT RAISE(ABORT, 'close rejected'); END;").unwrap();
     let close = || {
         Notification::new(
             "textDocument/didClose".into(),
@@ -117,7 +117,7 @@ fn decoding_errors_become_request_errors_without_stopping_the_server() {
     open(&mut server, "class C extends Target {}");
     let connection = beans_engine::storage::open(&root.path().join(".beans/models")).unwrap();
     connection
-        .execute("UPDATE entries SET model = '{}'", [])
+        .execute("UPDATE models SET model = '{}'", [])
         .unwrap();
     for method in [
         "textDocument/hover",

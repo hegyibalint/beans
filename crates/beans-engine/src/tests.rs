@@ -10,11 +10,11 @@ fn an_engine_creates_and_owns_the_workspace_cache() {
     let engine = Engine::new(root.path()).unwrap();
 
     assert!(root.path().join(".beans/models").is_file());
-    let entries: i64 = engine
+    let models: i64 = engine
         .storage
-        .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
+        .query_row("SELECT COUNT(*) FROM models", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(entries, 0);
+    assert_eq!(models, 0);
 }
 
 #[test]
@@ -24,15 +24,15 @@ fn recreating_an_engine_preserves_the_workspace_cache() {
         let engine = Engine::new(root.path()).unwrap();
         engine
             .storage
-            .execute("INSERT INTO entries VALUES (1, 0, '{}', NULL)", [])
+            .execute("INSERT INTO models VALUES (1, '[]', 0, '{}', NULL)", [])
             .unwrap();
     }
     let engine = Engine::new(root.path()).unwrap();
-    let entries: i64 = engine
+    let models: i64 = engine
         .storage
-        .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
+        .query_row("SELECT COUNT(*) FROM models", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(entries, 1);
+    assert_eq!(models, 1);
 }
 
 #[test]

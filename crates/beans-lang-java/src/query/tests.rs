@@ -68,7 +68,7 @@ fn replacements_and_deletions_remove_old_models_and_names() {
         assert_eq!(query.find_type(&name("Second")).unwrap().len(), 1);
         let count: i64 = models
             .connection
-            .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM models", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 1);
     }
@@ -78,7 +78,7 @@ fn replacements_and_deletions_remove_old_models_and_names() {
         assert!(query.file(&source).unwrap().is_none());
         assert!(query.find_type(&name("First")).unwrap().is_empty());
         assert!(query.find_type(&name("Second")).unwrap().is_empty());
-        for table in ["entries", "locations", "java_types"] {
+        for table in ["models", "java_types"] {
             let count: i64 = models
                 .connection
                 .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
@@ -118,6 +118,8 @@ fn locations_keep_component_kinds_boundaries_and_verbatim_values() {
             .entry(LocationEntry::Container("b.java".into())),
         Location { entries: vec![] },
         Location::new(LocationEntry::Virtual("untitled:😀\"\\\n.java".into())),
+        Location::new(LocationEntry::Container("root".into()))
+            .entry(LocationEntry::File("/Example.java".into())),
     ];
     for (index, source) in sources.iter().enumerate() {
         models.store(
@@ -133,6 +135,33 @@ fn locations_keep_component_kinds_boundaries_and_verbatim_values() {
             .remove(0);
         assert_eq!(handle.source(), source);
         assert!(query.file(source).unwrap().is_some());
+    }
+}
+
+#[test]
+fn invalid_locations_return_errors_during_discovery() {
+    let mut models = Models::new();
+    models.store(
+        lower_into("class Example {}"),
+        Location::file("/Example.java"),
+    );
+    for payload in [
+        "{}",
+        "null",
+        r#"[{"Unknown":"value"}]"#,
+        r#"[{}]"#,
+        r#"[{"File":1}]"#,
+    ] {
+        models
+            .connection
+            .execute("UPDATE models SET location = ?1", [payload])
+            .unwrap();
+        assert!(
+            models
+                .query(QueryScope::new(&Unrestricted))
+                .find_type(&name("Example"))
+                .is_err()
+        );
     }
 }
 
@@ -168,7 +197,10 @@ fn indexed_lookup_does_not_decode_unrelated_models() {
     );
     models
         .connection
-        .execute("UPDATE entries SET model = '{}' WHERE id = 2", [])
+        .execute(
+            "UPDATE models SET model = '{}', location = '{}' WHERE id = 2",
+            [],
+        )
         .unwrap();
     let query = models.query(QueryScope::new(&Unrestricted));
     let handle = query.find_type(&name("Healthy")).unwrap().remove(0);
@@ -189,7 +221,7 @@ fn invalid_models_return_errors_instead_of_panicking_during_traversal() {
     ] {
         models
             .connection
-            .execute("UPDATE entries SET model = ?1", [payload])
+            .execute("UPDATE models SET model = ?1", [payload])
             .unwrap();
         assert!(
             models

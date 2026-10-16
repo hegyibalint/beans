@@ -1,3 +1,4 @@
+use beans_core::location::{Location, LocationEntry};
 use rusqlite::Connection;
 use tempfile::tempdir;
 
@@ -11,8 +12,23 @@ fn startup_initializes_and_configures_the_database() {
 
     assert!(path.is_file());
     assert_eq!(version(&connection), SCHEMA_VERSION);
-    assert_eq!(count(&connection, "entries"), 0);
-    assert_eq!(count(&connection, "locations"), 0);
+    assert_eq!(count(&connection, "models"), 0);
+    let obsolete_tables: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_schema WHERE name IN ('entries', 'locations')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(obsolete_tables, 0);
+    let indexes: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_index_list('models')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(indexes, 0);
     assert_eq!(
         connection
             .pragma_query_value(None, "journal_mode", |row| row.get::<_, String>(0))
@@ -40,12 +56,12 @@ fn matching_version_preserves_cached_data() {
     {
         let connection = open(&path).unwrap();
         connection
-            .execute("INSERT INTO entries VALUES (1, 0, '{}', NULL)", [])
+            .execute("INSERT INTO models VALUES (1, '[]', 0, '{}', NULL)", [])
             .unwrap();
     }
     let connection = open(&path).unwrap();
     assert_eq!(version(&connection), SCHEMA_VERSION);
-    assert_eq!(count(&connection, "entries"), 1);
+    assert_eq!(count(&connection, "models"), 1);
 }
 
 #[test]
@@ -56,13 +72,13 @@ fn model_payloads_must_be_valid_json_text() {
         assert!(
             connection
                 .execute(
-                    &format!("INSERT INTO entries VALUES (1, 0, {model}, NULL)"),
+                    &format!("INSERT INTO models VALUES (1, '[]', 0, {model}, NULL)"),
                     [],
                 )
                 .is_err()
         );
     }
-    assert_eq!(count(&connection, "entries"), 0);
+    assert_eq!(count(&connection, "models"), 0);
 }
 
 #[test]
@@ -81,9 +97,9 @@ fn blob_model_caches_are_reset_instead_of_migrated() {
     }
     let connection = open(&path).unwrap();
     assert_eq!(version(&connection), SCHEMA_VERSION);
-    assert_eq!(count(&connection, "entries"), 0);
+    assert_eq!(count(&connection, "models"), 0);
     connection
-        .execute("INSERT INTO entries VALUES (1, 0, '{}', NULL)", [])
+        .execute("INSERT INTO models VALUES (1, '[]', 0, '{}', NULL)", [])
         .unwrap();
 }
 
@@ -108,7 +124,7 @@ fn older_version_discards_the_previous_schema_and_data() {
     }
     let connection = open(&path).unwrap();
     assert_eq!(version(&connection), SCHEMA_VERSION);
-    assert_eq!(count(&connection, "entries"), 0);
+    assert_eq!(count(&connection, "models"), 0);
     let objects: i64 = connection
         .query_row(
             "SELECT COUNT(*) FROM sqlite_schema WHERE name LIKE 'old%'",
@@ -174,39 +190,27 @@ fn locations_preserve_order_kinds_and_values_after_reopening() {
     let path = root.path().join("models.sqlite");
     {
         let connection = open(&path).unwrap();
-        connection
-            .execute_batch(
-                "INSERT INTO entries VALUES (1, 0, '{}', NULL);
-                 INSERT INTO locations VALUES (1, 2, 'container', 'p/C.class');
-                 INSERT INTO locations VALUES (1, 0, 'file', '/project/app.zip');
-                 INSERT INTO locations VALUES (1, 1, 'container', 'lib/a.jar');
-                 INSERT INTO entries VALUES (2, 1, '{}', X'03');
-                 INSERT INTO locations VALUES (2, 0, 'virtual', 'UNTITLED:My%20Type.java');",
-            )
-            .unwrap();
+        connection.execute_batch(
+            r#"INSERT INTO models VALUES (1, '[{"File":"/project/app.zip"},{"Container":"lib/a.jar"},{"Container":"p/C.class"}]', 0, '{}', NULL);
+               INSERT INTO models VALUES (2, '[{"Virtual":"UNTITLED:My%20Type.java"}]', 1, '{}', X'03');"#,
+        ).unwrap();
     }
     let connection = open(&path).unwrap();
-    let mut statement = connection
-        .prepare("SELECT kind, value FROM locations WHERE entry_id = 1 ORDER BY position")
-        .unwrap();
-    let locations = statement
-        .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    let location: String = connection
+        .query_row("SELECT location FROM models WHERE id = 1", [], |row| {
+            row.get(0)
         })
-        .unwrap()
-        .collect::<Result<Vec<_>, _>>()
         .unwrap();
+    let location: Location = serde_json::from_str(&location).unwrap();
     assert_eq!(
-        locations,
-        vec![
-            ("file".into(), "/project/app.zip".into()),
-            ("container".into(), "lib/a.jar".into()),
-            ("container".into(), "p/C.class".into()),
-        ]
+        location,
+        Location::file("/project/app.zip")
+            .entry(LocationEntry::Container("lib/a.jar".into()))
+            .entry(LocationEntry::Container("p/C.class".into()))
     );
     let uri: String = connection
         .query_row(
-            "SELECT value FROM locations WHERE entry_id = 2",
+            "SELECT json_extract(location, '$[0].Virtual') FROM models WHERE id = 2",
             [],
             |row| row.get(0),
         )
@@ -215,57 +219,53 @@ fn locations_preserve_order_kinds_and_values_after_reopening() {
 }
 
 #[test]
-fn locations_require_an_owner_and_unique_nonnegative_positions() {
+fn locations_must_be_valid_json_text() {
     let root = tempdir().unwrap();
     let connection = open(&root.path().join("models.sqlite")).unwrap();
-    connection
-        .execute_batch("INSERT INTO entries VALUES (1, 0, '{}', NULL)")
-        .unwrap();
-    for (owner, position, kind) in [(2, 0, "file"), (1, -1, "file"), (1, 0, "unknown")] {
+    for location in ["'not JSON'", "'{broken}'", "X'5B5D'", "NULL"] {
         assert!(
             connection
                 .execute(
-                    "INSERT INTO locations VALUES (?1, ?2, ?3, 'value')",
-                    rusqlite::params![owner, position, kind],
+                    &format!("INSERT INTO models VALUES (1, {location}, 0, '{{}}', NULL)"),
+                    [],
                 )
                 .is_err()
         );
     }
-    connection
-        .execute_batch("INSERT INTO locations VALUES (1, 0, 'file', '/project/C.class')")
-        .unwrap();
-    assert!(
-        connection
-            .execute(
-                "INSERT INTO locations VALUES (1, 0, 'virtual', 'untitled:C.java')",
-                [],
-            )
-            .is_err()
-    );
-    connection
-        .execute("DELETE FROM entries WHERE id = 1", [])
-        .unwrap();
-    assert_eq!(count(&connection, "locations"), 0);
+    assert_eq!(count(&connection, "models"), 0);
 }
 
 #[test]
-fn resetting_a_cache_with_linked_locations_removes_both_tables() {
+fn resetting_a_component_location_cache_discards_its_tables_and_data() {
     let root = tempdir().unwrap();
     let path = root.path().join("models.sqlite");
     {
-        let mut connection = open(&path).unwrap();
+        let mut connection = Connection::open(&path).unwrap();
         connection
-            .execute_batch(
-                "INSERT INTO entries VALUES (1, 0, '{}', NULL);
-             INSERT INTO locations VALUES (1, 0, 'file', '/project/C.class');",
-            )
+            .pragma_update(None, "foreign_keys", true)
             .unwrap();
+        connection.execute_batch(
+            "CREATE TABLE entries (id INTEGER PRIMARY KEY, model_kind INTEGER, model TEXT, content BLOB) STRICT;
+             CREATE TABLE locations (entry_id INTEGER REFERENCES entries(id) ON DELETE CASCADE, position INTEGER, kind TEXT, value TEXT) STRICT;
+             CREATE TABLE java_types (entry_id INTEGER REFERENCES entries(id) ON DELETE CASCADE, node_index INTEGER, name TEXT) STRICT;
+             INSERT INTO entries VALUES (1, 1, '{}', X'03');
+             INSERT INTO locations VALUES (1, 0, 'file', '/project/C.java');
+             INSERT INTO java_types VALUES (1, 1, 'C');",
+        ).unwrap();
         connection
             .pragma_update(None, "user_version", SCHEMA_VERSION - 1)
             .unwrap();
         initialize(&mut connection, &schema()).unwrap();
-        assert_eq!(count(&connection, "entries"), 0);
-        assert_eq!(count(&connection, "locations"), 0);
+        assert_eq!(count(&connection, "models"), 0);
+        assert_eq!(count(&connection, "java_types"), 0);
+        let obsolete_tables: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE name IN ('entries', 'locations')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(obsolete_tables, 0);
     }
     assert_eq!(version(&open(&path).unwrap()), SCHEMA_VERSION);
 }

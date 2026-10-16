@@ -1,9 +1,9 @@
-use beans_core::location::{Location, LocationEntry};
+use beans_core::location::Location;
 use rusqlite::{Transaction, params};
 
 use crate::{
     model::{File, nodes::NodeKind},
-    query::entry_id,
+    query::model_id,
 };
 
 pub const SCHEMA: &str = include_str!("storage/schema.sql");
@@ -16,22 +16,29 @@ pub fn store(
     contents: &str,
 ) -> Result<i64, String> {
     let model = serde_json::to_string(file).map_err(|error| error.to_string())?;
-    let id = if let Some(id) = entry_id(transaction, location)? {
+    let id = if let Some(id) = model_id(transaction, location)? {
         transaction
             .execute(
-                "UPDATE entries SET model = ?1, content = ?2 WHERE id = ?3",
+                "UPDATE models SET model = ?1, content = ?2 WHERE id = ?3",
                 params![model, contents.as_bytes(), id],
             )
             .map_err(|error| error.to_string())?;
         transaction
-            .execute("DELETE FROM java_types WHERE entry_id = ?1", [id])
+            .execute("DELETE FROM java_types WHERE model_id = ?1", [id])
             .map_err(|error| error.to_string())?;
         id
     } else {
-        insert(transaction, &model, location, contents)?
+        let location = serde_json::to_string(location).map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO models (location, model_kind, model, content) VALUES (?1, 1, ?2, ?3)",
+                params![location, model, contents.as_bytes()],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.last_insert_rowid()
     };
     let mut insert = transaction
-        .prepare("INSERT INTO java_types (entry_id, node_index, name) VALUES (?1, ?2, ?3)")
+        .prepare("INSERT INTO java_types (model_id, node_index, name) VALUES (?1, ?2, ?3)")
         .map_err(|error| error.to_string())?;
     for entry in file.iter_nodes() {
         if !matches!(entry.node.kind(), NodeKind::Type(_)) {
@@ -50,55 +57,13 @@ pub fn store(
 }
 
 pub fn remove(transaction: &Transaction<'_>, location: &Location) -> Result<bool, String> {
-    let Some(id) = entry_id(transaction, location)? else {
+    let Some(id) = model_id(transaction, location)? else {
         return Ok(false);
     };
     transaction
-        .execute("DELETE FROM entries WHERE id = ?1", [id])
+        .execute("DELETE FROM models WHERE id = ?1", [id])
         .map(|count| count != 0)
         .map_err(|error| error.to_string())
-}
-
-pub(crate) fn components(location: &Location) -> Result<Vec<(&str, &str)>, String> {
-    location
-        .entries
-        .iter()
-        .map(|entry| {
-            Ok(match entry {
-                LocationEntry::File(path) => {
-                    ("file", path.to_str().ok_or("file location is not UTF-8")?)
-                }
-                LocationEntry::Virtual(value) => ("virtual", value.as_str()),
-                LocationEntry::Container(value) => ("container", value.as_str()),
-            })
-        })
-        .collect()
-}
-
-fn insert(
-    transaction: &Transaction<'_>,
-    model: &str,
-    location: &Location,
-    contents: &str,
-) -> Result<i64, String> {
-    let components = components(location)?;
-    transaction
-        .execute(
-            "INSERT INTO entries (model_kind, model, content) VALUES (1, ?1, ?2)",
-            params![model, contents.as_bytes()],
-        )
-        .map_err(|error| error.to_string())?;
-    let id = transaction.last_insert_rowid();
-    let mut insert = transaction
-        .prepare("INSERT INTO locations (entry_id, position, kind, value) VALUES (?1, ?2, ?3, ?4)")
-        .map_err(|error| error.to_string())?;
-    for (position, (kind, value)) in components.into_iter().enumerate() {
-        let position = i64::try_from(position).map_err(|_| "location position overflow")?;
-        insert
-            .execute(params![id, position, kind, value])
-            .map_err(|error| error.to_string())?;
-    }
-    Ok(id)
 }
 
 fn canonical_name(file: &File, index: crate::model::nodes::NodeIndex) -> Option<String> {
