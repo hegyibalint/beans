@@ -4,7 +4,6 @@ use crate::JvmPlatform;
 
 impl JvmPlatform {
     pub fn find_classes(&self, _scope: QueryScope<'_>, _binary_name: &str) -> Vec<Location> {
-        // JVM persistence is deferred while Java moves to SQLite.
-        Vec::new()
+        todo!("JVM class lookup is not implemented")
     }
 }

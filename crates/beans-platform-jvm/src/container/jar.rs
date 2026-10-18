@@ -32,7 +32,7 @@ pub fn process(
         }
 
         let entry_id = id.entry(LocationEntry::Container(entry.name().to_owned()));
-        crate::parser::parse(entry)
+        crate::parser::parse(&entry_id, entry)
             .map_err(|error| format!("{entry_id:?}: {error}"))
             .map(|class| class.map(|class| (entry_id, class)))
             .transpose()

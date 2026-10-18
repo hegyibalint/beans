@@ -90,8 +90,11 @@ impl Fixture {
 fn jvm_class(binary_name: &str) -> (NamedTempFile, JvmPlatform) {
     let mut file = NamedTempFile::new().unwrap();
     file.write_all(&class_bytes(binary_name)).unwrap();
-    let mut jvm = JvmPlatform::new();
-    jvm.process(file.path().to_owned()).unwrap();
+    let jvm = JvmPlatform::new();
+    let mut models = Models::new();
+    let transaction = models.connection.transaction().unwrap();
+    assert!(jvm.process(&transaction, file.path()).unwrap());
+    transaction.commit().unwrap();
     (file, jvm)
 }
 
@@ -240,7 +243,7 @@ fn imported_superclass_uses_the_same_external_query() {
 }
 
 #[test]
-fn jvm_candidates_are_unavailable_until_persistence_is_implemented() {
+fn jvm_candidates_are_unavailable_until_querying_is_implemented() {
     let fixture = Fixture::new("package p; import q.Foo; class Use { Foo field; }", &[]);
     let (_file, jvm) = jvm_class("q/Foo");
     assert_eq!(fixture.resolve(&jvm), Err(ResolutionFailure::NotFound));

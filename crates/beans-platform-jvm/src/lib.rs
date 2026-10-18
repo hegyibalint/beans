@@ -13,6 +13,7 @@ use std::{
 };
 
 use beans_core::location::Location;
+use rusqlite::Transaction;
 
 pub use crate::model::class::Class;
 
@@ -24,40 +25,41 @@ impl JvmPlatform {
         Self::default()
     }
 
-    pub fn process_jdk_home(&mut self, home: &Path) -> Result<(), String> {
+    /// The caller must roll back the transaction on error.
+    pub fn process_jdk_home(
+        &self,
+        transaction: &Transaction<'_>,
+        home: &Path,
+    ) -> Result<(), String> {
         for artifact in jdk_artifacts(home)? {
-            self.process(artifact)?;
+            if !self.process(transaction, &artifact)? {
+                return Err(format!(
+                    "{}: unrecognized container format",
+                    artifact.display()
+                ));
+            }
         }
         Ok(())
     }
 
-    pub fn process(&mut self, path: PathBuf) -> Result<(), String> {
+    /// Replaces a recognized resource; the caller must roll back on error or `Ok(false)`.
+    pub fn process(&self, transaction: &Transaction<'_>, path: &Path) -> Result<bool, String> {
+        storage::remove(transaction, path)?;
         let mut file =
-            std::fs::File::open(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+            std::fs::File::open(path).map_err(|error| format!("{}: {error}", path.display()))?;
         let resource_id = Location::file(path);
 
         if let Some(entries) = container::class::process(&resource_id, &mut file)? {
-            return self.store(entries);
+            return store(transaction, entries);
         }
         if let Some(entries) = container::jar::process(&resource_id, &mut file)? {
-            return self.store(entries);
+            return store(transaction, entries);
         }
         if let Some(entries) = container::jimage::process(&resource_id, &mut file)? {
-            return self.store(entries);
+            return store(transaction, entries);
         }
 
-        Err(format!("{resource_id:?}: unrecognized container format"))
-    }
-
-    fn store(
-        &mut self,
-        entries: impl Iterator<Item = Result<(Location, Class), String>>,
-    ) -> Result<(), String> {
-        for entry in entries {
-            entry?;
-        }
-
-        Ok(())
+        Ok(false)
     }
 }
 
@@ -86,6 +88,17 @@ pub fn jdk_artifacts(home: &Path) -> Result<Vec<PathBuf>, String> {
         "{}: no supported JDK runtime found",
         home.display()
     ))
+}
+
+fn store(
+    transaction: &Transaction<'_>,
+    entries: impl Iterator<Item = Result<(Location, Class), String>>,
+) -> Result<bool, String> {
+    for entry in entries {
+        let (location, class) = entry?;
+        storage::store(transaction, &class, &location)?;
+    }
+    Ok(true)
 }
 
 fn artifact_exists(path: &Path) -> Result<bool, String> {

@@ -7,7 +7,9 @@ use beans_testing::support::class_bytes;
 fn returns_the_owned_class_name() {
     let class = {
         let bytes = class_bytes("example/Foo");
-        parse(bytes.as_slice()).unwrap().unwrap()
+        parse(&Location::file("Foo.class"), bytes.as_slice())
+            .unwrap()
+            .unwrap()
     };
 
     assert_eq!(class.name, "example/Foo");
@@ -16,13 +18,20 @@ fn returns_the_owned_class_name() {
 #[test]
 fn unrecognized_contents_return_none() {
     for bytes in [b"".as_slice(), b"not a class", &[0xCA, 0xFE, 0xBA]] {
-        assert!(parse(bytes).unwrap().is_none());
+        assert!(parse(&Location::file("input"), bytes).unwrap().is_none());
     }
 }
 
 #[test]
-fn recognized_but_truncated_class_returns_an_error() {
-    assert!(parse([0xCA, 0xFE, 0xBA, 0xBE].as_slice()).is_err());
+fn recognized_but_truncated_class_is_skipped() {
+    assert!(
+        parse(
+            &Location::file("broken.class"),
+            [0xCA, 0xFE, 0xBA, 0xBE].as_slice()
+        )
+        .unwrap()
+        .is_none()
+    );
 }
 
 #[test]
@@ -35,5 +44,7 @@ fn reader_failures_return_an_error() {
         }
     }
 
-    assert!(matches!(parse(BrokenReader), Err(error) if error == "read failed"));
+    assert!(
+        matches!(parse(&Location::file("input"), BrokenReader), Err(error) if error == "read failed")
+    );
 }

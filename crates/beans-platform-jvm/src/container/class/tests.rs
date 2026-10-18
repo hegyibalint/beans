@@ -16,11 +16,10 @@ fn yields_one_class() {
 }
 
 #[test]
-fn recognized_but_truncated_class_yields_error() {
+fn recognized_but_truncated_class_is_skipped() {
     let id = Location::file("broken.class");
     let mut entries = process(&id, Cursor::new([0xCA, 0xFE, 0xBA, 0xBE]))
         .unwrap()
         .unwrap();
-    assert!(entries.next().unwrap().is_err());
     assert!(entries.next().is_none());
 }

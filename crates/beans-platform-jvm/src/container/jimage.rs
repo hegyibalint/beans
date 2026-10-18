@@ -155,13 +155,12 @@ impl ImageLocation {
             .seek(SeekFrom::Start(start))
             .map_err(|error| format!("{entry_id:?}: {error}"))?;
         let mut resource = reader.take(self.uncompressed_size);
-        let class = crate::parser::parse(&mut resource)
+        let class = crate::parser::parse(&entry_id, &mut resource)
             .map_err(|error| format!("{entry_id:?}: {error}"))?;
         if resource.limit() != 0 {
             return Err(format!("{entry_id:?}: truncated jimage resource"));
         }
-        let class = class.ok_or_else(|| format!("{entry_id:?}: invalid class-file magic"))?;
-        Ok(Some((entry_id, class)))
+        Ok(class.map(|class| (entry_id, class)))
     }
 
     fn parse(mut reader: impl Read) -> Result<Self, String> {

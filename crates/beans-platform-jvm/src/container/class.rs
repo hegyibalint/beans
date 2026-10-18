@@ -14,12 +14,15 @@ pub fn process(
         return Ok(None);
     }
 
-    Ok(Some(std::iter::once_with(move || {
-        let class = crate::parser::parse(reader)
-            .map_err(|error| format!("{id:?}: {error}"))?
-            .ok_or_else(|| format!("{id:?}: invalid class-file magic"))?;
-        Ok((id.clone(), class))
-    })))
+    Ok(Some(
+        std::iter::once_with(move || {
+            crate::parser::parse(id, reader)
+                .map_err(|error| format!("{id:?}: {error}"))
+                .map(|class| class.map(|class| (id.clone(), class)))
+                .transpose()
+        })
+        .flatten(),
+    ))
 }
 
 #[cfg(test)]

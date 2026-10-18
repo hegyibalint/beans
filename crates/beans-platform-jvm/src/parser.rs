@@ -1,8 +1,10 @@
 use std::io::Read;
 
+use beans_core::location::Location;
+
 use crate::model::class::Class;
 
-pub fn parse(mut reader: impl Read) -> Result<Option<Class>, String> {
+pub fn parse(id: &Location, mut reader: impl Read) -> Result<Option<Class>, String> {
     let mut options = cafebabe::ParseOptions::default();
     options.parse_bytecode(false);
 
@@ -16,11 +18,15 @@ pub fn parse(mut reader: impl Read) -> Result<Option<Class>, String> {
         return Ok(None);
     }
 
-    let class =
-        cafebabe::parse_class_with_options(&bytes, &options).map_err(|error| error.to_string())?;
-    Ok(Some(Class {
-        name: class.this_class.to_string(),
-    }))
+    match cafebabe::parse_class_with_options(&bytes, &options) {
+        Ok(class) => Ok(Some(Class {
+            name: class.this_class.to_string(),
+        })),
+        Err(error) => {
+            log::warn!("{id:?}: {error}");
+            Ok(None)
+        }
+    }
 }
 
 #[cfg(test)]
