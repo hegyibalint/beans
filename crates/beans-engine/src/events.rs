@@ -1,4 +1,4 @@
-use std::{fs::File, path::Path, thread};
+use std::{fs::File, path::Path, sync::Arc, thread};
 
 use beans_core::events::Event;
 use beans_platform_jvm::JvmPlatform;
@@ -17,10 +17,11 @@ impl Engine {
         let events = self.events.clone();
         let storage = storage::open(&self.work_dir.join("models"))?;
         let event_log = logging::open(&self.work_dir);
+        let jvm = Arc::clone(&self.jvm);
         self.event_loop = Some(
             thread::Builder::new()
                 .name("beans-events".into())
-                .spawn(move || run(events, event_log, storage))
+                .spawn(move || Self::run(&jvm, events, event_log, storage))
                 .map_err(|error| error.to_string())?,
         );
         Ok(())
@@ -32,36 +33,40 @@ impl Engine {
         thread.join().map_err(|_| "engine event thread panicked")?;
         signal.map_err(|error| error.to_string())
     }
+
+    fn run(
+        jvm: &JvmPlatform,
+        events: Receiver<Event>,
+        mut event_log: Option<File>,
+        mut storage: Connection,
+    ) {
+        for event in events {
+            if let Some(file) = event_log.as_mut() {
+                if let Err(error) = logging::record(file, &event) {
+                    log::warn!("Event logging disabled: {error}");
+                    event_log = None;
+                }
+            }
+            match event {
+                Event::Stop => break,
+                Event::ResourceFound(found) => {
+                    if let Err(error) = process_resource(&mut storage, jvm, &found.path) {
+                        log::warn!("{}: {error}", found.path.display());
+                    }
+                }
+                Event::JavaHomeFound(found) => {
+                    if let Err(error) = process_jdk_home(&mut storage, jvm, &found.home) {
+                        log::warn!("{}: {error}", found.home.display());
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl Drop for Engine {
     fn drop(&mut self) {
         let _ = self.stop();
-    }
-}
-
-fn run(events: Receiver<Event>, mut event_log: Option<File>, mut storage: Connection) {
-    let jvm = JvmPlatform::new();
-    for event in events {
-        if let Some(file) = event_log.as_mut() {
-            if let Err(error) = logging::record(file, &event) {
-                log::warn!("Event logging disabled: {error}");
-                event_log = None;
-            }
-        }
-        match event {
-            Event::Stop => break,
-            Event::ResourceFound(found) => {
-                if let Err(error) = process_resource(&mut storage, &jvm, &found.path) {
-                    log::warn!("{}: {error}", found.path.display());
-                }
-            }
-            Event::JavaHomeFound(found) => {
-                if let Err(error) = process_jdk_home(&mut storage, &jvm, &found.home) {
-                    log::warn!("{}: {error}", found.home.display());
-                }
-            }
-        }
     }
 }
 

@@ -3,11 +3,13 @@
 use std::{
     env, fs,
     path::{Path, PathBuf},
+    sync::Arc,
     thread::JoinHandle,
 };
 
 use beans_core::events::Event;
 use beans_lang_java::engine::JavaLanguage;
+use beans_platform_jvm::JvmPlatform;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use rusqlite::Connection;
 
@@ -26,6 +28,7 @@ pub struct Engine {
 
     // Language verticals
     java: JavaLanguage,
+    jvm: Arc<JvmPlatform>,
 
     // Event bus
     sender: Sender<Event>,
@@ -50,6 +53,7 @@ impl Engine {
             work_dir,
             storage,
             java,
+            jvm: Arc::new(JvmPlatform::new()),
             sender,
             events,
             event_loop: None,

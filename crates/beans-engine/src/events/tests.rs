@@ -1,6 +1,7 @@
-use std::fs::File;
+use std::{fs::File, sync::Arc};
 
 use beans_core::events::{Event, JavaHomeFound};
+use beans_platform_jvm::JvmPlatform;
 use tempfile::tempdir;
 
 use crate::Engine;
@@ -88,6 +89,26 @@ fn dropping_a_running_engine_joins_the_thread_despite_live_producers() {
 }
 
 #[test]
+fn workers_share_the_engine_platform_across_restarts_and_release_it_on_shutdown() {
+    let root = tempdir().unwrap();
+    let mut engine = Engine::new(root.path()).unwrap();
+    let jvm = Arc::downgrade(&engine.jvm);
+    assert_eq!(jvm.strong_count(), 1);
+
+    engine.start().unwrap();
+    assert_eq!(jvm.strong_count(), 2);
+    assert!(engine.start().is_err());
+    assert_eq!(jvm.strong_count(), 2);
+    engine.stop().unwrap();
+    assert_eq!(jvm.strong_count(), 1);
+
+    engine.start().unwrap();
+    assert_eq!(jvm.strong_count(), 2);
+    drop(engine);
+    assert_eq!(jvm.strong_count(), 0);
+}
+
+#[test]
 fn a_failed_log_write_does_not_stop_the_event_loop() {
     let file = tempfile::NamedTempFile::new().unwrap();
     let read_only = File::open(file.path()).unwrap();
@@ -102,7 +123,7 @@ fn a_failed_log_write_does_not_stop_the_event_loop() {
 
     let root = tempdir().unwrap();
     let storage = crate::storage::open(&root.path().join("models")).unwrap();
-    super::run(events, Some(read_only), storage);
+    Engine::run(&JvmPlatform::new(), events, Some(read_only), storage);
 
     assert!(remaining.is_empty());
     assert_eq!(file.as_file().metadata().unwrap().len(), 0);
