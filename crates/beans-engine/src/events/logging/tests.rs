@@ -19,6 +19,10 @@ fn events_round_trip_as_individual_json_lines() {
     assert!(text.ends_with('\n'));
     let lines: Vec<_> = text.lines().collect();
     assert_eq!(lines.len(), 2);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(lines[0]).unwrap(),
+        serde_json::json!({"type": "JavaHomeFound", "data": {"home": home}})
+    );
     let Event::JavaHomeFound(found) = serde_json::from_str::<Event>(lines[0]).unwrap() else {
         panic!("expected JavaHomeFound");
     };
@@ -35,7 +39,7 @@ fn every_record_is_flushed() {
 
     record(&mut writer, &Event::Stop).unwrap();
 
-    assert_eq!(writer.get_ref(), b"\"Stop\"\n");
+    assert_eq!(writer.get_ref(), b"{\"type\":\"Stop\"}\n");
 }
 
 #[test]
