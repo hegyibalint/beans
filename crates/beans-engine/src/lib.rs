@@ -1,6 +1,6 @@
 //! Application coordination, independent of editor protocols.
 
-use std::{fs, path::Path};
+use std::{fs, path::Path, thread::JoinHandle};
 
 use beans_core::events::Event;
 use beans_lang_java::engine::JavaLanguage;
@@ -10,6 +10,7 @@ use rusqlite::Connection;
 
 pub mod diagnostics;
 mod documents;
+mod events;
 mod features;
 pub mod storage;
 
@@ -26,6 +27,7 @@ pub struct Engine {
     // Event bus
     sender: Sender<Event>,
     events: Receiver<Event>,
+    event_loop: Option<JoinHandle<()>>,
 }
 
 impl Engine {
@@ -44,6 +46,7 @@ impl Engine {
             jvm,
             sender,
             events,
+            event_loop: None,
         })
     }
 

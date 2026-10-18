@@ -1,6 +1,7 @@
 mod capabilities;
 mod folder_selection;
 mod imports;
+mod lifecycle;
 mod roots;
 
 use std::path::Path;

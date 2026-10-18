@@ -74,7 +74,9 @@ fn producers_share_one_engine_inbox() {
         .unwrap();
 
     for expected in ["/first-jdk", "/second-jdk"] {
-        let Event::JavaHomeFound(found) = engine.events.try_recv().unwrap();
+        let Event::JavaHomeFound(found) = engine.events.try_recv().unwrap() else {
+            panic!("expected JavaHomeFound");
+        };
         assert_eq!(found.home, std::path::Path::new(expected));
     }
     assert!(engine.events.try_recv().is_err());
@@ -95,6 +97,8 @@ fn a_producer_can_send_without_borrowing_the_engine() {
     .join()
     .unwrap();
 
-    let Event::JavaHomeFound(found) = engine.events.try_recv().unwrap();
+    let Event::JavaHomeFound(found) = engine.events.try_recv().unwrap() else {
+        panic!("expected JavaHomeFound");
+    };
     assert_eq!(found.home, std::path::Path::new("/jdk"));
 }

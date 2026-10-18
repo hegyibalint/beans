@@ -16,8 +16,10 @@ impl Features {
     pub(crate) fn initialize(params: &InitializeParams) -> Result<Self, String> {
         let root = workspace_root(params)?;
         let backend = load(&root).map_err(|error| error.to_string())?;
+        let mut engine = Engine::new(&root)?;
+        engine.start()?;
         let mut features = Self {
-            engine: Engine::new(&root)?,
+            engine,
             client_capabilities: params.capabilities.clone(),
             open_documents: Default::default(),
             workspace_documents: Default::default(),

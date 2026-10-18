@@ -27,6 +27,7 @@ dependencies = [
  "beans-lang-java",
  "beans-platform-jvm",
  "crossbeam-channel",
+ "log",
  "rusqlite",
  "serde_json",
  "tempfile",
