@@ -6,7 +6,6 @@ use std::{
 
 use beans_core::location::Location;
 use beans_engine::Engine;
-use beans_workspace_toml::load;
 use lsp_types::{InitializeParams, Uri};
 use url::Url;
 
@@ -15,7 +14,7 @@ use super::{Features, OpenDocument};
 impl Features {
     pub(crate) fn initialize(params: &InitializeParams) -> Result<Self, String> {
         let root = workspace_root(params)?;
-        let backend = load(&root).map_err(|error| error.to_string())?;
+        let backend = beans_workspace_toml::load(&root).map_err(|error| error.to_string())?;
         let mut engine = Engine::new(&root)?;
         engine.start()?;
         let mut features = Self {
@@ -27,6 +26,7 @@ impl Features {
         let mut files = BTreeSet::new();
         match backend {
             Some(backend) => {
+                backend.start(&features.engine.sender())?;
                 let project = backend.model();
                 let source_roots: BTreeSet<_> = project
                     .units
@@ -37,10 +37,10 @@ impl Features {
                 if project
                     .units
                     .values()
-                    .any(|unit| !unit.classpath.is_empty() || unit.jdk_home.is_some())
+                    .any(|unit| !unit.classpath.is_empty())
                 {
                     log::warn!(
-                        "{}: classpath and JDK ingestion is not implemented yet",
+                        "{}: classpath ingestion is not implemented yet",
                         root.display()
                     );
                 }
