@@ -10,3 +10,7 @@ CREATE TABLE models (
     content BLOB,
     CHECK (model_kind <> 1 OR content IS NOT NULL)
 ) STRICT;
+
+CREATE INDEX jvm_classes_by_name
+ON models (json_extract(model, '$.name'))
+WHERE model_kind = 0;

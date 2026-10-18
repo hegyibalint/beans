@@ -1,17 +1,21 @@
 use crate::query::JavaQuery;
 use beans_core::{names::Name, query_scope::QueryScope, resolution::TypeDefinitionQuery};
-use beans_platform_jvm::JvmPlatform;
+use beans_platform_jvm::query::JvmQuery;
+use rusqlite::Connection;
 
 use super::{JavaTypeCandidate, TypeCandidate};
 
 pub struct ResolutionQuery<'a> {
-    java: &'a JavaQuery<'a>,
-    jvm: &'a JvmPlatform,
+    java: JavaQuery<'a>,
+    jvm: JvmQuery<'a>,
 }
 
 impl<'a> ResolutionQuery<'a> {
-    pub fn new(java: &'a JavaQuery<'a>, jvm: &'a JvmPlatform) -> Self {
-        Self { java, jvm }
+    pub fn new(connection: &'a Connection, scope: QueryScope<'a>) -> Self {
+        Self {
+            java: JavaQuery::new(connection, scope),
+            jvm: JvmQuery::new(connection, scope),
+        }
     }
 }
 
@@ -22,12 +26,11 @@ impl TypeDefinitionQuery<TypeCandidate> for ResolutionQuery<'_> {
             .find_types(name)?
             .into_iter()
             .map(|handle| TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)));
-        let scope = QueryScope::new(self.java.classpath());
         // JVMS §4.2.1: internal names use '/'; canonical member-name conversion is not wired.
         let binary_name = name.as_slice().join("/");
         let jvm = self
             .jvm
-            .find_classes(scope, &binary_name)
+            .find_classes(&binary_name)?
             .into_iter()
             .map(TypeCandidate::Jvm);
         Ok(java.chain(jvm).collect())
@@ -50,8 +53,7 @@ mod tests {
         );
         let java = models.query(QueryScope::new(&Unrestricted));
         let address = java.find_types(&name).unwrap().remove(0);
-        let jvm = JvmPlatform::new();
-        let query = ResolutionQuery::new(&java, &jvm);
+        let query = ResolutionQuery::new(&models.connection, QueryScope::new(&Unrestricted));
         assert_eq!(
             query.find_types(&name).unwrap(),
             [TypeCandidate::Java(JavaTypeCandidate::Declaration(address))]
@@ -59,15 +61,25 @@ mod tests {
     }
 
     #[test]
-    fn storage_errors_are_not_missing_candidates() {
+    fn jvm_storage_errors_are_not_missing_candidates() {
+        let models = Models::new();
+        models.connection.execute("DROP TABLE models", []).unwrap();
+        let query = ResolutionQuery::new(&models.connection, QueryScope::new(&Unrestricted));
+        assert!(
+            query
+                .find_types(&Name::new(vec!["Missing".into()]))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn java_storage_errors_are_not_missing_candidates() {
         let models = Models::new();
         models
             .connection
             .execute("DROP TABLE java_types", [])
             .unwrap();
-        let java = models.query(QueryScope::new(&Unrestricted));
-        let jvm = JvmPlatform::new();
-        let query = ResolutionQuery::new(&java, &jvm);
+        let query = ResolutionQuery::new(&models.connection, QueryScope::new(&Unrestricted));
         assert!(
             query
                 .find_types(&Name::new(vec!["Missing".into()]))

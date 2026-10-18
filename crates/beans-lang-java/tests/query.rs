@@ -14,7 +14,6 @@ use beans_lang_java::{
         Context, JavaTypeCandidate, TypeCandidate, query::ResolutionQuery, resolve,
     },
 };
-use beans_platform_jvm::JvmPlatform;
 
 #[test]
 fn deletion_removes_the_model() {
@@ -84,8 +83,7 @@ fn an_imported_type_resolves_to_another_stored_source_file() {
     );
     let classpath = Unrestricted;
     let java = engine.query(QueryScope::new(&classpath));
-    let jvm = JvmPlatform::default();
-    let definitions = ResolutionQuery::new(&java, &jvm);
+    let definitions = ResolutionQuery::new(&engine.connection, QueryScope::new(&classpath));
     let file = java.file(&use_source).unwrap().unwrap();
     let field = file
         .iter_nodes()

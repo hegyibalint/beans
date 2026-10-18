@@ -38,17 +38,14 @@ impl Fixture {
         Self { java, source }
     }
 
-    fn resolve(&self, jvm: &JvmPlatform) -> Result<TypeCandidate, ResolutionFailure> {
-        self.resolve_at(jvm, Occurrence::Field)
+    fn resolve(&self) -> Result<TypeCandidate, ResolutionFailure> {
+        self.resolve_at(Occurrence::Field)
     }
 
-    fn resolve_at(
-        &self,
-        jvm: &JvmPlatform,
-        occurrence: Occurrence,
-    ) -> Result<TypeCandidate, ResolutionFailure> {
+    fn resolve_at(&self, occurrence: Occurrence) -> Result<TypeCandidate, ResolutionFailure> {
         let java = self.java.query(QueryScope::new(&Unrestricted));
-        let definitions = ResolutionQuery::new(&java, jvm);
+        let definitions =
+            ResolutionQuery::new(&self.java.connection, QueryScope::new(&Unrestricted));
         let file = java.file(&self.source).unwrap().unwrap();
         let (index, reference) = file
             .iter_nodes()
@@ -75,6 +72,19 @@ impl Fixture {
         }
     }
 
+    fn jvm_class(&mut self, binary_name: &str) -> NamedTempFile {
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(&class_bytes(binary_name)).unwrap();
+        let transaction = self.java.connection.transaction().unwrap();
+        assert!(
+            JvmPlatform::new()
+                .process(&transaction, file.path())
+                .unwrap()
+        );
+        transaction.commit().unwrap();
+        file
+    }
+
     fn expected(&self, name: &str) -> TypeCandidate {
         let query = self.java.query(QueryScope::new(&Unrestricted));
         let entry = query
@@ -87,17 +97,6 @@ impl Fixture {
     }
 }
 
-fn jvm_class(binary_name: &str) -> (NamedTempFile, JvmPlatform) {
-    let mut file = NamedTempFile::new().unwrap();
-    file.write_all(&class_bytes(binary_name)).unwrap();
-    let jvm = JvmPlatform::new();
-    let mut models = Models::new();
-    let transaction = models.connection.transaction().unwrap();
-    assert!(jvm.process(&transaction, file.path()).unwrap());
-    transaction.commit().unwrap();
-    (file, jvm)
-}
-
 #[test]
 fn single_import_shadows_current_package_and_on_demand_imports() {
     let fixture = Fixture::new(
@@ -108,10 +107,7 @@ fn single_import_shadows_current_package_and_on_demand_imports() {
             ("Demand", "package r; public class Foo {}"),
         ],
     );
-    assert_eq!(
-        fixture.resolve(&JvmPlatform::new()),
-        Ok(fixture.expected("q.Foo"))
-    );
+    assert_eq!(fixture.resolve(), Ok(fixture.expected("q.Foo")));
 }
 
 #[test]
@@ -123,10 +119,7 @@ fn current_package_shadows_on_demand_imports() {
             ("Demand", "package q; public class Foo {}"),
         ],
     );
-    assert_eq!(
-        fixture.resolve(&JvmPlatform::new()),
-        Ok(fixture.expected("p.Foo"))
-    );
+    assert_eq!(fixture.resolve(), Ok(fixture.expected("p.Foo")));
 }
 
 #[test]
@@ -139,8 +132,7 @@ fn distinct_on_demand_imports_are_ambiguous_but_duplicate_imports_are_not() {
         "package p; import q.*; import r.*; class Use { Foo field; }",
         files,
     );
-    let Err(ResolutionFailure::Ambiguous(candidates)) = ambiguous.resolve(&JvmPlatform::new())
-    else {
+    let Err(ResolutionFailure::Ambiguous(candidates)) = ambiguous.resolve() else {
         panic!("expected ambiguous on-demand imports");
     };
     assert_eq!(
@@ -152,10 +144,7 @@ fn distinct_on_demand_imports_are_ambiguous_but_duplicate_imports_are_not() {
         "package p; import q.*; import q.*; class Use { Foo field; }",
         files,
     );
-    assert_eq!(
-        duplicate.resolve(&JvmPlatform::new()),
-        Ok(duplicate.expected("q.Foo"))
-    );
+    assert_eq!(duplicate.resolve(), Ok(duplicate.expected("q.Foo")));
 }
 
 #[test]
@@ -170,7 +159,7 @@ fn a_qualified_suffix_does_not_disambiguate_on_demand_imports() {
             ("Second", "package r; public class Outer {}"),
         ],
     );
-    let Err(ResolutionFailure::Ambiguous(candidates)) = fixture.resolve(&JvmPlatform::new()) else {
+    let Err(ResolutionFailure::Ambiguous(candidates)) = fixture.resolve() else {
         panic!("expected two competing Outer types");
     };
     assert_eq!(
@@ -185,10 +174,7 @@ fn java_lang_is_imported_on_demand() {
         "package p; class Use { String field; }",
         &[("String", "package java.lang; public class String {}")],
     );
-    assert_eq!(
-        fixture.resolve(&JvmPlatform::new()),
-        Ok(fixture.expected("java.lang.String"))
-    );
+    assert_eq!(fixture.resolve(), Ok(fixture.expected("java.lang.String")));
 }
 
 #[test]
@@ -200,19 +186,13 @@ fn imported_qualified_name_resolves_the_member_and_commits_to_its_owner() {
             "package q; public class Outer { public class Inner {} }",
         )],
     );
-    assert_eq!(
-        fixture.resolve(&JvmPlatform::new()),
-        Ok(fixture.expected("q.Outer.Inner"))
-    );
+    assert_eq!(fixture.resolve(), Ok(fixture.expected("q.Outer.Inner")));
 
     let missing = Fixture::new(
         "package p; import q.Outer; class Use { Outer.Missing field; }",
         &[("Outer", "package q; public class Outer {}")],
     );
-    assert_eq!(
-        missing.resolve(&JvmPlatform::new()),
-        Err(ResolutionFailure::Partial)
-    );
+    assert_eq!(missing.resolve(), Err(ResolutionFailure::Partial));
 }
 
 #[test]
@@ -224,10 +204,7 @@ fn qualified_spelling_can_start_with_a_package() {
             "package q; public class Outer { public class Inner {} }",
         )],
     );
-    assert_eq!(
-        fixture.resolve(&JvmPlatform::new()),
-        Ok(fixture.expected("q.Outer.Inner"))
-    );
+    assert_eq!(fixture.resolve(), Ok(fixture.expected("q.Outer.Inner")));
 }
 
 #[test]
@@ -237,43 +214,52 @@ fn imported_superclass_uses_the_same_external_query() {
         &[("Base", "package q; public class Base {}")],
     );
     assert_eq!(
-        fixture.resolve_at(&JvmPlatform::new(), Occurrence::Supertype),
+        fixture.resolve_at(Occurrence::Supertype),
         Ok(fixture.expected("q.Base"))
     );
 }
 
 #[test]
-fn jvm_candidates_are_unavailable_until_querying_is_implemented() {
-    let fixture = Fixture::new("package p; import q.Foo; class Use { Foo field; }", &[]);
-    let (_file, jvm) = jvm_class("q/Foo");
-    assert_eq!(fixture.resolve(&jvm), Err(ResolutionFailure::NotFound));
+fn stored_jvm_classes_are_resolved() {
+    let mut fixture = Fixture::new("package p; import q.Foo; class Use { Foo field; }", &[]);
+    let file = fixture.jvm_class("q/Foo");
+    assert_eq!(
+        fixture.resolve(),
+        Ok(TypeCandidate::Jvm(Location::file(file.path())))
+    );
 }
 
 #[test]
-fn deferred_jvm_candidates_do_not_shadow_java_types() {
-    let fixture = Fixture::new(
+fn a_jvm_single_import_shadows_a_java_type_in_the_current_package() {
+    let mut fixture = Fixture::new(
         "package p; import q.Foo; class Use { Foo field; }",
         &[("Foo", "package p; class Foo {}")],
     );
-    let (_file, jvm) = jvm_class("q/Foo");
-    assert_eq!(fixture.resolve(&jvm), Ok(fixture.expected("p.Foo")));
+    let file = fixture.jvm_class("q/Foo");
+    assert_eq!(
+        fixture.resolve(),
+        Ok(TypeCandidate::Jvm(Location::file(file.path())))
+    );
 }
 
 #[test]
-fn deferred_jvm_candidates_do_not_make_java_types_ambiguous() {
-    let fixture = Fixture::new(
+fn java_and_jvm_candidates_with_the_same_name_are_ambiguous() {
+    let mut fixture = Fixture::new(
         "package p; import q.Foo; class Use { Foo field; }",
         &[("Foo", "package q; public class Foo {}")],
     );
-    let (_file, jvm) = jvm_class("q/Foo");
-    assert_eq!(fixture.resolve(&jvm), Ok(fixture.expected("q.Foo")));
+    let file = fixture.jvm_class("q/Foo");
+    assert_eq!(
+        fixture.resolve(),
+        Err(ResolutionFailure::Ambiguous(vec![
+            fixture.expected("q.Foo"),
+            TypeCandidate::Jvm(Location::file(file.path())),
+        ]))
+    );
 }
 
 #[test]
 fn an_unmatched_name_is_not_found() {
     let fixture = Fixture::new("package p; class Use { Missing field; }", &[]);
-    assert_eq!(
-        fixture.resolve(&JvmPlatform::new()),
-        Err(ResolutionFailure::NotFound)
-    );
+    assert_eq!(fixture.resolve(), Err(ResolutionFailure::NotFound));
 }

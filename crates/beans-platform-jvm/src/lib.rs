@@ -1,7 +1,7 @@
 mod container;
 mod model;
 mod parser;
-mod query;
+pub mod query;
 pub mod storage;
 
 #[cfg(test)]

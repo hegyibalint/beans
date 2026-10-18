@@ -22,7 +22,6 @@ impl Engine {
         let context = JavaFeatureContext {
             connection: &transaction,
             scope: QueryScope::new(&Unrestricted),
-            jvm: &self.jvm,
         };
         self.java.hover(&context, request)
     }

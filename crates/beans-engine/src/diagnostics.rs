@@ -10,11 +10,7 @@ impl Engine {
             .storage
             .unchecked_transaction()
             .map_err(|error| error.to_string())?;
-        self.java.diagnostics(
-            &transaction,
-            QueryScope::new(&Unrestricted),
-            &self.jvm,
-            source,
-        )
+        self.java
+            .diagnostics(&transaction, QueryScope::new(&Unrestricted), source)
     }
 }

@@ -8,7 +8,6 @@ use std::{
 
 use beans_core::events::Event;
 use beans_lang_java::engine::JavaLanguage;
-use beans_platform_jvm::JvmPlatform;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use rusqlite::Connection;
 
@@ -26,7 +25,6 @@ pub struct Engine {
     storage: Connection,
 
     // Language verticals
-    jvm: JvmPlatform,
     java: JavaLanguage,
 
     // Event bus
@@ -46,14 +44,12 @@ impl Engine {
             .map_err(|error| format!("{}: {error}", work_dir.display()))?;
         let storage = storage::open(&work_dir.join("models"))?;
         let (sender, events) = unbounded();
-        let jvm = JvmPlatform::new();
         let java = JavaLanguage::new();
 
         Ok(Self {
             work_dir,
             storage,
             java,
-            jvm,
             sender,
             events,
             event_loop: None,

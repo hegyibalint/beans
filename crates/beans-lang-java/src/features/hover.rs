@@ -38,7 +38,6 @@ mod tests {
         location::{Location, LocationEntry},
         query_scope::QueryScope,
     };
-    use beans_platform_jvm::JvmPlatform;
 
     fn source_id() -> Location {
         Location::new(LocationEntry::Virtual("untitled:Example.java".into()))
@@ -55,7 +54,6 @@ mod tests {
                 &JavaFeatureContext {
                     connection: &engine.connection,
                     scope: QueryScope::new(&Unrestricted),
-                    jvm: &JvmPlatform::default(),
                 },
                 &HoverRequest {
                     source,

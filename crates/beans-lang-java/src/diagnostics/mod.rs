@@ -1,5 +1,4 @@
 use beans_core::{location::Location, query_scope::QueryScope};
-use beans_platform_jvm::JvmPlatform;
 use rusqlite::Connection;
 
 use crate::{
@@ -27,24 +26,23 @@ impl JavaLanguage {
         &self,
         connection: &Connection,
         scope: QueryScope<'_>,
-        jvm: &JvmPlatform,
         source: &Location,
     ) -> Result<Vec<Diagnostic>, String> {
         let java = JavaQuery::new(connection, scope);
         let Some(file) = java.file(source)? else {
             return Ok(Vec::new());
         };
-        self.diagnostics_for_file(&java, jvm, source, &file)
+        self.diagnostics_for_file(connection, scope, source, &file)
     }
 
     pub fn diagnostics_for_file(
         &self,
-        java: &JavaQuery<'_>,
-        jvm: &JvmPlatform,
+        connection: &Connection,
+        scope: QueryScope<'_>,
         source: &Location,
         file: &File,
     ) -> Result<Vec<Diagnostic>, String> {
-        let definitions = ResolutionQuery::new(java, jvm);
+        let definitions = ResolutionQuery::new(connection, scope);
         unresolved_types::collect(file, source, &definitions)
     }
 }

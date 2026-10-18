@@ -2,7 +2,7 @@ use std::{path::Path, time::Duration};
 
 use rusqlite::{Connection, TransactionBehavior};
 
-const SCHEMA_VERSION: i64 = 8;
+const SCHEMA_VERSION: i64 = 9;
 
 /// Opens a file-backed cache. The caller chooses its location and creates its parent directory.
 pub fn open(path: &Path) -> Result<Connection, String> {

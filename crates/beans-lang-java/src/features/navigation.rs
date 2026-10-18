@@ -31,7 +31,7 @@ impl<'request>
         let source = request.source;
         let offset = request.offset;
         let java = JavaQuery::new(context.connection, context.scope);
-        let definitions = ResolutionQuery::new(&java, context.jvm);
+        let definitions = ResolutionQuery::new(context.connection, context.scope);
         let Some(file) = java.file(source)? else {
             return Ok(None);
         };
@@ -153,7 +153,6 @@ mod tests {
     use beans_core::{
         classpath::Unrestricted, names::Name, query_scope::QueryScope, ranges::ByteRange,
     };
-    use beans_platform_jvm::JvmPlatform;
 
     fn source_id() -> Location {
         Location::new(LocationEntry::Virtual("untitled:Example.java".into()))
@@ -165,7 +164,6 @@ mod tests {
                 &JavaFeatureContext {
                     connection: &java.connection,
                     scope: QueryScope::new(&Unrestricted),
-                    jvm: &JvmPlatform::default(),
                 },
                 &DefinitionRequest { source, offset },
             )
@@ -278,7 +276,6 @@ mod tests {
                     &JavaFeatureContext {
                         connection: &java.connection,
                         scope: QueryScope::new(&Unrestricted),
-                        jvm: &JvmPlatform::default(),
                     },
                     &DefinitionRequest {
                         source: &source,

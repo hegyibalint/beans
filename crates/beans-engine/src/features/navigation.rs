@@ -19,7 +19,6 @@ impl Engine {
         let context = JavaFeatureContext {
             connection: &transaction,
             scope: QueryScope::new(&Unrestricted),
-            jvm: &self.jvm,
         };
         self.java.goto_definition(&context, request)
     }
