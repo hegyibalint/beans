@@ -1,9 +1,11 @@
-use std::{fs::File, thread};
+use std::{fs::File, path::Path, thread};
 
 use beans_core::events::Event;
+use beans_platform_jvm::JvmPlatform;
 use crossbeam_channel::Receiver;
+use rusqlite::{Connection, TransactionBehavior};
 
-use crate::Engine;
+use crate::{Engine, storage};
 
 mod logging;
 
@@ -13,11 +15,12 @@ impl Engine {
             return Err("engine is already started".into());
         }
         let events = self.events.clone();
+        let storage = storage::open(&self.work_dir.join("models"))?;
         let event_log = logging::open(&self.work_dir);
         self.event_loop = Some(
             thread::Builder::new()
                 .name("beans-events".into())
-                .spawn(move || run(events, event_log))
+                .spawn(move || run(events, event_log, storage))
                 .map_err(|error| error.to_string())?,
         );
         Ok(())
@@ -37,7 +40,8 @@ impl Drop for Engine {
     }
 }
 
-fn run(events: Receiver<Event>, mut event_log: Option<File>) {
+fn run(events: Receiver<Event>, mut event_log: Option<File>, mut storage: Connection) {
+    let jvm = JvmPlatform::new();
     for event in events {
         if let Some(file) = event_log.as_mut() {
             if let Err(error) = logging::record(file, &event) {
@@ -47,11 +51,44 @@ fn run(events: Receiver<Event>, mut event_log: Option<File>) {
         }
         match event {
             Event::Stop => break,
+            Event::ResourceFound(found) => {
+                if let Err(error) = process_resource(&mut storage, &jvm, &found.path) {
+                    log::warn!("{}: {error}", found.path.display());
+                }
+            }
             Event::JavaHomeFound(found) => {
-                log::warn!("{}: JDK ingestion is not wired yet", found.home.display());
+                if let Err(error) = process_jdk_home(&mut storage, &jvm, &found.home) {
+                    log::warn!("{}: {error}", found.home.display());
+                }
             }
         }
     }
+}
+
+fn process_resource(
+    storage: &mut Connection,
+    jvm: &JvmPlatform,
+    path: &Path,
+) -> Result<(), String> {
+    let transaction = storage
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    if jvm.process(&transaction, path)? {
+        transaction.commit().map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn process_jdk_home(
+    storage: &mut Connection,
+    jvm: &JvmPlatform,
+    home: &Path,
+) -> Result<(), String> {
+    let transaction = storage
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    jvm.process_jdk_home(&transaction, home)?;
+    transaction.commit().map_err(|error| error.to_string())
 }
 
 #[cfg(test)]

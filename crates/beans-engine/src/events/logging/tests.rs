@@ -1,6 +1,6 @@
 use std::io::BufWriter;
 
-use beans_core::events::{Event, JavaHomeFound};
+use beans_core::events::{Event, JavaHomeFound, ResourceFound};
 
 use super::record;
 
@@ -13,12 +13,17 @@ fn events_round_trip_as_individual_json_lines() {
         &Event::JavaHomeFound(JavaHomeFound { home: home.into() }),
     )
     .unwrap();
+    record(
+        &mut bytes,
+        &Event::ResourceFound(ResourceFound { path: home.into() }),
+    )
+    .unwrap();
     record(&mut bytes, &Event::Stop).unwrap();
 
     let text = String::from_utf8(bytes).unwrap();
     assert!(text.ends_with('\n'));
     let lines: Vec<_> = text.lines().collect();
-    assert_eq!(lines.len(), 2);
+    assert_eq!(lines.len(), 3);
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(lines[0]).unwrap(),
         serde_json::json!({"type": "JavaHomeFound", "data": {"home": home}})
@@ -27,8 +32,16 @@ fn events_round_trip_as_individual_json_lines() {
         panic!("expected JavaHomeFound");
     };
     assert_eq!(found.home.to_str(), Some(home));
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(lines[1]).unwrap(),
+        serde_json::json!({"type": "ResourceFound", "data": {"path": home}})
+    );
+    let Event::ResourceFound(found) = serde_json::from_str::<Event>(lines[1]).unwrap() else {
+        panic!("expected ResourceFound");
+    };
+    assert_eq!(found.path.to_str(), Some(home));
     assert!(matches!(
-        serde_json::from_str::<Event>(lines[1]).unwrap(),
+        serde_json::from_str::<Event>(lines[2]).unwrap(),
         Event::Stop
     ));
 }

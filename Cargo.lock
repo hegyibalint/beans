@@ -26,11 +26,13 @@ dependencies = [
  "beans-core",
  "beans-lang-java",
  "beans-platform-jvm",
+ "beans-testing",
  "crossbeam-channel",
  "log",
  "rusqlite",
  "serde_json",
  "tempfile",
+ "zip",
 ]
 
 [[package]]

@@ -100,8 +100,12 @@ fn a_failed_log_write_does_not_stop_the_event_loop() {
         .unwrap();
     sender.send(Event::Stop).unwrap();
 
-    super::run(events, Some(read_only));
+    let root = tempdir().unwrap();
+    let storage = crate::storage::open(&root.path().join("models")).unwrap();
+    super::run(events, Some(read_only), storage);
 
     assert!(remaining.is_empty());
     assert_eq!(file.as_file().metadata().unwrap().len(), 0);
 }
+
+mod ingestion;
