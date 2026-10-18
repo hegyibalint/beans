@@ -4,6 +4,8 @@ use beans_core::events::{Event, JavaHomeFound};
 
 use super::Engine;
 
+mod environment;
+
 #[test]
 fn an_engine_creates_and_owns_the_workspace_cache() {
     let root = tempfile::tempdir().unwrap();

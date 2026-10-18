@@ -1,6 +1,10 @@
 //! Application coordination, independent of editor protocols.
 
-use std::{fs, path::Path, thread::JoinHandle};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    thread::JoinHandle,
+};
 
 use beans_core::events::Event;
 use beans_lang_java::engine::JavaLanguage;
@@ -18,6 +22,7 @@ pub mod storage;
 mod tests;
 
 pub struct Engine {
+    work_dir: PathBuf,
     storage: Connection,
 
     // Language verticals
@@ -32,15 +37,20 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(workspace_root: &Path) -> Result<Self, String> {
-        let directory = workspace_root.join(".beans");
-        fs::create_dir_all(&directory)
-            .map_err(|error| format!("{}: {error}", directory.display()))?;
-        let storage = storage::open(&directory.join("models"))?;
+        let beans_dir = env::var_os("BEANS_WORK_DIR")
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| ".beans".into());
+        let work_dir = workspace_root.join(beans_dir);
+        fs::create_dir_all(&work_dir)
+            .map_err(|error| format!("{}: {error}", work_dir.display()))?;
+        let storage = storage::open(&work_dir.join("models"))?;
         let (sender, events) = unbounded();
         let jvm = JvmPlatform::new();
         let java = JavaLanguage::new();
 
         Ok(Self {
+            work_dir,
             storage,
             java,
             jvm,

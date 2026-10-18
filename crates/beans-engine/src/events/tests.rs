@@ -1,3 +1,5 @@
+use std::fs::File;
+
 use beans_core::events::{Event, JavaHomeFound};
 use tempfile::tempdir;
 
@@ -83,4 +85,23 @@ fn dropping_a_running_engine_joins_the_thread_despite_live_producers() {
     drop(engine);
 
     assert!(sender.send(Event::Stop).is_err());
+}
+
+#[test]
+fn a_failed_log_write_does_not_stop_the_event_loop() {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let read_only = File::open(file.path()).unwrap();
+    let (sender, events) = crossbeam_channel::unbounded();
+    let remaining = events.clone();
+    sender
+        .send(Event::JavaHomeFound(JavaHomeFound {
+            home: "/jdk".into(),
+        }))
+        .unwrap();
+    sender.send(Event::Stop).unwrap();
+
+    super::run(events, Some(read_only));
+
+    assert!(remaining.is_empty());
+    assert_eq!(file.as_file().metadata().unwrap().len(), 0);
 }

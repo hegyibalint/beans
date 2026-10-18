@@ -1,9 +1,11 @@
-use std::thread;
+use std::{fs::File, thread};
 
 use beans_core::events::Event;
 use crossbeam_channel::Receiver;
 
 use crate::Engine;
+
+mod logging;
 
 impl Engine {
     pub fn start(&mut self) -> Result<(), String> {
@@ -11,10 +13,11 @@ impl Engine {
             return Err("engine is already started".into());
         }
         let events = self.events.clone();
+        let event_log = logging::open(&self.work_dir);
         self.event_loop = Some(
             thread::Builder::new()
                 .name("beans-events".into())
-                .spawn(move || run(events))
+                .spawn(move || run(events, event_log))
                 .map_err(|error| error.to_string())?,
         );
         Ok(())
@@ -34,8 +37,14 @@ impl Drop for Engine {
     }
 }
 
-fn run(events: Receiver<Event>) {
+fn run(events: Receiver<Event>, mut event_log: Option<File>) {
     for event in events {
+        if let Some(file) = event_log.as_mut() {
+            if let Err(error) = logging::record(file, &event) {
+                log::warn!("Event logging disabled: {error}");
+                event_log = None;
+            }
+        }
         match event {
             Event::Stop => break,
             Event::JavaHomeFound(found) => {

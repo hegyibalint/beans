@@ -1,12 +1,14 @@
 use std::path::PathBuf;
 
-#[derive(Debug)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Event {
     JavaHomeFound(JavaHomeFound),
     Stop,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct JavaHomeFound {
     pub home: PathBuf,
 }
