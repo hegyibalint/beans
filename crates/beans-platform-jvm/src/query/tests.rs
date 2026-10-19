@@ -100,6 +100,7 @@ fn queries_borrow_the_callers_transaction_and_follow_index_replacement_and_delet
     store(&mut connection, "p/Old", &location);
     {
         let transaction = connection.transaction().unwrap();
+        storage::remove(&transaction, "/Foo.class".as_ref()).unwrap();
         storage::store(
             &transaction,
             &Class {
@@ -117,7 +118,17 @@ fn queries_borrow_the_callers_transaction_and_follow_index_replacement_and_delet
     assert_eq!(query.find_classes("p/Old").unwrap(), [location.clone()]);
     assert!(query.find_classes("p/New").unwrap().is_empty());
 
-    store(&mut connection, "p/New", &location);
+    let transaction = connection.transaction().unwrap();
+    storage::remove(&transaction, "/Foo.class".as_ref()).unwrap();
+    storage::store(
+        &transaction,
+        &Class {
+            name: "p/New".into(),
+        },
+        &location,
+    )
+    .unwrap();
+    transaction.commit().unwrap();
     let query = JvmQuery::new(&connection, QueryScope::new(&Unrestricted));
     assert!(query.find_classes("p/Old").unwrap().is_empty());
     assert_eq!(query.find_classes("p/New").unwrap(), [location]);

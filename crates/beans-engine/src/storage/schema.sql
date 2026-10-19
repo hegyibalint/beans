@@ -11,6 +11,10 @@ CREATE TABLE models (
     CHECK (model_kind <> 1 OR content IS NOT NULL)
 ) STRICT;
 
+CREATE INDEX jvm_models_by_root
+ON models (json_extract(location, '$[0]'))
+WHERE model_kind = 0;
+
 CREATE INDEX jvm_classes_by_name
 ON models (json_extract(model, '$.name'))
 WHERE model_kind = 0;

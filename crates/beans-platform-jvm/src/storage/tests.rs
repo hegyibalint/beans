@@ -31,7 +31,7 @@ fn stores_borrowed_classes_and_locations_as_json() {
 }
 
 #[test]
-fn storing_the_same_location_replaces_its_model() {
+fn storage_only_inserts_and_leaves_replacement_to_the_caller() {
     let mut connection = database();
     let location = Location::file("/Foo.class");
     let transaction = connection.transaction().unwrap();
@@ -39,7 +39,7 @@ fn storing_the_same_location_replaces_its_model() {
     store(&transaction, &class("example/New"), &location).unwrap();
     transaction.commit().unwrap();
 
-    assert_eq!(names(&connection), ["example/New"]);
+    assert_eq!(names(&connection), ["example/New", "example/Old"]);
 }
 
 #[test]

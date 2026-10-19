@@ -28,7 +28,7 @@ fn startup_initializes_and_configures_the_database() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(indexes, 1);
+    assert_eq!(indexes, 2);
     assert_eq!(
         connection
             .pragma_query_value(None, "journal_mode", |row| row.get::<_, String>(0))
@@ -65,6 +65,25 @@ fn jvm_class_lookup_uses_the_name_index() {
 
     assert!(plan.starts_with("SEARCH models"), "{plan}");
     assert!(plan.contains("jvm_classes_by_name"), "{plan}");
+}
+
+#[test]
+fn jvm_resource_removal_uses_the_root_index() {
+    let root = tempdir().unwrap();
+    let connection = open(&root.path().join("models.sqlite")).unwrap();
+    let location = serde_json::to_string(&LocationEntry::File("/library.jar".into())).unwrap();
+    let plan: String = connection
+        .query_row(
+            "EXPLAIN QUERY PLAN
+             DELETE FROM models
+             WHERE model_kind = 0 AND json_extract(location, '$[0]') = ?1",
+            [location],
+            |row| row.get(3),
+        )
+        .unwrap();
+
+    assert!(plan.starts_with("SEARCH models"), "{plan}");
+    assert!(plan.contains("jvm_models_by_root"), "{plan}");
 }
 
 #[test]

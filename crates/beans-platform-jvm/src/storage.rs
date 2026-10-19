@@ -5,19 +5,13 @@ use rusqlite::{Transaction, params};
 
 use crate::Class;
 
-/// Replaces the current model; the caller must roll back the transaction on error.
+/// Inserts a model; the caller owns resource replacement and must roll back on error.
 pub fn store(
     transaction: &Transaction<'_>,
     class: &Class,
     location: &Location,
 ) -> Result<i64, String> {
     let location = serde_json::to_string(location).map_err(|error| error.to_string())?;
-    transaction
-        .execute(
-            "DELETE FROM models WHERE model_kind = 0 AND location = ?1",
-            [&location],
-        )
-        .map_err(|error| error.to_string())?;
     let model = serde_json::to_string(class).map_err(|error| error.to_string())?;
     transaction
         .execute(

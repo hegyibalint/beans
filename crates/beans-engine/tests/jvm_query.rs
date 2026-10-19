@@ -67,6 +67,7 @@ fn publish(connection: &mut Connection, name: &str) {
         &contents,
     )
     .unwrap();
+    jvm_storage::remove(&transaction, "/Example.class".as_ref()).unwrap();
     jvm_storage::store(
         &transaction,
         &Class {
