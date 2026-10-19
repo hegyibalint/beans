@@ -25,42 +25,37 @@ impl JvmPlatform {
         Self::default()
     }
 
-    /// The caller must roll back the transaction on error.
-    pub fn process_jdk_home(
-        &self,
-        transaction: &Transaction<'_>,
-        home: &Path,
-    ) -> Result<(), String> {
-        for artifact in jdk_artifacts(home)? {
-            if !self.process(transaction, &artifact)? {
-                return Err(format!(
-                    "{}: unrecognized container format",
-                    artifact.display()
-                ));
-            }
-        }
-        Ok(())
-    }
-
-    /// Replaces a recognized resource; the caller must roll back on error or `Ok(false)`.
-    pub fn process(&self, transaction: &Transaction<'_>, path: &Path) -> Result<bool, String> {
+    pub fn process(&self, path: &Path) -> Result<Vec<(Location, Class)>, String> {
         log::debug!("Processing JVM resource {}", path.display());
-        storage::remove(transaction, path)?;
         let mut file =
             std::fs::File::open(path).map_err(|error| format!("{}: {error}", path.display()))?;
         let resource_id = Location::file(path);
 
         if let Some(entries) = container::class::process(&resource_id, &mut file)? {
-            return store(transaction, path, entries);
+            return collect(path, entries);
         }
         if let Some(entries) = container::jar::process(&resource_id, &mut file)? {
-            return store(transaction, path, entries);
+            return collect(path, entries);
         }
         if let Some(entries) = container::jimage::process(&resource_id, &mut file)? {
-            return store(transaction, path, entries);
+            return collect(path, entries);
         }
 
-        Ok(false)
+        Ok(Vec::new())
+    }
+
+    /// Replaces a resource; the caller must roll back the transaction on error.
+    pub fn store(
+        &self,
+        transaction: &Transaction<'_>,
+        path: &Path,
+        classes: Vec<(Location, Class)>,
+    ) -> Result<(), String> {
+        storage::remove(transaction, path)?;
+        for (location, class) in classes {
+            storage::store(transaction, &class, &location)?;
+        }
+        Ok(())
     }
 }
 
@@ -91,25 +86,23 @@ pub fn jdk_artifacts(home: &Path) -> Result<Vec<PathBuf>, String> {
     ))
 }
 
-fn store(
-    transaction: &Transaction<'_>,
+fn collect(
     path: &Path,
     entries: impl Iterator<Item = Result<(Location, Class), String>>,
-) -> Result<bool, String> {
-    let mut count = 0;
+) -> Result<Vec<(Location, Class)>, String> {
+    let mut classes = Vec::new();
     for entry in entries {
-        let (location, class) = entry?;
-        storage::store(transaction, &class, &location)?;
-        count += 1;
-        if count % 1000 == 0 {
-            log::debug!("Staged {count} JVM classes from {}", path.display());
+        classes.push(entry?);
+        if classes.len() % 1000 == 0 {
+            log::debug!("Parsed {} JVM classes from {}", classes.len(), path.display());
         }
     }
     log::debug!(
-        "Finished staging {count} JVM classes from {}",
+        "Finished parsing {} JVM classes from {}",
+        classes.len(),
         path.display()
     );
-    Ok(true)
+    Ok(classes)
 }
 
 fn artifact_exists(path: &Path) -> Result<bool, String> {
