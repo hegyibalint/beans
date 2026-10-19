@@ -1,4 +1,4 @@
-use std::{fs::File, path::Path, sync::Arc, thread};
+use std::{fs::File, path::Path, sync::Arc, thread, time::Instant};
 
 use beans_core::events::Event;
 use beans_platform_jvm::JvmPlatform;
@@ -75,11 +75,21 @@ fn process_resource(
     jvm: &JvmPlatform,
     path: &Path,
 ) -> Result<(), String> {
+    let started = Instant::now();
+    log::info!("Processing resource {}", path.display());
     let transaction = storage
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
     if jvm.process(&transaction, path)? {
+        log::debug!("Committing resource {}", path.display());
         transaction.commit().map_err(|error| error.to_string())?;
+        log::info!(
+            "Published resource {} in {:?}",
+            path.display(),
+            started.elapsed()
+        );
+    } else {
+        log::debug!("Skipped unrecognized resource {}", path.display());
     }
     Ok(())
 }
@@ -89,11 +99,21 @@ fn process_jdk_home(
     jvm: &JvmPlatform,
     home: &Path,
 ) -> Result<(), String> {
+    let started = Instant::now();
+    log::info!("Processing JDK home {}", home.display());
     let transaction = storage
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
+    log::debug!("Acquired write transaction for JDK home {}", home.display());
     jvm.process_jdk_home(&transaction, home)?;
-    transaction.commit().map_err(|error| error.to_string())
+    log::debug!("Committing JDK home {}", home.display());
+    transaction.commit().map_err(|error| error.to_string())?;
+    log::info!(
+        "Published JDK home {} in {:?}",
+        home.display(),
+        started.elapsed()
+    );
+    Ok(())
 }
 
 #[cfg(test)]

@@ -34,6 +34,10 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
     let root = workspace.path();
     fs::create_dir_all(root.join("src/demo")).unwrap();
     fs::create_dir_all(root.join("src/library")).unwrap();
+    let jdk_home = root.join("local-jdk");
+    let runtime = jdk_home.join("lib/modules");
+    fs::create_dir_all(runtime.parent().unwrap()).unwrap();
+    fs::write(&runtime, beans_testing::support::class_bytes("p/Runtime")).unwrap();
     for (path, contents) in [
         (
             "beans.toml",
@@ -160,6 +164,22 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
         diagnostics.contains(" [beans-lsp] Indexed 2 workspace sources"),
         "{diagnostics}"
     );
+    for message in [
+        format!("Processing JDK home {}", jdk_home.display()),
+        format!(
+            "Acquired write transaction for JDK home {}",
+            jdk_home.display()
+        ),
+        format!("Processing JVM resource {}", runtime.display()),
+        format!("Finished staging 1 JVM classes from {}", runtime.display()),
+        format!("Committing JDK home {}", jdk_home.display()),
+        format!("Published JDK home {} in ", jdk_home.display()),
+    ] {
+        assert!(
+            diagnostics.contains(&message),
+            "missing {message}: {diagnostics}"
+        );
+    }
     let lines = fs::read_to_string(&log_path).unwrap();
     fs::remove_file(log_path).unwrap();
     let entries: Vec<serde_json::Value> = lines
