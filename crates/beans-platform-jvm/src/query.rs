@@ -1,5 +1,5 @@
 use beans_core::{location::Location, query_scope::QueryScope};
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 pub struct JvmQuery<'a> {
     connection: &'a Connection,
@@ -9,6 +9,18 @@ pub struct JvmQuery<'a> {
 impl<'a> JvmQuery<'a> {
     pub fn new(connection: &'a Connection, scope: QueryScope<'a>) -> Self {
         Self { connection, scope }
+    }
+
+    pub fn class_name(&self, location: &Location) -> Result<Option<String>, String> {
+        self.connection
+            .query_row(
+                "SELECT json_extract(model, '$.name') FROM models
+                 WHERE model_kind = 0 AND location = ?1",
+                [serde_json::to_string(location).map_err(|error| error.to_string())?],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())
     }
 
     pub fn find_classes(&self, binary_name: &str) -> Result<Vec<Location>, String> {

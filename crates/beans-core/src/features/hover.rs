@@ -1,4 +1,4 @@
-use crate::{location::Location, ranges::ByteRange};
+use crate::{location::Location, presentation::RichText, ranges::ByteRange};
 
 /// Supplies hover information using the implementation's context and request/response types.
 /// Protocol facets can use protocol types without introducing a core dependency on them.
@@ -16,19 +16,16 @@ pub struct HoverRequest<'a> {
 }
 
 pub struct HoverResponse {
-    contents: String,
+    contents: RichText,
     range: ByteRange,
 }
 
 impl HoverResponse {
-    pub fn new(contents: impl Into<String>, range: ByteRange) -> Self {
-        Self {
-            contents: contents.into(),
-            range,
-        }
+    pub fn new(contents: RichText, range: ByteRange) -> Self {
+        Self { contents, range }
     }
 
-    pub fn contents(&self) -> &str {
+    pub fn contents(&self) -> &RichText {
         &self.contents
     }
 

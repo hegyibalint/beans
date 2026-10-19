@@ -19,9 +19,36 @@ fn hover_only_requires_a_request() {
         .unwrap()
         .unwrap();
 
-    assert_eq!(response.contents(), "Target");
+    assert_eq!(response.contents().plaintext(), "Target");
     let range = response.range();
     assert_eq!(&contents[range.start()..range.end()], "Target");
+}
+
+#[test]
+fn resolved_hover_relativizes_workspace_sources() {
+    let root = tempfile::tempdir().unwrap();
+    let mut engine = Engine::new(root.path()).unwrap();
+    let contents = "package demo; class C { C value; }";
+    let source = Location::file(root.path().join("src/demo/C.java"));
+    engine.process(source.clone(), contents).unwrap();
+
+    let response = engine
+        .feature_hover(&HoverRequest {
+            source: &source,
+            contents,
+            offset: contents.find("C value").unwrap(),
+        })
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        response.contents().plaintext(),
+        "Type: demo.C\nLocated in: src/demo/C.java"
+    );
+    assert_eq!(
+        response.contents().markdown(),
+        Some("**Type:** ` demo.C `\n\n**Located in:** ` src/demo/C.java `")
+    );
 }
 
 #[test]
@@ -42,7 +69,7 @@ fn hover_uses_the_current_model() {
             })
             .unwrap()
             .unwrap();
-        assert_eq!(response.contents(), expected);
+        assert_eq!(response.contents().plaintext(), expected);
     }
 }
 

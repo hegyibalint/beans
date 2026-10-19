@@ -12,4 +12,5 @@ mod semantic_tokens;
 pub struct JavaFeatureContext<'a> {
     pub connection: &'a Connection,
     pub scope: QueryScope<'a>,
+    pub workspace_root: Option<&'a std::path::Path>,
 }

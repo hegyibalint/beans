@@ -23,7 +23,7 @@ fn java_hover_reaches_the_shared_feature_contract() {
         .unwrap()
         .unwrap();
 
-    assert_eq!(info.contents(), "Target");
+    assert_eq!(info.contents().plaintext(), "Target");
     let range = info.range();
     assert_eq!(&contents[range.start()..range.end()], "Target");
     assert!(

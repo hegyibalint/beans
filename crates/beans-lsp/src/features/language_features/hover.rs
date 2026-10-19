@@ -22,13 +22,29 @@ impl HoverProvider<(), HoverParams, Hover> for Features {
             return Ok(None);
         };
         let range = response.range();
+        let contents = response.contents();
+        let formats = self
+            .client_capabilities
+            .text_document
+            .as_ref()
+            .and_then(|document| document.hover.as_ref())
+            .and_then(|hover| hover.content_format.as_deref())
+            .unwrap_or_default();
+        let (kind, value) = formats
+            .iter()
+            .find_map(|format| match format {
+                MarkupKind::Markdown => {
+                    contents.markdown().map(|text| (MarkupKind::Markdown, text))
+                }
+                MarkupKind::PlainText => Some((MarkupKind::PlainText, contents.plaintext())),
+            })
+            .unwrap_or((MarkupKind::PlainText, contents.plaintext()));
 
         Ok((|| {
             Some(Hover {
-                // Bare MarkedString text is Markdown, which can hide generic arguments as HTML tags.
                 contents: HoverContents::Markup(MarkupContent {
-                    kind: MarkupKind::PlainText,
-                    value: response.contents().into(),
+                    kind,
+                    value: value.into(),
                 }),
                 range: Some(Range::new(
                     document.position(range.start())?,
@@ -44,6 +60,53 @@ mod tests {
     use super::*;
     use lsp_types::{DidOpenTextDocumentParams, TextDocumentItem, Uri};
     use serde_json::json;
+
+    #[test]
+    fn hover_uses_markdown_when_supported() {
+        let uri: Uri = "untitled:Example.java".parse().unwrap();
+        let (_root, mut features) = crate::features::test_features();
+        features.client_capabilities = serde_json::from_value(json!({
+            "textDocument": {"hover": {"contentFormat": ["markdown", "plaintext"]}}
+        }))
+        .unwrap();
+        features
+            .did_open(DidOpenTextDocumentParams {
+                text_document: TextDocumentItem::new(
+                    uri.clone(),
+                    "java".into(),
+                    1,
+                    "class C { C value; }".into(),
+                ),
+            })
+            .unwrap();
+        let params = serde_json::from_value(json!({
+            "textDocument": {"uri": uri},
+            "position": {"line": 0, "character": 10}
+        }))
+        .unwrap();
+
+        let hover = serde_json::to_value(features.hover(&(), &params).unwrap()).unwrap();
+        assert_eq!(
+            hover["contents"],
+            json!({
+                "kind": "markdown",
+                "value": "**Type:** ` C `\n\n**Located in:** ` untitled:Example.java `"
+            })
+        );
+
+        features.client_capabilities = serde_json::from_value(json!({
+            "textDocument": {"hover": {"contentFormat": ["plaintext", "markdown"]}}
+        }))
+        .unwrap();
+        let hover = serde_json::to_value(features.hover(&(), &params).unwrap()).unwrap();
+        assert_eq!(
+            hover["contents"],
+            json!({
+                "kind": "plaintext",
+                "value": "Type: C\nLocated in: untitled:Example.java"
+            })
+        );
+    }
 
     #[test]
     fn hover_response_uses_plaintext_and_utf16_coordinates() {

@@ -23,6 +23,7 @@ pub mod storage;
 mod tests;
 
 pub struct Engine {
+    workspace_root: PathBuf,
     work_dir: PathBuf,
     storage: Connection,
 
@@ -50,6 +51,7 @@ impl Engine {
         let java = JavaLanguage::new();
 
         Ok(Self {
+            workspace_root: workspace_root.to_path_buf(),
             work_dir,
             storage,
             java,

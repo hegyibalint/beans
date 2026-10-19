@@ -23,7 +23,7 @@ fn initialization_advertises_full_type_tokens_only() {
 fn field_type_identifiers_are_sorted_and_utf16_encoded() {
     let (_root, mut server) = server();
     let uri = "untitled:Example.java";
-    let text = "class Example { /* 😀 */ Box<Missing[]>[] a; Café b;\n pkg.Widget<? extends Absent> c; int[] counts; }";
+    let text = "class Example { /* 😀 */ Box<Missing[]>[] a; Café b;\n pkg.Widget<? extends Absent> c; int[] counts; pkg.Box<String>.Middle.Slot<Integer> nested; }";
     server.notify(Notification::new(
         "textDocument/didOpen".into(),
         json!({
@@ -38,13 +38,17 @@ fn field_type_identifiers_are_sorted_and_utf16_encoded() {
         }),
     );
     let tokens: SemanticTokens = serde_json::from_value(response.result.unwrap()).unwrap();
-    assert_eq!(tokens.data.len(), 5);
+    assert_eq!(tokens.data.len(), 10);
     let mut line = 0;
     let mut character = 0;
+    let mut search_start = 0;
     for (token, name) in tokens
         .data
         .iter()
-        .zip(["Box", "Missing", "Café", "Widget", "Absent"])
+        .zip([
+            "Box", "Missing", "Café", "Widget", "Absent", "Box", "String", "Middle", "Slot",
+            "Integer",
+        ])
     {
         if token.delta_line == 0 {
             character += token.delta_start;
@@ -52,7 +56,8 @@ fn field_type_identifiers_are_sorted_and_utf16_encoded() {
             line += token.delta_line;
             character = token.delta_start;
         }
-        let offset = text.find(name).unwrap();
+        let offset = search_start + text[search_start..].find(name).unwrap();
+        search_start = offset + name.len();
         let before = &text[..offset];
         assert_eq!(
             line,

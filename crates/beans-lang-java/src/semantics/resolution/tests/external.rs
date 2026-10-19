@@ -76,11 +76,11 @@ impl Fixture {
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(&class_bytes(binary_name)).unwrap();
         let transaction = self.java.connection.transaction().unwrap();
-        assert!(
-            JvmPlatform::new()
-                .process(&transaction, file.path())
-                .unwrap()
-        );
+        let classes = JvmPlatform::new().process(file.path()).unwrap();
+        assert!(!classes.is_empty());
+        for (location, class) in classes {
+            beans_platform_jvm::storage::store(&transaction, &class, &location).unwrap();
+        }
         transaction.commit().unwrap();
         file
     }

@@ -87,7 +87,7 @@ fn type_parameter_declaration_at(file: &File, offset: usize) -> Option<ByteRange
 }
 
 /// A missing occurrence is distinct from an occurrence whose name fails resolution.
-fn resolve_field_type_at(
+pub(super) fn resolve_field_type_at(
     file: &File,
     source: &Location,
     offset: usize,
@@ -164,6 +164,7 @@ mod tests {
                 &JavaFeatureContext {
                     connection: &java.connection,
                     scope: QueryScope::new(&Unrestricted),
+                    workspace_root: None,
                 },
                 &DefinitionRequest { source, offset },
             )
@@ -276,6 +277,7 @@ mod tests {
                     &JavaFeatureContext {
                         connection: &java.connection,
                         scope: QueryScope::new(&Unrestricted),
+                        workspace_root: None,
                     },
                     &DefinitionRequest {
                         source: &source,
