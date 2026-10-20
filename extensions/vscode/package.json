@@ -3,6 +3,7 @@
   "displayName": "Beans",
   "description": "Beans LSP client for JVM languages",
   "version": "0.0.1",
+  "license": "Apache-2.0",
   "publisher": "beans",
   "engines": {
     "vscode": "^1.90.0"

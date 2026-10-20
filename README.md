@@ -49,3 +49,10 @@ calls supply the crate name automatically; no per-call prefix is needed.
 Set `BEANS_LSP_LOG_PATH=/path/to/beans-lsp.jsonl` in the **language server process's** environment, then restart the server. Beans appends one JSON object per line for every incoming LSP request/notification/response and every outgoing response. Each entry includes a Unix `time_ms`, `pid`, `direction`, and the decoded `message`, including request IDs, parameters, results, and errors. Leave the variable unset to disable logging. The parent directory must already exist; an unwritable path prevents the server from starting.
 
 **The log contains document contents and potentially other private client data.** Keep it in a private location and remove or redact it before sharing. Logging does not write to stdout, which is reserved for the LSP transport.
+
+## License
+
+Copyright 2026 Bálint Hegyi.
+
+Beans is licensed under the [Apache License, Version 2.0](LICENSE).
+Third-party components remain subject to their respective licenses.
