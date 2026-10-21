@@ -1,6 +1,6 @@
-use std::{env, fs, path::Path, process::Command};
+use std::{env, fs, path::Path, process::Command as ProcessCommand};
 
-use beans_core::events::{Event, JavaHomeFound};
+use beans_core::event::Command;
 
 use crate::Engine;
 
@@ -38,11 +38,11 @@ fn a_relative_work_dir_holds_the_cache_and_event_log() {
     assert!(!root.path().join(".beans").exists());
     let events = read_events(&work_dir.join("events.jsonl"));
     assert_eq!(events.len(), 2);
-    let Event::JavaHomeFound(found) = &events[0] else {
-        panic!("expected JavaHomeFound");
+    let Command::ProcessJdkHome(home) = &events[0] else {
+        panic!("expected ProcessJdkHome");
     };
-    assert_eq!(found.home, root.path().join("jdk\n\"β\""));
-    assert!(matches!(events[1], Event::Stop));
+    assert_eq!(*home, root.path().join("jdk\n\"β\""));
+    assert!(matches!(events[1], Command::Stop));
 }
 
 #[test]
@@ -118,15 +118,13 @@ fn engine_child() {
     let mut engine = Engine::start(root).unwrap();
     engine
         .sender()
-        .send(Event::JavaHomeFound(JavaHomeFound {
-            home: root.join("jdk\n\"β\""),
-        }))
+        .send(Command::ProcessJdkHome(root.join("jdk\n\"β\"")))
         .unwrap();
     engine.stop().unwrap();
 }
 
 fn run(root: &Path, work_dir: Option<&Path>, event_log: Option<&str>) -> Result<(), String> {
-    let mut command = Command::new(env::current_exe().unwrap());
+    let mut command = ProcessCommand::new(env::current_exe().unwrap());
     command
         .args(["--exact", "tests::environment::engine_child", "--nocapture"])
         .env("BEANS_TEST_ENGINE_ROOT", root)
@@ -150,7 +148,7 @@ fn run(root: &Path, work_dir: Option<&Path>, event_log: Option<&str>) -> Result<
     }
 }
 
-fn read_events(path: &Path) -> Vec<Event> {
+fn read_events(path: &Path) -> Vec<Command> {
     fs::read_to_string(path)
         .unwrap()
         .lines()

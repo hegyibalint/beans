@@ -7,7 +7,7 @@ use std::{
     thread::JoinHandle,
 };
 
-use beans_core::events::Event;
+use beans_core::event::Command;
 use beans_lang_java::engine::JavaLanguage;
 use beans_platform_jvm::JvmPlatform;
 use crossbeam_channel::{Receiver, Sender, unbounded};
@@ -31,10 +31,10 @@ pub struct Engine {
     java: JavaLanguage,
     jvm: Arc<JvmPlatform>,
 
-    // Event bus
-    sender: Sender<Event>,
-    events: Receiver<Event>,
-    event_loop: Option<JoinHandle<()>>,
+    // Command queue
+    command_sender: Sender<Command>,
+    command_receiver: Receiver<Command>,
+    command_loop: Option<JoinHandle<()>>,
 }
 
 impl Engine {
@@ -47,7 +47,7 @@ impl Engine {
         fs::create_dir_all(&work_dir)
             .map_err(|error| format!("{}: {error}", work_dir.display()))?;
         let storage = storage::open(&work_dir.join("models"))?;
-        let (sender, events) = unbounded();
+        let (sender, commands) = unbounded();
         let java = JavaLanguage::new();
 
         Ok(Self {
@@ -56,13 +56,13 @@ impl Engine {
             storage,
             java,
             jvm: Arc::new(JvmPlatform::new()),
-            sender,
-            events,
-            event_loop: None,
+            command_sender: sender,
+            command_receiver: commands,
+            command_loop: None,
         })
     }
 
-    pub fn sender(&self) -> Sender<Event> {
-        self.sender.clone()
+    pub fn sender(&self) -> Sender<Command> {
+        self.command_sender.clone()
     }
 }

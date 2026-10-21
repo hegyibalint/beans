@@ -1,6 +1,6 @@
 use std::thread;
 
-use beans_core::events::{Event, JavaHomeFound};
+use beans_core::event::Command;
 
 use super::Engine;
 
@@ -65,23 +65,19 @@ fn producers_share_one_engine_inbox() {
     let second = engine.sender();
 
     first
-        .send(Event::JavaHomeFound(JavaHomeFound {
-            home: "/first-jdk".into(),
-        }))
+        .send(Command::ProcessJdkHome("/first-jdk".into()))
         .unwrap();
     second
-        .send(Event::JavaHomeFound(JavaHomeFound {
-            home: "/second-jdk".into(),
-        }))
+        .send(Command::ProcessJdkHome("/second-jdk".into()))
         .unwrap();
 
     for expected in ["/first-jdk", "/second-jdk"] {
-        let Event::JavaHomeFound(found) = engine.events.try_recv().unwrap() else {
-            panic!("expected JavaHomeFound");
+        let Command::ProcessJdkHome(home) = engine.command_receiver.try_recv().unwrap() else {
+            panic!("expected ProcessJdkHome");
         };
-        assert_eq!(found.home, std::path::Path::new(expected));
+        assert_eq!(home, std::path::Path::new(expected));
     }
-    assert!(engine.events.try_recv().is_err());
+    assert!(engine.command_receiver.try_recv().is_err());
 }
 
 #[test]
@@ -90,17 +86,13 @@ fn a_producer_can_send_without_borrowing_the_engine() {
     let engine = Engine::new(root.path()).unwrap();
     let sender = engine.sender();
     thread::spawn(move || {
-        sender
-            .send(Event::JavaHomeFound(JavaHomeFound {
-                home: "/jdk".into(),
-            }))
-            .unwrap();
+        sender.send(Command::ProcessJdkHome("/jdk".into())).unwrap();
     })
     .join()
     .unwrap();
 
-    let Event::JavaHomeFound(found) = engine.events.try_recv().unwrap() else {
-        panic!("expected JavaHomeFound");
+    let Command::ProcessJdkHome(home) = engine.command_receiver.try_recv().unwrap() else {
+        panic!("expected ProcessJdkHome");
     };
-    assert_eq!(found.home, std::path::Path::new("/jdk"));
+    assert_eq!(home, std::path::Path::new("/jdk"));
 }

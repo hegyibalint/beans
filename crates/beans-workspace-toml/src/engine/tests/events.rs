@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use beans_core::events::Event;
+use beans_core::event::Command;
 use crossbeam_channel::unbounded;
 
 use crate::parse;
@@ -28,7 +28,7 @@ fn startup_reports_each_resolved_home_once_in_path_order() {
 }
 
 #[test]
-fn a_workspace_without_configured_homes_emits_no_events() {
+fn a_workspace_without_configured_homes_sends_no_commands() {
     assert!(discovered_homes("[unit.app]\nclasspath = ['lib.jar']\n").is_empty());
 }
 
@@ -56,10 +56,10 @@ fn discovered_homes(contents: &str) -> Vec<PathBuf> {
     events
         .try_iter()
         .map(|event| {
-            let Event::JavaHomeFound(found) = event else {
-                panic!("expected JavaHomeFound");
+            let Command::ProcessJdkHome(home) = event else {
+                panic!("expected ProcessJdkHome");
             };
-            found.home
+            home
         })
         .collect()
 }

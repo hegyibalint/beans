@@ -1,12 +1,12 @@
 use std::collections::BTreeSet;
 
-use beans_core::events::{Event, JavaHomeFound};
+use beans_core::event::Command;
 use crossbeam_channel::Sender;
 
 use super::TomlWorkspace;
 
 impl TomlWorkspace {
-    pub fn start(&self, sender: &Sender<Event>) -> Result<(), String> {
+    pub fn start(&self, sender: &Sender<Command>) -> Result<(), String> {
         let homes: BTreeSet<_> = self
             .model()
             .units
@@ -15,7 +15,7 @@ impl TomlWorkspace {
             .collect();
         for home in homes {
             sender
-                .send(Event::JavaHomeFound(JavaHomeFound { home: home.clone() }))
+                .send(Command::ProcessJdkHome(home.clone()))
                 .map_err(|error| error.to_string())?;
         }
         Ok(())

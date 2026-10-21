@@ -1,4 +1,4 @@
-use beans_core::events::Event;
+use beans_core::event::Command;
 
 use crate::features::Features;
 
@@ -51,5 +51,5 @@ fn dropping_features_stops_the_engine() {
 
     drop(features);
 
-    assert!(sender.send(Event::Stop).is_err());
+    assert!(sender.send(Command::Stop).is_err());
 }

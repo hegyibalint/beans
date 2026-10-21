@@ -2,7 +2,7 @@ use std::{fs, io::Write, path::Path};
 
 use beans_core::{
     classpath::Unrestricted,
-    events::{Event, JavaHomeFound, ResourceFound},
+    event::Command,
     location::{Location, LocationEntry},
     query_scope::QueryScope,
 };
@@ -90,7 +90,7 @@ fn a_java_home_event_publishes_runtime_and_tools_together() {
     let mut engine = Engine::start(root.path()).unwrap();
     engine
         .sender()
-        .send(Event::JavaHomeFound(JavaHomeFound { home }))
+        .send(Command::ProcessJdkHome(home))
         .unwrap();
 
     engine.stop().unwrap();
@@ -121,7 +121,7 @@ fn a_java_home_failure_rolls_back_all_artifacts_and_processing_continues() {
     seed(&mut engine, "p/OldTool", &tools);
     engine
         .sender()
-        .send(Event::JavaHomeFound(JavaHomeFound { home }))
+        .send(Command::ProcessJdkHome(home))
         .unwrap();
     enqueue(&engine, &good);
 
@@ -144,7 +144,7 @@ fn a_storage_open_failure_is_reported_by_start() {
 fn enqueue(engine: &Engine, path: &Path) {
     engine
         .sender()
-        .send(Event::ResourceFound(ResourceFound { path: path.into() }))
+        .send(Command::ProcessResource(path.into()))
         .unwrap();
 }
 
