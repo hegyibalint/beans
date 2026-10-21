@@ -13,6 +13,7 @@ pub enum Command {
     ProcessResource(PathBuf),
 }
 
+#[derive(Clone)]
 pub enum Notification {
     ProcessJdkHomeStart(NotificationPayload<PathBuf>),
     ProcessJdkHomeStop(NotificationPayload<()>),
@@ -20,6 +21,7 @@ pub enum Notification {
     ProcessResourceStop(NotificationPayload<()>),
 }
 
+#[derive(Clone)]
 pub struct NotificationPayload<T> {
     pub id: u64,
     pub data: T,

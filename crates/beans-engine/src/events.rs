@@ -1,8 +1,14 @@
-use std::{fs::File, path::Path, sync::Arc, thread, time::Instant};
+use std::{
+    fs::File,
+    path::Path,
+    sync::{Arc, Mutex},
+    thread,
+    time::Instant,
+};
 
-use beans_core::event::Command;
+use beans_core::event::{Command, Notification, NotificationPayload};
 use beans_platform_jvm::{JvmPlatform, jdk_artifacts};
-use crossbeam_channel::Receiver;
+use crossbeam_channel::{Receiver, Sender};
 use rusqlite::{Connection, TransactionBehavior};
 
 use crate::{Engine, storage};
@@ -12,13 +18,14 @@ mod logging;
 impl Engine {
     pub(super) fn start_command_loop(&mut self) -> Result<(), String> {
         let commands = self.command_receiver.clone();
+        let subscribers = Arc::clone(&self.subscribers);
         let storage = storage::open(&self.work_dir.join("models"))?;
         let event_log = logging::open(&self.work_dir);
         let jvm = Arc::clone(&self.jvm);
         self.command_loop = Some(
             thread::Builder::new()
                 .name("beans-commands".into())
-                .spawn(move || Self::command_loop(&jvm, commands, event_log, storage))
+                .spawn(move || Self::command_loop(&jvm, commands, &subscribers, event_log, storage))
                 .map_err(|error| error.to_string())?,
         );
         Ok(())
@@ -36,6 +43,7 @@ impl Engine {
     fn command_loop(
         jvm: &JvmPlatform,
         commands: Receiver<Command>,
+        subscribers: &Mutex<Vec<Sender<Notification>>>,
         mut event_log: Option<File>,
         mut storage: Connection,
     ) {
@@ -52,15 +60,39 @@ impl Engine {
                 Command::Stop => break,
                 Command::ProcessResource(path) => {
                     notification_counter += 1;
+                    let id = notification_counter;
+                    publish_notification(
+                        subscribers,
+                        Notification::ProcessResourceStart(NotificationPayload {
+                            id,
+                            data: path.clone(),
+                        }),
+                    );
                     if let Err(error) = handle_command_process_resource(&mut storage, jvm, &path) {
                         log::warn!("{}: {error}", path.display());
                     }
+                    publish_notification(
+                        subscribers,
+                        Notification::ProcessResourceStop(NotificationPayload { id, data: () }),
+                    );
                 }
                 Command::ProcessJdkHome(home) => {
                     notification_counter += 1;
+                    let id = notification_counter;
+                    publish_notification(
+                        subscribers,
+                        Notification::ProcessJdkHomeStart(NotificationPayload {
+                            id,
+                            data: home.clone(),
+                        }),
+                    );
                     if let Err(error) = handle_command_process_jdk_home(&mut storage, jvm, &home) {
                         log::warn!("{}: {error}", home.display());
                     }
+                    publish_notification(
+                        subscribers,
+                        Notification::ProcessJdkHomeStop(NotificationPayload { id, data: () }),
+                    );
                 }
             }
         }
@@ -116,6 +148,16 @@ fn handle_command_process_jdk_home(
         started.elapsed()
     );
     Ok(())
+}
+
+fn publish_notification(
+    subscribers: &Mutex<Vec<Sender<Notification>>>,
+    notification: Notification,
+) {
+    subscribers
+        .lock()
+        .unwrap()
+        .retain(|sender| sender.send(notification.clone()).is_ok());
 }
 
 #[cfg(test)]

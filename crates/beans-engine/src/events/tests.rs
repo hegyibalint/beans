@@ -1,4 +1,7 @@
-use std::{fs::File, sync::Arc};
+use std::{
+    fs::File,
+    sync::{Arc, Mutex},
+};
 
 use beans_core::event::Command;
 use beans_platform_jvm::JvmPlatform;
@@ -92,10 +95,18 @@ fn a_failed_log_write_does_not_stop_the_command_loop() {
 
     let root = tempdir().unwrap();
     let storage = crate::storage::open(&root.path().join("models")).unwrap();
-    Engine::command_loop(&JvmPlatform::new(), commands, Some(read_only), storage);
+    let subscribers = Mutex::new(Vec::new());
+    Engine::command_loop(
+        &JvmPlatform::new(),
+        commands,
+        &subscribers,
+        Some(read_only),
+        storage,
+    );
 
     assert!(remaining.is_empty());
     assert_eq!(file.as_file().metadata().unwrap().len(), 0);
 }
 
 mod ingestion;
+mod notifications;

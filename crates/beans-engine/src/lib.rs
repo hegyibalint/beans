@@ -3,11 +3,11 @@
 use std::{
     env, fs,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
     thread::JoinHandle,
 };
 
-use beans_core::event::Command;
+use beans_core::event::{Command, Notification};
 use beans_lang_java::engine::JavaLanguage;
 use beans_platform_jvm::JvmPlatform;
 use crossbeam_channel::{Receiver, Sender, unbounded};
@@ -35,6 +35,8 @@ pub struct Engine {
     command_sender: Sender<Command>,
     command_receiver: Receiver<Command>,
     command_loop: Option<JoinHandle<()>>,
+
+    subscribers: Arc<Mutex<Vec<Sender<Notification>>>>,
 }
 
 impl Engine {
@@ -65,11 +67,19 @@ impl Engine {
             command_sender: sender,
             command_receiver: commands,
             command_loop: None,
+            subscribers: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
     pub fn sender(&self) -> Sender<Command> {
         self.command_sender.clone()
+    }
+
+    /// Each subscription has its own queue and receives future notifications only.
+    pub fn subscribe(&self) -> Receiver<Notification> {
+        let (sender, receiver) = unbounded();
+        self.subscribers.lock().unwrap().push(sender);
+        receiver
     }
 }
 
