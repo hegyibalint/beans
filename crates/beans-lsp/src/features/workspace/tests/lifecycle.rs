@@ -7,9 +7,9 @@ use super::params;
 #[test]
 fn initialization_starts_the_engine() {
     let root = tempfile::tempdir().unwrap();
-    let mut features = Features::initialize(&params(&[root.path()])).unwrap();
+    let features = Features::initialize(&params(&[root.path()])).unwrap();
 
-    features.engine.stop().unwrap();
+    features.engine.sender().send(Command::Start).unwrap();
 }
 
 #[test]
@@ -28,8 +28,9 @@ fn initialization_sends_the_configured_home_to_the_engine() {
     )
     .unwrap();
 
-    let mut features = Features::initialize(&params(&[root.path()])).unwrap();
-    features.engine.stop().unwrap();
+    let features = Features::initialize(&params(&[root.path()])).unwrap();
+    assert!(features.workspace_documents.is_empty());
+    drop(features);
 
     let connection = beans_engine::storage::open(&root.path().join(".beans/models")).unwrap();
     let name: String = connection
@@ -40,7 +41,6 @@ fn initialization_sends_the_configured_home_to_the_engine() {
         )
         .unwrap();
     assert_eq!(name, "p/Runtime");
-    assert!(features.workspace_documents.is_empty());
 }
 
 #[test]

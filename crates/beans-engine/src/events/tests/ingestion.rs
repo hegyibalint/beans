@@ -24,7 +24,7 @@ fn a_resource_event_publishes_replacement_classes_before_stop() {
     assert!(classes(&engine, "p/New").is_empty());
 
     enqueue(&engine, &path);
-    engine.stop().unwrap();
+    engine.stop_command_loop().unwrap();
 
     assert!(classes(&engine, "p/Old").is_empty());
     assert_eq!(classes(&engine, "p/New"), [Location::file(&path)]);
@@ -57,7 +57,7 @@ fn declined_resources_and_failures_preserve_old_classes_and_do_not_stop_later_ev
         enqueue(&engine, &path);
         enqueue(&engine, &good);
 
-        engine.stop().unwrap();
+        engine.stop_command_loop().unwrap();
 
         assert_eq!(classes(&engine, "p/Old"), [Location::file(&path)]);
         assert!(classes(&engine, "p/Rejected").is_empty());
@@ -74,7 +74,7 @@ fn a_recognized_resource_with_no_valid_classes_removes_old_classes() {
     seed(&mut engine, "p/Old", &path);
     enqueue(&engine, &path);
 
-    engine.stop().unwrap();
+    engine.stop_command_loop().unwrap();
 
     assert!(classes(&engine, "p/Old").is_empty());
 }
@@ -93,7 +93,7 @@ fn a_java_home_event_publishes_runtime_and_tools_together() {
         .send(Command::ProcessJdkHome(home))
         .unwrap();
 
-    engine.stop().unwrap();
+    engine.stop_command_loop().unwrap();
 
     assert_eq!(
         classes(&engine, "p/Runtime"),
@@ -125,7 +125,7 @@ fn a_java_home_failure_rolls_back_all_artifacts_and_processing_continues() {
         .unwrap();
     enqueue(&engine, &good);
 
-    engine.stop().unwrap();
+    engine.stop_command_loop().unwrap();
 
     assert_eq!(classes(&engine, "p/OldRuntime"), [Location::file(&runtime)]);
     assert_eq!(classes(&engine, "p/OldTool"), [Location::file(&tools)]);

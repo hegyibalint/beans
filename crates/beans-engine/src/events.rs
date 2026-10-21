@@ -10,22 +10,21 @@ use crate::{Engine, storage};
 mod logging;
 
 impl Engine {
-    pub fn start(workspace_root: &Path) -> Result<Self, String> {
-        let mut engine = Self::new(workspace_root)?;
-        let commands = engine.command_receiver.clone();
-        let storage = storage::open(&engine.work_dir.join("models"))?;
-        let event_log = logging::open(&engine.work_dir);
-        let jvm = Arc::clone(&engine.jvm);
-        engine.command_loop = Some(
+    pub(super) fn start_command_loop(&mut self) -> Result<(), String> {
+        let commands = self.command_receiver.clone();
+        let storage = storage::open(&self.work_dir.join("models"))?;
+        let event_log = logging::open(&self.work_dir);
+        let jvm = Arc::clone(&self.jvm);
+        self.command_loop = Some(
             thread::Builder::new()
                 .name("beans-commands".into())
-                .spawn(move || Self::run(&jvm, commands, event_log, storage))
+                .spawn(move || Self::command_loop(&jvm, commands, event_log, storage))
                 .map_err(|error| error.to_string())?,
         );
-        Ok(engine)
+        Ok(())
     }
 
-    pub fn stop(&mut self) -> Result<(), String> {
+    pub(super) fn stop_command_loop(&mut self) -> Result<(), String> {
         let thread = self.command_loop.take().ok_or("engine is not started")?;
         let signal = self.command_sender.send(Command::Stop);
         thread
@@ -34,12 +33,13 @@ impl Engine {
         signal.map_err(|error| error.to_string())
     }
 
-    fn run(
+    fn command_loop(
         jvm: &JvmPlatform,
         commands: Receiver<Command>,
         mut event_log: Option<File>,
         mut storage: Connection,
     ) {
+        let mut notification_counter = 0_u64;
         for command in commands {
             if let Some(file) = event_log.as_mut() {
                 if let Err(error) = logging::record(file, &command) {
@@ -51,23 +51,19 @@ impl Engine {
                 Command::Start => log::warn!("Start command is not implemented yet"),
                 Command::Stop => break,
                 Command::ProcessResource(path) => {
+                    notification_counter += 1;
                     if let Err(error) = handle_resource(&mut storage, jvm, &path) {
                         log::warn!("{}: {error}", path.display());
                     }
                 }
                 Command::ProcessJdkHome(home) => {
+                    notification_counter += 1;
                     if let Err(error) = handle_jdk_home(&mut storage, jvm, &home) {
                         log::warn!("{}: {error}", home.display());
                     }
                 }
             }
         }
-    }
-}
-
-impl Drop for Engine {
-    fn drop(&mut self) {
-        let _ = self.stop();
     }
 }
 

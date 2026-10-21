@@ -12,17 +12,19 @@ fn a_new_engine_has_no_thread_and_cannot_be_stopped() {
     let mut engine = Engine::new(root.path()).unwrap();
 
     assert!(engine.command_loop.is_none());
-    assert_eq!(engine.stop().unwrap_err(), "engine is not started");
+    assert_eq!(
+        engine.stop_command_loop().unwrap_err(),
+        "engine is not started"
+    );
 }
 
 #[test]
 fn start_returns_an_engine_with_a_live_command_loop() {
     let root = tempdir().unwrap();
-    let mut engine = Engine::start(root.path()).unwrap();
+    let engine = Engine::start(root.path()).unwrap();
 
     assert!(!engine.command_loop.as_ref().unwrap().is_finished());
     assert!(root.path().join(".beans/models").is_file());
-    engine.stop().unwrap();
 }
 
 #[test]
@@ -30,25 +32,29 @@ fn stopping_joins_and_clears_the_thread() {
     let root = tempdir().unwrap();
     let mut engine = Engine::start(root.path()).unwrap();
 
-    engine.stop().unwrap();
+    engine.stop_command_loop().unwrap();
 
     assert!(engine.command_loop.is_none());
     assert!(engine.command_receiver.is_empty());
-    assert_eq!(engine.stop().unwrap_err(), "engine is not started");
+    assert_eq!(
+        engine.stop_command_loop().unwrap_err(),
+        "engine is not started"
+    );
 }
 
 #[test]
-fn stop_follows_commands_already_in_the_queue() {
+fn dropping_an_engine_finishes_commands_already_in_the_queue() {
     let root = tempdir().unwrap();
-    let mut engine = Engine::start(root.path()).unwrap();
+    let engine = Engine::start(root.path()).unwrap();
+    let remaining = engine.command_receiver.clone();
     engine
         .sender()
         .send(Command::ProcessJdkHome("/jdk".into()))
         .unwrap();
 
-    engine.stop().unwrap();
+    drop(engine);
 
-    assert!(engine.command_receiver.is_empty());
+    assert!(remaining.is_empty());
 }
 
 #[test]
@@ -69,7 +75,7 @@ fn the_worker_shares_the_engine_platform_and_releases_it_on_shutdown() {
     let jvm = Arc::downgrade(&engine.jvm);
     assert_eq!(jvm.strong_count(), 2);
 
-    engine.stop().unwrap();
+    engine.stop_command_loop().unwrap();
     assert_eq!(jvm.strong_count(), 1);
     drop(engine);
     assert_eq!(jvm.strong_count(), 0);
@@ -86,7 +92,7 @@ fn a_failed_log_write_does_not_stop_the_command_loop() {
 
     let root = tempdir().unwrap();
     let storage = crate::storage::open(&root.path().join("models")).unwrap();
-    Engine::run(&JvmPlatform::new(), commands, Some(read_only), storage);
+    Engine::command_loop(&JvmPlatform::new(), commands, Some(read_only), storage);
 
     assert!(remaining.is_empty());
     assert_eq!(file.as_file().metadata().unwrap().len(), 0);

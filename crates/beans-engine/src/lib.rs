@@ -38,6 +38,12 @@ pub struct Engine {
 }
 
 impl Engine {
+    pub fn start(workspace_root: &Path) -> Result<Self, String> {
+        let mut engine = Self::new(workspace_root)?;
+        engine.start_command_loop()?;
+        Ok(engine)
+    }
+
     pub fn new(workspace_root: &Path) -> Result<Self, String> {
         let beans_dir = env::var_os("BEANS_WORK_DIR")
             .filter(|path| !path.is_empty())
@@ -64,5 +70,11 @@ impl Engine {
 
     pub fn sender(&self) -> Sender<Command> {
         self.command_sender.clone()
+    }
+}
+
+impl Drop for Engine {
+    fn drop(&mut self) {
+        let _ = self.stop_command_loop();
     }
 }

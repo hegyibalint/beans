@@ -115,12 +115,11 @@ fn engine_child() {
         return;
     };
     let root = Path::new(&root);
-    let mut engine = Engine::start(root).unwrap();
+    let engine = Engine::start(root).unwrap();
     engine
         .sender()
         .send(Command::ProcessJdkHome(root.join("jdk\n\"β\"")))
         .unwrap();
-    engine.stop().unwrap();
 }
 
 fn run(root: &Path, work_dir: Option<&Path>, event_log: Option<&str>) -> Result<(), String> {
