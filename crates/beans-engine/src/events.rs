@@ -10,21 +10,19 @@ use crate::{Engine, storage};
 mod logging;
 
 impl Engine {
-    pub fn start(&mut self) -> Result<(), String> {
-        if self.event_loop.is_some() {
-            return Err("engine is already started".into());
-        }
-        let events = self.events.clone();
-        let storage = storage::open(&self.work_dir.join("models"))?;
-        let event_log = logging::open(&self.work_dir);
-        let jvm = Arc::clone(&self.jvm);
-        self.event_loop = Some(
+    pub fn start(workspace_root: &Path) -> Result<Self, String> {
+        let mut engine = Self::new(workspace_root)?;
+        let events = engine.events.clone();
+        let storage = storage::open(&engine.work_dir.join("models"))?;
+        let event_log = logging::open(&engine.work_dir);
+        let jvm = Arc::clone(&engine.jvm);
+        engine.event_loop = Some(
             thread::Builder::new()
                 .name("beans-events".into())
                 .spawn(move || Self::run(&jvm, events, event_log, storage))
                 .map_err(|error| error.to_string())?,
         );
-        Ok(())
+        Ok(engine)
     }
 
     pub fn stop(&mut self) -> Result<(), String> {

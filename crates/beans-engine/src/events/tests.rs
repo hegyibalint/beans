@@ -16,22 +16,19 @@ fn a_new_engine_has_no_thread_and_cannot_be_stopped() {
 }
 
 #[test]
-fn starting_twice_does_not_replace_the_thread() {
+fn start_returns_an_engine_with_a_live_event_loop() {
     let root = tempdir().unwrap();
-    let mut engine = Engine::new(root.path()).unwrap();
-    engine.start().unwrap();
-    let id = engine.event_loop.as_ref().unwrap().thread().id();
+    let mut engine = Engine::start(root.path()).unwrap();
 
-    assert_eq!(engine.start().unwrap_err(), "engine is already started");
-    assert_eq!(engine.event_loop.as_ref().unwrap().thread().id(), id);
+    assert!(!engine.event_loop.as_ref().unwrap().is_finished());
+    assert!(root.path().join(".beans/models").is_file());
     engine.stop().unwrap();
 }
 
 #[test]
 fn stopping_joins_and_clears_the_thread() {
     let root = tempdir().unwrap();
-    let mut engine = Engine::new(root.path()).unwrap();
-    engine.start().unwrap();
+    let mut engine = Engine::start(root.path()).unwrap();
 
     engine.stop().unwrap();
 
@@ -43,34 +40,14 @@ fn stopping_joins_and_clears_the_thread() {
 #[test]
 fn stop_follows_events_already_in_the_queue() {
     let root = tempdir().unwrap();
-    let mut engine = Engine::new(root.path()).unwrap();
+    let mut engine = Engine::start(root.path()).unwrap();
     engine
         .sender()
         .send(Event::JavaHomeFound(JavaHomeFound {
             home: "/jdk".into(),
         }))
         .unwrap();
-    engine.start().unwrap();
 
-    engine.stop().unwrap();
-
-    assert!(engine.events.is_empty());
-}
-
-#[test]
-fn an_engine_can_restart_with_existing_producers() {
-    let root = tempdir().unwrap();
-    let mut engine = Engine::new(root.path()).unwrap();
-    let sender = engine.sender();
-    engine.start().unwrap();
-    engine.stop().unwrap();
-    sender
-        .send(Event::JavaHomeFound(JavaHomeFound {
-            home: "/jdk".into(),
-        }))
-        .unwrap();
-
-    engine.start().unwrap();
     engine.stop().unwrap();
 
     assert!(engine.events.is_empty());
@@ -79,9 +56,8 @@ fn an_engine_can_restart_with_existing_producers() {
 #[test]
 fn dropping_a_running_engine_joins_the_thread_despite_live_producers() {
     let root = tempdir().unwrap();
-    let mut engine = Engine::new(root.path()).unwrap();
+    let engine = Engine::start(root.path()).unwrap();
     let sender = engine.sender();
-    engine.start().unwrap();
 
     drop(engine);
 
@@ -89,21 +65,14 @@ fn dropping_a_running_engine_joins_the_thread_despite_live_producers() {
 }
 
 #[test]
-fn workers_share_the_engine_platform_across_restarts_and_release_it_on_shutdown() {
+fn the_worker_shares_the_engine_platform_and_releases_it_on_shutdown() {
     let root = tempdir().unwrap();
-    let mut engine = Engine::new(root.path()).unwrap();
+    let mut engine = Engine::start(root.path()).unwrap();
     let jvm = Arc::downgrade(&engine.jvm);
-    assert_eq!(jvm.strong_count(), 1);
+    assert_eq!(jvm.strong_count(), 2);
 
-    engine.start().unwrap();
-    assert_eq!(jvm.strong_count(), 2);
-    assert!(engine.start().is_err());
-    assert_eq!(jvm.strong_count(), 2);
     engine.stop().unwrap();
     assert_eq!(jvm.strong_count(), 1);
-
-    engine.start().unwrap();
-    assert_eq!(jvm.strong_count(), 2);
     drop(engine);
     assert_eq!(jvm.strong_count(), 0);
 }

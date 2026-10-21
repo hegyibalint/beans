@@ -115,14 +115,13 @@ fn engine_child() {
         return;
     };
     let root = Path::new(&root);
-    let mut engine = Engine::new(root).unwrap();
+    let mut engine = Engine::start(root).unwrap();
     engine
         .sender()
         .send(Event::JavaHomeFound(JavaHomeFound {
             home: root.join("jdk\n\"β\""),
         }))
         .unwrap();
-    engine.start().unwrap();
     engine.stop().unwrap();
 }
 

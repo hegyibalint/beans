@@ -18,13 +18,12 @@ fn a_resource_event_publishes_replacement_classes_before_stop() {
     let root = tempdir().unwrap();
     let path = root.path().join("resource");
     fs::write(&path, class_bytes("p/New")).unwrap();
-    let mut engine = Engine::new(root.path()).unwrap();
+    let mut engine = Engine::start(root.path()).unwrap();
     seed(&mut engine, "p/Old", &path);
-    enqueue(&engine, &path);
-
     assert_eq!(classes(&engine, "p/Old"), [Location::file(&path)]);
     assert!(classes(&engine, "p/New").is_empty());
-    engine.start().unwrap();
+
+    enqueue(&engine, &path);
     engine.stop().unwrap();
 
     assert!(classes(&engine, "p/Old").is_empty());
@@ -45,7 +44,7 @@ fn declined_resources_and_failures_preserve_old_classes_and_do_not_stop_later_ev
         }
         let good = root.path().join("good");
         fs::write(&good, class_bytes("p/Good")).unwrap();
-        let mut engine = Engine::new(root.path()).unwrap();
+        let mut engine = Engine::start(root.path()).unwrap();
         seed(&mut engine, "p/Old", &path);
         engine
             .storage
@@ -58,7 +57,6 @@ fn declined_resources_and_failures_preserve_old_classes_and_do_not_stop_later_ev
         enqueue(&engine, &path);
         enqueue(&engine, &good);
 
-        engine.start().unwrap();
         engine.stop().unwrap();
 
         assert_eq!(classes(&engine, "p/Old"), [Location::file(&path)]);
@@ -72,11 +70,10 @@ fn a_recognized_resource_with_no_valid_classes_removes_old_classes() {
     let root = tempdir().unwrap();
     let path = root.path().join("resource");
     fs::write(&path, [0xca, 0xfe, 0xba, 0xbe]).unwrap();
-    let mut engine = Engine::new(root.path()).unwrap();
+    let mut engine = Engine::start(root.path()).unwrap();
     seed(&mut engine, "p/Old", &path);
     enqueue(&engine, &path);
 
-    engine.start().unwrap();
     engine.stop().unwrap();
 
     assert!(classes(&engine, "p/Old").is_empty());
@@ -90,13 +87,12 @@ fn a_java_home_event_publishes_runtime_and_tools_together() {
     let tools = home.join("lib/tools.jar");
     write_jar(&runtime, "p/Runtime");
     write_jar(&tools, "p/Tool");
-    let mut engine = Engine::new(root.path()).unwrap();
+    let mut engine = Engine::start(root.path()).unwrap();
     engine
         .sender()
         .send(Event::JavaHomeFound(JavaHomeFound { home }))
         .unwrap();
 
-    engine.start().unwrap();
     engine.stop().unwrap();
 
     assert_eq!(
@@ -120,7 +116,7 @@ fn a_java_home_failure_rolls_back_all_artifacts_and_processing_continues() {
     fs::write(&tools, b"unrecognized tools").unwrap();
     let good = root.path().join("good");
     fs::write(&good, class_bytes("p/Good")).unwrap();
-    let mut engine = Engine::new(root.path()).unwrap();
+    let mut engine = Engine::start(root.path()).unwrap();
     seed(&mut engine, "p/OldRuntime", &runtime);
     seed(&mut engine, "p/OldTool", &tools);
     engine
@@ -129,7 +125,6 @@ fn a_java_home_failure_rolls_back_all_artifacts_and_processing_continues() {
         .unwrap();
     enqueue(&engine, &good);
 
-    engine.start().unwrap();
     engine.stop().unwrap();
 
     assert_eq!(classes(&engine, "p/OldRuntime"), [Location::file(&runtime)]);
@@ -139,13 +134,11 @@ fn a_java_home_failure_rolls_back_all_artifacts_and_processing_continues() {
 }
 
 #[test]
-fn a_writer_open_failure_is_reported_without_starting_the_thread() {
+fn a_storage_open_failure_is_reported_by_start() {
     let root = tempdir().unwrap();
-    let mut engine = Engine::new(root.path()).unwrap();
-    engine.work_dir = root.path().join("missing");
+    fs::create_dir_all(root.path().join(".beans/models")).unwrap();
 
-    assert!(engine.start().is_err());
-    assert!(engine.event_loop.is_none());
+    assert!(Engine::start(root.path()).is_err());
 }
 
 fn enqueue(engine: &Engine, path: &Path) {

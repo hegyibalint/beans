@@ -9,10 +9,6 @@ fn initialization_starts_the_engine() {
     let root = tempfile::tempdir().unwrap();
     let mut features = Features::initialize(&params(&[root.path()])).unwrap();
 
-    assert_eq!(
-        features.engine.start().unwrap_err(),
-        "engine is already started"
-    );
     features.engine.stop().unwrap();
 }
 

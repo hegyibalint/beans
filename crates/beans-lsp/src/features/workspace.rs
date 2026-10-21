@@ -15,8 +15,7 @@ impl Features {
     pub(crate) fn initialize(params: &InitializeParams) -> Result<Self, String> {
         let root = workspace_root(params)?;
         let backend = beans_workspace_toml::load(&root).map_err(|error| error.to_string())?;
-        let mut engine = Engine::new(&root)?;
-        engine.start()?;
+        let engine = Engine::start(&root)?;
         let mut features = Self {
             engine,
             client_capabilities: params.capabilities.clone(),
