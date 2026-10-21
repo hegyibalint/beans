@@ -1,6 +1,7 @@
 //! Shared vocabulary and contracts, independent of storage and editor protocols.
 
 pub mod classpath;
+pub mod event;
 pub mod events;
 pub mod features;
 pub mod input;
