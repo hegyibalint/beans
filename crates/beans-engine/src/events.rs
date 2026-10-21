@@ -52,13 +52,13 @@ impl Engine {
                 Command::Stop => break,
                 Command::ProcessResource(path) => {
                     notification_counter += 1;
-                    if let Err(error) = handle_resource(&mut storage, jvm, &path) {
+                    if let Err(error) = handle_command_process_resource(&mut storage, jvm, &path) {
                         log::warn!("{}: {error}", path.display());
                     }
                 }
                 Command::ProcessJdkHome(home) => {
                     notification_counter += 1;
-                    if let Err(error) = handle_jdk_home(&mut storage, jvm, &home) {
+                    if let Err(error) = handle_command_process_jdk_home(&mut storage, jvm, &home) {
                         log::warn!("{}: {error}", home.display());
                     }
                 }
@@ -67,7 +67,11 @@ impl Engine {
     }
 }
 
-fn handle_resource(storage: &mut Connection, jvm: &JvmPlatform, path: &Path) -> Result<(), String> {
+fn handle_command_process_resource(
+    storage: &mut Connection,
+    jvm: &JvmPlatform,
+    path: &Path,
+) -> Result<(), String> {
     let started = Instant::now();
     log::info!("Processing resource {}", path.display());
     let classes = jvm.process(path)?;
@@ -85,7 +89,11 @@ fn handle_resource(storage: &mut Connection, jvm: &JvmPlatform, path: &Path) -> 
     Ok(())
 }
 
-fn handle_jdk_home(storage: &mut Connection, jvm: &JvmPlatform, home: &Path) -> Result<(), String> {
+fn handle_command_process_jdk_home(
+    storage: &mut Connection,
+    jvm: &JvmPlatform,
+    home: &Path,
+) -> Result<(), String> {
     let started = Instant::now();
     log::info!("Processing JDK home {}", home.display());
     let mut resources = Vec::new();
