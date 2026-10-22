@@ -1,9 +1,11 @@
-use std::io;
+use std::{io, thread::JoinHandle};
 
-use lsp_server::{Connection, Message};
+use crossbeam_channel::Sender;
+use lsp_server::{Connection, Message, Response};
 
 use crate::features::Features;
 
+mod engine_notifications;
 mod notifications;
 mod request_log;
 mod requests;
@@ -26,6 +28,8 @@ enum Lifecycle {
 pub struct Server {
     lifecycle: Lifecycle,
     features: Option<Features>,
+    notification_thread: Option<JoinHandle<()>>,
+    notification_replies: Option<Sender<Response>>,
 }
 
 impl Server {
@@ -34,14 +38,20 @@ impl Server {
     /// An exit without shutdown, a disconnected client, or a failed send is an error.
     /// Lifecycle rules: <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize>.
     pub fn run(mut self, connection: Connection) -> io::Result<()> {
-        let mut log = RequestLog::from_env()?;
+        let log = RequestLog::from_env()?;
         for message in &connection.receiver {
             log.record("incoming", &message)?;
             match message {
                 Message::Request(request) => {
-                    let response: Message = self.respond(request).into();
-                    log.record("outgoing", &response)?;
-                    connection.sender.send(response).map_err(io::Error::other)?;
+                    let initializing = request.method == "initialize";
+                    let response = self.respond(request);
+                    let initialized = initializing && response.error.is_none();
+                    let message = Message::Response(response);
+                    log.record("outgoing", &message)?;
+                    connection.sender.send(message).map_err(io::Error::other)?;
+                    if initialized {
+                        self.start_notification_thread(connection.sender.clone(), log.clone())?;
+                    }
                 }
                 Message::Notification(notification) if notification.method == "exit" => {
                     // LSP #exit requires failure unless shutdown was received first.
@@ -57,14 +67,29 @@ impl Server {
                         connection.sender.send(message).map_err(io::Error::other)?;
                     }
                 }
-                // There are no outgoing requests, so responses need no dispatch yet.
-                Message::Response(_) => {}
+                Message::Response(response) => {
+                    if let Some(replies) = &self.notification_replies {
+                        let _ = replies.send(response);
+                    }
+                }
             }
         }
         Err(io::Error::new(
             io::ErrorKind::UnexpectedEof,
             "client disconnected before exit",
         ))
+    }
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        self.notification_replies.take();
+        self.features.take();
+        if let Some(thread) = self.notification_thread.take() {
+            if thread.join().is_err() {
+                log::warn!("LSP notification thread panicked");
+            }
+        }
     }
 }
 

@@ -27,6 +27,8 @@ fn server() -> (tempfile::TempDir, Server) {
     let server = Server {
         lifecycle: Lifecycle::Running,
         features: Some(features),
+        notification_thread: None,
+        notification_replies: None,
     };
     (root, server)
 }

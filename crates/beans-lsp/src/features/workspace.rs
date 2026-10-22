@@ -16,8 +16,19 @@ impl Features {
         let root = workspace_root(params)?;
         let backend = beans_workspace_toml::load(&root).map_err(|error| error.to_string())?;
         let engine = Engine::start(&root)?;
+        let engine_notifications = if params
+            .capabilities
+            .window
+            .as_ref()
+            .is_some_and(|window| window.work_done_progress == Some(true))
+        {
+            Some(engine.subscribe())
+        } else {
+            None
+        };
         let mut features = Self {
             engine,
+            engine_notifications,
             client_capabilities: params.capabilities.clone(),
             open_documents: Default::default(),
             workspace_documents: Default::default(),

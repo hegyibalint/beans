@@ -58,6 +58,7 @@ dependencies = [
  "beans-engine",
  "beans-testing",
  "beans-workspace-toml",
+ "crossbeam-channel",
  "env_logger",
  "log",
  "lsp-server",

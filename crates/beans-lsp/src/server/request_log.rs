@@ -2,6 +2,7 @@ use std::{
     env,
     fs::OpenOptions,
     io::{self, Write},
+    sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -12,7 +13,8 @@ use serde_json::json;
 use std::os::unix::fs::OpenOptionsExt;
 
 /// Opt-in JSON Lines transcript of the decoded LSP messages, not stdio framing.
-pub(super) struct RequestLog(Option<std::fs::File>);
+#[derive(Clone, Default)]
+pub(super) struct RequestLog(Option<Arc<Mutex<std::fs::File>>>);
 
 impl RequestLog {
     pub(super) fn from_env() -> io::Result<Self> {
@@ -23,11 +25,11 @@ impl RequestLog {
         options.create(true).append(true);
         #[cfg(unix)]
         options.mode(0o600);
-        Ok(Self(Some(options.open(path)?)))
+        Ok(Self(Some(Arc::new(Mutex::new(options.open(path)?)))))
     }
 
-    pub(super) fn record(&mut self, direction: &str, message: &Message) -> io::Result<()> {
-        let Some(file) = &mut self.0 else {
+    pub(super) fn record(&self, direction: &str, message: &Message) -> io::Result<()> {
+        let Some(file) = &self.0 else {
             return Ok(());
         };
         let mut line = serde_json::to_vec(&json!({
@@ -37,6 +39,8 @@ impl RequestLog {
             "message": message,
         }))?;
         line.push(b'\n');
-        file.write_all(&line)
+        file.lock()
+            .map_err(|_| io::Error::other("request log lock poisoned"))?
+            .write_all(&line)
     }
 }
