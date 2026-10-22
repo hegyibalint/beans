@@ -3,7 +3,7 @@ use beans_core::{
     location::{Location, LocationEntry},
 };
 
-use crate::{Workspace, Workspaces};
+use beans_workspace::{Workspace, Workspaces};
 
 fn library_entry() -> Location {
     Location::new(LocationEntry::File("/library.jar".into()))

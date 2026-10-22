@@ -3,7 +3,7 @@ use beans_core::{
     location::{Location, LocationEntry},
 };
 
-use crate::{Workspace, Workspaces};
+use beans_workspace::{Workspace, Workspaces};
 
 fn entry(name: &str) -> Location {
     Location::new(LocationEntry::Virtual(name.into()))

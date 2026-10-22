@@ -92,6 +92,3 @@ impl Workspaces {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;
