@@ -94,7 +94,11 @@ fn collect(
     for entry in entries {
         classes.push(entry?);
         if classes.len() % 1000 == 0 {
-            log::debug!("Parsed {} JVM classes from {}", classes.len(), path.display());
+            log::debug!(
+                "Parsed {} JVM classes from {}",
+                classes.len(),
+                path.display()
+            );
         }
     }
     log::debug!(

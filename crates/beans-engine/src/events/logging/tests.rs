@@ -20,7 +20,8 @@ fn commands_round_trip_as_individual_json_lines() {
         serde_json::from_str::<serde_json::Value>(lines[0]).unwrap(),
         serde_json::json!({"type": "ProcessJdkHome", "data": home})
     );
-    let Command::ProcessJdkHome(decoded) = serde_json::from_str::<Command>(lines[0]).unwrap() else {
+    let Command::ProcessJdkHome(decoded) = serde_json::from_str::<Command>(lines[0]).unwrap()
+    else {
         panic!("expected ProcessJdkHome");
     };
     assert_eq!(decoded.to_str(), Some(home));
@@ -28,7 +29,8 @@ fn commands_round_trip_as_individual_json_lines() {
         serde_json::from_str::<serde_json::Value>(lines[1]).unwrap(),
         serde_json::json!({"type": "ProcessResource", "data": home})
     );
-    let Command::ProcessResource(decoded) = serde_json::from_str::<Command>(lines[1]).unwrap() else {
+    let Command::ProcessResource(decoded) = serde_json::from_str::<Command>(lines[1]).unwrap()
+    else {
         panic!("expected ProcessResource");
     };
     assert_eq!(decoded.to_str(), Some(home));

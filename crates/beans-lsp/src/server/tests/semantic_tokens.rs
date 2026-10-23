@@ -42,14 +42,9 @@ fn field_type_identifiers_are_sorted_and_utf16_encoded() {
     let mut line = 0;
     let mut character = 0;
     let mut search_start = 0;
-    for (token, name) in tokens
-        .data
-        .iter()
-        .zip([
-            "Box", "Missing", "Café", "Widget", "Absent", "Box", "String", "Middle", "Slot",
-            "Integer",
-        ])
-    {
+    for (token, name) in tokens.data.iter().zip([
+        "Box", "Missing", "Café", "Widget", "Absent", "Box", "String", "Middle", "Slot", "Integer",
+    ]) {
         if token.delta_line == 0 {
             character += token.delta_start;
         } else {

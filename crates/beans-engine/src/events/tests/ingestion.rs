@@ -88,10 +88,7 @@ fn a_java_home_event_publishes_runtime_and_tools_together() {
     write_jar(&runtime, "p/Runtime");
     write_jar(&tools, "p/Tool");
     let mut engine = Engine::start(root.path()).unwrap();
-    engine
-        .sender()
-        .send(Command::ProcessJdkHome(home))
-        .unwrap();
+    engine.sender().send(Command::ProcessJdkHome(home)).unwrap();
 
     engine.stop_command_loop().unwrap();
 
@@ -119,10 +116,7 @@ fn a_java_home_failure_rolls_back_all_artifacts_and_processing_continues() {
     let mut engine = Engine::start(root.path()).unwrap();
     seed(&mut engine, "p/OldRuntime", &runtime);
     seed(&mut engine, "p/OldTool", &tools);
-    engine
-        .sender()
-        .send(Command::ProcessJdkHome(home))
-        .unwrap();
+    engine.sender().send(Command::ProcessJdkHome(home)).unwrap();
     enqueue(&engine, &good);
 
     engine.stop_command_loop().unwrap();
