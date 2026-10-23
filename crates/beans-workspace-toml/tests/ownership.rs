@@ -1,42 +1,30 @@
-use std::{collections::BTreeMap, path::PathBuf};
+use std::path::Path;
 
 use beans_core::location::{Location, LocationEntry};
 use beans_workspace::Workspace;
 
-use crate::{
-    engine::TomlWorkspace,
-    model::{Project, Unit},
-};
+use beans_workspace_toml::{TomlWorkspace, parse};
 
 fn entry(path: &str, name: &str) -> Location {
     Location::new(LocationEntry::File(path.into())).entry(LocationEntry::Container(name.into()))
 }
 
-fn unit(sources: &[&str], artifact: &str) -> Unit {
-    Unit {
-        sources: sources.iter().map(PathBuf::from).collect(),
-        depends_on: Vec::new(),
-        classpath: vec![artifact.into()],
-        jdk_home: None,
-    }
-}
-
-fn workspace(units: &[(&str, Unit)]) -> TomlWorkspace {
-    TomlWorkspace::new(Project {
-        root: "/project".into(),
-        units: units
-            .iter()
-            .map(|(id, unit)| ((*id).into(), unit.clone()))
-            .collect::<BTreeMap<_, _>>(),
-    })
+fn workspace(contents: &str) -> TomlWorkspace {
+    parse(contents, Path::new("/project")).unwrap()
 }
 
 #[test]
 fn each_document_selects_its_own_units_policy() {
-    let workspace = workspace(&[
-        ("app", unit(&["/project/app"], "/project/app.jar")),
-        ("lib", unit(&["/project/lib"], "/project/lib.jar")),
-    ]);
+    let workspace = workspace(
+        r#"
+        [unit.app]
+        sources = ["app"]
+        classpath = ["app.jar"]
+        [unit.lib]
+        sources = ["lib"]
+        classpath = ["lib.jar"]
+        "#,
+    );
 
     for (document, visible, hidden) in [
         (
@@ -58,10 +46,16 @@ fn each_document_selects_its_own_units_policy() {
 
 #[test]
 fn shared_roots_combine_the_policies_of_all_owners() {
-    let workspace = workspace(&[
-        ("app", unit(&["/project/shared"], "/project/app.jar")),
-        ("lib", unit(&["/project/shared"], "/project/lib.jar")),
-    ]);
+    let workspace = workspace(
+        r#"
+        [unit.app]
+        sources = ["shared"]
+        classpath = ["app.jar"]
+        [unit.lib]
+        sources = ["shared"]
+        classpath = ["lib.jar"]
+        "#,
+    );
     let classpath = workspace.classpath_for("file:///project/shared/Future.java");
 
     assert!(classpath.contains_class(&entry("/project/app.jar", "Example.class")));
@@ -71,13 +65,16 @@ fn shared_roots_combine_the_policies_of_all_owners() {
 
 #[test]
 fn nested_roots_add_owners_only_within_the_nested_tree() {
-    let workspace = workspace(&[
-        ("broad", unit(&["/project/src"], "/project/broad.jar")),
-        (
-            "nested",
-            unit(&["/project/src/nested"], "/project/nested.jar"),
-        ),
-    ]);
+    let workspace = workspace(
+        r#"
+        [unit.broad]
+        sources = ["src"]
+        classpath = ["broad.jar"]
+        [unit.nested]
+        sources = ["src/nested"]
+        classpath = ["nested.jar"]
+        "#,
+    );
     let nested = workspace.classpath_for("file:///project/src/nested/Future.java");
     let outer = workspace.classpath_for("file:///project/src/Future.java");
 
@@ -89,7 +86,7 @@ fn nested_roots_add_owners_only_within_the_nested_tree() {
 
 #[test]
 fn unclaimed_and_non_file_documents_remain_unrestricted() {
-    let workspace = workspace(&[("app", unit(&["/project/src"], "/project/app.jar"))]);
+    let workspace = workspace("[unit.app]\nsources = ['src']\nclasspath = ['app.jar']\n");
 
     for uri in [
         "file:///project/scratch/Future.java",
@@ -97,6 +94,7 @@ fn unclaimed_and_non_file_documents_remain_unrestricted() {
         "untitled:Future.java",
         "beans-jvm:///library/Example.class",
         "beans-jvm:///project/src/Future.java",
+        "custom:///project/src/Future.java",
         "not a URI",
     ] {
         assert!(
@@ -109,9 +107,10 @@ fn unclaimed_and_non_file_documents_remain_unrestricted() {
 }
 
 #[test]
-fn file_uris_are_decoded_before_ownership_is_selected() {
-    let workspace = workspace(&[("app", unit(&["/project/my sources"], "/project/app.jar"))]);
-    let classpath = workspace.classpath_for("file:///project/my%20sources/Future.java");
+fn file_uris_are_decoded_and_normalized_before_ownership_is_selected() {
+    let workspace = workspace("[unit.app]\nsources = ['my sources/é']\nclasspath = ['app.jar']\n");
+    let classpath =
+        workspace.classpath_for("file:///project/old/../my%20sources/%C3%A9/Future.java");
 
     assert!(classpath.contains_class(&entry("/project/app.jar", "Example.class")));
     assert!(!classpath.contains_class(&entry("/unrelated.jar", "Example.class")));

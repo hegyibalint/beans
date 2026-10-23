@@ -109,6 +109,7 @@ dependencies = [
  "crossbeam-channel",
  "log",
  "serde",
+ "tempfile",
  "toml",
  "url",
 ]

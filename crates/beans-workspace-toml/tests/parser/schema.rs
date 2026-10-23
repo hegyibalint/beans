@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::parser::{ParseError, parse};
+use beans_workspace_toml::{ParseError, parse};
 
 use super::project;
 

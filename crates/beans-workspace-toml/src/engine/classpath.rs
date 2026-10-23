@@ -30,9 +30,6 @@ impl SourceClasspath {
     }
 }
 
-#[cfg(test)]
-mod tests;
-
 impl Classpath for SourceClasspath {
     fn contains_source(&self, resource: &Location) -> bool {
         let [LocationEntry::File(path)] = resource.entries.as_slice() else {

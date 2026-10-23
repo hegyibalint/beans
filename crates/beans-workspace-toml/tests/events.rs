@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use beans_core::event::Command;
 use crossbeam_channel::unbounded;
 
-use crate::parse;
+use beans_workspace_toml::parse;
 
 #[test]
 fn startup_reports_each_resolved_home_once_in_path_order() {

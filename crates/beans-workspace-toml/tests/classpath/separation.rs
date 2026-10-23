@@ -1,10 +1,7 @@
-use beans_core::{
-    classpath::Classpath,
-    location::{Location, LocationEntry},
-};
+use beans_core::location::{Location, LocationEntry};
+use beans_workspace::Workspace;
 
-use super::{classpath, unit};
-use crate::model::Unit;
+use super::workspace;
 
 fn file(path: &str) -> Location {
     Location::new(LocationEntry::File(path.into()))
@@ -12,13 +9,8 @@ fn file(path: &str) -> Location {
 
 #[test]
 fn source_roots_and_binary_locations_have_independent_visibility() {
-    let classpath = classpath(
-        Unit {
-            classpath: vec!["/project/out".into()],
-            ..unit(&["/project/src"])
-        },
-        &[],
-    );
+    let workspace = workspace("[unit.app]\nsources = ['src']\nclasspath = ['out']\n");
+    let classpath = workspace.classpath_for("file:///project/src/Use.java");
 
     for name in ["Foo.java", "Foo.class"] {
         let source = file(&format!("/project/src/{name}"));
@@ -32,13 +24,8 @@ fn source_roots_and_binary_locations_have_independent_visibility() {
 
 #[test]
 fn a_location_can_be_explicitly_included_in_both_policies() {
-    let classpath = classpath(
-        Unit {
-            classpath: vec!["/project/shared".into()],
-            ..unit(&["/project/shared"])
-        },
-        &[],
-    );
+    let workspace = workspace("[unit.app]\nsources = ['shared']\nclasspath = ['shared']\n");
+    let classpath = workspace.classpath_for("file:///project/shared/Use.java");
     let resource = file("/project/shared/Foo.java");
     assert!(classpath.contains_source(&resource));
     assert!(classpath.contains_class(&resource));
@@ -46,13 +33,8 @@ fn a_location_can_be_explicitly_included_in_both_policies() {
 
 #[test]
 fn source_entries_in_archives_are_not_supported_even_under_source_roots() {
-    let classpath = classpath(
-        Unit {
-            classpath: vec!["/project/src/lib.jar".into()],
-            ..unit(&["/project/src"])
-        },
-        &[],
-    );
+    let workspace = workspace("[unit.app]\nsources = ['src']\nclasspath = ['src/lib.jar']\n");
+    let classpath = workspace.classpath_for("file:///project/src/Use.java");
     let archive = file("/project/src/lib.jar");
     for container in [
         archive.clone(),

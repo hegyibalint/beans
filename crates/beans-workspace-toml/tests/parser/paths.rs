@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::parser::parse;
+use beans_workspace_toml::parse;
 
 use super::project;
 
@@ -47,6 +47,16 @@ fn dot_components_do_not_change_resolved_identity() {
     assert_eq!(
         project.units["app"].classpath,
         [PathBuf::from("/libs/dependency.jar")]
+    );
+}
+
+#[test]
+fn parent_components_cannot_escape_the_filesystem_root() {
+    let project = project("[unit.app]\nsources = ['/project/../../src', '/../..']\n");
+
+    assert_eq!(
+        project.units["app"].sources,
+        [PathBuf::from("/src"), PathBuf::from("/")]
     );
 }
 

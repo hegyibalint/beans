@@ -152,7 +152,7 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
         .unwrap_or_else(|| panic!("missing descriptor log: {diagnostics}"));
     assert!(
         diagnostics.contains(&format!(
-            " [beans-workspace-toml] BEANS_WORKSPACE_TOML_JAVA_HOME override active for {}: jdk_home={}",
+            " [beans-workspace-toml] JDK override active for {}: jdk_home={}",
             root.join("beans.toml").display(),
             root.join("local-jdk").display()
         )),

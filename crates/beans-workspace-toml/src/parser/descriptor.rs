@@ -1,7 +1,4 @@
-use std::{
-    fs, io,
-    path::{Path, PathBuf},
-};
+use std::{fs, io, path::Path};
 
 use crate::{
     engine::TomlWorkspace,
@@ -16,9 +13,9 @@ pub const DESCRIPTOR: &str = "beans.toml";
 
 /// Read a workspace's descriptor. Absence is not an error; a present but
 /// unreadable or invalid descriptor is never silently replaced with a fallback.
-/// A nonempty `BEANS_WORKSPACE_TOML_JAVA_HOME` overrides `jdk_home` for every
-/// unit. Relative override paths are resolved against the workspace root.
-pub fn load(root: &Path) -> Result<Option<TomlWorkspace>, LoadError> {
+/// A nonempty override replaces `jdk_home` for every unit. Relative override
+/// paths are resolved against the workspace root.
+pub fn load(root: &Path, jdk_override: Option<&Path>) -> Result<Option<TomlWorkspace>, LoadError> {
     let path = root.join(DESCRIPTOR);
     let contents = match fs::read_to_string(&path) {
         Ok(contents) => contents,
@@ -28,43 +25,33 @@ pub fn load(root: &Path) -> Result<Option<TomlWorkspace>, LoadError> {
         }
         Err(error) => return Err(LoadError::Read { path, error }),
     };
-    let jdk_override = std::env::var_os("BEANS_WORKSPACE_TOML_JAVA_HOME").map(PathBuf::from);
-    let workspace =
-        parse_with_jdk_override(&contents, root, jdk_override.as_deref()).map_err(|error| {
-            LoadError::Parse {
-                path: path.clone(),
-                error,
-            }
-        })?;
+    let mut project = parse_project(&contents, root).map_err(|error| LoadError::Parse {
+        path: path.clone(),
+        error,
+    })?;
     if let Some(home) = jdk_override.filter(|path| !path.as_os_str().is_empty()) {
+        let home = normalize(&project.root.join(home));
+        for unit in project.units.values_mut() {
+            unit.jdk_home = Some(home.clone());
+        }
         log::info!(
-            "BEANS_WORKSPACE_TOML_JAVA_HOME override active for {}: jdk_home={}",
+            "JDK override active for {}: jdk_home={}",
             path.display(),
-            normalize(&workspace.model().root.join(home)).display()
+            home.display()
         );
     }
-    log::info!(
-        "Loaded {}: units={}",
-        path.display(),
-        workspace.model().units.len()
-    );
-    Ok(Some(workspace))
+    log::info!("Loaded {}: units={}", path.display(), project.units.len());
+    Ok(Some(TomlWorkspace::new(project)))
 }
 
 /// Parse the v0.2 descriptor format and resolve paths against `root`.
 /// A relative root is made absolute using the current directory; inputs need
 /// not exist. Unknown fields and dependencies naming absent units are errors.
-/// Unlike [`load`], this does not read environment overrides.
 pub fn parse(contents: &str, root: &Path) -> Result<TomlWorkspace, ParseError> {
-    parse_with_jdk_override(contents, root, None)
+    parse_project(contents, root).map(TomlWorkspace::new)
 }
 
-pub(super) fn parse_with_jdk_override(
-    contents: &str,
-    root: &Path,
-    jdk_override: Option<&Path>,
-) -> Result<TomlWorkspace, ParseError> {
-    let jdk_override = jdk_override.filter(|path| !path.as_os_str().is_empty());
+fn parse_project(contents: &str, root: &Path) -> Result<Project, ParseError> {
     let Descriptor { jdk_home, unit } = toml::from_str(contents).map_err(ParseError::Toml)?;
     for (id, descriptor) in &unit {
         for dependency in &descriptor.depends_on {
@@ -90,13 +77,14 @@ pub(super) fn parse_with_jdk_override(
                 sources: unit.sources.iter().map(|path| resolve(path)).collect(),
                 depends_on: unit.depends_on,
                 classpath: unit.classpath.iter().map(|path| resolve(path)).collect(),
-                jdk_home: jdk_override
-                    .or(unit.jdk_home.as_deref())
+                jdk_home: unit
+                    .jdk_home
+                    .as_deref()
                     .or(jdk_home.as_deref())
                     .map(resolve),
             };
             (id, unit)
         })
         .collect();
-    Ok(TomlWorkspace::new(Project { root, units }))
+    Ok(Project { root, units })
 }
