@@ -5,8 +5,7 @@ use beans_core::{
 };
 use rusqlite::Connection;
 
-use super::JvmQuery;
-use crate::{Class, storage};
+use beans_platform_jvm::{Class, query::JvmQuery, storage};
 
 #[test]
 fn finds_all_jvm_locations_by_exact_internal_name() {
@@ -143,7 +142,7 @@ fn queries_borrow_the_callers_transaction_and_follow_index_replacement_and_delet
 fn database() -> Connection {
     let connection = Connection::open_in_memory().unwrap();
     connection
-        .execute_batch(include_str!("../../../beans-engine/src/storage/schema.sql"))
+        .execute_batch(include_str!("../../beans-engine/src/storage/schema.sql"))
         .unwrap();
     connection
 }

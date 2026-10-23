@@ -1,12 +1,15 @@
-use std::io::{Cursor, Write};
+use std::{
+    io::{Cursor, Write},
+    path::Path,
+};
 
-use beans_core::location::LocationEntry;
+use beans_core::location::{Location, LocationEntry};
 use beans_testing::support::class_bytes;
 use rusqlite::Connection;
 use tempfile::NamedTempFile;
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-use super::*;
+use beans_platform_jvm::{Class, JvmPlatform, jdk_artifacts, storage};
 
 #[test]
 fn stores_each_container_format_in_the_supplied_transaction() {
@@ -14,7 +17,7 @@ fn stores_each_container_format_in_the_supplied_transaction() {
     for (bytes, entry) in [
         (class.clone(), None),
         (
-            jar_bytes(&[("example/Foo.class", &class)]),
+            jar_bytes(&[("readme.txt", b"hello"), ("example/Foo.class", &class)]),
             Some("example/Foo.class"),
         ),
         (jimage_bytes(&class), Some("/java.base/example/Foo.class")),
@@ -81,6 +84,7 @@ fn recognized_resources_can_replace_previous_models_with_no_classes() {
     let broken = [0xCA, 0xFE, 0xBA, 0xBE];
     for bytes in [
         jar_bytes(&[]),
+        jar_bytes(&[("readme.txt", b"hello")]),
         broken.to_vec(),
         jar_bytes(&[("Broken.class", &broken)]),
         jimage_bytes(&broken),
@@ -113,7 +117,12 @@ fn unknown_formats_produce_no_classes_without_changing_stored_models() {
 
 #[test]
 fn container_opening_errors_preserve_previous_models() {
-    for bytes in [b"PK\x03\x04".as_slice(), &[0xDA, 0xDA, 0xFE, 0xCA]] {
+    for bytes in [
+        b"PK\x03\x04".as_slice(),
+        b"PK\x05\x06",
+        b"PK\x06\x06",
+        &[0xDA, 0xDA, 0xFE, 0xCA],
+    ] {
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(bytes).unwrap();
         let mut connection = database();

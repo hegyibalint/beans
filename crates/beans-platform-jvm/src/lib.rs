@@ -4,9 +4,6 @@ mod parser;
 pub mod query;
 pub mod storage;
 
-#[cfg(test)]
-mod tests;
-
 use std::{
     io,
     path::{Path, PathBuf},

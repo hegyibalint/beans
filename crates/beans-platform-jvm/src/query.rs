@@ -47,6 +47,3 @@ impl<'a> JvmQuery<'a> {
         Ok(locations)
     }
 }
-
-#[cfg(test)]
-mod tests;

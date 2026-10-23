@@ -35,6 +35,3 @@ pub fn remove(transaction: &Transaction<'_>, path: &Path) -> Result<bool, String
         .map(|count| count != 0)
         .map_err(|error| error.to_string())
 }
-
-#[cfg(test)]
-mod tests;

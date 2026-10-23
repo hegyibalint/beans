@@ -38,6 +38,3 @@ pub fn process(
             .transpose()
     })))
 }
-
-#[cfg(test)]
-mod tests;

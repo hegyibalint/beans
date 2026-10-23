@@ -1,8 +1,10 @@
 use beans_core::location::{Location, LocationEntry};
 use rusqlite::Connection;
 
-use super::{remove, store};
-use crate::Class;
+use beans_platform_jvm::{
+    Class,
+    storage::{remove, store},
+};
 
 #[test]
 fn stores_borrowed_classes_and_locations_as_json() {
@@ -154,7 +156,7 @@ fn a_storage_failure_allows_rolling_back_the_whole_replacement() {
 fn database() -> Connection {
     let connection = Connection::open_in_memory().unwrap();
     connection
-        .execute_batch(include_str!("../../../beans-engine/src/storage/schema.sql"))
+        .execute_batch(include_str!("../../beans-engine/src/storage/schema.sql"))
         .unwrap();
     connection
 }

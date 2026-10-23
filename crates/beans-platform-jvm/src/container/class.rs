@@ -24,6 +24,3 @@ pub fn process(
         .flatten(),
     ))
 }
-
-#[cfg(test)]
-mod tests;
