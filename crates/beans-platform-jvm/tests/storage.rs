@@ -1,4 +1,5 @@
 use beans_core::location::{Location, LocationEntry};
+use beans_testing::database;
 use rusqlite::Connection;
 
 use beans_platform_jvm::{
@@ -151,14 +152,6 @@ fn a_storage_failure_allows_rolling_back_the_whole_replacement() {
         assert!(error.contains("rejected class"));
     }
     assert_eq!(names(&connection), ["Old"]);
-}
-
-fn database() -> Connection {
-    let connection = Connection::open_in_memory().unwrap();
-    connection
-        .execute_batch(include_str!("../../beans-engine/src/storage/schema.sql"))
-        .unwrap();
-    connection
 }
 
 fn class(name: &str) -> Class {

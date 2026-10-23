@@ -4,7 +4,7 @@ use std::{
 };
 
 use beans_core::location::{Location, LocationEntry};
-use beans_testing::support::class_bytes;
+use beans_testing::{database, support::class_bytes};
 use rusqlite::Connection;
 use tempfile::NamedTempFile;
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
@@ -376,14 +376,6 @@ fn artifact_read_errors_allow_the_caller_to_roll_back_publication() {
     transaction.rollback().unwrap();
 
     assert!(names(&connection).is_empty());
-}
-
-fn database() -> Connection {
-    let connection = Connection::open_in_memory().unwrap();
-    connection
-        .execute_batch(include_str!("../../beans-engine/src/storage/schema.sql"))
-        .unwrap();
-    connection
 }
 
 fn seed(connection: &mut Connection, path: &Path) {

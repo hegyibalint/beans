@@ -3,6 +3,7 @@ use beans_core::{
     location::{Location, LocationEntry},
     query_scope::QueryScope,
 };
+use beans_testing::database;
 use rusqlite::Connection;
 
 use beans_platform_jvm::{Class, query::JvmQuery, storage};
@@ -137,14 +138,6 @@ fn queries_borrow_the_callers_transaction_and_follow_index_replacement_and_delet
     transaction.commit().unwrap();
     let query = JvmQuery::new(&connection, QueryScope::new(&Unrestricted));
     assert!(query.find_classes("p/New").unwrap().is_empty());
-}
-
-fn database() -> Connection {
-    let connection = Connection::open_in_memory().unwrap();
-    connection
-        .execute_batch(include_str!("../../beans-engine/src/storage/schema.sql"))
-        .unwrap();
-    connection
 }
 
 fn store(connection: &mut Connection, name: &str, location: &Location) {

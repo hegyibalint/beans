@@ -2,7 +2,7 @@ use beans_core::location::{Location, LocationEntry};
 use rusqlite::Connection;
 use tempfile::tempdir;
 
-use super::{SCHEMA_VERSION, initialize, open, schema};
+use super::{SCHEMA_VERSION, initialize, initialize_schema, open};
 
 #[test]
 fn startup_initializes_and_configures_the_database() {
@@ -208,7 +208,7 @@ fn failed_initialization_rolls_back_the_reset() {
     connection
         .execute_batch("CREATE TABLE sentinel (value INTEGER); INSERT INTO sentinel VALUES (42)")
         .unwrap();
-    assert!(initialize(&mut connection, "CREATE TABLE broken (").is_err());
+    assert!(initialize_schema(&mut connection, "CREATE TABLE broken (").is_err());
     assert_eq!(version(&connection), 0);
     assert_eq!(count(&connection, "sentinel"), 1);
 }
@@ -292,7 +292,7 @@ fn resetting_a_component_location_cache_discards_its_tables_and_data() {
         connection
             .pragma_update(None, "user_version", SCHEMA_VERSION - 1)
             .unwrap();
-        initialize(&mut connection, &schema()).unwrap();
+        initialize(&mut connection).unwrap();
         assert_eq!(count(&connection, "models"), 0);
         assert_eq!(count(&connection, "java_types"), 0);
         let obsolete_tables: i64 = connection

@@ -8,16 +8,7 @@ const SCHEMA_VERSION: i64 = 10;
 pub fn open(path: &Path) -> Result<Connection, String> {
     let mut connection =
         Connection::open(path).map_err(|error| format!("{}: {error}", path.display()))?;
-    connection
-        .busy_timeout(Duration::from_secs(5))
-        .map_err(|error| error.to_string())?;
-    initialize(&mut connection, &schema())?;
-    connection
-        .pragma_update(None, "foreign_keys", true)
-        .map_err(|error| error.to_string())?;
-    connection
-        .pragma_update(None, "synchronous", "FULL")
-        .map_err(|error| error.to_string())?;
+    initialize(&mut connection)?;
     let mode: String = connection
         .pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get(0))
         .map_err(|error| error.to_string())?;
@@ -25,6 +16,22 @@ pub fn open(path: &Path) -> Result<Connection, String> {
         return Err(format!("expected SQLite WAL mode, got {mode}"));
     }
     Ok(connection)
+}
+
+/// Initializes the complete cache schema and configures an existing connection.
+/// Older caches are reset; newer schema versions are rejected.
+/// The journal mode is left unchanged so in-memory connections are supported.
+pub fn initialize(connection: &mut Connection) -> Result<(), String> {
+    connection
+        .busy_timeout(Duration::from_secs(5))
+        .map_err(|error| error.to_string())?;
+    initialize_schema(connection, &schema())?;
+    connection
+        .pragma_update(None, "foreign_keys", true)
+        .map_err(|error| error.to_string())?;
+    connection
+        .pragma_update(None, "synchronous", "FULL")
+        .map_err(|error| error.to_string())
 }
 
 fn schema() -> String {
@@ -35,7 +42,7 @@ fn schema() -> String {
     .join("\n")
 }
 
-fn initialize(connection: &mut Connection, schema: &str) -> Result<(), String> {
+fn initialize_schema(connection: &mut Connection, schema: &str) -> Result<(), String> {
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;

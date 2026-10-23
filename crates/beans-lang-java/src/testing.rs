@@ -14,15 +14,9 @@ impl Default for Models {
 
 impl Models {
     pub fn new() -> Self {
-        let connection = Connection::open_in_memory().unwrap();
-        connection
-            .execute_batch(include_str!("../../beans-engine/src/storage/schema.sql"))
-            .unwrap();
-        connection.execute_batch(storage::SCHEMA).unwrap();
-        connection
-            .pragma_update(None, "foreign_keys", true)
-            .unwrap();
-        Self { connection }
+        Self {
+            connection: beans_testing::database(),
+        }
     }
 
     pub fn process(&self, contents: &str) -> File {

@@ -88,6 +88,8 @@ dependencies = [
 name = "beans-testing"
 version = "0.0.1"
 dependencies = [
+ "beans-engine",
+ "rusqlite",
  "serde",
  "serde_json",
 ]
