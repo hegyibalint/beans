@@ -87,4 +87,65 @@ fn initialize_schema(connection: &mut Connection, schema: &str) -> Result<(), St
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use beans_testing::database;
+    use rusqlite::Connection;
+
+    use super::initialize_schema;
+
+    #[test]
+    fn model_payloads_must_be_valid_json_text() {
+        let connection = database();
+        for model in ["'not JSON'", "'{broken}'", "X'7B7D'", "NULL"] {
+            assert!(
+                connection
+                    .execute(
+                        &format!("INSERT INTO models VALUES (1, '[]', 0, {model}, NULL)"),
+                        [],
+                    )
+                    .is_err()
+            );
+        }
+        assert_eq!(count(&connection, "models"), 0);
+    }
+
+    #[test]
+    fn locations_must_be_valid_json_text() {
+        let connection = database();
+        for location in ["'not JSON'", "'{broken}'", "X'5B5D'", "NULL"] {
+            assert!(
+                connection
+                    .execute(
+                        &format!("INSERT INTO models VALUES (1, {location}, 0, '{{}}', NULL)"),
+                        [],
+                    )
+                    .is_err()
+            );
+        }
+        assert_eq!(count(&connection, "models"), 0);
+    }
+
+    #[test]
+    fn failed_initialization_rolls_back_the_reset() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE sentinel (value INTEGER); INSERT INTO sentinel VALUES (42)",
+            )
+            .unwrap();
+        assert!(initialize_schema(&mut connection, "CREATE TABLE broken (").is_err());
+        let version: i64 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 0);
+        assert_eq!(count(&connection, "sentinel"), 1);
+    }
+
+    fn count(connection: &Connection, table: &str) -> i64 {
+        connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap()
+    }
+}

@@ -5,6 +5,7 @@ use beans_core::{
     source::SourceSpan,
 };
 use beans_engine::Engine;
+use beans_testing::TempDir;
 
 #[test]
 fn imported_type_navigation_is_unrestricted_for_file_and_virtual_documents() {
@@ -17,8 +18,8 @@ fn imported_type_navigation_is_unrestricted_for_file_and_virtual_documents() {
         Location::file("/src/p/Use.java"),
         Location::new(LocationEntry::Virtual("untitled:Use.java".into())),
     ] {
-        let root = tempfile::tempdir().unwrap();
-        let mut engine = Engine::new(root.path()).unwrap();
+        let root = TempDir::new();
+        let mut engine = Engine::new(root.root()).unwrap();
         engine
             .process_document(source.clone(), "java", use_text)
             .unwrap();

@@ -10,12 +10,13 @@ use beans_lang_java::{
     query::JavaQuery,
     storage::{remove, store},
 };
+use beans_testing::TempDir;
 use rusqlite::Connection;
 
 #[test]
 fn java_models_are_stored_as_queryable_json_without_consuming_the_model() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("models.sqlite");
+    let root = TempDir::new();
+    let path = root.path("models.sqlite");
     let contents = "package p.q; import java.util.List; public class Box<T extends Number> extends Base implements Named { private List<? super T[]> values; class Nested {} }";
     let file = lower_into(contents);
     let location = Location::file("/project/sources.zip")
@@ -71,8 +72,8 @@ fn java_models_are_stored_as_queryable_json_without_consuming_the_model() {
 
 #[test]
 fn models_can_be_selected_by_the_first_location_component() {
-    let root = tempfile::tempdir().unwrap();
-    let mut connection = open(&root.path().join("models.sqlite")).unwrap();
+    let root = TempDir::new();
+    let mut connection = open(&root.path("models.sqlite")).unwrap();
     let transaction = connection.transaction().unwrap();
     let file = lower_into("class Example {}");
     for source in [
@@ -102,8 +103,8 @@ fn models_can_be_selected_by_the_first_location_component() {
 
 #[test]
 fn replacing_a_model_reuses_its_row_and_preserves_the_verbatim_location() {
-    let root = tempfile::tempdir().unwrap();
-    let mut connection = open(&root.path().join("models.sqlite")).unwrap();
+    let root = TempDir::new();
+    let mut connection = open(&root.path("models.sqlite")).unwrap();
     let uri = "UNTITLED:My%20Type.java";
     let location = Location::new(LocationEntry::Virtual(uri.into()));
     let transaction = connection.transaction().unwrap();
@@ -132,8 +133,8 @@ fn replacing_a_model_reuses_its_row_and_preserves_the_verbatim_location() {
 
 #[test]
 fn the_caller_controls_commit_and_rollback() {
-    let root = tempfile::tempdir().unwrap();
-    let mut connection = open(&root.path().join("models.sqlite")).unwrap();
+    let root = TempDir::new();
+    let mut connection = open(&root.path("models.sqlite")).unwrap();
     {
         let transaction = connection.transaction().unwrap();
         store(
@@ -154,8 +155,8 @@ fn the_caller_controls_commit_and_rollback() {
 
 #[test]
 fn publication_errors_allow_the_caller_to_roll_back_the_whole_batch() {
-    let root = tempfile::tempdir().unwrap();
-    let mut connection = open(&root.path().join("models.sqlite")).unwrap();
+    let root = TempDir::new();
+    let mut connection = open(&root.path("models.sqlite")).unwrap();
     connection.execute_batch("CREATE TRIGGER reject_location BEFORE INSERT ON models WHEN json_array_length(NEW.location) > 1 BEGIN SELECT RAISE(ABORT, 'rejected location'); END;").unwrap();
     {
         let transaction = connection.transaction().unwrap();
@@ -183,8 +184,8 @@ fn publication_errors_allow_the_caller_to_roll_back_the_whole_batch() {
 #[test]
 fn non_utf8_file_locations_are_rejected_instead_of_changed() {
     use std::{ffi::OsString, os::unix::ffi::OsStringExt, path::PathBuf};
-    let root = tempfile::tempdir().unwrap();
-    let mut connection = open(&root.path().join("models.sqlite")).unwrap();
+    let root = TempDir::new();
+    let mut connection = open(&root.path("models.sqlite")).unwrap();
     {
         let transaction = connection.transaction().unwrap();
         let path = PathBuf::from(OsString::from_vec(b"/Example\xff.java".to_vec()));
@@ -196,8 +197,8 @@ fn non_utf8_file_locations_are_rejected_instead_of_changed() {
 
 #[test]
 fn read_transactions_keep_old_models_and_indexes_after_replacement() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("models.sqlite");
+    let root = TempDir::new();
+    let path = root.path("models.sqlite");
     let source = Location::file("/Example.java");
     let mut writer = open(&path).unwrap();
     {
@@ -249,8 +250,8 @@ fn read_transactions_keep_old_models_and_indexes_after_replacement() {
 
 #[test]
 fn deleting_a_model_keeps_existing_readers_consistent_and_removes_all_owned_rows() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("models.sqlite");
+    let root = TempDir::new();
+    let path = root.path("models.sqlite");
     let source = Location::file("/Example.java");
     let mut writer = open(&path).unwrap();
     {
@@ -288,8 +289,8 @@ fn deleting_a_model_keeps_existing_readers_consistent_and_removes_all_owned_rows
 
 #[test]
 fn readers_never_observe_a_partially_published_batch() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("models.sqlite");
+    let root = TempDir::new();
+    let path = root.path("models.sqlite");
     let first = Location::file("/First.java");
     let second = Location::file("/Second.java");
     let mut writer = open(&path).unwrap();

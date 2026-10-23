@@ -1,17 +1,17 @@
 use beans_core::location::{Location, LocationEntry};
+use beans_engine::storage::{initialize, open};
+use beans_testing::{TempDir, database};
 use rusqlite::Connection;
-use tempfile::tempdir;
-
-use super::{SCHEMA_VERSION, initialize, initialize_schema, open};
 
 #[test]
 fn startup_initializes_and_configures_the_database() {
-    let root = tempdir().unwrap();
-    let path = root.path().join("models.sqlite");
+    let files = TempDir::new();
+    let path = files.path("models.sqlite");
     let connection = open(&path).unwrap();
 
     assert!(path.is_file());
-    assert_eq!(version(&connection), SCHEMA_VERSION);
+    assert!(version(&connection) > 0);
+    assert_eq!(version(&connection), version(&database()));
     assert_eq!(count(&connection, "models"), 0);
     let obsolete_tables: i64 = connection
         .query_row(
@@ -51,8 +51,8 @@ fn startup_initializes_and_configures_the_database() {
 
 #[test]
 fn jvm_class_lookup_uses_the_name_index() {
-    let root = tempdir().unwrap();
-    let connection = open(&root.path().join("models.sqlite")).unwrap();
+    let files = TempDir::new();
+    let connection = open(&files.path("models.sqlite")).unwrap();
     let plan: String = connection
         .query_row(
             "EXPLAIN QUERY PLAN
@@ -69,8 +69,8 @@ fn jvm_class_lookup_uses_the_name_index() {
 
 #[test]
 fn jvm_resource_removal_uses_the_root_index() {
-    let root = tempdir().unwrap();
-    let connection = open(&root.path().join("models.sqlite")).unwrap();
+    let files = TempDir::new();
+    let connection = open(&files.path("models.sqlite")).unwrap();
     let location = serde_json::to_string(&LocationEntry::File("/library.jar".into())).unwrap();
     let plan: String = connection
         .query_row(
@@ -88,52 +88,36 @@ fn jvm_resource_removal_uses_the_root_index() {
 
 #[test]
 fn matching_version_preserves_cached_data() {
-    let root = tempdir().unwrap();
-    let path = root.path().join("models.sqlite");
-    {
+    let files = TempDir::new();
+    let path = files.path("models.sqlite");
+    let expected_version = {
         let connection = open(&path).unwrap();
         connection
             .execute("INSERT INTO models VALUES (1, '[]', 0, '{}', NULL)", [])
             .unwrap();
-    }
+        version(&connection)
+    };
     let connection = open(&path).unwrap();
-    assert_eq!(version(&connection), SCHEMA_VERSION);
+    assert_eq!(version(&connection), expected_version);
     assert_eq!(count(&connection, "models"), 1);
 }
 
 #[test]
-fn model_payloads_must_be_valid_json_text() {
-    let root = tempdir().unwrap();
-    let connection = open(&root.path().join("models.sqlite")).unwrap();
-    for model in ["'not JSON'", "'{broken}'", "X'7B7D'", "NULL"] {
-        assert!(
-            connection
-                .execute(
-                    &format!("INSERT INTO models VALUES (1, '[]', 0, {model}, NULL)"),
-                    [],
-                )
-                .is_err()
-        );
-    }
-    assert_eq!(count(&connection, "models"), 0);
-}
-
-#[test]
 fn blob_model_caches_are_reset_instead_of_migrated() {
-    let root = tempdir().unwrap();
-    let path = root.path().join("models.sqlite");
+    let files = TempDir::new();
+    let path = files.path("models.sqlite");
     {
         let connection = Connection::open(&path).unwrap();
         connection
             .execute_batch(
                 "CREATE TABLE entries (id INTEGER PRIMARY KEY, model BLOB NOT NULL) STRICT;
-             INSERT INTO entries VALUES (1, X'01');
-             PRAGMA user_version = 2;",
+                 INSERT INTO entries VALUES (1, X'01');
+                 PRAGMA user_version = 2;",
             )
             .unwrap();
     }
     let connection = open(&path).unwrap();
-    assert_eq!(version(&connection), SCHEMA_VERSION);
+    assert_eq!(version(&connection), version(&database()));
     assert_eq!(count(&connection, "models"), 0);
     connection
         .execute("INSERT INTO models VALUES (1, '[]', 0, '{}', NULL)", [])
@@ -142,12 +126,13 @@ fn blob_model_caches_are_reset_instead_of_migrated() {
 
 #[test]
 fn older_version_discards_the_previous_schema_and_data() {
-    let root = tempdir().unwrap();
-    let path = root.path().join("models.sqlite");
+    let files = TempDir::new();
+    let path = files.path("models.sqlite");
+    let expected_version = version(&database());
     {
         let connection = Connection::open(&path).unwrap();
         connection
-            .pragma_update(None, "user_version", SCHEMA_VERSION - 1)
+            .pragma_update(None, "user_version", expected_version - 1)
             .unwrap();
         connection
             .execute_batch(
@@ -160,7 +145,7 @@ fn older_version_discards_the_previous_schema_and_data() {
             .unwrap();
     }
     let connection = open(&path).unwrap();
-    assert_eq!(version(&connection), SCHEMA_VERSION);
+    assert_eq!(version(&connection), expected_version);
     assert_eq!(count(&connection, "models"), 0);
     let objects: i64 = connection
         .query_row(
@@ -174,8 +159,9 @@ fn older_version_discards_the_previous_schema_and_data() {
 
 #[test]
 fn newer_version_is_rejected_without_changing_the_database() {
-    let root = tempdir().unwrap();
-    let path = root.path().join("models.sqlite");
+    let files = TempDir::new();
+    let path = files.path("models.sqlite");
+    let future_version = version(&database()) + 1;
     {
         let connection = Connection::open(&path).unwrap();
         connection
@@ -184,15 +170,15 @@ fn newer_version_is_rejected_without_changing_the_database() {
             )
             .unwrap();
         connection
-            .pragma_update(None, "user_version", SCHEMA_VERSION + 1)
+            .pragma_update(None, "user_version", future_version)
             .unwrap();
     }
     assert_eq!(
         open(&path).unwrap_err(),
-        format!("unsupported SQLite schema version: {}", SCHEMA_VERSION + 1)
+        format!("unsupported SQLite schema version: {future_version}")
     );
     let connection = Connection::open(&path).unwrap();
-    assert_eq!(version(&connection), SCHEMA_VERSION + 1);
+    assert_eq!(version(&connection), future_version);
     assert_eq!(count(&connection, "sentinel"), 1);
     assert_eq!(
         connection
@@ -203,28 +189,17 @@ fn newer_version_is_rejected_without_changing_the_database() {
 }
 
 #[test]
-fn failed_initialization_rolls_back_the_reset() {
-    let mut connection = Connection::open_in_memory().unwrap();
-    connection
-        .execute_batch("CREATE TABLE sentinel (value INTEGER); INSERT INTO sentinel VALUES (42)")
-        .unwrap();
-    assert!(initialize_schema(&mut connection, "CREATE TABLE broken (").is_err());
-    assert_eq!(version(&connection), 0);
-    assert_eq!(count(&connection, "sentinel"), 1);
-}
-
-#[test]
 fn opening_does_not_create_parent_directories() {
-    let root = tempdir().unwrap();
-    let path = root.path().join("missing/models.sqlite");
+    let files = TempDir::new();
+    let path = files.path("missing/models.sqlite");
     assert!(open(&path).is_err());
     assert!(!path.parent().unwrap().exists());
 }
 
 #[test]
 fn locations_preserve_order_kinds_and_values_after_reopening() {
-    let root = tempdir().unwrap();
-    let path = root.path().join("models.sqlite");
+    let files = TempDir::new();
+    let path = files.path("models.sqlite");
     {
         let connection = open(&path).unwrap();
         connection.execute_batch(
@@ -256,26 +231,10 @@ fn locations_preserve_order_kinds_and_values_after_reopening() {
 }
 
 #[test]
-fn locations_must_be_valid_json_text() {
-    let root = tempdir().unwrap();
-    let connection = open(&root.path().join("models.sqlite")).unwrap();
-    for location in ["'not JSON'", "'{broken}'", "X'5B5D'", "NULL"] {
-        assert!(
-            connection
-                .execute(
-                    &format!("INSERT INTO models VALUES (1, {location}, 0, '{{}}', NULL)"),
-                    [],
-                )
-                .is_err()
-        );
-    }
-    assert_eq!(count(&connection, "models"), 0);
-}
-
-#[test]
 fn resetting_a_component_location_cache_discards_its_tables_and_data() {
-    let root = tempdir().unwrap();
-    let path = root.path().join("models.sqlite");
+    let files = TempDir::new();
+    let path = files.path("models.sqlite");
+    let expected_version = version(&database());
     {
         let mut connection = Connection::open(&path).unwrap();
         connection
@@ -290,7 +249,7 @@ fn resetting_a_component_location_cache_discards_its_tables_and_data() {
              INSERT INTO java_types VALUES (1, 1, 'C');",
         ).unwrap();
         connection
-            .pragma_update(None, "user_version", SCHEMA_VERSION - 1)
+            .pragma_update(None, "user_version", expected_version - 1)
             .unwrap();
         initialize(&mut connection).unwrap();
         assert_eq!(count(&connection, "models"), 0);
@@ -303,8 +262,9 @@ fn resetting_a_component_location_cache_discards_its_tables_and_data() {
             )
             .unwrap();
         assert_eq!(obsolete_tables, 0);
+        assert_eq!(version(&connection), expected_version);
     }
-    assert_eq!(version(&open(&path).unwrap()), SCHEMA_VERSION);
+    assert_eq!(version(&open(&path).unwrap()), expected_version);
 }
 
 fn version(connection: &Connection) -> i64 {

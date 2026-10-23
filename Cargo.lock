@@ -31,8 +31,6 @@ dependencies = [
  "log",
  "rusqlite",
  "serde_json",
- "tempfile",
- "zip",
 ]
 
 [[package]]
@@ -92,6 +90,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "zip",
 ]
 
 [[package]]

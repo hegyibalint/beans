@@ -1,13 +1,11 @@
-use std::{
-    fs,
-    io::{Cursor, Write},
-    path::Path,
-};
+use std::{fs, path::Path};
 
 use beans_core::location::{Location, LocationEntry};
-use beans_testing::{TempDir, database, support::class_bytes};
+use beans_testing::{
+    TempDir, database,
+    support::{class_bytes, jar_bytes},
+};
 use rusqlite::Connection;
-use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 use beans_platform_jvm::{Class, JvmPlatform, jdk_artifacts, storage};
 
@@ -466,20 +464,6 @@ fn names(connection: &Connection) -> Vec<String> {
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap()
-}
-
-fn jar_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {
-    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    for (name, bytes) in entries {
-        writer
-            .start_file(
-                *name,
-                SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
-            )
-            .unwrap();
-        writer.write_all(bytes).unwrap();
-    }
-    writer.finish().unwrap().into_inner()
 }
 
 fn jimage_bytes(class: &[u8]) -> Vec<u8> {

@@ -9,12 +9,13 @@ use beans_lang_java::{
     storage as java_storage,
 };
 use beans_platform_jvm::{Class, storage as jvm_storage};
+use beans_testing::TempDir;
 use rusqlite::Connection;
 
 #[test]
 fn java_and_jvm_queries_share_a_snapshot_across_replacement_and_deletion() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("models.sqlite");
+    let root = TempDir::new();
+    let path = root.path("models.sqlite");
     let mut writer = open(&path).unwrap();
     publish(&mut writer, "Old");
     let mut reader = open(&path).unwrap();

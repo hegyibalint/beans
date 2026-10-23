@@ -1,5 +1,4 @@
 use std::{
-    fs::File,
     path::Path,
     sync::{Arc, Mutex},
     thread,
@@ -11,21 +10,23 @@ use beans_platform_jvm::{JvmPlatform, jdk_artifacts};
 use crossbeam_channel::{Receiver, Sender};
 use rusqlite::{Connection, TransactionBehavior};
 
-use crate::{Engine, storage};
-
-mod logging;
+use crate::{
+    Engine,
+    logging::{self, Logger},
+    storage,
+};
 
 impl Engine {
     pub(super) fn start_command_loop(&mut self) -> Result<(), String> {
         let commands = self.command_receiver.clone();
         let subscribers = Arc::clone(&self.subscribers);
         let storage = storage::open(&self.work_dir.join("models"))?;
-        let event_log = logging::open(&self.work_dir);
+        let logger = logging::open(&self.work_dir);
         let jvm = Arc::clone(&self.jvm);
         self.command_loop = Some(
             thread::Builder::new()
                 .name("beans-commands".into())
-                .spawn(move || Self::command_loop(&jvm, commands, &subscribers, event_log, storage))
+                .spawn(move || Self::command_loop(&jvm, commands, &subscribers, logger, storage))
                 .map_err(|error| error.to_string())?,
         );
         Ok(())
@@ -44,17 +45,12 @@ impl Engine {
         jvm: &JvmPlatform,
         commands: Receiver<Command>,
         subscribers: &Mutex<Vec<Sender<Notification>>>,
-        mut event_log: Option<File>,
+        mut logger: Logger,
         mut storage: Connection,
     ) {
         let mut notification_counter = 0_u64;
         for command in commands {
-            if let Some(file) = event_log.as_mut() {
-                if let Err(error) = logging::record(file, &command) {
-                    log::warn!("Event logging disabled: {error}");
-                    event_log = None;
-                }
-            }
+            logger.record(&command);
             match command {
                 Command::Start => log::warn!("Start command is not implemented yet"),
                 Command::Stop => break,
@@ -167,4 +163,25 @@ fn publish_notification(
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disconnected_subscribers_are_removed() {
+        let (disconnected, receiver) = crossbeam_channel::unbounded();
+        drop(receiver);
+        let (connected, notifications) = crossbeam_channel::unbounded();
+        let subscribers = Mutex::new(vec![disconnected, connected]);
+        let notification =
+            Notification::ProcessResourceStop(NotificationPayload { id: 1, data: () });
+
+        publish_notification(&subscribers, notification);
+
+        assert_eq!(subscribers.lock().unwrap().len(), 1);
+        assert!(matches!(
+            notifications.try_recv().unwrap(),
+            Notification::ProcessResourceStop(payload) if payload.id == 1
+        ));
+        assert!(notifications.is_empty());
+    }
+}

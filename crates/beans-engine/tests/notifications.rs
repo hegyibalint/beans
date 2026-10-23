@@ -1,27 +1,22 @@
-use std::{fs, time::Duration};
+use std::time::Duration;
 
 use beans_core::event::{Command, Notification};
-use beans_testing::support::class_bytes;
+use beans_engine::Engine;
+use beans_testing::{TempDir, support::class_bytes};
 use crossbeam_channel::TryRecvError;
-use tempfile::tempdir;
-
-use crate::Engine;
 
 #[test]
 fn subscribers_receive_identical_pairs_on_success_and_failure() {
-    let root = tempdir().unwrap();
-    let resource = root.path().join("resource.class");
-    fs::write(&resource, class_bytes("example/Resource")).unwrap();
-    let home = root.path().join("jdk");
-    fs::create_dir_all(home.join("lib")).unwrap();
-    fs::write(home.join("lib/modules"), class_bytes("example/Runtime")).unwrap();
+    let files = TempDir::new();
+    let resource = files.write("resource.class", class_bytes("example/Resource"));
+    files.write("jdk/lib/modules", class_bytes("example/Runtime"));
     let operations = [
-        (false, root.path().join("missing.class")),
+        (false, files.path("missing.class")),
         (false, resource),
-        (true, root.path().join("missing-jdk")),
-        (true, home),
+        (true, files.path("missing-jdk")),
+        (true, files.path("jdk")),
     ];
-    let engine = Engine::start(root.path()).unwrap();
+    let engine = Engine::start(files.root()).unwrap();
     let first = engine.subscribe();
     let second = engine.subscribe();
 
@@ -65,12 +60,12 @@ fn subscribers_receive_identical_pairs_on_success_and_failure() {
 
 #[test]
 fn new_subscribers_receive_future_notifications_without_replay() {
-    let root = tempdir().unwrap();
-    let engine = Engine::start(root.path()).unwrap();
+    let files = TempDir::new();
+    let engine = Engine::start(files.root()).unwrap();
     let first = engine.subscribe();
     engine
         .sender()
-        .send(Command::ProcessResource(root.path().join("first")))
+        .send(Command::ProcessResource(files.path("first")))
         .unwrap();
     for _ in 0..2 {
         first.recv_timeout(Duration::from_secs(5)).unwrap();
@@ -80,7 +75,7 @@ fn new_subscribers_receive_future_notifications_without_replay() {
     assert!(second.is_empty());
     engine
         .sender()
-        .send(Command::ProcessResource(root.path().join("second")))
+        .send(Command::ProcessResource(files.path("second")))
         .unwrap();
     drop(engine);
 
@@ -93,7 +88,7 @@ fn new_subscribers_receive_future_notifications_without_replay() {
         };
         assert_eq!(start.id, 2);
         assert_eq!(stop.id, start.id);
-        assert_eq!(start.data, root.path().join("second"));
+        assert_eq!(start.data, files.path("second"));
         assert!(matches!(
             notifications.try_recv(),
             Err(TryRecvError::Disconnected)
@@ -102,19 +97,18 @@ fn new_subscribers_receive_future_notifications_without_replay() {
 }
 
 #[test]
-fn disconnected_subscribers_are_removed_without_affecting_other_subscribers() {
-    let root = tempdir().unwrap();
-    let mut engine = Engine::start(root.path()).unwrap();
+fn disconnected_subscribers_do_not_affect_other_subscribers() {
+    let files = TempDir::new();
+    let engine = Engine::start(files.root()).unwrap();
     let connected = engine.subscribe();
     drop(engine.subscribe());
     engine
         .sender()
-        .send(Command::ProcessResource(root.path().join("missing")))
+        .send(Command::ProcessResource(files.path("missing")))
         .unwrap();
 
-    engine.stop_command_loop().unwrap();
+    drop(engine);
 
-    assert_eq!(engine.subscribers.lock().unwrap().len(), 1);
     assert!(matches!(
         connected.try_recv().unwrap(),
         Notification::ProcessResourceStart(_)
@@ -123,5 +117,8 @@ fn disconnected_subscribers_are_removed_without_affecting_other_subscribers() {
         connected.try_recv().unwrap(),
         Notification::ProcessResourceStop(_)
     ));
-    assert!(connected.is_empty());
+    assert!(matches!(
+        connected.try_recv(),
+        Err(TryRecvError::Disconnected)
+    ));
 }

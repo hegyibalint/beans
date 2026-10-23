@@ -7,9 +7,6 @@ use beans_lang_java::features::JavaFeatureContext;
 
 use crate::Engine;
 
-#[cfg(test)]
-mod tests;
-
 impl Engine {
     pub fn feature_hover(
         &self,
