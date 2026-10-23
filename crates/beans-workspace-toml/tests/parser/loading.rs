@@ -1,65 +1,62 @@
 use std::{fs, path::Path};
 
-use beans_workspace_toml::{LoadError, ParseError, load, parse};
-
-use super::Root;
+use beans_testing::TempDir;
+use beans_workspace_toml::{DESCRIPTOR, LoadError, ParseError, load, parse};
 
 #[test]
 fn an_absent_descriptor_is_not_an_error() {
-    let root = Root::new();
+    let files = TempDir::new();
 
-    assert!(load(root.path(), None).unwrap().is_none());
+    assert!(load(files.root(), None).unwrap().is_none());
 }
 
 #[test]
 fn a_descriptor_is_resolved_against_its_containing_root() {
-    let root = Root::new();
-    fs::write(root.descriptor(), "[unit.app]\nsources = [\"src\"]\n").unwrap();
+    let files = TempDir::new();
+    files.write(DESCRIPTOR, "[unit.app]\nsources = [\"src\"]\n");
 
-    let workspace = load(root.path(), None).unwrap().unwrap();
+    let workspace = load(files.root(), None).unwrap().unwrap();
 
-    assert_eq!(
-        workspace.model().units["app"].sources,
-        [root.path().join("src")]
-    );
+    assert_eq!(workspace.model().units["app"].sources, [files.path("src")]);
 }
 
 #[test]
 fn loading_applies_runtime_overrides_without_changing_descriptor_parsing() {
-    let root = Root::new();
+    let files = TempDir::new();
     let contents = "[unit.app]\n";
-    fs::write(root.descriptor(), contents).unwrap();
+    files.write(DESCRIPTOR, contents);
 
-    let workspace = load(root.path(), Some(Path::new("local jdk")))
+    let workspace = load(files.root(), Some(Path::new("local jdk")))
         .unwrap()
         .unwrap();
     assert_eq!(
         workspace.model().units["app"].jdk_home,
-        Some(root.path().join("local jdk"))
+        Some(files.path("local jdk"))
     );
-    let parsed = parse(contents, root.path()).unwrap();
+    let parsed = parse(contents, files.root()).unwrap();
     assert_eq!(parsed.model().units["app"].jdk_home, None);
 }
 
 #[test]
 fn an_unreadable_descriptor_is_not_treated_as_absent() {
-    let root = Root::new();
-    fs::create_dir(root.descriptor()).unwrap();
+    let files = TempDir::new();
+    let descriptor = files.path(DESCRIPTOR);
+    fs::create_dir(&descriptor).unwrap();
 
     assert!(
-        matches!(load(root.path(), None), Err(LoadError::Read { path, .. })
-        if path == root.descriptor())
+        matches!(load(files.root(), None), Err(LoadError::Read { path, .. })
+        if path == descriptor)
     );
 }
 
 #[test]
 fn invalid_utf8_is_a_read_error() {
-    let root = Root::new();
-    fs::write(root.descriptor(), [0xff]).unwrap();
+    let files = TempDir::new();
+    let descriptor = files.write(DESCRIPTOR, [0xff]);
 
     assert!(
-        matches!(load(root.path(), None), Err(LoadError::Read { path, .. })
-        if path == root.descriptor())
+        matches!(load(files.root(), None), Err(LoadError::Read { path, .. })
+        if path == descriptor)
     );
 }
 
@@ -67,22 +64,18 @@ fn invalid_utf8_is_a_read_error() {
 fn parse_errors_keep_the_descriptor_path_and_cause() {
     use std::error::Error;
 
-    let root = Root::new();
-    fs::write(
-        root.descriptor(),
-        "[unit.app]\ndepends_on = [\"missing\"]\n",
-    )
-    .unwrap();
-    let error = load(root.path(), None).unwrap_err();
+    let files = TempDir::new();
+    let descriptor = files.write(DESCRIPTOR, "[unit.app]\ndepends_on = [\"missing\"]\n");
+    let error = load(files.root(), None).unwrap_err();
 
     assert!(
         matches!(&error, LoadError::Parse { path, error: ParseError::UnknownDependency { .. } }
-        if path == &root.descriptor())
+        if path == &descriptor)
     );
     assert!(
         error
             .to_string()
-            .contains(&root.descriptor().display().to_string())
+            .contains(&descriptor.display().to_string())
     );
     assert!(error.source().is_some());
 }

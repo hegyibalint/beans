@@ -80,7 +80,6 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
- "tempfile",
  "zip",
 ]
 
@@ -92,6 +91,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -107,11 +107,11 @@ name = "beans-workspace-toml"
 version = "0.0.1"
 dependencies = [
  "beans-core",
+ "beans-testing",
  "beans-workspace",
  "crossbeam-channel",
  "log",
  "serde",
- "tempfile",
  "toml",
  "url",
 ]

@@ -1,16 +1,12 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use beans_core::location::{Location, LocationEntry};
+use beans_testing::TempDir;
 use beans_workspace::Workspace;
-use beans_workspace_toml::{LoadError, ParseError, load};
+use beans_workspace_toml::{DESCRIPTOR, LoadError, ParseError, load};
 use url::Url;
 
-use super::Root;
-
-const DESCRIPTOR: &str = r#"
+const CONTENTS: &str = r#"
 jdk_home = "vendor/jdk"
 [unit.app]
 sources = ["app"]
@@ -21,10 +17,10 @@ jdk_home = "vendor/legacy"
 
 #[test]
 fn an_override_supplies_a_missing_jdk() {
-    let root = Root::new();
-    fs::write(root.descriptor(), "[unit.app]\n").unwrap();
+    let files = TempDir::new();
+    files.write(DESCRIPTOR, "[unit.app]\n");
 
-    let workspace = load(root.path(), Some(Path::new("/local/jdk")))
+    let workspace = load(files.root(), Some(Path::new("/local/jdk")))
         .unwrap()
         .unwrap();
 
@@ -36,64 +32,64 @@ fn an_override_supplies_a_missing_jdk() {
 
 #[test]
 fn an_override_wins_over_both_workspace_and_unit_jdks() {
-    let root = Root::new();
-    fs::write(root.descriptor(), DESCRIPTOR).unwrap();
+    let files = TempDir::new();
+    files.write(DESCRIPTOR, CONTENTS);
     let home = Path::new("/local/jdk");
 
-    let workspace = load(root.path(), Some(home)).unwrap().unwrap();
+    let workspace = load(files.root(), Some(home)).unwrap().unwrap();
 
     for (id, unit) in &workspace.model().units {
         assert_eq!(unit.jdk_home.as_deref(), Some(home));
-        let document = Url::from_file_path(root.path().join(id).join("Use.java")).unwrap();
+        let document = Url::from_file_path(files.path(id).join("Use.java")).unwrap();
         let classpath = workspace.classpath_for(document.as_str());
         assert!(classpath.contains_class(&runtime(home)));
         for declared in ["vendor/jdk", "vendor/legacy"] {
-            assert!(!classpath.contains_class(&runtime(&root.path().join(declared))));
+            assert!(!classpath.contains_class(&runtime(&files.path(declared))));
         }
     }
 }
 
 #[test]
 fn relative_overrides_are_normalized_against_the_workspace_root() {
-    let root = Root::new();
-    fs::write(root.descriptor(), "[unit.app]\n").unwrap();
+    let files = TempDir::new();
+    files.write(DESCRIPTOR, "[unit.app]\n");
 
-    let workspace = load(root.path(), Some(Path::new("local/.././jdk with spaces")))
+    let workspace = load(files.root(), Some(Path::new("local/.././jdk with spaces")))
         .unwrap()
         .unwrap();
 
     assert_eq!(
         workspace.model().units["app"].jdk_home,
-        Some(root.path().join("jdk with spaces"))
+        Some(files.path("jdk with spaces"))
     );
 }
 
 #[test]
 fn absent_and_empty_overrides_preserve_descriptor_precedence() {
-    let root = Root::new();
-    fs::write(root.descriptor(), DESCRIPTOR).unwrap();
+    let files = TempDir::new();
+    files.write(DESCRIPTOR, CONTENTS);
 
     for jdk_override in [None, Some(Path::new(""))] {
-        let workspace = load(root.path(), jdk_override).unwrap().unwrap();
+        let workspace = load(files.root(), jdk_override).unwrap().unwrap();
 
         assert_eq!(
             workspace.model().units["app"].jdk_home,
-            Some(root.path().join("vendor/jdk"))
+            Some(files.path("vendor/jdk"))
         );
         assert_eq!(
             workspace.model().units["legacy"].jdk_home,
-            Some(root.path().join("vendor/legacy"))
+            Some(files.path("vendor/legacy"))
         );
     }
 }
 
 #[test]
 fn an_override_does_not_hide_an_invalid_descriptor() {
-    let root = Root::new();
-    fs::write(root.descriptor(), "jdk_home = 26\n[unit.app]\n").unwrap();
+    let files = TempDir::new();
+    files.write(DESCRIPTOR, "jdk_home = 26\n[unit.app]\n");
 
     assert!(matches!(
-        load(root.path(), Some(Path::new("/local/jdk"))),
+        load(files.root(), Some(Path::new("/local/jdk"))),
         Err(LoadError::Parse {
             error: ParseError::Toml(_),
             ..

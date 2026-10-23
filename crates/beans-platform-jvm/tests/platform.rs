@@ -1,12 +1,12 @@
 use std::{
+    fs,
     io::{Cursor, Write},
     path::Path,
 };
 
 use beans_core::location::{Location, LocationEntry};
-use beans_testing::{database, support::class_bytes};
+use beans_testing::{TempDir, database, support::class_bytes};
 use rusqlite::Connection;
-use tempfile::NamedTempFile;
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 use beans_platform_jvm::{Class, JvmPlatform, jdk_artifacts, storage};
@@ -22,22 +22,22 @@ fn stores_each_container_format_in_the_supplied_transaction() {
         ),
         (jimage_bytes(&class), Some("/java.base/example/Foo.class")),
     ] {
-        let mut file = NamedTempFile::new().unwrap();
-        file.write_all(&bytes).unwrap();
+        let files = TempDir::new();
+        let path = files.write("resource", bytes);
         let mut connection = database();
         let platform = JvmPlatform::new();
-        let classes = platform.process(file.path()).unwrap();
+        let classes = platform.process(&path).unwrap();
         assert_eq!(classes.len(), 1);
         assert!(names(&connection).is_empty());
         let transaction = connection.transaction().unwrap();
-        platform.store(&transaction, file.path(), classes).unwrap();
+        platform.store(&transaction, &path, classes).unwrap();
         transaction.commit().unwrap();
 
         assert_eq!(names(&connection), ["example/Foo"]);
         let source: String = connection
             .query_row("SELECT location FROM models", [], |row| row.get(0))
             .unwrap();
-        let mut expected = Location::file(file.path());
+        let mut expected = Location::file(&path);
         if let Some(entry) = entry {
             expected = expected.entry(LocationEntry::Container(entry.into()));
         }
@@ -47,33 +47,33 @@ fn stores_each_container_format_in_the_supplied_transaction() {
 
 #[test]
 fn replacement_skips_malformed_classes_and_removes_previous_models() {
-    let mut file = NamedTempFile::new().unwrap();
-    std::fs::write(
-        file.path(),
+    let files = TempDir::new();
+    let path = files.write(
+        "resource",
         jar_bytes(&[
             ("First.class", &class_bytes("Old")),
             ("Broken.class", &class_bytes("PreviouslyValid")),
             ("Missing.class", &class_bytes("Missing")),
         ]),
-    )
-    .unwrap();
+    );
     let mut connection = database();
     let platform = JvmPlatform::new();
-    let classes = platform.process(file.path()).unwrap();
+    let classes = platform.process(&path).unwrap();
     let transaction = connection.transaction().unwrap();
-    platform.store(&transaction, file.path(), classes).unwrap();
+    platform.store(&transaction, &path, classes).unwrap();
     transaction.commit().unwrap();
 
-    let bytes = jar_bytes(&[
-        ("First.class", &class_bytes("New")),
-        ("Broken.class", &[0xCA, 0xFE, 0xBA, 0xBE]),
-        ("Last.class", &class_bytes("Last")),
-    ]);
-    file.as_file_mut().set_len(0).unwrap();
-    file.write_all(&bytes).unwrap();
-    let classes = platform.process(file.path()).unwrap();
+    files.write(
+        "resource",
+        jar_bytes(&[
+            ("First.class", &class_bytes("New")),
+            ("Broken.class", &[0xCA, 0xFE, 0xBA, 0xBE]),
+            ("Last.class", &class_bytes("Last")),
+        ]),
+    );
+    let classes = platform.process(&path).unwrap();
     let transaction = connection.transaction().unwrap();
-    platform.store(&transaction, file.path(), classes).unwrap();
+    platform.store(&transaction, &path, classes).unwrap();
     transaction.commit().unwrap();
 
     assert_eq!(names(&connection), ["Last", "New"]);
@@ -89,15 +89,15 @@ fn recognized_resources_can_replace_previous_models_with_no_classes() {
         jar_bytes(&[("Broken.class", &broken)]),
         jimage_bytes(&broken),
     ] {
-        let mut file = NamedTempFile::new().unwrap();
-        file.write_all(&bytes).unwrap();
+        let files = TempDir::new();
+        let path = files.write("resource", bytes);
         let mut connection = database();
-        seed(&mut connection, file.path());
+        seed(&mut connection, &path);
         let platform = JvmPlatform::new();
-        let classes = platform.process(file.path()).unwrap();
+        let classes = platform.process(&path).unwrap();
         assert!(classes.is_empty());
         let transaction = connection.transaction().unwrap();
-        platform.store(&transaction, file.path(), classes).unwrap();
+        platform.store(&transaction, &path, classes).unwrap();
         transaction.commit().unwrap();
 
         assert!(names(&connection).is_empty());
@@ -106,12 +106,12 @@ fn recognized_resources_can_replace_previous_models_with_no_classes() {
 
 #[test]
 fn unknown_formats_produce_no_classes_without_changing_stored_models() {
-    let mut file = NamedTempFile::new().unwrap();
-    file.write_all(b"not a container").unwrap();
+    let files = TempDir::new();
+    let path = files.write("resource", b"not a container");
     let mut connection = database();
-    seed(&mut connection, file.path());
+    seed(&mut connection, &path);
 
-    assert!(JvmPlatform::new().process(file.path()).unwrap().is_empty());
+    assert!(JvmPlatform::new().process(&path).unwrap().is_empty());
     assert_eq!(names(&connection), ["Old"]);
 }
 
@@ -123,13 +123,13 @@ fn container_opening_errors_preserve_previous_models() {
         b"PK\x06\x06",
         &[0xDA, 0xDA, 0xFE, 0xCA],
     ] {
-        let mut file = NamedTempFile::new().unwrap();
-        file.write_all(bytes).unwrap();
+        let files = TempDir::new();
+        let path = files.write("resource", bytes);
         let mut connection = database();
-        seed(&mut connection, file.path());
+        seed(&mut connection, &path);
 
-        let error = JvmPlatform::new().process(file.path()).unwrap_err();
-        assert!(error.contains(&file.path().display().to_string()));
+        let error = JvmPlatform::new().process(&path).unwrap_err();
+        assert!(error.contains(&path.display().to_string()));
 
         assert_eq!(names(&connection), ["Old"]);
     }
@@ -145,27 +145,29 @@ fn entry_read_errors_abort_parsing_without_changing_stored_models() {
         .position(|bytes| bytes == broken)
         .unwrap();
     bytes[offset] ^= 1;
-    let mut file = NamedTempFile::new().unwrap();
-    file.write_all(&bytes).unwrap();
+    let files = TempDir::new();
+    let path = files.write("resource", bytes);
     let mut connection = database();
-    seed(&mut connection, file.path());
+    seed(&mut connection, &path);
 
-    assert!(JvmPlatform::new().process(file.path()).is_err());
+    assert!(JvmPlatform::new().process(&path).is_err());
 
     assert_eq!(names(&connection), ["Old"]);
 }
 
 #[test]
 fn storage_errors_abort_publication_instead_of_being_skipped() {
-    let mut file = NamedTempFile::new().unwrap();
-    file.write_all(&jar_bytes(&[
-        ("First.class", &class_bytes("First")),
-        ("Rejected.class", &class_bytes("Rejected")),
-        ("Last.class", &class_bytes("Last")),
-    ]))
-    .unwrap();
+    let files = TempDir::new();
+    let path = files.write(
+        "resource",
+        jar_bytes(&[
+            ("First.class", &class_bytes("First")),
+            ("Rejected.class", &class_bytes("Rejected")),
+            ("Last.class", &class_bytes("Last")),
+        ]),
+    );
     let mut connection = database();
-    seed(&mut connection, file.path());
+    seed(&mut connection, &path);
     connection
         .execute_batch(
             "CREATE TRIGGER reject_class BEFORE INSERT ON models
@@ -174,12 +176,10 @@ fn storage_errors_abort_publication_instead_of_being_skipped() {
         )
         .unwrap();
     let platform = JvmPlatform::new();
-    let classes = platform.process(file.path()).unwrap();
+    let classes = platform.process(&path).unwrap();
     let transaction = connection.transaction().unwrap();
 
-    let error = platform
-        .store(&transaction, file.path(), classes)
-        .unwrap_err();
+    let error = platform.store(&transaction, &path, classes).unwrap_err();
     assert!(error.contains("rejected class"));
     assert_eq!(names(&transaction), ["First"]);
     transaction.rollback().unwrap();
@@ -189,8 +189,8 @@ fn storage_errors_abort_publication_instead_of_being_skipped() {
 
 #[test]
 fn missing_resources_return_errors_without_losing_previous_models() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("missing.jar");
+    let files = TempDir::new();
+    let path = files.path("missing.jar");
     let mut connection = database();
     seed(&mut connection, &path);
 
@@ -210,12 +210,10 @@ fn imports_each_jdk_runtime_layout() {
         ),
         ("lib/rt.jar", jar_bytes(&[("example/Foo.class", &class)])),
     ] {
-        let home = tempfile::tempdir().unwrap();
-        let path = home.path().join(relative);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, bytes).unwrap();
+        let home = TempDir::new();
+        let path = home.write(relative, bytes);
         let mut connection = database();
-        assert_eq!(jdk_artifacts(home.path()).unwrap(), vec![path.clone()]);
+        assert_eq!(jdk_artifacts(home.root()).unwrap(), vec![path.clone()]);
         let platform = JvmPlatform::new();
         let classes = platform.process(&path).unwrap();
         let transaction = connection.transaction().unwrap();
@@ -228,25 +226,20 @@ fn imports_each_jdk_runtime_layout() {
 
 #[test]
 fn jdk_runtime_candidates_are_selected_in_order() {
-    let home = tempfile::tempdir().unwrap();
+    let home = TempDir::new();
     for relative in ["lib/rt.jar", "jre/lib/rt.jar", "lib/modules"] {
-        let path = home.path().join(relative);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, []).unwrap();
-        assert_eq!(jdk_artifacts(home.path()).unwrap(), vec![path]);
+        let path = home.write(relative, []);
+        assert_eq!(jdk_artifacts(home.root()).unwrap(), vec![path]);
     }
 }
 
 #[test]
 fn invalid_existing_runtime_does_not_fall_back() {
-    let home = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(home.path().join("lib")).unwrap();
-    std::fs::create_dir_all(home.path().join("jre/lib")).unwrap();
-    let runtime = home.path().join("lib/modules");
-    std::fs::write(&runtime, [0xDA, 0xDA, 0xFE, 0xCA]).unwrap();
-    std::fs::write(home.path().join("jre/lib/rt.jar"), jar_bytes(&[])).unwrap();
+    let home = TempDir::new();
+    let runtime = home.write("lib/modules", [0xDA, 0xDA, 0xFE, 0xCA]);
+    home.write("jre/lib/rt.jar", jar_bytes(&[]));
 
-    let artifacts = jdk_artifacts(home.path()).unwrap();
+    let artifacts = jdk_artifacts(home.root()).unwrap();
     assert_eq!(artifacts, [runtime]);
     let error = JvmPlatform::new().process(&artifacts[0]).unwrap_err();
     assert!(error.contains("lib/modules"));
@@ -254,16 +247,16 @@ fn invalid_existing_runtime_does_not_fall_back() {
 
 #[test]
 fn missing_and_non_file_runtimes_are_errors() {
-    let home = tempfile::tempdir().unwrap();
+    let home = TempDir::new();
     assert!(
-        jdk_artifacts(home.path())
+        jdk_artifacts(home.root())
             .unwrap_err()
             .contains("no supported JDK runtime")
     );
-    std::fs::create_dir_all(home.path().join("lib/modules")).unwrap();
-    std::fs::write(home.path().join("lib/rt.jar"), jar_bytes(&[])).unwrap();
+    fs::create_dir_all(home.path("lib/modules")).unwrap();
+    home.write("lib/rt.jar", jar_bytes(&[]));
     assert!(
-        jdk_artifacts(home.path())
+        jdk_artifacts(home.root())
             .unwrap_err()
             .contains("expected a JDK artifact file")
     );
@@ -272,22 +265,16 @@ fn missing_and_non_file_runtimes_are_errors() {
 #[test]
 fn legacy_layouts_import_optional_tools() {
     for relative in ["jre/lib/rt.jar", "lib/rt.jar"] {
-        let home = tempfile::tempdir().unwrap();
-        let runtime = home.path().join(relative);
-        let tools = home.path().join("lib/tools.jar");
-        std::fs::create_dir_all(runtime.parent().unwrap()).unwrap();
-        std::fs::create_dir_all(tools.parent().unwrap()).unwrap();
-        std::fs::write(
-            &runtime,
+        let home = TempDir::new();
+        let runtime = home.write(
+            relative,
             jar_bytes(&[("Runtime.class", &class_bytes("example/Runtime"))]),
-        )
-        .unwrap();
-        std::fs::write(
-            &tools,
+        );
+        let tools = home.write(
+            "lib/tools.jar",
             jar_bytes(&[("Tools.class", &class_bytes("example/Tools"))]),
-        )
-        .unwrap();
-        let artifacts = jdk_artifacts(home.path()).unwrap();
+        );
+        let artifacts = jdk_artifacts(home.root()).unwrap();
         assert_eq!(artifacts, [runtime, tools]);
         let platform = JvmPlatform::new();
         let mut connection = database();
@@ -304,14 +291,12 @@ fn legacy_layouts_import_optional_tools() {
 
 #[test]
 fn modern_layout_ignores_legacy_artifacts() {
-    let home = tempfile::tempdir().unwrap();
-    let runtime = home.path().join("lib/modules");
-    std::fs::create_dir_all(home.path().join("lib/tools.jar")).unwrap();
-    std::fs::create_dir_all(home.path().join("jre/lib")).unwrap();
-    std::fs::write(&runtime, jimage_bytes(&class_bytes("example/Foo"))).unwrap();
-    std::fs::write(home.path().join("jre/lib/rt.jar"), b"invalid").unwrap();
-    std::fs::write(home.path().join("lib/rt.jar"), b"invalid").unwrap();
-    assert_eq!(jdk_artifacts(home.path()).unwrap(), vec![runtime.clone()]);
+    let home = TempDir::new();
+    let runtime = home.write("lib/modules", jimage_bytes(&class_bytes("example/Foo")));
+    fs::create_dir_all(home.path("lib/tools.jar")).unwrap();
+    home.write("jre/lib/rt.jar", b"invalid");
+    home.write("lib/rt.jar", b"invalid");
+    assert_eq!(jdk_artifacts(home.root()).unwrap(), vec![runtime.clone()]);
     let platform = JvmPlatform::new();
     let classes = platform.process(&runtime).unwrap();
     let mut connection = database();
@@ -324,12 +309,11 @@ fn modern_layout_ignores_legacy_artifacts() {
 
 #[test]
 fn tools_alone_do_not_supply_a_runtime() {
-    let home = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(home.path().join("lib")).unwrap();
-    std::fs::write(home.path().join("lib/tools.jar"), jar_bytes(&[])).unwrap();
+    let home = TempDir::new();
+    home.write("lib/tools.jar", jar_bytes(&[]));
 
     assert!(
-        jdk_artifacts(home.path())
+        jdk_artifacts(home.root())
             .unwrap_err()
             .contains("no supported JDK runtime")
     );
@@ -338,14 +322,12 @@ fn tools_alone_do_not_supply_a_runtime() {
 #[test]
 fn existing_optional_artifact_must_be_a_file() {
     for relative in ["jre/lib/rt.jar", "lib/rt.jar"] {
-        let home = tempfile::tempdir().unwrap();
-        let runtime = home.path().join(relative);
-        std::fs::create_dir_all(runtime.parent().unwrap()).unwrap();
-        std::fs::write(&runtime, jar_bytes(&[])).unwrap();
-        std::fs::create_dir_all(home.path().join("lib/tools.jar")).unwrap();
+        let home = TempDir::new();
+        home.write(relative, jar_bytes(&[]));
+        fs::create_dir_all(home.path("lib/tools.jar")).unwrap();
 
         assert!(
-            jdk_artifacts(home.path())
+            jdk_artifacts(home.root())
                 .unwrap_err()
                 .contains("expected a JDK artifact file")
         );
@@ -354,16 +336,12 @@ fn existing_optional_artifact_must_be_a_file() {
 
 #[test]
 fn artifact_read_errors_allow_the_caller_to_roll_back_publication() {
-    let home = tempfile::tempdir().unwrap();
-    let runtime = home.path().join("lib/rt.jar");
-    let tools = home.path().join("lib/tools.jar");
-    std::fs::create_dir_all(runtime.parent().unwrap()).unwrap();
-    std::fs::write(
-        &runtime,
+    let home = TempDir::new();
+    let runtime = home.write(
+        "lib/rt.jar",
         jar_bytes(&[("Runtime.class", &class_bytes("Runtime"))]),
-    )
-    .unwrap();
-    std::fs::write(&tools, b"PK\x03\x04").unwrap();
+    );
+    let tools = home.write("lib/tools.jar", b"PK\x03\x04");
     let platform = JvmPlatform::new();
     let classes = platform.process(&runtime).unwrap();
     let mut connection = database();
