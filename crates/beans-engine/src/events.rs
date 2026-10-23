@@ -106,11 +106,14 @@ fn handle_command_process_resource(
 ) -> Result<(), String> {
     let started = Instant::now();
     log::info!("Processing resource {}", path.display());
-    let classes = jvm.process(path)?;
+    let processed = jvm.process(path)?;
+    for (location, error) in &processed.failures {
+        log::warn!("{location:?}: {error}");
+    }
     let transaction = storage
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
-    jvm.store(&transaction, path, classes)?;
+    jvm.store(&transaction, path, processed.classes)?;
     log::debug!("Committing resource {}", path.display());
     transaction.commit().map_err(|error| error.to_string())?;
     log::info!(
@@ -130,8 +133,11 @@ fn handle_command_process_jdk_home(
     log::info!("Processing JDK home {}", home.display());
     let mut resources = Vec::new();
     for artifact in jdk_artifacts(home)? {
-        let classes = jvm.process(&artifact)?;
-        resources.push((artifact, classes));
+        let processed = jvm.process(&artifact)?;
+        for (location, error) in &processed.failures {
+            log::warn!("{location:?}: {error}");
+        }
+        resources.push((artifact, processed.classes));
     }
     let transaction = storage
         .transaction_with_behavior(TransactionBehavior::Immediate)

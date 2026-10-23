@@ -22,23 +22,27 @@ impl JvmPlatform {
         Self::default()
     }
 
-    pub fn process(&self, path: &Path) -> Result<Vec<(Location, Class)>, String> {
+    /// Recognized resources report classes and failures; unsupported formats return an error.
+    pub fn process(&self, path: &Path) -> Result<ProcessedResource, String> {
         log::debug!("Processing JVM resource {}", path.display());
         let mut file =
             std::fs::File::open(path).map_err(|error| format!("{}: {error}", path.display()))?;
         let resource_id = Location::file(path);
 
-        if let Some(entries) = container::class::process(&resource_id, &mut file)? {
-            return collect(path, entries);
+        if let Some(processed) = container::class::process(&resource_id, &mut file)? {
+            return Ok(processed);
         }
-        if let Some(entries) = container::jar::process(&resource_id, &mut file)? {
-            return collect(path, entries);
+        if let Some(processed) = container::jar::process(&resource_id, &mut file)? {
+            return Ok(processed);
         }
-        if let Some(entries) = container::jimage::process(&resource_id, &mut file)? {
-            return collect(path, entries);
+        if let Some(processed) = container::jimage::process(&resource_id, &mut file)? {
+            return Ok(processed);
         }
 
-        Ok(Vec::new())
+        Err(format!(
+            "{}: unsupported JVM resource format",
+            path.display()
+        ))
     }
 
     /// Replaces a resource; the caller must roll back the transaction on error.
@@ -54,6 +58,12 @@ impl JvmPlatform {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Default)]
+pub struct ProcessedResource {
+    pub classes: Vec<(Location, Class)>,
+    pub failures: Vec<(Location, String)>,
 }
 
 /// Selects the first supported layout, including tools.jar only for legacy homes.
@@ -81,25 +91,6 @@ pub fn jdk_artifacts(home: &Path) -> Result<Vec<PathBuf>, String> {
         "{}: no supported JDK runtime found",
         home.display()
     ))
-}
-
-fn collect(
-    path: &Path,
-    entries: impl Iterator<Item = Result<(Location, Class), String>>,
-) -> Result<Vec<(Location, Class)>, String> {
-    let mut classes = Vec::new();
-    for entry in entries {
-        classes.push(entry?);
-        if classes.len() % 1000 == 0 {
-            log::debug!("Parsed {} JVM classes from {}", classes.len(), path.display());
-        }
-    }
-    log::debug!(
-        "Finished parsing {} JVM classes from {}",
-        classes.len(),
-        path.display()
-    );
-    Ok(classes)
 }
 
 fn artifact_exists(path: &Path) -> Result<bool, String> {

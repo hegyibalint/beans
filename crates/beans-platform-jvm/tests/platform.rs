@@ -26,11 +26,14 @@ fn stores_each_container_format_in_the_supplied_transaction() {
         let path = files.write("resource", bytes);
         let mut connection = database();
         let platform = JvmPlatform::new();
-        let classes = platform.process(&path).unwrap();
-        assert_eq!(classes.len(), 1);
+        let processed = platform.process(&path).unwrap();
+        assert_eq!(processed.classes.len(), 1);
+        assert!(processed.failures.is_empty());
         assert!(names(&connection).is_empty());
         let transaction = connection.transaction().unwrap();
-        platform.store(&transaction, &path, classes).unwrap();
+        platform
+            .store(&transaction, &path, processed.classes)
+            .unwrap();
         transaction.commit().unwrap();
 
         assert_eq!(names(&connection), ["example/Foo"]);
@@ -58,7 +61,7 @@ fn replacement_skips_malformed_classes_and_removes_previous_models() {
     );
     let mut connection = database();
     let platform = JvmPlatform::new();
-    let classes = platform.process(&path).unwrap();
+    let classes = platform.process(&path).unwrap().classes;
     let transaction = connection.transaction().unwrap();
     platform.store(&transaction, &path, classes).unwrap();
     transaction.commit().unwrap();
@@ -71,33 +74,45 @@ fn replacement_skips_malformed_classes_and_removes_previous_models() {
             ("Last.class", &class_bytes("Last")),
         ]),
     );
-    let classes = platform.process(&path).unwrap();
+    let processed = platform.process(&path).unwrap();
+    assert_eq!(
+        processed
+            .classes
+            .iter()
+            .map(|(_, class)| class.name.as_str())
+            .collect::<Vec<_>>(),
+        ["New", "Last"]
+    );
+    assert_eq!(processed.failures.len(), 1);
+    assert_eq!(
+        processed.failures[0].0,
+        Location::file(&path).entry(LocationEntry::Container("Broken.class".into()))
+    );
+    assert!(!processed.failures[0].1.is_empty());
     let transaction = connection.transaction().unwrap();
-    platform.store(&transaction, &path, classes).unwrap();
+    platform
+        .store(&transaction, &path, processed.classes)
+        .unwrap();
     transaction.commit().unwrap();
 
     assert_eq!(names(&connection), ["Last", "New"]);
 }
 
 #[test]
-fn recognized_resources_can_replace_previous_models_with_no_classes() {
-    let broken = [0xCA, 0xFE, 0xBA, 0xBE];
-    for bytes in [
-        jar_bytes(&[]),
-        jar_bytes(&[("readme.txt", b"hello")]),
-        broken.to_vec(),
-        jar_bytes(&[("Broken.class", &broken)]),
-        jimage_bytes(&broken),
-    ] {
+fn empty_resources_can_replace_previous_models_without_failures() {
+    for bytes in [jar_bytes(&[]), jar_bytes(&[("readme.txt", b"hello")])] {
         let files = TempDir::new();
         let path = files.write("resource", bytes);
         let mut connection = database();
         seed(&mut connection, &path);
         let platform = JvmPlatform::new();
-        let classes = platform.process(&path).unwrap();
-        assert!(classes.is_empty());
+        let processed = platform.process(&path).unwrap();
+        assert!(processed.classes.is_empty());
+        assert!(processed.failures.is_empty());
         let transaction = connection.transaction().unwrap();
-        platform.store(&transaction, &path, classes).unwrap();
+        platform
+            .store(&transaction, &path, processed.classes)
+            .unwrap();
         transaction.commit().unwrap();
 
         assert!(names(&connection).is_empty());
@@ -105,41 +120,85 @@ fn recognized_resources_can_replace_previous_models_with_no_classes() {
 }
 
 #[test]
-fn unknown_formats_produce_no_classes_without_changing_stored_models() {
+fn invalid_classes_report_their_locations_even_when_none_succeed() {
+    let broken = [0xCA, 0xFE, 0xBA, 0xBE];
+    for (bytes, entry) in [
+        (broken.to_vec(), None),
+        (
+            jar_bytes(&[("Broken.class", &broken)]),
+            Some("Broken.class"),
+        ),
+        (
+            jar_bytes(&[("Broken.class", b"not a class")]),
+            Some("Broken.class"),
+        ),
+        (jimage_bytes(&broken), Some("/java.base/example/Foo.class")),
+        (
+            jimage_bytes(b"not a class"),
+            Some("/java.base/example/Foo.class"),
+        ),
+    ] {
+        let files = TempDir::new();
+        let path = files.write("resource", bytes);
+        let processed = JvmPlatform::new().process(&path).unwrap();
+        let mut expected = Location::file(&path);
+        if let Some(entry) = entry {
+            expected = expected.entry(LocationEntry::Container(entry.into()));
+        }
+
+        assert!(processed.classes.is_empty());
+        assert_eq!(processed.failures.len(), 1);
+        assert_eq!(processed.failures[0].0, expected);
+        assert!(!processed.failures[0].1.is_empty());
+    }
+}
+
+#[test]
+fn unsupported_formats_return_errors_without_changing_stored_models() {
     let files = TempDir::new();
     let path = files.write("resource", b"not a container");
     let mut connection = database();
     seed(&mut connection, &path);
 
-    assert!(JvmPlatform::new().process(&path).unwrap().is_empty());
+    let error = JvmPlatform::new().process(&path).unwrap_err();
+    assert!(error.contains("unsupported JVM resource format"));
+    assert!(error.contains(&path.display().to_string()));
     assert_eq!(names(&connection), ["Old"]);
 }
 
 #[test]
-fn container_opening_errors_preserve_previous_models() {
+fn invalid_containers_report_resource_failures_without_changing_stored_models() {
     for bytes in [
         b"PK\x03\x04".as_slice(),
         b"PK\x05\x06",
         b"PK\x06\x06",
         &[0xDA, 0xDA, 0xFE, 0xCA],
+        &[0xCA, 0xFE, 0xDA, 0xDA],
     ] {
         let files = TempDir::new();
         let path = files.write("resource", bytes);
         let mut connection = database();
         seed(&mut connection, &path);
 
-        let error = JvmPlatform::new().process(&path).unwrap_err();
-        assert!(error.contains(&path.display().to_string()));
+        let processed = JvmPlatform::new().process(&path).unwrap();
+        assert!(processed.classes.is_empty());
+        assert_eq!(processed.failures.len(), 1);
+        assert_eq!(processed.failures[0].0, Location::file(&path));
+        assert!(!processed.failures[0].1.is_empty());
 
         assert_eq!(names(&connection), ["Old"]);
     }
 }
 
 #[test]
-fn entry_read_errors_abort_parsing_without_changing_stored_models() {
+fn entry_read_errors_do_not_discard_classes_or_prevent_reading_later_entries() {
     let good = class_bytes("First");
     let broken = class_bytes("Broken");
-    let mut bytes = jar_bytes(&[("First.class", &good), ("Broken.class", &broken)]);
+    let mut bytes = jar_bytes(&[
+        ("First.class", &good),
+        ("Broken.class", &broken),
+        ("Last.class", &class_bytes("Last")),
+    ]);
     let offset = bytes
         .windows(broken.len())
         .position(|bytes| bytes == broken)
@@ -150,8 +209,21 @@ fn entry_read_errors_abort_parsing_without_changing_stored_models() {
     let mut connection = database();
     seed(&mut connection, &path);
 
-    assert!(JvmPlatform::new().process(&path).is_err());
-
+    let processed = JvmPlatform::new().process(&path).unwrap();
+    assert_eq!(
+        processed
+            .classes
+            .iter()
+            .map(|(_, class)| class.name.as_str())
+            .collect::<Vec<_>>(),
+        ["First", "Last"]
+    );
+    assert_eq!(processed.failures.len(), 1);
+    assert_eq!(
+        processed.failures[0].0,
+        Location::file(&path).entry(LocationEntry::Container("Broken.class".into()))
+    );
+    assert!(!processed.failures[0].1.is_empty());
     assert_eq!(names(&connection), ["Old"]);
 }
 
@@ -176,7 +248,7 @@ fn storage_errors_abort_publication_instead_of_being_skipped() {
         )
         .unwrap();
     let platform = JvmPlatform::new();
-    let classes = platform.process(&path).unwrap();
+    let classes = platform.process(&path).unwrap().classes;
     let transaction = connection.transaction().unwrap();
 
     let error = platform.store(&transaction, &path, classes).unwrap_err();
@@ -215,9 +287,12 @@ fn imports_each_jdk_runtime_layout() {
         let mut connection = database();
         assert_eq!(jdk_artifacts(home.root()).unwrap(), vec![path.clone()]);
         let platform = JvmPlatform::new();
-        let classes = platform.process(&path).unwrap();
+        let processed = platform.process(&path).unwrap();
+        assert!(processed.failures.is_empty());
         let transaction = connection.transaction().unwrap();
-        platform.store(&transaction, &path, classes).unwrap();
+        platform
+            .store(&transaction, &path, processed.classes)
+            .unwrap();
         transaction.commit().unwrap();
 
         assert_eq!(names(&connection), ["example/Foo"]);
@@ -241,8 +316,11 @@ fn invalid_existing_runtime_does_not_fall_back() {
 
     let artifacts = jdk_artifacts(home.root()).unwrap();
     assert_eq!(artifacts, [runtime]);
-    let error = JvmPlatform::new().process(&artifacts[0]).unwrap_err();
-    assert!(error.contains("lib/modules"));
+    let processed = JvmPlatform::new().process(&artifacts[0]).unwrap();
+    assert!(processed.classes.is_empty());
+    assert_eq!(processed.failures.len(), 1);
+    assert_eq!(processed.failures[0].0, Location::file(&artifacts[0]));
+    assert!(!processed.failures[0].1.is_empty());
 }
 
 #[test]
@@ -280,8 +358,11 @@ fn legacy_layouts_import_optional_tools() {
         let mut connection = database();
         let transaction = connection.transaction().unwrap();
         for path in artifacts {
-            let classes = platform.process(&path).unwrap();
-            platform.store(&transaction, &path, classes).unwrap();
+            let processed = platform.process(&path).unwrap();
+            assert!(processed.failures.is_empty());
+            platform
+                .store(&transaction, &path, processed.classes)
+                .unwrap();
         }
         transaction.commit().unwrap();
 
@@ -298,10 +379,13 @@ fn modern_layout_ignores_legacy_artifacts() {
     home.write("lib/rt.jar", b"invalid");
     assert_eq!(jdk_artifacts(home.root()).unwrap(), vec![runtime.clone()]);
     let platform = JvmPlatform::new();
-    let classes = platform.process(&runtime).unwrap();
+    let processed = platform.process(&runtime).unwrap();
+    assert!(processed.failures.is_empty());
     let mut connection = database();
     let transaction = connection.transaction().unwrap();
-    platform.store(&transaction, &runtime, classes).unwrap();
+    platform
+        .store(&transaction, &runtime, processed.classes)
+        .unwrap();
     transaction.commit().unwrap();
 
     assert_eq!(names(&connection), ["example/Foo"]);
@@ -335,7 +419,7 @@ fn existing_optional_artifact_must_be_a_file() {
 }
 
 #[test]
-fn artifact_read_errors_allow_the_caller_to_roll_back_publication() {
+fn reported_artifact_failures_allow_the_caller_to_roll_back_publication() {
     let home = TempDir::new();
     let runtime = home.write(
         "lib/rt.jar",
@@ -343,13 +427,19 @@ fn artifact_read_errors_allow_the_caller_to_roll_back_publication() {
     );
     let tools = home.write("lib/tools.jar", b"PK\x03\x04");
     let platform = JvmPlatform::new();
-    let classes = platform.process(&runtime).unwrap();
+    let processed = platform.process(&runtime).unwrap();
+    assert!(processed.failures.is_empty());
     let mut connection = database();
     let transaction = connection.transaction().unwrap();
-    platform.store(&transaction, &runtime, classes).unwrap();
+    platform
+        .store(&transaction, &runtime, processed.classes)
+        .unwrap();
 
-    let error = platform.process(&tools).unwrap_err();
-    assert!(error.contains("lib/tools.jar"));
+    let invalid = platform.process(&tools).unwrap();
+    assert!(invalid.classes.is_empty());
+    assert_eq!(invalid.failures.len(), 1);
+    assert_eq!(invalid.failures[0].0, Location::file(&tools));
+    assert!(!invalid.failures[0].1.is_empty());
     assert_eq!(names(&transaction), ["Runtime"]);
     transaction.rollback().unwrap();
 

@@ -76,9 +76,10 @@ impl Fixture {
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(&class_bytes(binary_name)).unwrap();
         let transaction = self.java.connection.transaction().unwrap();
-        let classes = JvmPlatform::new().process(file.path()).unwrap();
-        assert!(!classes.is_empty());
-        for (location, class) in classes {
+        let processed = JvmPlatform::new().process(file.path()).unwrap();
+        assert!(processed.failures.is_empty());
+        assert!(!processed.classes.is_empty());
+        for (location, class) in processed.classes {
             beans_platform_jvm::storage::store(&transaction, &class, &location).unwrap();
         }
         transaction.commit().unwrap();

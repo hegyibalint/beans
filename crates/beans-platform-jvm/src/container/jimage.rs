@@ -5,7 +5,7 @@ use std::{
 
 use beans_core::location::{Location, LocationEntry};
 
-use crate::model::class::Class;
+use crate::ProcessedResource;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Endian {
@@ -114,11 +114,7 @@ impl ImageLocation {
         strings: &[u8],
         resources_start: u64,
         file_size: u64,
-    ) -> Result<Option<(Location, Class)>, String> {
-        if self.compressed_size != 0 {
-            return Err("compressed jimage resources are unsupported".into());
-        }
-
+    ) -> Result<Option<super::Entry>, String> {
         // Compare ASCII bytes before decoding names or touching resource data.
         if string_bytes(strings, self.extension)? != b"class" {
             return Ok(None);
@@ -139,28 +135,38 @@ impl ImageLocation {
         name.push_str(".class");
         let entry_id = id.entry(LocationEntry::Container(name));
 
-        // Location offsets are relative to the resource section, not the file.
-        let start = resources_start
-            .checked_add(self.resource_offset)
-            .ok_or_else(|| format!("{entry_id:?}: resource offset overflow"))?;
-        let end = start
-            .checked_add(self.uncompressed_size)
-            .ok_or_else(|| format!("{entry_id:?}: resource size overflow"))?;
-        if end > file_size {
-            return Err(format!("{entry_id:?}: resource extends beyond jimage"));
-        }
+        let class = (|| {
+            if self.compressed_size != 0 {
+                return Err("compressed jimage resources are unsupported".into());
+            }
 
-        // The class parser reads to EOF; limit it to this resource's range.
-        reader
-            .seek(SeekFrom::Start(start))
-            .map_err(|error| format!("{entry_id:?}: {error}"))?;
-        let mut resource = reader.take(self.uncompressed_size);
-        let class = crate::parser::parse(&entry_id, &mut resource)
-            .map_err(|error| format!("{entry_id:?}: {error}"))?;
-        if resource.limit() != 0 {
-            return Err(format!("{entry_id:?}: truncated jimage resource"));
-        }
-        Ok(class.map(|class| (entry_id, class)))
+            // Location offsets are relative to the resource section, not the file.
+            let start = resources_start
+                .checked_add(self.resource_offset)
+                .ok_or("resource offset overflow")?;
+            let end = start
+                .checked_add(self.uncompressed_size)
+                .ok_or("resource size overflow")?;
+            if end > file_size {
+                return Err("resource extends beyond jimage".into());
+            }
+
+            // The class parser reads to EOF; limit it to this resource's range.
+            reader
+                .seek(SeekFrom::Start(start))
+                .map_err(|error| error.to_string())?;
+            let mut resource = reader.take(self.uncompressed_size);
+            let class = crate::parser::parse(&mut resource)?;
+            if resource.limit() != 0 {
+                return Err("truncated jimage resource".into());
+            }
+            class.ok_or_else(|| "invalid class magic".into())
+        })();
+        Ok(Some(
+            class
+                .map(|class| (entry_id.clone(), class))
+                .map_err(|error| (entry_id, error)),
+        ))
     }
 
     fn parse(mut reader: impl Read) -> Result<Self, String> {
@@ -209,7 +215,7 @@ impl ImageLocation {
 pub fn process(
     id: &Location,
     mut reader: impl Read + Seek,
-) -> Result<Option<impl Iterator<Item = Result<(Location, Class), String>>>, String> {
+) -> Result<Option<ProcessedResource>, String> {
     if !matches!(
         super::magic(&mut reader).map_err(|error| format!("{id:?}: {error}"))?,
         Some([0xCA, 0xFE, 0xDA, 0xDA] | [0xDA, 0xDA, 0xFE, 0xCA])
@@ -217,74 +223,80 @@ pub fn process(
         return Ok(None);
     }
 
-    let header = Header::parse(&mut reader).map_err(|error| format!("{id:?}: {error}"))?;
+    Ok(Some(super::collect(id, entries(id, reader))))
+}
+
+fn entries(
+    id: &Location,
+    mut reader: impl Read + Seek,
+) -> Result<impl Iterator<Item = super::Entry>, String> {
+    let header = Header::parse(&mut reader)?;
 
     // Redirects serve name lookup; enumeration only needs the location offsets.
     let table_size = u64::from(header.table_length) * 4;
     let index_start = reader
         .seek(SeekFrom::Current(table_size as i64))
-        .map_err(|error| format!("{id:?}: {error}"))?;
+        .map_err(|error| error.to_string())?;
 
     // The remaining index is [location offsets | location records | strings].
     let index_size = table_size + u64::from(header.locations_size) + u64::from(header.strings_size);
     let resources_start = index_start
         .checked_add(index_size)
-        .ok_or_else(|| format!("{id:?}: jimage index size overflow"))?;
+        .ok_or("jimage index size overflow")?;
 
     // Validate the index extent before allocating; retain the length for resource checks.
     let file_size = reader
         .seek(SeekFrom::End(0))
-        .map_err(|error| format!("{id:?}: {error}"))?;
+        .map_err(|error| error.to_string())?;
     if resources_start > file_size {
-        return Err(format!("{id:?}: truncated jimage index"));
+        return Err("truncated jimage index".into());
     }
 
     // Keep encoded metadata in one buffer; decode only as the iterator advances.
-    let index_size = usize::try_from(index_size).map_err(|error| format!("{id:?}: {error}"))?;
+    let index_size = usize::try_from(index_size).map_err(|error| error.to_string())?;
     let mut index = vec![0; index_size];
     reader
         .seek(SeekFrom::Start(index_start))
-        .map_err(|error| format!("{id:?}: {error}"))?;
+        .map_err(|error| error.to_string())?;
     reader
         .read_exact(&mut index)
-        .map_err(|error| format!("{id:?}: {error}"))?;
+        .map_err(|error| error.to_string())?;
 
     // These boundaries are relative to the buffer, unlike resources_start.
     let locations_start = table_size as usize;
     let strings_start = locations_start + header.locations_size as usize;
 
     // Each four-byte slot points into location records; zero marks an unused slot.
-    Ok(Some((0..locations_start).step_by(4).filter_map(
-        move |slot| {
-            let offset = header.endian.decode([
-                index[slot],
-                index[slot + 1],
-                index[slot + 2],
-                index[slot + 3],
-            ]);
-            if offset == 0 {
-                return None;
-            }
+    Ok((0..locations_start).step_by(4).filter_map(move |slot| {
+        let offset = header.endian.decode([
+            index[slot],
+            index[slot + 1],
+            index[slot + 2],
+            index[slot + 3],
+        ]);
+        if offset == 0 {
+            return None;
+        }
 
-            let result = (|| {
-                let bytes = index[locations_start..strings_start]
-                    .get(offset as usize..)
-                    .ok_or("jimage location offset out of bounds")?;
-                let location = ImageLocation::parse(bytes)?;
-                location.class(
-                    id,
-                    &mut reader,
-                    &index[strings_start..],
-                    resources_start,
-                    file_size,
-                )
-            })();
+        let result = (|| {
+            let bytes = index[locations_start..strings_start]
+                .get(offset as usize..)
+                .ok_or("jimage location offset out of bounds")?;
+            let location = ImageLocation::parse(bytes)?;
+            location.class(
+                id,
+                &mut reader,
+                &index[strings_start..],
+                resources_start,
+                file_size,
+            )
+        })();
 
-            result
-                .map_err(|error| format!("{id:?}: location {offset}: {error}"))
-                .transpose()
-        },
-    )))
+        match result {
+            Ok(entry) => entry,
+            Err(error) => Some(Err((id.clone(), format!("location {offset}: {error}")))),
+        }
+    }))
 }
 
 #[cfg(test)]
@@ -417,10 +429,17 @@ mod tests {
     #[test]
     fn recognized_images_never_fall_back() {
         for encode in [u32::to_le_bytes, u32::to_be_bytes] {
-            let truncated = encode(0xCAFEDADA);
-            assert!(process(&Location::file("modules"), Cursor::new(truncated)).is_err());
-            let unsupported = header_bytes(encode, 0x00020000);
-            assert!(process(&Location::file("modules"), Cursor::new(unsupported)).is_err());
+            for bytes in [
+                encode(0xCAFEDADA).to_vec(),
+                header_bytes(encode, 0x00020000),
+            ] {
+                let id = Location::file("modules");
+                let processed = process(&id, Cursor::new(bytes)).unwrap().unwrap();
+                assert!(processed.classes.is_empty());
+                assert_eq!(processed.failures.len(), 1);
+                assert_eq!(processed.failures[0].0, id);
+                assert!(!processed.failures[0].1.is_empty());
+            }
         }
     }
 
@@ -433,12 +452,11 @@ mod tests {
         let image = home.join("lib/modules");
         let file = std::fs::File::open(&image).unwrap();
         let id = Location::file(image);
-        let entries = process(&id, file).unwrap().unwrap();
-        let mut count = 0;
+        let processed = process(&id, file).unwrap().unwrap();
+        assert!(processed.failures.is_empty());
+        assert!(!processed.classes.is_empty());
         let mut found_object = false;
-        for entry in entries {
-            let (entry_id, class) = entry.unwrap();
-            count += 1;
+        for (entry_id, class) in processed.classes {
             if class.name == "java/lang/Object" {
                 assert_eq!(
                     entry_id,
@@ -449,7 +467,6 @@ mod tests {
                 found_object = true;
             }
         }
-        assert!(count > 0);
         assert!(found_object);
     }
 
@@ -491,10 +508,25 @@ mod tests {
             for offset in [locations_size, locations_size + 1, u32::MAX] {
                 bytes[40..44].copy_from_slice(&encode(offset));
                 let id = Location::file("modules");
-                let mut entries = process(&id, Cursor::new(&bytes)).unwrap().unwrap();
+                let mut entries = entries(&id, Cursor::new(&bytes)).unwrap();
                 assert!(entries.next().unwrap().is_err());
             }
         }
+    }
+
+    #[test]
+    fn invalid_location_slots_do_not_prevent_reading_later_entries() {
+        let mut bytes = image_bytes(u32::to_le_bytes, 0, 0, class_bytes().len() as u64);
+        bytes[36..40].copy_from_slice(&u32::MAX.to_le_bytes());
+        let id = Location::file("modules");
+        let mut entries = entries(&id, Cursor::new(bytes)).unwrap();
+
+        let (location, error) = entries.next().unwrap().unwrap_err();
+        assert_eq!(location, id);
+        assert!(error.contains("jimage location offset out of bounds"));
+        let (_, class) = entries.next().unwrap().unwrap();
+        assert_eq!(class.name, "java/lang/Object");
+        assert!(entries.next().is_none());
     }
 
     #[test]
@@ -502,9 +534,15 @@ mod tests {
         for encode in [u32::to_le_bytes, u32::to_be_bytes] {
             let bytes = image_bytes(encode, 42, 0, class_bytes().len() as u64);
             let id = Location::file("modules");
-            let mut entries = process(&id, Cursor::new(bytes)).unwrap().unwrap();
-            let error = entries.next().unwrap().err().unwrap();
-            assert!(error.contains("location 1: compressed jimage resources are unsupported"));
+            let mut entries = entries(&id, Cursor::new(bytes)).unwrap();
+            let (location, error) = entries.next().unwrap().unwrap_err();
+            assert_eq!(
+                location,
+                id.entry(LocationEntry::Container(
+                    "/java.base/java/lang/Object.class".into()
+                ))
+            );
+            assert!(error.contains("compressed jimage resources are unsupported"));
         }
     }
 
@@ -515,7 +553,7 @@ mod tests {
             bytes.extend([0xAA; 16]);
             let id =
                 Location::file("outer.zip").entry(LocationEntry::Container("lib/modules".into()));
-            let mut entries = process(&id, Cursor::new(bytes)).unwrap().unwrap();
+            let mut entries = entries(&id, Cursor::new(bytes)).unwrap();
             let (entry_id, class) = entries.next().unwrap().unwrap();
             assert_eq!(class.name, "java/lang/Object");
             assert_eq!(
@@ -532,10 +570,9 @@ mod tests {
     fn rejects_truncated_images() {
         let bytes = image_bytes(u32::to_le_bytes, 0, 0, class_bytes().len() as u64);
         for length in 0..bytes.len() {
-            match process(&Location::file("modules"), Cursor::new(&bytes[..length])) {
+            match entries(&Location::file("modules"), Cursor::new(&bytes[..length])) {
                 Err(_) => {}
-                Ok(None) => assert!(length < 4),
-                Ok(Some(mut entries)) => assert!(entries.next().unwrap().is_err()),
+                Ok(mut entries) => assert!(entries.next().unwrap().is_err()),
             }
         }
     }
@@ -545,8 +582,8 @@ mod tests {
         for (offset, size) in [(u64::MAX, 1), (0, u64::MAX)] {
             let bytes = image_bytes(u32::to_le_bytes, 0, offset, size);
             let id = Location::file("modules");
-            let mut entries = process(&id, Cursor::new(bytes)).unwrap().unwrap();
-            assert!(entries.next().unwrap().err().unwrap().contains("overflow"));
+            let mut entries = entries(&id, Cursor::new(bytes)).unwrap();
+            assert!(entries.next().unwrap().unwrap_err().1.contains("overflow"));
         }
     }
 

@@ -1,7 +1,5 @@
-//! Container readers return `Ok(None)` when the format is not recognized,
-//! leaving the reader at its starting position so another reader can try.
-//! `Ok(Some(entries))` claims the input, even if the iterator yields no classes.
-//! Opening errors and errors yielded during iteration must not trigger fallback.
+//! Readers decline unrecognized formats without advancing the input.
+//! Recognized formats return a result, including any invalid data; errors stop the chain.
 
 pub mod class;
 pub mod jar;
@@ -9,19 +7,52 @@ pub mod jimage;
 
 use std::io::{self, Read, Seek, SeekFrom};
 
-fn magic(reader: &mut (impl Read + Seek)) -> Result<Option<[u8; 4]>, String> {
-    let start = reader
-        .stream_position()
-        .map_err(|error| error.to_string())?;
+use beans_core::location::Location;
+
+use crate::{Class, ProcessedResource};
+
+type Entry = Result<(Location, Class), (Location, String)>;
+
+fn collect(
+    id: &Location,
+    entries: Result<impl Iterator<Item = Entry>, String>,
+) -> ProcessedResource {
+    let mut processed = ProcessedResource::default();
+    let entries = match entries {
+        Ok(entries) => entries,
+        Err(error) => {
+            processed.failures.push((id.clone(), error));
+            return processed;
+        }
+    };
+    for entry in entries {
+        match entry {
+            Ok(class) => {
+                processed.classes.push(class);
+                if processed.classes.len() % 1000 == 0 {
+                    log::debug!("Parsed {} JVM classes from {id:?}", processed.classes.len());
+                }
+            }
+            Err(failure) => processed.failures.push(failure),
+        }
+    }
+    log::debug!(
+        "Finished parsing {} JVM classes from {id:?} with {} failures",
+        processed.classes.len(),
+        processed.failures.len()
+    );
+    processed
+}
+
+fn magic(reader: &mut (impl Read + Seek)) -> io::Result<Option<[u8; 4]>> {
+    let start = reader.stream_position()?;
     let mut bytes = [0; 4];
     let result = reader.read_exact(&mut bytes);
-    reader
-        .seek(SeekFrom::Start(start))
-        .map_err(|error| error.to_string())?;
+    reader.seek(SeekFrom::Start(start))?;
     match result {
         Ok(()) => Ok(Some(bytes)),
         Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => Ok(None),
-        Err(error) => Err(error.to_string()),
+        Err(error) => Err(error),
     }
 }
 
@@ -29,12 +60,11 @@ fn magic(reader: &mut (impl Read + Seek)) -> Result<Option<[u8; 4]>, String> {
 mod tests {
     use std::io::Cursor;
 
-    use beans_core::location::Location;
-
     use super::*;
 
     #[test]
-    fn unrecognized_inputs_restore_the_starting_position() {
+    fn readers_decline_unknown_inputs_without_advancing_the_reader() {
+        let id = Location::file("input");
         for bytes in [
             b"".as_slice(),
             b"x",
@@ -47,23 +77,11 @@ mod tests {
             let mut reader = Cursor::new(input);
             reader.set_position(7);
 
-            assert!(
-                class::process(&Location::file("input"), &mut reader)
-                    .unwrap()
-                    .is_none()
-            );
+            assert!(class::process(&id, &mut reader).unwrap().is_none());
             assert_eq!(reader.position(), 7);
-            assert!(
-                jar::process(&Location::file("input"), &mut reader)
-                    .unwrap()
-                    .is_none()
-            );
+            assert!(jar::process(&id, &mut reader).unwrap().is_none());
             assert_eq!(reader.position(), 7);
-            assert!(
-                jimage::process(&Location::file("input"), &mut reader)
-                    .unwrap()
-                    .is_none()
-            );
+            assert!(jimage::process(&id, &mut reader).unwrap().is_none());
             assert_eq!(reader.position(), 7);
         }
     }
@@ -74,6 +92,7 @@ mod tests {
         let class_magic = [0xCA, 0xFE, 0xBA, 0xBE];
         let jar_magic = *b"PK\x03\x04";
         let image_magic = [0xDA, 0xDA, 0xFE, 0xCA];
+
         assert!(
             class::process(&id, Cursor::new(jar_magic))
                 .unwrap()
@@ -121,9 +140,17 @@ mod tests {
             }
         }
 
-        let mut reader = BrokenReader(Cursor::new(Vec::new()));
-        assert!(class::process(&Location::file("input"), &mut reader).is_err());
-        assert!(jar::process(&Location::file("input"), &mut reader).is_err());
-        assert!(jimage::process(&Location::file("input"), &mut reader).is_err());
+        let mut reader = BrokenReader(Cursor::new(vec![0; 8]));
+        reader.0.set_position(7);
+
+        let id = Location::file("input");
+        for error in [
+            class::process(&id, &mut reader).unwrap_err(),
+            jar::process(&id, &mut reader).unwrap_err(),
+            jimage::process(&id, &mut reader).unwrap_err(),
+        ] {
+            assert!(error.contains("read failed"));
+        }
+        assert_eq!(reader.0.position(), 7);
     }
 }
