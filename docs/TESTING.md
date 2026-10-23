@@ -34,3 +34,20 @@ This has some effects on API design:
 
 When writing a new module, struct, or function, think of it's integration test not only testing behavior, but "neatness": well design code is most often elegant to test.
 When testing is difficult, examine why before adding workarounds. Propose reshaping APIs and dependency boundaries so behavior is easier to exercise and its effects are easier to observe.
+
+## Shared test utilities
+
+Before adding test setup, look for existing utilities in `beans-testing` and similar setup elsewhere. Reuse what fits. 
+If an existing utility does not fit, consider improving or reshaping it before adding another variant. 
+A better design may require migrating existing tests; prefer that work over accumulating overlapping helpers just to keep the current change small.
+
+When multiple suites need the same infrastructure—databases, temporary project trees, file operations, or binary fixtures—keep it in `beans-testing`. 
+Maintain it as a coherent, discoverable set of utilities, not a pile of alternatives. 
+Consolidate overlapping helpers and remove superseded ones as needs evolve. 
+Judge the result by the clarity of the whole testing suite, not only the test being added.
+
+Keep scenario-specific setup and assertions close to their tests.
+Share mechanics, not merely code that looks similar; helpers work well, if they make test contracts easier to read by removing unnecessary detail.
+
+A good example of this is `database(...)` where the creation of the database is a need, but not a concern by many databases.
+These compose into larger helpers like `engine(...)`; the point is to hide unnecessary and unimportant detail.
