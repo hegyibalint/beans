@@ -1,12 +1,9 @@
 use super::*;
-use beans_testing::template::Template;
+use beans_core::location::Location;
+use beans_testing::{TempDir, template::Template};
 use lsp_server::Notification;
 use serde_json::json;
-use std::{
-    fs,
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::fs;
 use url::Url;
 
 #[test]
@@ -45,10 +42,10 @@ fn definition_request_returns_a_utf16_target_location() {
 
 #[test]
 fn definition_link_uses_the_source_range_when_the_client_supports_it() {
-    let root = tempfile::tempdir().unwrap();
-    let mut params = initialize_params(root.path());
+    let root = TempDir::new();
+    let mut params = initialize_params(root.root());
     params["capabilities"] = json!({"textDocument": {"definition": {"linkSupport": true}}});
-    let mut server = Server::default();
+    let mut server = Client::default();
     let initialized = request(&mut server, "initialize", params);
     assert!(initialized.error.is_none());
 
@@ -88,30 +85,21 @@ fn definition_link_uses_the_source_range_when_the_client_supports_it() {
 }
 
 #[test]
-fn definition_location_uses_unopened_workspace_file_text() {
-    let root = std::env::temp_dir().join(format!(
-        "beans-definition-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    struct Cleanup(PathBuf);
-    impl Drop for Cleanup {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
-    let _cleanup = Cleanup(root.clone());
-    let sources = root.join("src");
-    let target_path = root.join("library/Widget.java");
-    fs::create_dir_all(target_path.parent().unwrap()).unwrap();
+fn definition_location_reads_unopened_external_file_text_from_disk() {
+    let root = TempDir::new();
+    let project = root.path("project");
+    fs::create_dir(&project).unwrap();
+    let sources = project.join("src");
     let target = Template::parse("package library;\n/* 😀 */ public class <span>Widget</span> {}");
-    fs::write(&target_path, &target.content).unwrap();
+    let target_path = root.write("library/Widget.java", &target.content);
+    let mut engine = beans_engine::Engine::new(&project).unwrap();
+    engine
+        .process(Location::file(&target_path), &target.content)
+        .unwrap();
+    drop(engine);
 
-    let mut server = Server::default();
-    let root_uri = Url::from_directory_path(&root).unwrap().to_string();
+    let mut server = Client::default();
+    let root_uri = Url::from_directory_path(&project).unwrap().to_string();
     let initialized = request(
         &mut server,
         "initialize",

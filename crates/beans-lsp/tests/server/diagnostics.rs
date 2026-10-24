@@ -2,10 +2,10 @@ use lsp_server::Notification;
 use lsp_types::PublishDiagnosticsParams;
 use serde_json::{Value, json};
 
+use super::Client;
 use super::server;
-use crate::server::Server;
 
-fn notify(server: &mut Server, method: &str, params: Value) -> Vec<PublishDiagnosticsParams> {
+fn notify(server: &mut Client, method: &str, params: Value) -> Vec<PublishDiagnosticsParams> {
     server
         .notify(Notification::new(method.into(), params))
         .into_iter()
@@ -16,7 +16,7 @@ fn notify(server: &mut Server, method: &str, params: Value) -> Vec<PublishDiagno
         .collect()
 }
 
-fn open(server: &mut Server, uri: &str, text: &str) -> Vec<PublishDiagnosticsParams> {
+fn open(server: &mut Client, uri: &str, text: &str) -> Vec<PublishDiagnosticsParams> {
     notify(
         server,
         "textDocument/didOpen",

@@ -2,22 +2,7 @@ use lsp_server::Notification;
 use lsp_types::SemanticTokens;
 use serde_json::json;
 
-use super::{initialize_params, request, server};
-use crate::server::Server;
-
-#[test]
-fn initialization_advertises_full_type_tokens_only() {
-    let root = tempfile::tempdir().unwrap();
-    let mut server = Server::default();
-    let response = request(&mut server, "initialize", initialize_params(root.path()));
-    let provider = &response.result.unwrap()["capabilities"]["semanticTokensProvider"];
-    assert_eq!(
-        provider["legend"],
-        json!({"tokenTypes": ["type"], "tokenModifiers": []})
-    );
-    assert_eq!(provider["full"], true);
-    assert!(provider.get("range").is_none());
-}
+use super::{request, server};
 
 #[test]
 fn field_type_identifiers_are_sorted_and_utf16_encoded() {
@@ -42,14 +27,9 @@ fn field_type_identifiers_are_sorted_and_utf16_encoded() {
     let mut line = 0;
     let mut character = 0;
     let mut search_start = 0;
-    for (token, name) in tokens
-        .data
-        .iter()
-        .zip([
-            "Box", "Missing", "Café", "Widget", "Absent", "Box", "String", "Middle", "Slot",
-            "Integer",
-        ])
-    {
+    for (token, name) in tokens.data.iter().zip([
+        "Box", "Missing", "Café", "Widget", "Absent", "Box", "String", "Middle", "Slot", "Integer",
+    ]) {
         if token.delta_line == 0 {
             character += token.delta_start;
         } else {

@@ -23,4 +23,3 @@ url.workspace = true
 
 [dev-dependencies]
 beans-testing.workspace = true
-tempfile.workspace = true

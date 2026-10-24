@@ -12,9 +12,6 @@ mod requests;
 
 use request_log::RequestLog;
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Default)]
 enum Lifecycle {
     #[default]

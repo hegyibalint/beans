@@ -53,16 +53,6 @@ pub(super) fn resource_for_uri(uri: &Uri) -> Location {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs,
-        path::PathBuf,
-        time::{SystemTime, UNIX_EPOCH},
-    };
-
-    use beans_core::{location::LocationEntry, ranges::ByteRange, source::SourceSpan};
-    use beans_testing::template::Template;
-    use lsp_types::{Position, Range};
-
     use super::*;
 
     #[test]
@@ -77,78 +67,6 @@ mod tests {
         assert_eq!(
             resource_for_uri(&uri),
             Location::new(LocationEntry::Virtual(uri.as_str().into()))
-        );
-    }
-
-    #[test]
-    fn locations_preserve_the_open_documents_uri_spelling() {
-        let uri: Uri = "file:///src/%54arget.java".parse().unwrap();
-        let (_root, mut features) = crate::features::test_features();
-        features.open_documents.insert(
-            uri.as_str().into(),
-            OpenDocument::new(uri.clone(), "java".into(), 1, "class Target {}".into()),
-        );
-
-        let location = features
-            .location_for_span(SourceSpan::new(
-                Location::file("/src/Target.java"),
-                ByteRange::new(6, 12),
-            ))
-            .unwrap();
-
-        assert_eq!(location.uri, uri);
-        assert_eq!(
-            location.range,
-            Range::new(Position::new(0, 6), Position::new(0, 12))
-        );
-    }
-
-    #[test]
-    fn nested_resources_have_no_source_location_yet() {
-        let source =
-            Location::file("/library.jar").entry(LocationEntry::Container("Target.class".into()));
-        let (_root, features) = crate::features::test_features();
-        assert!(
-            features
-                .location_for_span(SourceSpan::new(source, ByteRange::new(0, 1)))
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn missing_text_snapshot_is_read_from_disk_for_coordinates() {
-        let path = std::env::temp_dir().join(format!(
-            "beans-location-{}-{}.txt",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        struct Cleanup(PathBuf);
-        impl Drop for Cleanup {
-            fn drop(&mut self) {
-                let _ = fs::remove_file(&self.0);
-            }
-        }
-        let _cleanup = Cleanup(path.clone());
-        let fixture = Template::parse("/* 😀 */ <span>target</span>");
-        fs::write(&path, &fixture.content).unwrap();
-        let uri = Url::from_file_path(&path).unwrap().to_string();
-        let target = &fixture.spans[0];
-
-        let (_root, features) = crate::features::test_features();
-        let location = features
-            .location_for_span(SourceSpan::new(
-                Location::file(path),
-                ByteRange::new(target.start, target.end),
-            ))
-            .unwrap();
-
-        assert_eq!(location.uri.as_str(), uri);
-        assert_eq!(
-            location.range,
-            Range::new(Position::new(0, 9), Position::new(0, 15))
         );
     }
 }

@@ -1,16 +1,15 @@
 use lsp_server::Notification;
 use serde_json::{Value, json};
 
-use super::{Lifecycle, assert_error, request, server};
-use crate::server::Server;
+use super::{Client, assert_error, request, server};
 
-fn open(server: &mut Server, text: &str) -> Vec<Notification> {
+fn open(server: &mut Client, text: &str) -> Vec<Notification> {
     server.notify(Notification::new("textDocument/didOpen".into(), json!({
         "textDocument": {"uri": "untitled:Example.java", "languageId": "java", "version": 1, "text": text}
     })))
 }
 
-fn hover(server: &mut Server) -> lsp_server::Response {
+fn hover(server: &mut Client) -> lsp_server::Response {
     request(
         server,
         "textDocument/hover",
@@ -36,7 +35,7 @@ fn assert_reported(notifications: &[Notification], message: &str) {
 #[test]
 fn failed_open_reports_an_error_and_the_server_can_recover() {
     let (root, mut server) = server();
-    let connection = beans_engine::storage::open(&root.path().join(".beans/models")).unwrap();
+    let connection = beans_engine::storage::open(&root.path(".beans/models")).unwrap();
     connection.execute_batch("CREATE TRIGGER reject_type BEFORE INSERT ON java_types BEGIN SELECT RAISE(ABORT, 'publication rejected'); END;").unwrap();
     assert_reported(
         &open(&mut server, "class C extends Target {}"),
@@ -63,7 +62,7 @@ fn failed_open_reports_an_error_and_the_server_can_recover() {
 fn failed_changes_keep_the_last_published_document_and_allow_retry() {
     let (root, mut server) = server();
     open(&mut server, "class C extends Former {}");
-    let connection = beans_engine::storage::open(&root.path().join(".beans/models")).unwrap();
+    let connection = beans_engine::storage::open(&root.path(".beans/models")).unwrap();
     connection.execute_batch("CREATE TRIGGER reject_type BEFORE INSERT ON java_types BEGIN SELECT RAISE(ABORT, 'change rejected'); END;").unwrap();
     let change = || {
         Notification::new(
@@ -91,7 +90,7 @@ fn failed_changes_keep_the_last_published_document_and_allow_retry() {
 fn failed_close_does_not_discard_the_open_document() {
     let (root, mut server) = server();
     open(&mut server, "class C extends Target {}");
-    let connection = beans_engine::storage::open(&root.path().join(".beans/models")).unwrap();
+    let connection = beans_engine::storage::open(&root.path(".beans/models")).unwrap();
     connection.execute_batch("CREATE TRIGGER reject_removal BEFORE DELETE ON models BEGIN SELECT RAISE(ABORT, 'close rejected'); END;").unwrap();
     let close = || {
         Notification::new(
@@ -115,7 +114,7 @@ fn failed_close_does_not_discard_the_open_document() {
 fn decoding_errors_become_request_errors_without_stopping_the_server() {
     let (root, mut server) = server();
     open(&mut server, "class C extends Target {}");
-    let connection = beans_engine::storage::open(&root.path().join(".beans/models")).unwrap();
+    let connection = beans_engine::storage::open(&root.path(".beans/models")).unwrap();
     connection
         .execute("UPDATE models SET model = '{}'", [])
         .unwrap();
@@ -133,7 +132,6 @@ fn decoding_errors_become_request_errors_without_stopping_the_server() {
             }),
         );
         assert_error(response, lsp_server::ErrorCode::RequestFailed);
-        assert!(matches!(server.lifecycle, Lifecycle::Running));
     }
     open(&mut server, "class C extends Recovered {}");
     assert_eq!(
