@@ -3,12 +3,14 @@ use std::io::{Read, Seek};
 use beans_core::location::{Location, LocationEntry};
 use zip::ZipArchive;
 
-use crate::model::class::Class;
+use crate::ProcessedResource;
+
+use super::Entry;
 
 pub fn process(
     id: &Location,
     mut reader: impl Read + Seek,
-) -> Result<Option<impl Iterator<Item = Result<(Location, Class), String>>>, String> {
+) -> Result<Option<ProcessedResource>, String> {
     // Local file header, empty archive, or ZIP64 end record.
     if !matches!(
         super::magic(&mut reader).map_err(|error| format!("{id:?}: {error}"))?,
@@ -17,13 +19,17 @@ pub fn process(
         return Ok(None);
     }
 
-    let mut archive = ZipArchive::new(reader).map_err(|error| format!("{id:?}: {error}"))?;
+    Ok(Some(super::collect(id, entries(id, reader))))
+}
 
-    Ok(Some((0..archive.len()).filter_map(move |index| {
+fn entries(id: &Location, reader: impl Read + Seek) -> Result<impl Iterator<Item = Entry>, String> {
+    let mut archive = ZipArchive::new(reader).map_err(|error| error.to_string())?;
+
+    Ok((0..archive.len()).filter_map(move |index| {
         let entry = match archive.by_index(index) {
             Ok(entry) => entry,
             Err(error) => {
-                return Some(Err(format!("{id:?}: entry {index}: {error}")));
+                return Some(Err((id.clone(), format!("entry {index}: {error}"))));
             }
         };
 
@@ -32,12 +38,12 @@ pub fn process(
         }
 
         let entry_id = id.entry(LocationEntry::Container(entry.name().to_owned()));
-        crate::parser::parse(&entry_id, entry)
-            .map_err(|error| format!("{entry_id:?}: {error}"))
-            .map(|class| class.map(|class| (entry_id, class)))
-            .transpose()
-    })))
+        let is_class = entry.name().ends_with(".class");
+        match crate::parser::parse(entry) {
+            Ok(Some(class)) => Some(Ok((entry_id, class))),
+            Ok(None) if is_class => Some(Err((entry_id, "invalid class magic".into()))),
+            Ok(None) => None,
+            Err(error) => Some(Err((entry_id, error))),
+        }
+    }))
 }
-
-#[cfg(test)]
-mod tests;

@@ -169,4 +169,92 @@ impl File {
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use super::*;
+    use crate::model::nodes::types::Kind;
+    use beans_core::ranges::{ByteRange, Spanned};
+
+    #[test]
+    fn an_empty_file_has_one_parentless_compilation_unit() {
+        let file = File::new();
+        let root = file.node(File::ROOT_NODE_ID).unwrap();
+        assert!(matches!(root.kind(), NodeKind::CompilationUnit));
+        assert_eq!(root.parent(), None);
+        assert!(root.iter_children().next().is_none());
+        assert_eq!(file.iter_nodes().count(), 1);
+        assert!(file.node(NodeIndex::new(1)).is_none());
+    }
+
+    #[test]
+    fn top_level_nodes_are_direct_children_of_the_compilation_unit() {
+        let mut file = File::new();
+        let top_level = file.add_node(File::ROOT_NODE_ID, NodeKind::Block);
+        let nested = file.add_node(top_level, NodeKind::Block);
+        assert!(!file.is_top_level(File::ROOT_NODE_ID));
+        assert!(file.is_top_level(top_level));
+        assert!(!file.is_top_level(nested));
+        assert!(!file.is_top_level(NodeIndex::new(10)));
+    }
+
+    #[test]
+    fn indices_and_links_survive_arena_growth() {
+        let mut file = File::new();
+        let first = file.add_node(File::ROOT_NODE_ID, NodeKind::Block);
+        for _ in 0..256 {
+            file.add_node(first, NodeKind::Block);
+        }
+        assert_eq!(file.node(first).unwrap().parent(), Some(File::ROOT_NODE_ID));
+        assert_eq!(file.iter_children(first).count(), 256);
+        for entry in file.iter_children(first) {
+            assert_eq!(entry.node.parent(), Some(first));
+        }
+    }
+
+    #[test]
+    fn rejected_insertions_leave_the_tree_unchanged() {
+        for (parent, kind) in [
+            (NodeIndex::new(10), NodeKind::Block),
+            (File::ROOT_NODE_ID, NodeKind::CompilationUnit),
+        ] {
+            let mut file = File::new();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                file.add_node(parent, kind)
+            }));
+            assert!(result.is_err());
+            assert_eq!(file.iter_nodes().count(), 1);
+            assert!(file.iter_children(File::ROOT_NODE_ID).next().is_none());
+            assert_eq!(
+                file.add_node(File::ROOT_NODE_ID, NodeKind::Block),
+                NodeIndex::new(1)
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid parent node index")]
+    fn children_reject_an_unknown_parent() {
+        let file = File::new();
+        let _ = file.iter_children(NodeIndex::new(10));
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid node index")]
+    fn ancestors_reject_an_unknown_start() {
+        let file = File::new();
+        let _ = file.iter_ancestors(NodeIndex::new(10)).next();
+    }
+
+    #[test]
+    fn malformed_package_names_cannot_match_even_an_identical_prefix() {
+        let mut file = File::new();
+        let mut declaration = TypeDeclaration::new(Kind::Class);
+        declaration.name = Some(Spanned::new("Example".into(), ByteRange::new(0, 7)));
+        file.add_node(File::ROOT_NODE_ID, NodeKind::Type(declaration));
+        file.package_name = ["p", "", "q"].into_iter().map(str::to_owned).collect();
+        let name = ["p", "", "q", "Example"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        assert!(file.find_type(&name).is_empty());
+    }
+}

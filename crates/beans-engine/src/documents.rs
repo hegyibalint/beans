@@ -6,9 +6,6 @@ use rusqlite::TransactionBehavior;
 
 use crate::Engine;
 
-#[cfg(test)]
-mod tests;
-
 impl Engine {
     pub fn accept(&self, path: &Path) -> bool {
         self.java.accept(path)

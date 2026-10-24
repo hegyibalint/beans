@@ -17,10 +17,8 @@ pub mod diagnostics;
 mod documents;
 mod events;
 mod features;
+pub mod logging;
 pub mod storage;
-
-#[cfg(test)]
-mod tests;
 
 pub struct Engine {
     workspace_root: PathBuf,

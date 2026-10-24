@@ -8,16 +8,7 @@ const SCHEMA_VERSION: i64 = 10;
 pub fn open(path: &Path) -> Result<Connection, String> {
     let mut connection =
         Connection::open(path).map_err(|error| format!("{}: {error}", path.display()))?;
-    connection
-        .busy_timeout(Duration::from_secs(5))
-        .map_err(|error| error.to_string())?;
-    initialize(&mut connection, &schema())?;
-    connection
-        .pragma_update(None, "foreign_keys", true)
-        .map_err(|error| error.to_string())?;
-    connection
-        .pragma_update(None, "synchronous", "FULL")
-        .map_err(|error| error.to_string())?;
+    initialize(&mut connection)?;
     let mode: String = connection
         .pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get(0))
         .map_err(|error| error.to_string())?;
@@ -25,6 +16,22 @@ pub fn open(path: &Path) -> Result<Connection, String> {
         return Err(format!("expected SQLite WAL mode, got {mode}"));
     }
     Ok(connection)
+}
+
+/// Initializes the complete cache schema and configures an existing connection.
+/// Older caches are reset; newer schema versions are rejected.
+/// The journal mode is left unchanged so in-memory connections are supported.
+pub fn initialize(connection: &mut Connection) -> Result<(), String> {
+    connection
+        .busy_timeout(Duration::from_secs(5))
+        .map_err(|error| error.to_string())?;
+    initialize_schema(connection, &schema())?;
+    connection
+        .pragma_update(None, "foreign_keys", true)
+        .map_err(|error| error.to_string())?;
+    connection
+        .pragma_update(None, "synchronous", "FULL")
+        .map_err(|error| error.to_string())
 }
 
 fn schema() -> String {
@@ -35,7 +42,7 @@ fn schema() -> String {
     .join("\n")
 }
 
-fn initialize(connection: &mut Connection, schema: &str) -> Result<(), String> {
+fn initialize_schema(connection: &mut Connection, schema: &str) -> Result<(), String> {
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
@@ -80,4 +87,65 @@ fn initialize(connection: &mut Connection, schema: &str) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use beans_testing::database;
+    use rusqlite::Connection;
+
+    use super::initialize_schema;
+
+    #[test]
+    fn model_payloads_must_be_valid_json_text() {
+        let connection = database();
+        for model in ["'not JSON'", "'{broken}'", "X'7B7D'", "NULL"] {
+            assert!(
+                connection
+                    .execute(
+                        &format!("INSERT INTO models VALUES (1, '[]', 0, {model}, NULL)"),
+                        [],
+                    )
+                    .is_err()
+            );
+        }
+        assert_eq!(count(&connection, "models"), 0);
+    }
+
+    #[test]
+    fn locations_must_be_valid_json_text() {
+        let connection = database();
+        for location in ["'not JSON'", "'{broken}'", "X'5B5D'", "NULL"] {
+            assert!(
+                connection
+                    .execute(
+                        &format!("INSERT INTO models VALUES (1, {location}, 0, '{{}}', NULL)"),
+                        [],
+                    )
+                    .is_err()
+            );
+        }
+        assert_eq!(count(&connection, "models"), 0);
+    }
+
+    #[test]
+    fn failed_initialization_rolls_back_the_reset() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE sentinel (value INTEGER); INSERT INTO sentinel VALUES (42)",
+            )
+            .unwrap();
+        assert!(initialize_schema(&mut connection, "CREATE TABLE broken (").is_err());
+        let version: i64 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 0);
+        assert_eq!(count(&connection, "sentinel"), 1);
+    }
+
+    fn count(connection: &Connection, table: &str) -> i64 {
+        connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap()
+    }
+}

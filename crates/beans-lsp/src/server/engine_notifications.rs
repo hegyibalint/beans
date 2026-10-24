@@ -122,4 +122,40 @@ fn send(sender: &Sender<Message>, log: &RequestLog, message: Message) -> io::Res
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn stop_without_start_does_not_emit_progress() {
+        let (notifications, receiver) = unbounded();
+        notifications
+            .send(EngineNotification::ProcessResourceStop(
+                beans_core::event::NotificationPayload { id: 99, data: () },
+            ))
+            .unwrap();
+        drop(notifications);
+        let (_replies, responses) = unbounded();
+        let (sender, outgoing) = unbounded();
+        consume_notifications(receiver, responses, sender, RequestLog::default()).unwrap();
+        assert!(outgoing.try_recv().is_err());
+    }
+
+    #[test]
+    fn progress_tokens_preserve_the_full_identifier_range() {
+        for id in [0, 1, u64::MAX] {
+            let create = create_progress(id);
+            assert_eq!(create.id, format!("beans:progress:{id}").into());
+            assert_eq!(create.method, "window/workDoneProgress/create");
+            assert_eq!(create.params, json!({"token": format!("beans:{id}")}));
+            let Message::Notification(end) = end_progress(id) else {
+                panic!("expected progress notification");
+            };
+            assert_eq!(end.method, "$/progress");
+            assert_eq!(
+                end.params,
+                json!({"token": format!("beans:{id}"), "value": {"kind": "end"}})
+            );
+        }
+    }
+}

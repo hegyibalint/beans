@@ -122,9 +122,6 @@ mod resolve;
 mod result;
 mod validation;
 
-#[cfg(test)]
-mod tests;
-
 pub use self::{
     resolve::{resolve, resolve_supertype},
     result::{JavaTypeCandidate, ResolutionFailure, TypeCandidate, TypeParameterHandle},

@@ -22,21 +22,3 @@ pub(crate) struct Features {
     open_documents: HashMap<String, OpenDocument>,
     workspace_documents: HashMap<String, OpenDocument>,
 }
-
-#[cfg(test)]
-pub(crate) fn test_features() -> (tempfile::TempDir, Features) {
-    let root = tempfile::tempdir().unwrap();
-    let params = lsp_types::InitializeParams {
-        workspace_folders: Some(vec![lsp_types::WorkspaceFolder {
-            uri: url::Url::from_directory_path(root.path())
-                .unwrap()
-                .as_str()
-                .parse()
-                .unwrap(),
-            name: "test".into(),
-        }]),
-        ..lsp_types::InitializeParams::default()
-    };
-    let features = Features::initialize(&params).unwrap();
-    (root, features)
-}

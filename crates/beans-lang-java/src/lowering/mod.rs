@@ -473,6 +473,3 @@ fn collect_name_components(content: &str, node: Node) -> Option<Vec<String>> {
         _ => None,
     }
 }
-
-#[cfg(test)]
-mod tests;

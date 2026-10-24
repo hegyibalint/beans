@@ -156,3 +156,39 @@ fn named_segments<'a>(
 
     Ok(segments)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::references::PrimitiveType;
+    use beans_core::location::Location;
+
+    #[test]
+    fn a_non_named_reference_is_invalid() {
+        let file = File::new();
+        let source = Location::file("/Test.java");
+        for reference in [TypeRef::Primitive(PrimitiveType::Int), TypeRef::Void] {
+            let ctx = Context::new(&source, &file, File::ROOT_NODE_ID, &reference);
+            assert_eq!(resolve(&ctx), Err(ResolutionFailure::InvalidTypeRef));
+            assert_eq!(
+                resolve_supertype(&ctx),
+                Err(ResolutionFailure::InvalidTypeRef)
+            );
+        }
+    }
+
+    #[test]
+    fn an_empty_named_reference_is_invalid() {
+        let file = File::new();
+        let source = Location::file("/Test.java");
+        let reference = TypeRef::Named {
+            segments: Vec::new(),
+        };
+        let ctx = Context::new(&source, &file, File::ROOT_NODE_ID, &reference);
+        assert_eq!(resolve(&ctx), Err(ResolutionFailure::InvalidTypeRef));
+        assert_eq!(
+            resolve_supertype(&ctx),
+            Err(ResolutionFailure::InvalidTypeRef)
+        );
+    }
+}

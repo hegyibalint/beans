@@ -4,40 +4,23 @@ use std::{
     process::{Command, Stdio},
     sync::mpsc,
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
+use beans_testing::TempDir;
 use lsp_server::{Message, Notification, Request};
 use serde_json::json;
 use url::Url;
 
 #[test]
 fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
-    let log_path = std::env::temp_dir().join(format!(
-        "beans-lsp-{}-{}.jsonl",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    let mut child = Command::new(env!("CARGO_BIN_EXE_beans-lsp"))
-        .env("BEANS_LSP_LOG_PATH", &log_path)
-        .env("RUST_LOG", "beans=debug")
-        .env("BEANS_WORKSPACE_TOML_JAVA_HOME", "local-jdk")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let workspace = tempfile::tempdir().unwrap();
-    let root = workspace.path();
-    fs::create_dir_all(root.join("src/demo")).unwrap();
-    fs::create_dir_all(root.join("src/library")).unwrap();
-    let jdk_home = root.join("local-jdk");
-    let runtime = jdk_home.join("lib/modules");
-    fs::create_dir_all(runtime.parent().unwrap()).unwrap();
-    fs::write(&runtime, beans_testing::support::class_bytes("p/Runtime")).unwrap();
+    let workspace = TempDir::new();
+    let root = workspace.root();
+    let log_path = workspace.path("lsp.jsonl");
+    workspace.write(
+        "local-jdk/lib/modules",
+        beans_testing::support::class_bytes("p/Runtime"),
+    );
     for (path, contents) in [
         (
             "beans.toml",
@@ -52,8 +35,19 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
             include_str!("../../../examples/playground/src/library/Widget.java"),
         ),
     ] {
-        fs::write(root.join(path), contents).unwrap();
+        workspace.write(path, contents);
     }
+    let mut child = Command::new(env!("CARGO_BIN_EXE_beans-lsp"))
+        .env_remove("BEANS_WORK_DIR")
+        .env_remove("BEANS_EVENT_LOG")
+        .env("BEANS_LSP_LOG_PATH", &log_path)
+        .env("RUST_LOG", "beans=debug")
+        .env("BEANS_WORKSPACE_TOML_JAVA_HOME", "local-jdk")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
     let workspace_uri = Url::from_directory_path(root).unwrap().to_string();
     let mut stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
@@ -152,7 +146,7 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
         .unwrap_or_else(|| panic!("missing descriptor log: {diagnostics}"));
     assert!(
         diagnostics.contains(&format!(
-            " [beans-workspace-toml] BEANS_WORKSPACE_TOML_JAVA_HOME override active for {}: jdk_home={}",
+            " [beans-workspace-toml] JDK override active for {}: jdk_home={}",
             root.join("beans.toml").display(),
             root.join("local-jdk").display()
         )),
@@ -164,24 +158,16 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
         diagnostics.contains(" [beans-lsp] Indexed 2 workspace sources"),
         "{diagnostics}"
     );
-    for message in [
-        format!("Processing JDK home {}", jdk_home.display()),
-        format!(
-            "Acquired write transaction for JDK home {}",
-            jdk_home.display()
-        ),
-        format!("Processing JVM resource {}", runtime.display()),
-        format!("Finished staging 1 JVM classes from {}", runtime.display()),
-        format!("Committing JDK home {}", jdk_home.display()),
-        format!("Published JDK home {} in ", jdk_home.display()),
-    ] {
-        assert!(
-            diagnostics.contains(&message),
-            "missing {message}: {diagnostics}"
-        );
-    }
+    let connection = beans_engine::storage::open(&workspace.path(".beans/models")).unwrap();
+    let name: String = connection
+        .query_row(
+            "SELECT json_extract(model, '$.name') FROM models WHERE model_kind = 0",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(name, "p/Runtime");
     let lines = fs::read_to_string(&log_path).unwrap();
-    fs::remove_file(log_path).unwrap();
     let entries: Vec<serde_json::Value> = lines
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())

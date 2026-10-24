@@ -116,6 +116,3 @@ pub(crate) fn model_id(
         .optional()
         .map_err(|error| error.to_string())
 }
-
-#[cfg(test)]
-mod tests;

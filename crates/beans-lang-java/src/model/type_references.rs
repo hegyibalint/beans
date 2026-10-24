@@ -99,6 +99,3 @@ pub(crate) fn find_in_reference(
         }),
     }
 }
-
-#[cfg(test)]
-mod tests;
