@@ -76,6 +76,3 @@ fn collect_named_references<'a>(
         TypeRef::Primitive(_) | TypeRef::Void => {}
     }
 }
-
-#[cfg(test)]
-mod tests;

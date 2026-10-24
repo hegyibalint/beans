@@ -16,7 +16,6 @@ tree-sitter-java.workspace = true
 
 [dev-dependencies]
 beans-testing.workspace = true
-tempfile.workspace = true
 
 [[example]]
 name = "inspect"
