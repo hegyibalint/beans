@@ -25,7 +25,7 @@ impl Logger {
 }
 
 pub(crate) fn open(work_dir: &Path) -> Logger {
-    if !env::var_os("BEANS_EVENT_LOG").is_some_and(|value| value == "1") {
+    if env::var_os("BEANS_EVENT_LOG").is_none_or(|value| value != "1") {
         return Logger::default();
     }
     let path = work_dir.join("events.jsonl");

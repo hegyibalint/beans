@@ -82,10 +82,10 @@ impl Drop for Server {
     fn drop(&mut self) {
         self.notification_replies.take();
         self.features.take();
-        if let Some(thread) = self.notification_thread.take() {
-            if thread.join().is_err() {
-                log::warn!("LSP notification thread panicked");
-            }
+        if let Some(thread) = self.notification_thread.take()
+            && thread.join().is_err()
+        {
+            log::warn!("LSP notification thread panicked");
         }
     }
 }

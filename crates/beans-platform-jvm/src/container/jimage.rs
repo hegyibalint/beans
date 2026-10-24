@@ -35,8 +35,6 @@ struct Header {
     endian: Endian,
     major_version: u16,
     minor_version: u16,
-    flags: u32,
-    resource_count: u32,
     table_length: u32,
     locations_size: u32,
     strings_size: u32,
@@ -56,12 +54,12 @@ impl Header {
         };
 
         let version = endian.read_u32(&mut reader)?;
+        let _flags = endian.read_u32(&mut reader)?;
+        let _resource_count = endian.read_u32(&mut reader)?;
         let header = Self {
             endian,
             major_version: (version >> 16) as u16,
             minor_version: version as u16,
-            flags: endian.read_u32(&mut reader)?,
-            resource_count: endian.read_u32(&mut reader)?,
             table_length: endian.read_u32(&mut reader)?,
             locations_size: endian.read_u32(&mut reader)?,
             strings_size: endian.read_u32(&mut reader)?,
@@ -103,7 +101,6 @@ struct ImageLocation {
     resource_offset: u64,
     compressed_size: u64,
     uncompressed_size: u64,
-    preview_flags: u64,
 }
 
 impl ImageLocation {
@@ -207,7 +204,6 @@ impl ImageLocation {
             resource_offset: attributes[5],
             compressed_size: attributes[6],
             uncompressed_size: attributes[7],
-            preview_flags: attributes[8],
         })
     }
 }
@@ -394,8 +390,6 @@ mod tests {
                 assert_eq!(header.endian, endian);
                 assert_eq!(header.major_version, 1);
                 assert_eq!(header.minor_version, version as u16);
-                assert_eq!(header.flags, 0);
-                assert_eq!(header.resource_count, 1);
                 assert_eq!(header.table_length, 1);
                 assert_eq!(header.locations_size, 13);
                 assert_eq!(header.strings_size, 34);
@@ -480,15 +474,15 @@ mod tests {
         assert_eq!(location.resource_offset, 0);
         assert_eq!(location.compressed_size, 0);
         assert_eq!(location.uncompressed_size, 288);
-        assert_eq!(location.preview_flags, 0);
     }
 
     #[test]
-    fn reads_eight_byte_values_and_preview_flags() {
-        let bytes = [0x2F, 1, 2, 3, 4, 5, 6, 7, 8, 0x40, 3, 0];
-        let location = ImageLocation::parse(bytes.as_slice()).unwrap();
+    fn reads_eight_byte_values_and_accepts_preview_flags() {
+        let bytes = [0x2F, 1, 2, 3, 4, 5, 6, 7, 8, 0x40, 3, 0, 0xAA];
+        let mut reader = bytes.as_slice();
+        let location = ImageLocation::parse(&mut reader).unwrap();
         assert_eq!(location.resource_offset, 0x0102030405060708);
-        assert_eq!(location.preview_flags, 3);
+        assert_eq!(reader, [0xAA]);
     }
 
     #[test]

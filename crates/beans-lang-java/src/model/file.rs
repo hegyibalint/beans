@@ -168,6 +168,12 @@ impl File {
     }
 }
 
+impl Default for File {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

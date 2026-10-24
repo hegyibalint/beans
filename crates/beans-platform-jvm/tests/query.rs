@@ -112,10 +112,16 @@ fn queries_borrow_the_callers_transaction_and_follow_index_replacement_and_delet
         let query = JvmQuery::new(&transaction, QueryScope::new(&Unrestricted));
 
         assert!(query.find_classes("p/Old").unwrap().is_empty());
-        assert_eq!(query.find_classes("p/New").unwrap(), [location.clone()]);
+        assert_eq!(
+            query.find_classes("p/New").unwrap(),
+            std::slice::from_ref(&location)
+        );
     }
     let query = JvmQuery::new(&connection, QueryScope::new(&Unrestricted));
-    assert_eq!(query.find_classes("p/Old").unwrap(), [location.clone()]);
+    assert_eq!(
+        query.find_classes("p/Old").unwrap(),
+        std::slice::from_ref(&location)
+    );
     assert!(query.find_classes("p/New").unwrap().is_empty());
 
     let transaction = connection.transaction().unwrap();

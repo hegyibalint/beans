@@ -19,7 +19,7 @@ pub struct JvmPlatform;
 
 impl JvmPlatform {
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 
     /// Recognized resources report classes and failures; unsupported formats return an error.
