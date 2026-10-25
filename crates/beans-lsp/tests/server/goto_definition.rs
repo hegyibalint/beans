@@ -103,7 +103,7 @@ fn definition_location_reads_unopened_external_file_text_from_disk() {
     let initialized = request(
         &mut server,
         "initialize",
-        json!({"capabilities": {}, "workspaceFolders": [{"uri": root_uri, "name": "playground"}]}),
+        json!({"capabilities": {}, "workspaceFolders": [{"uri": root_uri, "name": "project"}]}),
     );
     assert!(initialized.error.is_none());
 

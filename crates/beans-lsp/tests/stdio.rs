@@ -21,22 +21,8 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
         "local-jdk/lib/modules",
         beans_testing::support::class_bytes("p/Runtime"),
     );
-    for (path, contents) in [
-        (
-            "beans.toml",
-            include_str!("../../../examples/playground/beans.toml"),
-        ),
-        (
-            "src/demo/Example.java",
-            include_str!("../../../examples/playground/src/demo/Example.java"),
-        ),
-        (
-            "src/library/Widget.java",
-            include_str!("../../../examples/playground/src/library/Widget.java"),
-        ),
-    ] {
-        workspace.write(path, contents);
-    }
+    workspace.write("beans.toml", "[unit.main]\nsources = ['src']\n");
+    workspace.write("src/Workspace.java", "class Workspace {}");
     let mut child = Command::new(env!("CARGO_BIN_EXE_beans-lsp"))
         .env_remove("BEANS_WORK_DIR")
         .env_remove("BEANS_EVENT_LOG")
@@ -61,7 +47,7 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
                 "initialize".into(),
                 json!({
                     "capabilities": {},
-                    "workspaceFolders": [{"uri": workspace_uri, "name": "playground"}]
+                    "workspaceFolders": [{"uri": workspace_uri, "name": "workspace"}]
                 }),
             ))
             .write(&mut stdin)?;
@@ -141,7 +127,7 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
         .lines()
         .find(|line| {
             line.contains(" [beans-workspace-toml] Loaded ")
-                && line.ends_with("beans.toml: units=2")
+                && line.ends_with("beans.toml: units=1")
         })
         .unwrap_or_else(|| panic!("missing descriptor log: {diagnostics}"));
     assert!(
@@ -155,7 +141,7 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
     let (timestamp, _) = descriptor_log.split_once(' ').unwrap();
     assert!(timestamp.contains('T') && timestamp.ends_with('Z'));
     assert!(
-        diagnostics.contains(" [beans-lsp] Indexed 2 workspace sources"),
+        diagnostics.contains(" [beans-lsp] Indexed 1 workspace sources"),
         "{diagnostics}"
     );
     let connection = beans_engine::storage::open(&workspace.path(".beans/models")).unwrap();
