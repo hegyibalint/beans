@@ -29,7 +29,7 @@ npm --prefix extensions/vscode run compile
 if [ "$PROJECT" = "$PWD/examples/playground" ]; then
   code --new-window --disable-extensions --user-data-dir "$PWD/target/vscode-dev" \
     --extensionDevelopmentPath="$PWD/extensions/vscode" \
-    "$PROJECT" "$PROJECT/src/demo/Example.java"
+    "$PROJECT" "$PROJECT/src/demo/Demo.java"
 else
   code --new-window --disable-extensions --user-data-dir "$PWD/target/vscode-dev" \
     --extensionDevelopmentPath="$PWD/extensions/vscode" "$PROJECT"
