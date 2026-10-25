@@ -1,0 +1,2 @@
+@CONTRIBUTING.md
+@docs/TESTING.md
