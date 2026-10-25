@@ -39,7 +39,7 @@ to see the server's stderr diagnostics:
 
 ```text
 Loaded /…/examples/playground/beans.toml: units=2
-Indexed 2 workspace sources
+Indexed 3 workspace sources
 ```
 
 For a behavioral check, use **Go to Definition** on `Widget` in
@@ -49,8 +49,18 @@ no longer resolve. Restore the line and restart afterward. Descriptor changes
 are not watched yet.
 
 The other fields in `Example.java` demonstrate modeled type hovers, member
-types, type arguments, arrays, and type-parameter navigation. Hover currently
+types, type arguments, arrays, and type-parameter navigation. Follow `Generic`
+into `src/demo/Generic.java` for a class bound with multiple interface bounds,
+upper- and lower-bounded wildcards, and type-parameter arrays. Hover currently
 shows the type as written, rather than resolved type information.
+
+`Missing` is deliberately undeclared, both as a field type and inside an array
+type argument. Replace it with `Widget`, or append `class Missing {}` to
+`Example.java`, to clear those diagnostics. Rename the declaration to bring them
+back. Editing any open Java file refreshes diagnostics for all open Java files.
+For a cross-file check, create `src/demo/Missing.java` containing
+`package demo; class Missing {}` and open it so Beans receives the new file;
+filesystem watching is not implemented.
 
 See [TOML workspace documentation](../../docs/WORKSPACE.md) for the full format,
 fallback behavior, and current limitations.
