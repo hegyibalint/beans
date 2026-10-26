@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640" role="img" aria-labelledby="filled-title filled-desc">
+  <title id="filled-title">Beans — Heatwave filled, dark background</title>
+  <desc id="filled-desc">Heatwave red-to-yellow striped bean halves with a golden yellow outline, sharp tips and a balanced center gap. Near-black background (#111114).</desc>
+  <defs>
+    <linearGradient id="filled-heatwave" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="640" y2="640">
+      <stop offset="0" stop-color="#C82B3C" />
+      <stop offset="0.291976785536" stop-color="#C82B3C" />
+      <stop offset="0.291976785536" stop-color="#E83D35" />
+      <stop offset="0.375186071322" stop-color="#E83D35" />
+      <stop offset="0.375186071322" stop-color="#F6532B" />
+      <stop offset="0.458395357107" stop-color="#F6532B" />
+      <stop offset="0.458395357107" stop-color="#FA7929" />
+      <stop offset="0.541604642893" stop-color="#FA7929" />
+      <stop offset="0.541604642893" stop-color="#FFA931" />
+      <stop offset="0.624813928678" stop-color="#FFA931" />
+      <stop offset="0.624813928678" stop-color="#FFCC39" />
+      <stop offset="0.708023214464" stop-color="#FFCC39" />
+      <stop offset="0.708023214464" stop-color="#FFE353" />
+      <stop offset="1" stop-color="#FFE353" />
+    </linearGradient>
+  </defs>
+  <rect width="640" height="640" fill="#111114" />
+  <path d="M293.167184 44 C142.9 101.5 73.9 200.4 87.7 332.65 C100.35 458 195.8 547.7 293.167184 596 C355.267184 487.9 352.967184 439.6 324.217184 382.1 L262.117184 257.9 C233.367184 200.4 231.067184 152.1 293.167184 44 Z M346.832816 596 C497.1 538.5 566.1 439.6 552.3 307.35 C539.65 182 444.2 92.3 346.832816 44 C284.732816 152.1 287.032816 200.4 315.782816 257.9 L377.882816 382.1 C406.632816 439.6 408.932816 487.9 346.832816 596 Z" fill="url(#filled-heatwave)" stroke="#FEB626" stroke-width="24" stroke-linejoin="miter" stroke-miterlimit="8" />
+</svg>
