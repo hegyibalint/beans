@@ -1,7 +1,7 @@
 use beans_core::{
-    classpath::Classpath,
     location::{Location, LocationEntry},
     query_scope::QueryScope,
+    resource_filter::ResourceFilter,
 };
 
 use beans_workspace::{Workspace, Workspaces};
@@ -29,7 +29,7 @@ fn unconfigured_workspaces_supply_unrestricted_visibility_for_document_uris() {
 fn configured_workspaces_forward_the_document_uri_and_borrow_backend_visibility() {
     struct SelectedSource {
         document: String,
-        visible: Classpath,
+        visible: ResourceFilter,
     }
     impl Workspace for SelectedSource {
         fn classpath_for(&self, uri: &str) -> QueryScope<'_> {
@@ -41,7 +41,7 @@ fn configured_workspaces_forward_the_document_uri_and_borrow_backend_visibility(
     let visible = library_entry();
     let workspaces = Workspaces::new(SelectedSource {
         document: uri.into(),
-        visible: Classpath::file("/library.jar"),
+        visible: ResourceFilter::file("/library.jar"),
     });
 
     let classpath = workspaces.classpath_for(uri);

@@ -1,7 +1,7 @@
 use beans_core::{
-    classpath::Classpath,
     location::{Location, LocationEntry},
     query_scope::QueryScope,
+    resource_filter::ResourceFilter,
 };
 
 use beans_workspace::{Workspace, Workspaces};
@@ -10,11 +10,11 @@ fn entry(name: &str) -> Location {
     Location::file(format!("/{name}.jar")).entry(LocationEntry::Container("Example.class".into()))
 }
 
-struct Visible(Classpath);
+struct Visible(ResourceFilter);
 
 impl Visible {
     fn new(name: &str) -> Self {
-        Self(Classpath::file(format!("/{name}.jar")))
+        Self(ResourceFilter::file(format!("/{name}.jar")))
     }
 }
 
@@ -135,7 +135,7 @@ fn virtual_document_uris_never_select_filesystem_roots() {
 fn a_nested_fallback_folder_overrides_the_ancestors_configured_policy() {
     let mut workspaces = Workspaces::default();
     workspaces.add(["/project".into()], Visible::new("configured"));
-    workspaces.add(["/project/scratch".into()], Classpath::Unrestricted);
+    workspaces.add(["/project/scratch".into()], ResourceFilter::Unrestricted);
 
     assert!(sees(
         &workspaces,

@@ -1,7 +1,7 @@
 use beans_core::{
-    classpath::Classpath,
     location::{Location, LocationEntry},
     query_scope::QueryScope,
+    resource_filter::ResourceFilter,
 };
 use beans_testing::database;
 use rusqlite::Connection;
@@ -37,7 +37,7 @@ fn finds_all_jvm_locations_by_exact_internal_name() {
 }
 
 #[test]
-fn classpath_membership_uses_classes_not_sources() {
+fn resource_filters_use_classes_not_sources() {
     let mut connection = database();
     let visible =
         Location::file("/visible.jar").entry(LocationEntry::Container("p/Foo.class".into()));
@@ -47,8 +47,8 @@ fn classpath_membership_uses_classes_not_sources() {
         &Location::file("/hidden/Foo.class"),
     );
     store(&mut connection, "p/Foo", &visible);
-    let sources = [Classpath::Unrestricted];
-    let classes = [Classpath::file("/visible.jar")];
+    let sources = [ResourceFilter::Unrestricted];
+    let classes = [ResourceFilter::file("/visible.jar")];
     let query = JvmQuery::new(&connection, QueryScope::new(&sources, &classes));
 
     assert_eq!(query.find_classes("p/Foo").unwrap(), [visible]);

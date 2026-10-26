@@ -9,15 +9,15 @@ use crate::{
 
 /// A filesystem root, admitting filesystem descendants and direct container contents.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FileClasspath {
+pub struct FileResourceFilter {
     root: PathBuf,
 }
 
-impl FileClasspath {
+impl FileResourceFilter {
     /// The root must be absolute, but need not exist.
     pub fn new(root: impl AsRef<Path>) -> Self {
         let root = root.as_ref();
-        assert!(root.is_absolute(), "classpath roots must be absolute");
+        assert!(root.is_absolute(), "resource filter roots must be absolute");
         Self {
             root: normalize(root),
         }
@@ -47,7 +47,7 @@ mod tests {
 
     #[test]
     fn standalone_files_match_without_admitting_siblings() {
-        let classpath = FileClasspath::new("/classes/p/C.class");
+        let classpath = FileResourceFilter::new("/classes/p/C.class");
         let resource = Location::file("/classes/p/C.class");
         assert!(classpath.contains_source(&resource));
         assert!(classpath.contains_class(&resource));
@@ -61,7 +61,7 @@ mod tests {
 
     #[test]
     fn directories_match_descendants_by_path_components() {
-        let classpath = FileClasspath::new("/classes");
+        let classpath = FileResourceFilter::new("/classes");
         for path in [
             "/classes/C.class",
             "/classes/p/q/C.class",
@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn containers_admit_only_direct_binary_entries_from_the_exact_root() {
-        let classpath = FileClasspath::new("/libs/example.jar");
+        let classpath = FileResourceFilter::new("/libs/example.jar");
         for name in ["C.class", "p/q/C.class"] {
             let resource =
                 Location::file("/libs/example.jar").entry(LocationEntry::Container(name.into()));
@@ -104,7 +104,7 @@ mod tests {
 
     #[test]
     fn directories_do_not_expose_contained_archives() {
-        let classpath = FileClasspath::new("/classes");
+        let classpath = FileResourceFilter::new("/classes");
         let resource =
             Location::file("/classes/lib.jar").entry(LocationEntry::Container("p/C.class".into()));
         assert!(!classpath.contains_source(&resource));
@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn unsupported_location_shapes_are_rejected() {
-        let classpath = FileClasspath::new("/libs/example.jar");
+        let classpath = FileResourceFilter::new("/libs/example.jar");
         let root = Location::file("/libs/example.jar");
         for resource in [
             Location { entries: vec![] },
@@ -131,7 +131,7 @@ mod tests {
 
     #[test]
     fn directory_roots_and_resources_are_lexically_normalized() {
-        let classpath = FileClasspath::new("/project/out/../classes/.");
+        let classpath = FileResourceFilter::new("/project/out/../classes/.");
         let resource = Location::file("/project/classes/p/../C.class");
         assert!(classpath.contains_source(&resource));
         assert!(classpath.contains_class(&resource));
@@ -143,15 +143,15 @@ mod tests {
 
     #[test]
     fn container_roots_and_outer_paths_are_lexically_normalized() {
-        let classpath = FileClasspath::new("/libs/old/../example.jar");
+        let classpath = FileResourceFilter::new("/libs/old/../example.jar");
         let resource = Location::file("/libs/./example.jar")
             .entry(LocationEntry::Container("p/C.class".into()));
         assert!(classpath.contains_class(&resource));
     }
 
     #[test]
-    #[should_panic(expected = "classpath roots must be absolute")]
+    #[should_panic(expected = "resource filter roots must be absolute")]
     fn relative_roots_are_rejected() {
-        FileClasspath::new("classes");
+        FileResourceFilter::new("classes");
     }
 }

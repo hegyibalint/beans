@@ -2,10 +2,10 @@ use beans_lang_java::lower_into;
 
 use super::support::Models;
 use beans_core::{
-    classpath::Classpath,
     location::{Location, LocationEntry},
     names::Name,
     query_scope::QueryScope,
+    resource_filter::ResourceFilter,
 };
 
 fn name(text: &str) -> Name {
@@ -164,8 +164,8 @@ fn source_discovery_uses_source_roots_not_binary_roots() {
             Location::file(format!("{root}/Example.java")),
         );
     }
-    let sources = [Classpath::file("/one"), Classpath::file("/two")];
-    let classes = [Classpath::file("/hidden")];
+    let sources = [ResourceFilter::file("/one"), ResourceFilter::file("/two")];
+    let classes = [ResourceFilter::file("/hidden")];
     let query = models.query(QueryScope::new(&sources, &classes));
     let locations: Vec<_> = query
         .find_type(&name("Example"))
@@ -183,7 +183,7 @@ fn source_discovery_uses_source_roots_not_binary_roots() {
 }
 
 #[test]
-fn classpath_filters_discovery_but_not_direct_model_reads() {
+fn resource_filters_restrict_discovery_but_not_direct_model_reads() {
     let mut models = Models::new();
     let source = Location::file("/Example.java");
     models.store(lower_into("class Example {}"), source.clone());

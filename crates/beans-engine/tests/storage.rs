@@ -1,4 +1,7 @@
-use beans_core::location::{Location, LocationEntry};
+use beans_core::{
+    location::{Location, LocationEntry},
+    resource_filter::ResourceFilter,
+};
 use beans_engine::storage::{initialize, open};
 use beans_testing::{TempDir, database};
 use rusqlite::Connection;
@@ -92,9 +95,9 @@ fn compilation_scope_names_can_repeat_within_an_import() {
     let connection = database();
     connection
         .execute_batch(
-            "INSERT INTO compilation_scopes (kind, root, name, classpath)
-             VALUES (1, '/repo/build-a', 'main', '[]'),
-                    (1, '/repo/build-a', 'main', '[]');",
+            "INSERT INTO compilation_scopes (kind, root, name, inputs, dependencies)
+             VALUES (1, '/repo/build-a', 'main', '[]', '[]'),
+                    (1, '/repo/build-a', 'main', '[]', '[]');",
         )
         .unwrap();
     assert_eq!(count(&connection, "compilation_scopes"), 2);
@@ -105,11 +108,11 @@ fn replacing_scopes_is_isolated_by_kind_and_root() {
     let mut connection = database();
     connection
         .execute_batch(
-            "INSERT INTO compilation_scopes (kind, root, name, classpath)
-             VALUES (1, '/repo/build-a', 'main', '[]'),
-                    (1, '/repo/build-a', 'test', '[]'),
-                    (1, '/repo/build-b', 'main', '[]'),
-                    (2, '/repo/build-a', 'main', '[]');",
+            "INSERT INTO compilation_scopes (kind, root, name, inputs, dependencies)
+             VALUES (1, '/repo/build-a', 'main', '[]', '[]'),
+                    (1, '/repo/build-a', 'test', '[]', '[]'),
+                    (1, '/repo/build-b', 'main', '[]', '[]'),
+                    (2, '/repo/build-a', 'main', '[]', '[]');",
         )
         .unwrap();
 
@@ -117,8 +120,8 @@ fn replacing_scopes_is_isolated_by_kind_and_root() {
     transaction
         .execute_batch(
             "DELETE FROM compilation_scopes WHERE kind = 1 AND root = '/repo/build-a';
-             INSERT INTO compilation_scopes (kind, root, name, classpath)
-             VALUES (1, '/repo/build-a', 'integrationTest', '[]');",
+             INSERT INTO compilation_scopes (kind, root, name, inputs, dependencies)
+             VALUES (1, '/repo/build-a', 'integrationTest', '[]', '[]');",
         )
         .unwrap();
     transaction.commit().unwrap();
@@ -144,6 +147,8 @@ fn replacing_scopes_is_isolated_by_kind_and_root() {
 fn matching_version_preserves_cached_data() {
     let files = TempDir::new();
     let path = files.path("models.sqlite");
+    let inputs = serde_json::to_string(&[ResourceFilter::file("/project/src")]).unwrap();
+    let dependencies = serde_json::to_string(&[ResourceFilter::file("/library.jar")]).unwrap();
     let expected_version = {
         let connection = open(&path).unwrap();
         connection
@@ -151,9 +156,9 @@ fn matching_version_preserves_cached_data() {
             .unwrap();
         connection
             .execute(
-                "INSERT INTO compilation_scopes (id, kind, root, name, classpath)
-                 VALUES (7, 0, '/project', 'main', '[]')",
-                [],
+                "INSERT INTO compilation_scopes (id, kind, root, name, inputs, dependencies)
+                 VALUES (7, 0, '/project', 'main', ?1, ?2)",
+                [&inputs, &dependencies],
             )
             .unwrap();
         version(&connection)
@@ -161,9 +166,9 @@ fn matching_version_preserves_cached_data() {
     let connection = open(&path).unwrap();
     assert_eq!(version(&connection), expected_version);
     assert_eq!(count(&connection, "models"), 1);
-    let scope: (i64, i64, String, String, String) = connection
+    let scope: (i64, i64, String, String, String, String) = connection
         .query_row(
-            "SELECT id, kind, root, name, classpath FROM compilation_scopes",
+            "SELECT id, kind, root, name, inputs, dependencies FROM compilation_scopes",
             [],
             |row| {
                 Ok((
@@ -172,11 +177,40 @@ fn matching_version_preserves_cached_data() {
                     row.get(2)?,
                     row.get(3)?,
                     row.get(4)?,
+                    row.get(5)?,
                 ))
             },
         )
         .unwrap();
-    assert_eq!(scope, (7, 0, "/project".into(), "main".into(), "[]".into()));
+    assert_eq!(
+        scope,
+        (7, 0, "/project".into(), "main".into(), inputs, dependencies)
+    );
+}
+
+#[test]
+fn null_and_empty_dependency_filters_remain_distinct_after_reopening() {
+    let files = TempDir::new();
+    let path = files.path("models.sqlite");
+    {
+        let connection = open(&path).unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO compilation_scopes (kind, root, name, inputs, dependencies)
+                 VALUES (0, '/project', 'unrestricted', '[]', NULL),
+                        (0, '/project', 'inputs-only', '[]', '[]');",
+            )
+            .unwrap();
+    }
+    let connection = open(&path).unwrap();
+    let dependencies: Vec<Option<String>> = connection
+        .prepare("SELECT dependencies FROM compilation_scopes ORDER BY id")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(dependencies, [None, Some("[]".into())]);
 }
 
 #[test]

@@ -1,19 +1,19 @@
-use crate::{classpath::Classpath, location::Location};
+use crate::{location::Location, resource_filter::ResourceFilter};
 
 /// Selects which locations a query can see; the database transaction owns its snapshot.
 #[derive(Clone, Copy)]
 pub struct QueryScope<'a> {
-    sources: &'a [Classpath],
-    classes: &'a [Classpath],
+    sources: &'a [ResourceFilter],
+    classes: &'a [ResourceFilter],
 }
 
 impl<'a> QueryScope<'a> {
-    pub fn new(sources: &'a [Classpath], classes: &'a [Classpath]) -> Self {
+    pub fn new(sources: &'a [ResourceFilter], classes: &'a [ResourceFilter]) -> Self {
         Self { sources, classes }
     }
 
     pub fn unrestricted() -> Self {
-        const ENTRIES: &[Classpath] = &[Classpath::Unrestricted];
+        const ENTRIES: &[ResourceFilter] = &[ResourceFilter::Unrestricted];
         Self::new(ENTRIES, ENTRIES)
     }
 
@@ -36,11 +36,14 @@ mod tests {
     use crate::location::LocationEntry;
 
     #[test]
-    fn query_scope_borrows_and_combines_separate_classpath_lists() {
-        let sources = [Classpath::file("/src"), Classpath::file("/shared")];
+    fn query_scope_borrows_and_combines_separate_resource_filters() {
+        let sources = [
+            ResourceFilter::file("/src"),
+            ResourceFilter::file("/shared"),
+        ];
         let classes = [
-            Classpath::file("/first.jar"),
-            Classpath::file("/second.jar"),
+            ResourceFilter::file("/first.jar"),
+            ResourceFilter::file("/second.jar"),
         ];
         let scope = QueryScope::new(&sources, &classes);
         assert!(std::ptr::eq(scope.sources, sources.as_slice()));

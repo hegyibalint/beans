@@ -1,6 +1,6 @@
 mod file;
 
-pub use file::FileClasspath;
+pub use file::FileResourceFilter;
 
 use std::path::Path;
 
@@ -8,29 +8,29 @@ use serde::{Deserialize, Serialize};
 
 use crate::location::Location;
 
-/// Determines which resources are available to a query.
+/// A serializable filter over resource locations.
 /// Membership does not resolve symbols or check language-level accessibility.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Classpath {
-    File(FileClasspath),
+pub enum ResourceFilter {
+    File(FileResourceFilter),
     Unrestricted,
 }
 
-impl Classpath {
+impl ResourceFilter {
     pub fn file(root: impl AsRef<Path>) -> Self {
-        Self::File(FileClasspath::new(root))
+        Self::File(FileResourceFilter::new(root))
     }
 
     pub fn contains_source(&self, resource: &Location) -> bool {
         match self {
-            Self::File(classpath) => classpath.contains_source(resource),
+            Self::File(filter) => filter.contains_source(resource),
             Self::Unrestricted => true,
         }
     }
 
     pub fn contains_class(&self, resource: &Location) -> bool {
         match self {
-            Self::File(classpath) => classpath.contains_class(resource),
+            Self::File(filter) => filter.contains_class(resource),
             Self::Unrestricted => true,
         }
     }
@@ -43,7 +43,7 @@ mod tests {
 
     #[test]
     fn unrestricted_includes_files_virtual_resources_and_nested_entries() {
-        let classpath = Classpath::Unrestricted;
+        let filter = ResourceFilter::Unrestricted;
         let file = Location::file("/src/Example.java");
         let virtual_resource =
             Location::new(LocationEntry::Virtual("untitled:Example.java".into()));
@@ -51,29 +51,29 @@ mod tests {
             .entry(LocationEntry::Container("p/Example.class".into()));
 
         for resource in [file, virtual_resource, class] {
-            assert!(classpath.contains_source(&resource));
-            assert!(classpath.contains_class(&resource));
+            assert!(filter.contains_source(&resource));
+            assert!(filter.contains_class(&resource));
         }
     }
 
     #[test]
     fn file_variants_delegate_both_membership_checks() {
-        let classpath = Classpath::file("/library.jar");
+        let filter = ResourceFilter::file("/library.jar");
         let class = Location::file("/library.jar")
             .entry(LocationEntry::Container("p/Example.class".into()));
-        assert!(!classpath.contains_source(&class));
-        assert!(classpath.contains_class(&class));
-        assert!(!classpath.contains_class(&Location::file("/other/Example.class")));
+        assert!(!filter.contains_source(&class));
+        assert!(filter.contains_class(&class));
+        assert!(!filter.contains_class(&Location::file("/other/Example.class")));
     }
 
     #[test]
     fn serde_preserves_variants_normalized_roots_and_entry_order() {
-        let classpaths = vec![
-            Classpath::file("/libs/old/../b.jar"),
-            Classpath::Unrestricted,
-            Classpath::file("/libs/a.jar"),
+        let filters = vec![
+            ResourceFilter::file("/libs/old/../b.jar"),
+            ResourceFilter::Unrestricted,
+            ResourceFilter::file("/libs/a.jar"),
         ];
-        let json = serde_json::to_value(&classpaths).unwrap();
+        let json = serde_json::to_value(&filters).unwrap();
         assert_eq!(
             json,
             serde_json::json!([
@@ -83,8 +83,8 @@ mod tests {
             ])
         );
         assert_eq!(
-            serde_json::from_value::<Vec<Classpath>>(json).unwrap(),
-            classpaths
+            serde_json::from_value::<Vec<ResourceFilter>>(json).unwrap(),
+            filters
         );
     }
 }

@@ -2,7 +2,7 @@ use std::{path::Path, time::Duration};
 
 use rusqlite::{Connection, TransactionBehavior};
 
-const SCHEMA_VERSION: i64 = 14;
+const SCHEMA_VERSION: i64 = 16;
 
 /// Opens a file-backed cache. The caller chooses its location and creates its parent directory.
 pub fn open(path: &Path) -> Result<Connection, String> {
@@ -133,8 +133,8 @@ mod tests {
                 connection
                     .execute(
                         &format!(
-                            "INSERT INTO compilation_scopes (kind, root, name, classpath)
-                             VALUES ({kind}, '/project', 'main', '[]')"
+                            "INSERT INTO compilation_scopes (kind, root, name, inputs, dependencies)
+                             VALUES ({kind}, '/project', 'main', '[]', '[]')"
                         ),
                         [],
                     )
@@ -145,21 +145,32 @@ mod tests {
     }
 
     #[test]
-    fn classpaths_must_be_valid_json_text() {
+    fn scope_filters_must_be_valid_json_text_when_present() {
         let connection = database();
-        for classpath in ["'not JSON'", "'{broken}'", "X'5B5D'", "NULL"] {
-            assert!(
-                connection
-                    .execute(
-                        &format!(
-                            "INSERT INTO compilation_scopes (kind, root, name, classpath)
-                             VALUES (0, '/project', 'main', {classpath})"
-                        ),
-                        [],
-                    )
-                    .is_err()
-            );
+        for value in ["'not JSON'", "'{broken}'", "X'5B5D'"] {
+            for (inputs, dependencies) in [(value, "'[]'"), ("'[]'", value)] {
+                assert!(
+                    connection
+                        .execute(
+                            &format!(
+                                "INSERT INTO compilation_scopes (kind, root, name, inputs, dependencies)
+                                 VALUES (0, '/project', 'main', {inputs}, {dependencies})"
+                            ),
+                            [],
+                        )
+                        .is_err()
+                );
+            }
         }
+        assert!(
+            connection
+                .execute(
+                    "INSERT INTO compilation_scopes (kind, root, name, inputs, dependencies)
+                     VALUES (0, '/project', 'main', NULL, '[]')",
+                    [],
+                )
+                .is_err()
+        );
         assert_eq!(count(&connection, "compilation_scopes"), 0);
     }
 

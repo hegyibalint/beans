@@ -8,9 +8,14 @@ CREATE TABLE compilation_scopes (
     root TEXT NOT NULL,
     -- An informative name to the scope often like "main" or "test"
     name TEXT NOT NULL,
-    -- Which classpaths this scope sees?
-    -- See `beans_core::classpath::Classpath`
-    classpath TEXT NOT NULL CHECK (json_valid(classpath))
+    -- Which resources belong to this scope?
+    -- See `beans_core::resource_filter::ResourceFilter`
+    inputs TEXT NOT NULL CHECK (json_valid(inputs)),
+    -- Which resources this scope sees?
+    --  * NULL:     filter cannot be applied, i.e. we match on everything.
+    --  * Not NULL: the filter can be applied. Empty list means we match on nothing.
+    -- See `beans_core::resource_filter::ResourceFilter`
+    dependencies TEXT CHECK (dependencies IS NULL OR json_valid(dependencies))
 ) STRICT;
 
 CREATE TABLE models (

@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use beans_core::{classpath::Classpath, query_scope::QueryScope};
+use beans_core::{query_scope::QueryScope, resource_filter::ResourceFilter};
 use url::Url;
 
 /// Backend contract for document URI visibility, including platform-provided virtual documents.
@@ -11,7 +11,7 @@ pub trait Workspace {
     fn classpath_for(&self, uri: &str) -> QueryScope<'_>;
 }
 
-impl Workspace for Classpath {
+impl Workspace for ResourceFilter {
     fn classpath_for(&self, _uri: &str) -> QueryScope<'_> {
         let entries = std::slice::from_ref(self);
         QueryScope::new(entries, entries)
