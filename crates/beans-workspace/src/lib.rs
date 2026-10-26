@@ -2,19 +2,19 @@
 
 use std::path::PathBuf;
 
-use beans_core::classpath::{Classpath, Unrestricted};
+use beans_core::{classpath::Classpath, query_scope::QueryScope};
 use url::Url;
 
 /// Backend contract for document URI visibility, including platform-provided virtual documents.
 /// Implementations retain their own project models; consumers only borrow the resulting policy.
 pub trait Workspace {
-    fn classpath_for(&self, uri: &str) -> &dyn Classpath;
+    fn classpath_for(&self, uri: &str) -> QueryScope<'_>;
 }
 
-/// A workspace without a configured visibility policy.
-impl Workspace for Unrestricted {
-    fn classpath_for(&self, _uri: &str) -> &dyn Classpath {
-        self
+impl Workspace for Classpath {
+    fn classpath_for(&self, _uri: &str) -> QueryScope<'_> {
+        let entries = std::slice::from_ref(self);
+        QueryScope::new(entries, entries)
     }
 }
 
@@ -29,7 +29,7 @@ impl Workspace for Unrestricted {
 ///     workspaces: &'a Workspaces,
 ///     uri: &str,
 /// ) -> QueryScope<'a> {
-///     QueryScope::new(workspaces.classpath_for(uri))
+///     workspaces.classpath_for(uri)
 /// }
 /// ```
 #[derive(Default)]
@@ -65,7 +65,7 @@ impl Workspaces {
         });
     }
 
-    pub fn classpath_for(&self, uri: &str) -> &dyn Classpath {
+    pub fn classpath_for(&self, uri: &str) -> QueryScope<'_> {
         if let Some(path) = Url::parse(uri)
             .ok()
             .filter(|uri| uri.scheme() == "file")
@@ -88,7 +88,7 @@ impl Workspaces {
         }
         match &self.workspace {
             Some(workspace) => workspace.classpath_for(uri),
-            None => &Unrestricted,
+            None => QueryScope::unrestricted(),
         }
     }
 }

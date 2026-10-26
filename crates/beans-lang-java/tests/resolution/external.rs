@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use beans_core::{classpath::Unrestricted, location::Location, query_scope::QueryScope};
+use beans_core::{location::Location, query_scope::QueryScope};
 use beans_lang_java::{
     model::nodes::NodeKind,
     semantics::resolution::{
@@ -43,9 +43,8 @@ impl Fixture {
     }
 
     fn resolve_at(&self, occurrence: Occurrence) -> Result<TypeCandidate, ResolutionFailure> {
-        let java = self.java.query(QueryScope::new(&Unrestricted));
-        let definitions =
-            ResolutionQuery::new(&self.java.connection, QueryScope::new(&Unrestricted));
+        let java = self.java.query(QueryScope::unrestricted());
+        let definitions = ResolutionQuery::new(&self.java.connection, QueryScope::unrestricted());
         let file = java.file(&self.source).unwrap().unwrap();
         let (index, reference) = file
             .iter_nodes()
@@ -84,7 +83,7 @@ impl Fixture {
     }
 
     fn expected(&self, name: &str) -> TypeCandidate {
-        let query = self.java.query(QueryScope::new(&Unrestricted));
+        let query = self.java.query(QueryScope::unrestricted());
         let entry = query
             .find_type(&name.split('.').map(str::to_owned).collect())
             .unwrap()

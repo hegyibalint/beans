@@ -1,6 +1,5 @@
 use beans_core::{
-    classpath::Classpath, location::Location, names::Name, query_scope::QueryScope,
-    resolution::TypeDefinitionQuery,
+    location::Location, names::Name, query_scope::QueryScope, resolution::TypeDefinitionQuery,
 };
 use rusqlite::{Connection, OptionalExtension};
 
@@ -18,10 +17,6 @@ pub struct JavaQuery<'a> {
 impl<'a> JavaQuery<'a> {
     pub fn new(connection: &'a Connection, scope: QueryScope<'a>) -> Self {
         Self { connection, scope }
-    }
-
-    pub fn classpath(&self) -> &'a dyn Classpath {
-        self.scope.classpath()
     }
 
     pub fn file(&self, location: &Location) -> Result<Option<File>, String> {
@@ -77,7 +72,7 @@ impl<'a> JavaQuery<'a> {
         for row in rows {
             let (id, index) = row.map_err(|error| error.to_string())?;
             let source = self.location(id)?;
-            if !self.classpath().contains_source(&source) {
+            if !self.scope.contains_source(&source) {
                 continue;
             }
             let index = usize::try_from(index).map_err(|_| "invalid Java node index")?;

@@ -17,7 +17,7 @@ impl JavaLanguage {
     ) -> Result<Vec<ByteRange>, String> {
         let java = JavaQuery::new(
             connection,
-            beans_core::query_scope::QueryScope::new(&beans_core::classpath::Unrestricted),
+            beans_core::query_scope::QueryScope::unrestricted(),
         );
         let Some(file) = java.file(source)? else {
             return Ok(Vec::new());

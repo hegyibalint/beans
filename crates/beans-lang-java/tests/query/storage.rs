@@ -2,7 +2,7 @@ use beans_lang_java::lower_into;
 
 use super::support::Models;
 use beans_core::{
-    classpath::{Classpath, Unrestricted},
+    classpath::Classpath,
     location::{Location, LocationEntry},
     names::Name,
     query_scope::QueryScope,
@@ -21,7 +21,7 @@ fn decoded_models_preserve_the_lowered_tree_and_ranges() {
     );
     let expected = serde_json::to_value(&file).unwrap();
     models.store(file, source.clone());
-    let query = models.query(QueryScope::new(&Unrestricted));
+    let query = models.query(QueryScope::unrestricted());
     let decoded = query.file(&source).unwrap().unwrap();
     assert_eq!(serde_json::to_value(decoded).unwrap(), expected);
 }
@@ -35,7 +35,7 @@ fn indexed_lookup_returns_handles_for_nested_and_duplicate_declarations() {
             Location::file(source),
         );
     }
-    let query = models.query(QueryScope::new(&Unrestricted));
+    let query = models.query(QueryScope::unrestricted());
     let handles = query.find_type(&name("p.q.Outer.Member")).unwrap();
     assert_eq!(handles.len(), 4);
     assert_eq!(handles[0].source(), handles[1].source());
@@ -57,7 +57,7 @@ fn replacements_and_deletions_remove_old_models_and_names() {
     models.store(lower_into("class First {}"), source.clone());
     assert_eq!(
         models
-            .query(QueryScope::new(&Unrestricted))
+            .query(QueryScope::unrestricted())
             .find_type(&name("First"))
             .unwrap()
             .len(),
@@ -65,7 +65,7 @@ fn replacements_and_deletions_remove_old_models_and_names() {
     );
     models.store(lower_into("class Second {}"), source.clone());
     {
-        let query = models.query(QueryScope::new(&Unrestricted));
+        let query = models.query(QueryScope::unrestricted());
         assert!(query.find_type(&name("First")).unwrap().is_empty());
         assert_eq!(query.find_type(&name("Second")).unwrap().len(), 1);
         let count: i64 = models
@@ -76,7 +76,7 @@ fn replacements_and_deletions_remove_old_models_and_names() {
     }
     models.remove(source.clone());
     {
-        let query = models.query(QueryScope::new(&Unrestricted));
+        let query = models.query(QueryScope::unrestricted());
         assert!(query.file(&source).unwrap().is_none());
         assert!(query.find_type(&name("First")).unwrap().is_empty());
         assert!(query.find_type(&name("Second")).unwrap().is_empty());
@@ -91,7 +91,7 @@ fn replacements_and_deletions_remove_old_models_and_names() {
         }
     }
     models.store(lower_into("class Third {}"), source.clone());
-    let query = models.query(QueryScope::new(&Unrestricted));
+    let query = models.query(QueryScope::unrestricted());
     assert_eq!(query.find_type(&name("Third")).unwrap().len(), 1);
     assert!(query.find_type(&name("First")).unwrap().is_empty());
 }
@@ -117,7 +117,7 @@ fn locations_keep_component_kinds_boundaries_and_verbatim_values() {
             source.clone(),
         );
     }
-    let query = models.query(QueryScope::new(&Unrestricted));
+    let query = models.query(QueryScope::unrestricted());
     for (index, source) in sources.iter().enumerate() {
         let handle = query
             .find_type(&name(&format!("Type{index}")))
@@ -148,7 +148,7 @@ fn invalid_locations_return_errors_during_discovery() {
             .unwrap();
         assert!(
             models
-                .query(QueryScope::new(&Unrestricted))
+                .query(QueryScope::unrestricted())
                 .find_type(&name("Example"))
                 .is_err()
         );
@@ -156,20 +156,38 @@ fn invalid_locations_return_errors_during_discovery() {
 }
 
 #[test]
-fn classpath_filters_discovery_but_not_direct_model_reads() {
-    struct NoSources;
-    impl Classpath for NoSources {
-        fn contains_source(&self, _: &Location) -> bool {
-            false
-        }
-        fn contains_class(&self, _: &Location) -> bool {
-            false
-        }
+fn source_discovery_uses_source_roots_not_binary_roots() {
+    let mut models = Models::new();
+    for root in ["/one", "/two", "/hidden"] {
+        models.store(
+            lower_into("class Example {}"),
+            Location::file(format!("{root}/Example.java")),
+        );
     }
+    let sources = [Classpath::file("/one"), Classpath::file("/two")];
+    let classes = [Classpath::file("/hidden")];
+    let query = models.query(QueryScope::new(&sources, &classes));
+    let locations: Vec<_> = query
+        .find_type(&name("Example"))
+        .unwrap()
+        .into_iter()
+        .map(|handle| handle.source().clone())
+        .collect();
+    assert_eq!(
+        locations,
+        [
+            Location::file("/one/Example.java"),
+            Location::file("/two/Example.java"),
+        ]
+    );
+}
+
+#[test]
+fn classpath_filters_discovery_but_not_direct_model_reads() {
     let mut models = Models::new();
     let source = Location::file("/Example.java");
     models.store(lower_into("class Example {}"), source.clone());
-    let query = models.query(QueryScope::new(&NoSources));
+    let query = models.query(QueryScope::new(&[], &[]));
     assert!(query.file(&source).unwrap().is_some());
     assert!(query.find_type(&name("Example")).unwrap().is_empty());
 }
@@ -192,7 +210,7 @@ fn indexed_lookup_does_not_decode_unrelated_models() {
             [],
         )
         .unwrap();
-    let query = models.query(QueryScope::new(&Unrestricted));
+    let query = models.query(QueryScope::unrestricted());
     let handle = query.find_type(&name("Healthy")).unwrap().remove(0);
     assert_eq!(
         query.declaration(&handle).unwrap().unwrap().name(),
@@ -215,7 +233,7 @@ fn invalid_models_return_errors_instead_of_panicking_during_traversal() {
             .unwrap();
         assert!(
             models
-                .query(QueryScope::new(&Unrestricted))
+                .query(QueryScope::unrestricted())
                 .file(&source)
                 .is_err()
         );

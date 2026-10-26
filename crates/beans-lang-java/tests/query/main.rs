@@ -5,11 +5,8 @@ use support::Models;
 mod resolution;
 mod storage;
 
+use beans_core::location::Location;
 use beans_core::query_scope::QueryScope;
-use beans_core::{
-    classpath::{Classpath, Unrestricted},
-    location::Location,
-};
 use beans_lang_java::{
     lowering::lower_into,
     model::nodes::NodeKind,
@@ -26,13 +23,7 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
         lower_into("package app; class Target {} class Use { Target target; }"),
         source.clone(),
     );
-    let classpath = Unrestricted;
-    let query = engine.query(QueryScope::new(&classpath));
-
-    assert!(std::ptr::eq(
-        query.classpath(),
-        &classpath as &dyn Classpath
-    ));
+    let query = engine.query(QueryScope::unrestricted());
     let file = query
         .file(&source)
         .unwrap()
@@ -74,9 +65,8 @@ fn an_imported_type_resolves_to_another_stored_source_file() {
         lower_into("package q; public class Target {}"),
         target_source.clone(),
     );
-    let classpath = Unrestricted;
-    let java = engine.query(QueryScope::new(&classpath));
-    let definitions = ResolutionQuery::new(&engine.connection, QueryScope::new(&classpath));
+    let java = engine.query(QueryScope::unrestricted());
+    let definitions = ResolutionQuery::new(&engine.connection, QueryScope::unrestricted());
     let file = java.file(&use_source).unwrap().unwrap();
     let field = file
         .iter_nodes()

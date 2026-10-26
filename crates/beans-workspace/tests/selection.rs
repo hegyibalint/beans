@@ -1,36 +1,26 @@
 use beans_core::{
-    classpath::{Classpath, Unrestricted},
+    classpath::Classpath,
     location::{Location, LocationEntry},
+    query_scope::QueryScope,
 };
 
 use beans_workspace::{Workspace, Workspaces};
 
 fn entry(name: &str) -> Location {
-    Location::new(LocationEntry::Virtual(name.into()))
-        .entry(LocationEntry::Container("Example.class".into()))
+    Location::file(format!("/{name}.jar")).entry(LocationEntry::Container("Example.class".into()))
 }
 
-struct Visible(Location);
+struct Visible(Classpath);
 
 impl Visible {
     fn new(name: &str) -> Self {
-        Self(entry(name))
-    }
-}
-
-impl Classpath for Visible {
-    fn contains_source(&self, _source: &Location) -> bool {
-        false
-    }
-
-    fn contains_class(&self, source: &Location) -> bool {
-        source == &self.0
+        Self(Classpath::file(format!("/{name}.jar")))
     }
 }
 
 impl Workspace for Visible {
-    fn classpath_for(&self, _uri: &str) -> &dyn Classpath {
-        self
+    fn classpath_for(&self, _uri: &str) -> QueryScope<'_> {
+        QueryScope::new(&[], std::slice::from_ref(&self.0))
     }
 }
 
@@ -145,7 +135,7 @@ fn virtual_document_uris_never_select_filesystem_roots() {
 fn a_nested_fallback_folder_overrides_the_ancestors_configured_policy() {
     let mut workspaces = Workspaces::default();
     workspaces.add(["/project".into()], Visible::new("configured"));
-    workspaces.add(["/project/scratch".into()], Unrestricted);
+    workspaces.add(["/project/scratch".into()], Classpath::Unrestricted);
 
     assert!(sees(
         &workspaces,

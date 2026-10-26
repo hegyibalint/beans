@@ -1,5 +1,4 @@
 use beans_core::{
-    classpath::Unrestricted,
     location::{Location, LocationEntry},
     names::Name,
     query_scope::QueryScope,
@@ -126,7 +125,7 @@ fn replacing_a_model_reuses_its_row_and_preserves_the_verbatim_location() {
     for table in ["models", "java_types"] {
         assert_eq!(count(&connection, table), 1);
     }
-    let query = JavaQuery::new(&connection, QueryScope::new(&Unrestricted));
+    let query = JavaQuery::new(&connection, QueryScope::unrestricted());
     assert!(query.find_type(&name_of("First")).unwrap().is_empty());
     assert_eq!(query.find_type(&name_of("Second")).unwrap().len(), 1);
 }
@@ -215,7 +214,7 @@ fn read_transactions_keep_old_models_and_indexes_after_replacement() {
     let mut reader = open(&path).unwrap();
     {
         let transaction = reader.transaction().unwrap();
-        let query = JavaQuery::new(&transaction, QueryScope::new(&Unrestricted));
+        let query = JavaQuery::new(&transaction, QueryScope::unrestricted());
         let handle = query.find_type(&name_of("Former")).unwrap().remove(0);
         let publication = writer.transaction().unwrap();
         store(
@@ -242,7 +241,7 @@ fn read_transactions_keep_old_models_and_indexes_after_replacement() {
             1
         );
     }
-    let query = JavaQuery::new(&reader, QueryScope::new(&Unrestricted));
+    let query = JavaQuery::new(&reader, QueryScope::unrestricted());
     assert!(query.find_type(&name_of("Former")).unwrap().is_empty());
     assert_eq!(query.find_type(&name_of("Latest")).unwrap().len(), 1);
     assert_eq!(count(&writer, "models"), 1);
@@ -268,7 +267,7 @@ fn deleting_a_model_keeps_existing_readers_consistent_and_removes_all_owned_rows
     let mut reader = open(&path).unwrap();
     {
         let transaction = reader.transaction().unwrap();
-        let query = JavaQuery::new(&transaction, QueryScope::new(&Unrestricted));
+        let query = JavaQuery::new(&transaction, QueryScope::unrestricted());
         let handle = query.find_type(&name_of("Example")).unwrap().remove(0);
         let publication = writer.transaction().unwrap();
         assert!(remove(&publication, &source).unwrap());
@@ -282,7 +281,7 @@ fn deleting_a_model_keeps_existing_readers_consistent_and_removes_all_owned_rows
             Some("Example")
         );
     }
-    let query = JavaQuery::new(&reader, QueryScope::new(&Unrestricted));
+    let query = JavaQuery::new(&reader, QueryScope::unrestricted());
     assert!(query.file(&source).unwrap().is_none());
     assert!(query.find_type(&name_of("Example")).unwrap().is_empty());
 }
@@ -323,7 +322,7 @@ fn readers_never_observe_a_partially_published_batch() {
     .unwrap();
     {
         let transaction = reader.transaction().unwrap();
-        let query = JavaQuery::new(&transaction, QueryScope::new(&Unrestricted));
+        let query = JavaQuery::new(&transaction, QueryScope::unrestricted());
         assert_eq!(query.find_type(&name_of("First")).unwrap().len(), 1);
         assert_eq!(query.find_type(&name_of("Second")).unwrap().len(), 1);
         assert!(query.find_type(&name_of("NewFirst")).unwrap().is_empty());
@@ -340,7 +339,7 @@ fn readers_never_observe_a_partially_published_batch() {
         assert!(query.find_type(&name_of("NewFirst")).unwrap().is_empty());
         assert!(query.find_type(&name_of("NewSecond")).unwrap().is_empty());
     }
-    let query = JavaQuery::new(&reader, QueryScope::new(&Unrestricted));
+    let query = JavaQuery::new(&reader, QueryScope::unrestricted());
     assert!(query.find_type(&name_of("First")).unwrap().is_empty());
     assert!(query.find_type(&name_of("Second")).unwrap().is_empty());
     assert_eq!(query.find_type(&name_of("NewFirst")).unwrap().len(), 1);

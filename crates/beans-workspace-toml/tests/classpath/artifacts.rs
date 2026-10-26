@@ -65,15 +65,16 @@ fn directories_do_not_implicitly_include_archives_inside_them() {
 }
 
 #[test]
-fn nested_entries_follow_the_explicitly_included_outer_artifact() {
+fn explicitly_included_archives_do_not_expose_nested_container_contents() {
     let workspace = workspace("[unit.app]\nsources = ['src']\nclasspath = ['app.zip']\n");
     let classpath = workspace.classpath_for("file:///project/src/Use.java");
     let nested = entry("/project/app.zip", "lib/a.jar")
         .entry(LocationEntry::Container("p/Feature.class".into()));
     let other = entry("/other/app.zip", "lib/a.jar")
         .entry(LocationEntry::Container("p/Feature.class".into()));
-    assert!(classpath.contains_class(&nested));
+    assert!(!classpath.contains_class(&nested));
     assert!(!classpath.contains_class(&other));
+    assert!(classpath.contains_class(&entry("/project/app.zip", "p/Feature.class")));
 }
 
 #[test]

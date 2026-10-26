@@ -1,7 +1,6 @@
 use std::{fs, path::Path};
 
 use beans_core::{
-    classpath::Unrestricted,
     event::Command,
     location::{Location, LocationEntry},
     query_scope::QueryScope,
@@ -163,7 +162,7 @@ fn seed(cache: &mut Connection, name: &str, path: &Path) {
 }
 
 fn classes(cache: &Connection, name: &str) -> Vec<Location> {
-    JvmQuery::new(cache, QueryScope::new(&Unrestricted))
+    JvmQuery::new(cache, QueryScope::unrestricted())
         .find_classes(name)
         .unwrap()
 }

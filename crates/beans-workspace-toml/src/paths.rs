@@ -1,23 +1,7 @@
-use std::path::{Component, Path, PathBuf};
+use std::path::PathBuf;
 
+pub(crate) use beans_core::paths::normalize;
 use url::Url;
-
-/// Normalize absolute paths without requiring declared inputs to exist.
-/// This is lexical identity, not filesystem canonicalization through symlinks.
-pub(crate) fn normalize(path: &Path) -> PathBuf {
-    debug_assert!(path.is_absolute());
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            _ => normalized.push(component.as_os_str()),
-        }
-    }
-    normalized
-}
 
 pub(crate) fn document_path(uri: &str) -> Option<PathBuf> {
     // Url::to_file_path does not check the scheme itself.

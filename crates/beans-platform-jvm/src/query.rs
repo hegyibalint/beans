@@ -40,7 +40,7 @@ impl<'a> JvmQuery<'a> {
             let location = row.map_err(|error| error.to_string())?;
             let location: Location =
                 serde_json::from_str(&location).map_err(|error| error.to_string())?;
-            if self.scope.classpath().contains_class(&location) {
+            if self.scope.contains_class(&location) {
                 locations.push(location);
             }
         }

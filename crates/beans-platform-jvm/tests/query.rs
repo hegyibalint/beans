@@ -1,5 +1,5 @@
 use beans_core::{
-    classpath::{Classpath, Unrestricted},
+    classpath::Classpath,
     location::{Location, LocationEntry},
     query_scope::QueryScope,
 };
@@ -28,7 +28,7 @@ fn finds_all_jvm_locations_by_exact_internal_name() {
             [],
         )
         .unwrap();
-    let query = JvmQuery::new(&connection, QueryScope::new(&Unrestricted));
+    let query = JvmQuery::new(&connection, QueryScope::unrestricted());
 
     assert_eq!(query.find_classes("p/Foo").unwrap(), [first, second]);
     for name in ["Missing", "p.Foo", "p/foo", "p/F"] {
@@ -38,18 +38,6 @@ fn finds_all_jvm_locations_by_exact_internal_name() {
 
 #[test]
 fn classpath_membership_uses_classes_not_sources() {
-    struct OnlyClass(Location);
-
-    impl Classpath for OnlyClass {
-        fn contains_source(&self, _location: &Location) -> bool {
-            false
-        }
-
-        fn contains_class(&self, location: &Location) -> bool {
-            location == &self.0
-        }
-    }
-
     let mut connection = database();
     let visible =
         Location::file("/visible.jar").entry(LocationEntry::Container("p/Foo.class".into()));
@@ -59,8 +47,9 @@ fn classpath_membership_uses_classes_not_sources() {
         &Location::file("/hidden/Foo.class"),
     );
     store(&mut connection, "p/Foo", &visible);
-    let classpath = OnlyClass(visible.clone());
-    let query = JvmQuery::new(&connection, QueryScope::new(&classpath));
+    let sources = [Classpath::Unrestricted];
+    let classes = [Classpath::file("/visible.jar")];
+    let query = JvmQuery::new(&connection, QueryScope::new(&sources, &classes));
 
     assert_eq!(query.find_classes("p/Foo").unwrap(), [visible]);
 }
@@ -69,7 +58,7 @@ fn classpath_membership_uses_classes_not_sources() {
 fn database_errors_are_not_missing_classes() {
     let connection = database();
     connection.execute("DROP TABLE models", []).unwrap();
-    let query = JvmQuery::new(&connection, QueryScope::new(&Unrestricted));
+    let query = JvmQuery::new(&connection, QueryScope::unrestricted());
 
     assert!(query.find_classes("p/Foo").is_err());
 }
@@ -86,7 +75,7 @@ fn invalid_matching_locations_are_errors_but_unrelated_rows_are_not_decoded() {
             [],
         )
         .unwrap();
-    let query = JvmQuery::new(&connection, QueryScope::new(&Unrestricted));
+    let query = JvmQuery::new(&connection, QueryScope::unrestricted());
 
     assert_eq!(query.find_classes("p/Foo").unwrap(), [location]);
     assert!(query.find_classes("p/Missing").unwrap().is_empty());
@@ -109,7 +98,7 @@ fn queries_borrow_the_callers_transaction_and_follow_index_replacement_and_delet
             &location,
         )
         .unwrap();
-        let query = JvmQuery::new(&transaction, QueryScope::new(&Unrestricted));
+        let query = JvmQuery::new(&transaction, QueryScope::unrestricted());
 
         assert!(query.find_classes("p/Old").unwrap().is_empty());
         assert_eq!(
@@ -117,7 +106,7 @@ fn queries_borrow_the_callers_transaction_and_follow_index_replacement_and_delet
             std::slice::from_ref(&location)
         );
     }
-    let query = JvmQuery::new(&connection, QueryScope::new(&Unrestricted));
+    let query = JvmQuery::new(&connection, QueryScope::unrestricted());
     assert_eq!(
         query.find_classes("p/Old").unwrap(),
         std::slice::from_ref(&location)
@@ -135,14 +124,14 @@ fn queries_borrow_the_callers_transaction_and_follow_index_replacement_and_delet
     )
     .unwrap();
     transaction.commit().unwrap();
-    let query = JvmQuery::new(&connection, QueryScope::new(&Unrestricted));
+    let query = JvmQuery::new(&connection, QueryScope::unrestricted());
     assert!(query.find_classes("p/Old").unwrap().is_empty());
     assert_eq!(query.find_classes("p/New").unwrap(), [location]);
 
     let transaction = connection.transaction().unwrap();
     storage::remove(&transaction, "/Foo.class".as_ref()).unwrap();
     transaction.commit().unwrap();
-    let query = JvmQuery::new(&connection, QueryScope::new(&Unrestricted));
+    let query = JvmQuery::new(&connection, QueryScope::unrestricted());
     assert!(query.find_classes("p/New").unwrap().is_empty());
 }
 

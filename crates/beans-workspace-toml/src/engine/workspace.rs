@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, path::PathBuf};
 
-use beans_core::classpath::{Classpath, Unrestricted};
+use beans_core::query_scope::QueryScope;
 use beans_workspace::Workspace;
 
 use super::classpath::SourceClasspath;
@@ -53,9 +53,9 @@ impl TomlWorkspace {
 impl Workspace for TomlWorkspace {
     /// Sources shared by units see the union of their policies. Unclaimed
     /// files, non-file URIs, and virtual documents remain unrestricted.
-    fn classpath_for(&self, uri: &str) -> &dyn Classpath {
+    fn classpath_for(&self, uri: &str) -> QueryScope<'_> {
         let Some(path) = document_path(uri) else {
-            return &Unrestricted;
+            return QueryScope::unrestricted();
         };
         match self
             .scopes
@@ -63,8 +63,8 @@ impl Workspace for TomlWorkspace {
             .filter(|scope| path.starts_with(&scope.root))
             .max_by_key(|scope| scope.root.components().count())
         {
-            Some(scope) => &scope.classpath,
-            None => &Unrestricted,
+            Some(scope) => scope.classpath.scope(),
+            None => QueryScope::unrestricted(),
         }
     }
 }
