@@ -57,7 +57,7 @@ fn jvm_class_lookup_uses_the_name_index() {
         .query_row(
             "EXPLAIN QUERY PLAN
              SELECT location FROM models
-             WHERE model_kind = 0 AND json_extract(model, '$.name') = ?1",
+             WHERE kind = 0 AND json_extract(model, '$.name') = ?1",
             ["p/Example"],
             |row| row.get(3),
         )
@@ -76,7 +76,7 @@ fn jvm_resource_removal_uses_the_root_index() {
         .query_row(
             "EXPLAIN QUERY PLAN
              DELETE FROM models
-             WHERE model_kind = 0 AND json_extract(location, '$[0]') = ?1",
+             WHERE kind = 0 AND json_extract(location, '$[0]') = ?1",
             [location],
             |row| row.get(3),
         )

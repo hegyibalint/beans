@@ -23,7 +23,7 @@ fn finds_all_jvm_locations_by_exact_internal_name() {
     );
     connection
         .execute(
-            r#"INSERT INTO models (location, model_kind, model, content)
+            r#"INSERT INTO models (location, kind, model, content)
                VALUES ('[]', 1, '{"name":"p/Foo"}', X'')"#,
             [],
         )
@@ -81,7 +81,7 @@ fn invalid_matching_locations_are_errors_but_unrelated_rows_are_not_decoded() {
     store(&mut connection, "p/Foo", &location);
     connection
         .execute(
-            r#"INSERT INTO models (location, model_kind, model)
+            r#"INSERT INTO models (location, kind, model)
                VALUES ('{}', 0, '{"name":"p/Broken"}')"#,
             [],
         )

@@ -15,7 +15,7 @@ pub fn store(
     let model = serde_json::to_string(class).map_err(|error| error.to_string())?;
     transaction
         .execute(
-            "INSERT INTO models (location, model_kind, model) VALUES (?1, 0, ?2)",
+            "INSERT INTO models (location, kind, model) VALUES (?1, 0, ?2)",
             params![location, model],
         )
         .map_err(|error| error.to_string())?;
@@ -29,7 +29,7 @@ pub fn remove(transaction: &Transaction<'_>, path: &Path) -> Result<bool, String
     transaction
         .execute(
             "DELETE FROM models
-             WHERE model_kind = 0 AND json_extract(location, '$[0]') = ?1",
+             WHERE kind = 0 AND json_extract(location, '$[0]') = ?1",
             [root],
         )
         .map(|count| count != 0)

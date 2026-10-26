@@ -50,7 +50,7 @@ fn unsupported_resources_and_failures_preserve_old_classes_and_do_not_stop_later
         cache
             .execute_batch(
                 "CREATE TRIGGER reject_class BEFORE INSERT ON models
-                 WHEN NEW.model_kind = 0 AND json_extract(NEW.model, '$.name') = 'p/Rejected'
+                 WHEN NEW.kind = 0 AND json_extract(NEW.model, '$.name') = 'p/Rejected'
                  BEGIN SELECT RAISE(ABORT, 'rejected class'); END;",
             )
             .unwrap();

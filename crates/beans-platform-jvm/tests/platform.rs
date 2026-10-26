@@ -457,7 +457,7 @@ fn seed(connection: &mut Connection, path: &Path) {
 
 fn names(connection: &Connection) -> Vec<String> {
     let mut statement = connection
-        .prepare("SELECT json_extract(model, '$.name') FROM models WHERE model_kind = 0 ORDER BY 1")
+        .prepare("SELECT json_extract(model, '$.name') FROM models WHERE kind = 0 ORDER BY 1")
         .unwrap();
     statement
         .query_map([], |row| row.get(0))

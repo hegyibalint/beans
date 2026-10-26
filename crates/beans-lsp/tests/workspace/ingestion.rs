@@ -7,7 +7,7 @@ use super::*;
 fn stored_sources(root: &Path) -> Vec<Location> {
     let connection = beans_engine::storage::open(&root.join(".beans/models")).unwrap();
     let mut statement = connection
-        .prepare("SELECT location FROM models WHERE model_kind = 1 ORDER BY location")
+        .prepare("SELECT location FROM models WHERE kind = 1 ORDER BY location")
         .unwrap();
     statement
         .query_map([], |row| row.get::<_, String>(0))

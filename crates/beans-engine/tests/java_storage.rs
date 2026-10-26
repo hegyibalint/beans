@@ -32,7 +32,7 @@ fn java_models_are_stored_as_queryable_json_without_consuming_the_model() {
     let connection = open(&path).unwrap();
     let (kind, model, content): (i64, String, Vec<u8>) = connection
         .query_row(
-            "SELECT model_kind, model, content FROM models WHERE id = ?1",
+            "SELECT kind, model, content FROM models WHERE id = ?1",
             [id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )

@@ -109,7 +109,7 @@ pub(crate) fn model_id(
 ) -> Result<Option<i64>, String> {
     connection
         .query_row(
-            "SELECT id FROM models WHERE model_kind = 1 AND location = ?1",
+            "SELECT id FROM models WHERE kind = 1 AND location = ?1",
             [serde_json::to_string(location).map_err(|error| error.to_string())?],
             |row| row.get(0),
         )

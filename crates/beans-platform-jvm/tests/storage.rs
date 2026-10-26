@@ -19,7 +19,7 @@ fn stores_borrowed_classes_and_locations_as_json() {
 
     let (kind, model, source, content): (i64, String, String, Option<Vec<u8>>) = connection
         .query_row(
-            "SELECT model_kind, model, location, content FROM models WHERE id = ?1",
+            "SELECT kind, model, location, content FROM models WHERE id = ?1",
             [id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
@@ -71,7 +71,7 @@ fn removal_is_scoped_to_the_physical_resource_and_jvm_models() {
     }
     transaction
         .execute(
-            "INSERT INTO models (location, model_kind, model, content) VALUES (?1, 1, '{}', X'')",
+            "INSERT INTO models (location, kind, model, content) VALUES (?1, 1, '{}', X'')",
             [serde_json::to_string(&Location::file(root)).unwrap()],
         )
         .unwrap();
@@ -85,11 +85,9 @@ fn removal_is_scoped_to_the_physical_resource_and_jvm_models() {
         ["Kept0", "Kept1", "Kept2", "Kept3", "Kept4"]
     );
     let java_models: i64 = connection
-        .query_row(
-            "SELECT COUNT(*) FROM models WHERE model_kind = 1",
-            [],
-            |row| row.get(0),
-        )
+        .query_row("SELECT COUNT(*) FROM models WHERE kind = 1", [], |row| {
+            row.get(0)
+        })
         .unwrap();
     assert_eq!(java_models, 1);
 }
@@ -160,7 +158,7 @@ fn class(name: &str) -> Class {
 
 fn names(connection: &Connection) -> Vec<String> {
     let mut statement = connection
-        .prepare("SELECT json_extract(model, '$.name') FROM models WHERE model_kind = 0 ORDER BY 1")
+        .prepare("SELECT json_extract(model, '$.name') FROM models WHERE kind = 0 ORDER BY 1")
         .unwrap();
     statement
         .query_map([], |row| row.get(0))

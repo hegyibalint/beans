@@ -15,7 +15,7 @@ impl<'a> JvmQuery<'a> {
         self.connection
             .query_row(
                 "SELECT json_extract(model, '$.name') FROM models
-                 WHERE model_kind = 0 AND location = ?1",
+                 WHERE kind = 0 AND location = ?1",
                 [serde_json::to_string(location).map_err(|error| error.to_string())?],
                 |row| row.get(0),
             )
@@ -28,7 +28,7 @@ impl<'a> JvmQuery<'a> {
             .connection
             .prepare(
                 "SELECT location FROM models
-                 WHERE model_kind = 0 AND json_extract(model, '$.name') = ?1
+                 WHERE kind = 0 AND json_extract(model, '$.name') = ?1
                  ORDER BY id",
             )
             .map_err(|error| error.to_string())?;
