@@ -13,6 +13,7 @@ fn startup_initializes_and_configures_the_database() {
     assert!(version(&connection) > 0);
     assert_eq!(version(&connection), version(&database()));
     assert_eq!(count(&connection, "models"), 0);
+    assert_eq!(count(&connection, "compilation_scopes"), 0);
     let obsolete_tables: i64 = connection
         .query_row(
             "SELECT COUNT(*) FROM sqlite_schema WHERE name IN ('entries', 'locations')",
@@ -87,6 +88,59 @@ fn jvm_resource_removal_uses_the_root_index() {
 }
 
 #[test]
+fn compilation_scope_names_can_repeat_within_an_import() {
+    let connection = database();
+    connection
+        .execute_batch(
+            "INSERT INTO compilation_scopes (kind, root, name, classpath)
+             VALUES (1, '/repo/build-a', 'main', '[]'),
+                    (1, '/repo/build-a', 'main', '[]');",
+        )
+        .unwrap();
+    assert_eq!(count(&connection, "compilation_scopes"), 2);
+}
+
+#[test]
+fn replacing_scopes_is_isolated_by_kind_and_root() {
+    let mut connection = database();
+    connection
+        .execute_batch(
+            "INSERT INTO compilation_scopes (kind, root, name, classpath)
+             VALUES (1, '/repo/build-a', 'main', '[]'),
+                    (1, '/repo/build-a', 'test', '[]'),
+                    (1, '/repo/build-b', 'main', '[]'),
+                    (2, '/repo/build-a', 'main', '[]');",
+        )
+        .unwrap();
+
+    let transaction = connection.transaction().unwrap();
+    transaction
+        .execute_batch(
+            "DELETE FROM compilation_scopes WHERE kind = 1 AND root = '/repo/build-a';
+             INSERT INTO compilation_scopes (kind, root, name, classpath)
+             VALUES (1, '/repo/build-a', 'integrationTest', '[]');",
+        )
+        .unwrap();
+    transaction.commit().unwrap();
+
+    let scopes: Vec<(i64, String, String)> = connection
+        .prepare("SELECT kind, root, name FROM compilation_scopes ORDER BY id")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        scopes,
+        [
+            (1, "/repo/build-b".into(), "main".into()),
+            (2, "/repo/build-a".into(), "main".into()),
+            (1, "/repo/build-a".into(), "integrationTest".into()),
+        ]
+    );
+}
+
+#[test]
 fn matching_version_preserves_cached_data() {
     let files = TempDir::new();
     let path = files.path("models.sqlite");
@@ -95,11 +149,34 @@ fn matching_version_preserves_cached_data() {
         connection
             .execute("INSERT INTO models VALUES (1, '[]', 0, '{}', NULL)", [])
             .unwrap();
+        connection
+            .execute(
+                "INSERT INTO compilation_scopes (id, kind, root, name, classpath)
+                 VALUES (7, 0, '/project', 'main', '[]')",
+                [],
+            )
+            .unwrap();
         version(&connection)
     };
     let connection = open(&path).unwrap();
     assert_eq!(version(&connection), expected_version);
     assert_eq!(count(&connection, "models"), 1);
+    let scope: (i64, i64, String, String, String) = connection
+        .query_row(
+            "SELECT id, kind, root, name, classpath FROM compilation_scopes",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(scope, (7, 0, "/project".into(), "main".into(), "[]".into()));
 }
 
 #[test]

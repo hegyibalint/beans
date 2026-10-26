@@ -2,7 +2,7 @@ use std::{path::Path, time::Duration};
 
 use rusqlite::{Connection, TransactionBehavior};
 
-const SCHEMA_VERSION: i64 = 11;
+const SCHEMA_VERSION: i64 = 14;
 
 /// Opens a file-backed cache. The caller chooses its location and creates its parent directory.
 pub fn open(path: &Path) -> Result<Connection, String> {
@@ -123,6 +123,44 @@ mod tests {
             );
         }
         assert_eq!(count(&connection, "models"), 0);
+    }
+
+    #[test]
+    fn scope_kinds_must_be_known_numbers() {
+        let connection = database();
+        for kind in ["-1", "3", "'toml'", "NULL"] {
+            assert!(
+                connection
+                    .execute(
+                        &format!(
+                            "INSERT INTO compilation_scopes (kind, root, name, classpath)
+                             VALUES ({kind}, '/project', 'main', '[]')"
+                        ),
+                        [],
+                    )
+                    .is_err()
+            );
+        }
+        assert_eq!(count(&connection, "compilation_scopes"), 0);
+    }
+
+    #[test]
+    fn classpaths_must_be_valid_json_text() {
+        let connection = database();
+        for classpath in ["'not JSON'", "'{broken}'", "X'5B5D'", "NULL"] {
+            assert!(
+                connection
+                    .execute(
+                        &format!(
+                            "INSERT INTO compilation_scopes (kind, root, name, classpath)
+                             VALUES (0, '/project', 'main', {classpath})"
+                        ),
+                        [],
+                    )
+                    .is_err()
+            );
+        }
+        assert_eq!(count(&connection, "compilation_scopes"), 0);
     }
 
     #[test]
