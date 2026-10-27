@@ -28,7 +28,5 @@ This will open a development VSCode with some sample files, and Beans running. E
 
 ## License
 
-Copyright 2026 Bálint Hegyi.
-
 Beans is licensed under the [Apache License, Version 2.0](LICENSE).
 Third-party components remain subject to their respective licenses.
