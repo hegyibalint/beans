@@ -8,7 +8,7 @@ hero:
     file: ../../assets/social.png
   actions:
     - text: Getting Started
-      link: /getting-started/
+      link: /beans/getting-started/
       icon: right-arrow
     - text: GitHub
       link: https://github.com/hegyibalint/beans

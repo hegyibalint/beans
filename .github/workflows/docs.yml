@@ -2,6 +2,7 @@ name: Docs
 
 on:
   push:
+    branches: [main]
     paths:
       - 'docs/**'
       - 'mise*.toml'
@@ -32,3 +33,21 @@ jobs:
           install_args: node
       - run: npm ci
       - run: npm run build
+      - uses: actions/upload-pages-artifact@v5
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          path: docs/dist
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v5
+        id: deployment

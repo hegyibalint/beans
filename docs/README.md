@@ -13,7 +13,11 @@ You can also launch the dev server with the **Docs** configuration in VS Code
 when the repository root is open.
 
 `npm run build` creates the static site in `dist/`.
-`npm run preview` serves that build locally.
+`npm run preview` serves that build locally. The site is served under `/beans/`
+in both development and production.
+
+The Docs workflow checks pull requests and deploys changes on `main` to
+<https://hegyibalint.github.io/beans/> using GitHub Pages.
 
 Published pages live in `src/content/docs/`, and images live in `src/assets/`.
 The other documents in this directory are not published by the site.
