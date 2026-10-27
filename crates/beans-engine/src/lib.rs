@@ -29,11 +29,12 @@ pub struct Engine {
     java: JavaLanguage,
     jvm: Arc<JvmPlatform>,
 
-    // Command queue
+    // Command bus
     command_sender: Sender<Command>,
     command_receiver: Receiver<Command>,
     command_loop: Option<JoinHandle<()>>,
 
+    // Notification bus
     subscribers: Arc<Mutex<Vec<Sender<Notification>>>>,
 }
 

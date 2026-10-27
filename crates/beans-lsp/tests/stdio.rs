@@ -147,7 +147,7 @@ fn stdio_serves_a_session_and_exits_without_waiting_for_eof() {
     let connection = beans_engine::storage::open(&workspace.path(".beans/models")).unwrap();
     let name: String = connection
         .query_row(
-            "SELECT json_extract(model, '$.name') FROM models WHERE model_kind = 0",
+            "SELECT json_extract(model, '$.name') FROM models WHERE kind = 0",
             [],
             |row| row.get(0),
         )

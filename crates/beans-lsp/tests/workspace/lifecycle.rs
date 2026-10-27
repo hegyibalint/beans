@@ -28,7 +28,7 @@ fn initialization_queues_the_configured_home_and_exit_waits_for_publication() {
 
     let connection = beans_engine::storage::open(&root.path(".beans/models")).unwrap();
     let mut statement = connection
-        .prepare("SELECT json_extract(model, '$.name') FROM models WHERE model_kind = 0")
+        .prepare("SELECT json_extract(model, '$.name') FROM models WHERE kind = 0")
         .unwrap();
     let names: Vec<String> = statement
         .query_map([], |row| row.get(0))

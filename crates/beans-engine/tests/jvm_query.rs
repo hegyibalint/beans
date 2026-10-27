@@ -1,6 +1,5 @@
 use beans_core::{
-    classpath::Unrestricted, location::Location, names::Name, query_scope::QueryScope,
-    resolution::TypeDefinitionQuery,
+    location::Location, names::Name, query_scope::QueryScope, resolution::TypeDefinitionQuery,
 };
 use beans_engine::storage::open;
 use beans_lang_java::{
@@ -24,7 +23,7 @@ fn java_and_jvm_queries_share_a_snapshot_across_replacement_and_deletion() {
 
     {
         let transaction = reader.transaction().unwrap();
-        let query = ResolutionQuery::new(&transaction, QueryScope::new(&Unrestricted));
+        let query = ResolutionQuery::new(&transaction, QueryScope::unrestricted());
         let candidates = query.find_types(&old).unwrap();
         assert!(matches!(
             candidates.as_slice(),
@@ -38,7 +37,7 @@ fn java_and_jvm_queries_share_a_snapshot_across_replacement_and_deletion() {
     }
     {
         let transaction = reader.transaction().unwrap();
-        let query = ResolutionQuery::new(&transaction, QueryScope::new(&Unrestricted));
+        let query = ResolutionQuery::new(&transaction, QueryScope::unrestricted());
         assert!(query.find_types(&old).unwrap().is_empty());
         let candidates = query.find_types(&new).unwrap();
         assert!(matches!(
@@ -53,7 +52,7 @@ fn java_and_jvm_queries_share_a_snapshot_across_replacement_and_deletion() {
 
         assert_eq!(query.find_types(&new).unwrap(), candidates);
     }
-    let query = ResolutionQuery::new(&reader, QueryScope::new(&Unrestricted));
+    let query = ResolutionQuery::new(&reader, QueryScope::unrestricted());
     assert!(query.find_types(&old).unwrap().is_empty());
     assert!(query.find_types(&new).unwrap().is_empty());
 }

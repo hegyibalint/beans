@@ -1,7 +1,6 @@
 use std::{fs, path::Path};
 
 use beans_core::{
-    classpath::Unrestricted,
     event::Command,
     location::{Location, LocationEntry},
     query_scope::QueryScope,
@@ -50,7 +49,7 @@ fn unsupported_resources_and_failures_preserve_old_classes_and_do_not_stop_later
         cache
             .execute_batch(
                 "CREATE TRIGGER reject_class BEFORE INSERT ON models
-                 WHEN NEW.model_kind = 0 AND json_extract(NEW.model, '$.name') = 'p/Rejected'
+                 WHEN NEW.kind = 0 AND json_extract(NEW.model, '$.name') = 'p/Rejected'
                  BEGIN SELECT RAISE(ABORT, 'rejected class'); END;",
             )
             .unwrap();
@@ -163,7 +162,7 @@ fn seed(cache: &mut Connection, name: &str, path: &Path) {
 }
 
 fn classes(cache: &Connection, name: &str) -> Vec<Location> {
-    JvmQuery::new(cache, QueryScope::new(&Unrestricted))
+    JvmQuery::new(cache, QueryScope::unrestricted())
         .find_classes(name)
         .unwrap()
 }

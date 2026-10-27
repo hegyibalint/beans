@@ -127,12 +127,13 @@ pub use self::{
     result::{JavaTypeCandidate, ResolutionFailure, TypeCandidate, TypeParameterHandle},
 };
 use crate::model::{File, nodes::NodeIndex, references::TypeRef};
-use beans_core::location::Location;
 use beans_core::resolution::TypeDefinitionQuery;
+use beans_core::{compilation_scope::CompilationScopes, location::Location};
 
 pub struct Context<'a> {
     /// Borrowed query over visible Java and JVM types; `None` limits lookup to this file.
     definitions: Option<&'a dyn TypeDefinitionQuery<TypeCandidate>>,
+    scopes: &'a CompilationScopes,
     source: &'a Location,
     file: &'a File,
     node_index: NodeIndex,
@@ -146,8 +147,10 @@ impl<'a> Context<'a> {
         node_index: NodeIndex,
         type_ref: &'a TypeRef,
     ) -> Self {
+        static UNRESTRICTED: CompilationScopes = CompilationScopes::unrestricted();
         Self {
             definitions: None,
+            scopes: &UNRESTRICTED,
             source,
             file,
             node_index,
@@ -164,9 +167,15 @@ impl<'a> Context<'a> {
         self
     }
 
+    pub fn with_scopes(mut self, scopes: &'a CompilationScopes) -> Self {
+        self.scopes = scopes;
+        self
+    }
+
     fn for_type_ref<'b>(&'b self, node_index: NodeIndex, type_ref: &'b TypeRef) -> Context<'b> {
         Context {
             definitions: self.definitions,
+            scopes: self.scopes,
             source: self.source,
             file: self.file,
             node_index,

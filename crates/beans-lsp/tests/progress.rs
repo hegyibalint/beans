@@ -72,7 +72,7 @@ fn progress_waits_for_creation_and_only_uses_accepted_tokens() {
         let connection = beans_engine::storage::open(&root.path(".beans/models")).unwrap();
         let name: String = connection
             .query_row(
-                "SELECT json_extract(model, '$.name') FROM models WHERE model_kind = 0",
+                "SELECT json_extract(model, '$.name') FROM models WHERE kind = 0",
                 [],
                 |row| row.get(0),
             )

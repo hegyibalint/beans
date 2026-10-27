@@ -6,7 +6,7 @@ fn databases_support_both_model_kinds_and_cascade_java_type_removal() {
     connection
         .execute_batch(
             r#"
-            INSERT INTO models (id, location, model_kind, model, content)
+            INSERT INTO models (id, location, kind, model, content)
             VALUES (1, '[]', 1, '{}', X''), (2, '[]', 0, '{"name":"C"}', NULL);
             INSERT INTO java_types (model_id, node_index, name) VALUES (1, 0, 'C');
             "#,
@@ -45,7 +45,7 @@ fn reinitializing_a_current_database_preserves_models_and_type_indexes() {
     let mut connection = database();
     connection
         .execute_batch(
-            "INSERT INTO models (id, location, model_kind, model, content)
+            "INSERT INTO models (id, location, kind, model, content)
              VALUES (1, '[]', 1, '{}', X'');
              INSERT INTO java_types (model_id, node_index, name) VALUES (1, 0, 'C');",
         )

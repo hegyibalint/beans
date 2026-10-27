@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use beans_core::{
-    classpath::Unrestricted,
     features::HoverRequest,
     location::{Location, LocationEntry},
     query_scope::QueryScope,
@@ -125,7 +124,7 @@ fn failed_publication_restores_the_previous_model_and_indexes() {
         serde_json::to_value(file(&cache, &source).unwrap()).unwrap(),
         original
     );
-    let query = JavaQuery::new(&cache, QueryScope::new(&Unrestricted));
+    let query = JavaQuery::new(&cache, QueryScope::unrestricted());
     assert_eq!(
         query
             .find_type(&["Original".to_owned()].into_iter().collect())
@@ -178,7 +177,7 @@ fn reopening_reads_and_replaces_the_persisted_model() {
     engine
         .process(source.clone(), "class Replacement {}")
         .unwrap();
-    let query = JavaQuery::new(&cache, QueryScope::new(&Unrestricted));
+    let query = JavaQuery::new(&cache, QueryScope::unrestricted());
     assert!(
         query
             .find_type(&["Original".to_owned()].into_iter().collect())
@@ -196,7 +195,7 @@ fn reopening_reads_and_replaces_the_persisted_model() {
 }
 
 fn file(cache: &Connection, source: &Location) -> Option<File> {
-    JavaQuery::new(cache, QueryScope::new(&Unrestricted))
+    JavaQuery::new(cache, QueryScope::unrestricted())
         .file(source)
         .unwrap()
 }

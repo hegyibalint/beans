@@ -1,20 +1,45 @@
+CREATE TABLE compilation_scopes (
+    id INTEGER PRIMARY KEY,
+    -- What workspace system this scope belongs to?
+    -- 0 = TOML, 1 = Gradle, 2 = Maven
+    kind INTEGER NOT NULL CHECK (kind IN (0, 1, 2)),
+    -- Which project root this scope belongs to?
+    -- We might have multiple, independent projects in a workspace
+    root TEXT NOT NULL,
+    -- An informative name to the scope often like "main" or "test"
+    name TEXT NOT NULL,
+    -- Which resources belong to this scope?
+    -- See `beans_core::resource_filter::ResourceFilter`
+    inputs TEXT NOT NULL CHECK (json_valid(inputs)),
+    -- Which resources this scope sees?
+    --  * NULL:     filter cannot be applied, i.e. we match on everything.
+    --  * Not NULL: the filter can be applied. Empty list means we match on nothing.
+    -- See `beans_core::resource_filter::ResourceFilter`
+    dependencies TEXT CHECK (dependencies IS NULL OR json_valid(dependencies))
+) STRICT;
+
 CREATE TABLE models (
     id INTEGER PRIMARY KEY,
-    -- beans_core::location::Location
+    -- Where is this source/binary/entry located in?
+    -- See `beans_core::location::Location`
     location TEXT NOT NULL CHECK (json_valid(location)),
+    -- Which platform the model belongs to?
     -- 0 = JVM, 1 = Java
-    model_kind INTEGER NOT NULL CHECK (model_kind IN (0, 1)),
-    -- beans_platform_jvm::Class (model_kind = 0)
-    -- beans_lang_java::model::File (model_kind = 1)
+    kind INTEGER NOT NULL CHECK (kind IN (0, 1)),
+    -- The semantic model information encoded as JSON
+    -- See `beans_platform_jvm::Class` (kind = 0)
+    -- See `beans_lang_java::model::File` (kind = 1)
     model TEXT NOT NULL CHECK (json_valid(model)),
+    -- The source text
     content BLOB,
-    CHECK (model_kind <> 1 OR content IS NOT NULL)
+    -- If we have a Java file, we must have its source
+    CHECK (kind <> 1 OR content IS NOT NULL)
 ) STRICT;
 
 CREATE INDEX jvm_models_by_root
 ON models (json_extract(location, '$[0]'))
-WHERE model_kind = 0;
+WHERE kind = 0;
 
 CREATE INDEX jvm_classes_by_name
 ON models (json_extract(model, '$.name'))
-WHERE model_kind = 0;
+WHERE kind = 0;

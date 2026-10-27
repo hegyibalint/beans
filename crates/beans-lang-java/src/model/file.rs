@@ -7,7 +7,7 @@ use super::{
 };
 
 /// Represents a whole `.java` file.
-/// Stored as JSON in `models.model` for Java rows (`model_kind = 1`).
+/// Stored as JSON in `models.model` for Java rows (`kind = 1`).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct File {
     /// Package components; empty for the unnamed package (JLS §7.4.2).

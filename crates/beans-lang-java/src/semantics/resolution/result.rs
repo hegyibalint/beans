@@ -44,6 +44,16 @@ pub enum TypeCandidate {
     Jvm(Location),
 }
 
+impl TypeCandidate {
+    pub fn location(&self) -> &Location {
+        match self {
+            Self::Java(JavaTypeCandidate::Declaration(handle)) => handle.source(),
+            Self::Java(JavaTypeCandidate::TypeParameter(handle)) => handle.owner().source(),
+            Self::Jvm(location) => location,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum JavaTypeCandidate {
     Declaration(DeclarationHandle),
@@ -71,5 +81,29 @@ pub(crate) fn classify_candidates(
 pub(crate) fn push_unique_candidate(candidates: &mut Vec<TypeCandidate>, candidate: TypeCandidate) {
     if !candidates.contains(&candidate) {
         candidates.push(candidate);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::nodes::NodeIndex;
+    use beans_core::location::LocationEntry;
+
+    #[test]
+    fn candidates_expose_the_location_of_their_declaration_or_class() {
+        let source = Location::file("/src/Example.java");
+        let handle = DeclarationHandle::new(source.clone(), NodeIndex::new(1));
+        let declaration = TypeCandidate::Java(JavaTypeCandidate::Declaration(handle.clone()));
+        let parameter = TypeCandidate::Java(JavaTypeCandidate::TypeParameter(
+            TypeParameterHandle::new(handle, 0),
+        ));
+        let binary = Location::file("/library.jar")
+            .entry(LocationEntry::Container("p/Example.class".into()));
+        let class = TypeCandidate::Jvm(binary.clone());
+
+        assert_eq!(declaration.location(), &source);
+        assert_eq!(parameter.location(), &source);
+        assert_eq!(class.location(), &binary);
     }
 }

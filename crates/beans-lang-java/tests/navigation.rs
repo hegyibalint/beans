@@ -1,5 +1,4 @@
 use beans_core::{
-    classpath::Unrestricted,
     features::navigation::{DefinitionProvider, DefinitionRequest},
     location::{Location, LocationEntry},
     query_scope::QueryScope,
@@ -87,7 +86,7 @@ fn generic_components_and_their_arguments_navigate_independently() {
             .goto_definition(
                 &JavaFeatureContext {
                     connection: &java.connection,
-                    scope: QueryScope::new(&Unrestricted),
+                    scope: QueryScope::unrestricted(),
                     workspace_root: None,
                 },
                 &DefinitionRequest {
@@ -242,7 +241,7 @@ fn definition_at(java: &Models, source: &Location, offset: usize) -> Option<Sour
         .goto_definition(
             &JavaFeatureContext {
                 connection: &java.connection,
-                scope: QueryScope::new(&Unrestricted),
+                scope: QueryScope::unrestricted(),
                 workspace_root: None,
             },
             &DefinitionRequest { source, offset },

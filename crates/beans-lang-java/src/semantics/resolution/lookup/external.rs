@@ -1,5 +1,5 @@
 use crate::model::{imports::ImportType, references::TypeNameComponent};
-use beans_core::{names::Name, ranges::Spanned, resolution::TypeDefinitionQuery};
+use beans_core::{names::Name, ranges::Spanned};
 
 use super::super::{Context, ResolutionFailure, TypeCandidate, result::classify_candidates};
 
@@ -27,12 +27,12 @@ pub(in crate::semantics::resolution) fn lookup_external(
         .filter(|import| import.typ() == ImportType::SingleType && import.is_name_valid())
         .filter(|import| import.name().as_slice().last() == Some(simple_name))
         .map(|import| import.name().clone());
-    if let Some(candidate) = lookup_paths(definitions, single_imports, suffix)? {
+    if let Some(candidate) = lookup_paths(ctx, single_imports, suffix)? {
         return Ok(Some(candidate));
     }
 
     let same_package = append(ctx.file.package_name.as_slice(), first_segment);
-    if let Some(candidate) = lookup_paths(definitions, std::iter::once(same_package), suffix)? {
+    if let Some(candidate) = lookup_paths(ctx, std::iter::once(same_package), suffix)? {
         return Ok(Some(candidate));
     }
 
@@ -47,7 +47,7 @@ pub(in crate::semantics::resolution) fn lookup_external(
             &["java".into(), "lang".into()],
             first_segment,
         )));
-    if let Some(candidate) = lookup_paths(definitions, on_demand, suffix)? {
+    if let Some(candidate) = lookup_paths(ctx, on_demand, suffix)? {
         return Ok(Some(candidate));
     }
 
@@ -83,20 +83,25 @@ pub(in crate::semantics::resolution) fn lookup_external(
 
 /// A bound prefix commits to this tier even if its qualified suffix is missing.
 fn lookup_paths(
-    definitions: &dyn TypeDefinitionQuery<TypeCandidate>,
+    ctx: &Context<'_>,
     paths: impl Iterator<Item = Name>,
     suffix: &[Spanned<TypeNameComponent>],
 ) -> Result<Option<TypeCandidate>, ResolutionFailure> {
+    let Some(definitions) = ctx.definitions else {
+        return Ok(None);
+    };
     let mut owners = Vec::<(Name, TypeCandidate)>::new();
     for path in paths {
-        for candidate in definitions
+        definitions
             .find_types(&path)
             .map_err(ResolutionFailure::Query)?
-        {
-            if !owners.iter().any(|(_, known)| known == &candidate) {
-                owners.push((path.clone(), candidate));
-            }
-        }
+            .into_iter()
+            .filter(|candidate| ctx.scopes.visible(ctx.source, candidate.location()))
+            .for_each(|candidate| {
+                if !owners.iter().any(|(_, known)| known == &candidate) {
+                    owners.push((path.clone(), candidate));
+                }
+            });
     }
 
     // JLS §6.5.5.1 requires a unique first type. A suffix cannot choose between

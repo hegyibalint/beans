@@ -31,7 +31,7 @@ pub fn store(
         let location = serde_json::to_string(location).map_err(|error| error.to_string())?;
         transaction
             .execute(
-                "INSERT INTO models (location, model_kind, model, content) VALUES (?1, 1, ?2, ?3)",
+                "INSERT INTO models (location, kind, model, content) VALUES (?1, 1, ?2, ?3)",
                 params![location, model, contents.as_bytes()],
             )
             .map_err(|error| error.to_string())?;

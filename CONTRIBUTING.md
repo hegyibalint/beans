@@ -2,10 +2,9 @@
 
 ## Setup
 
-Install stable Rust through rustup and install mise, then run from the repository root:
+Install and activate [mise](https://mise.jdx.dev/getting-started.html) to manage Rust, JDKs, and Node.js (including npm), then run from the repository root:
 
 ```sh
-rustup component add rustfmt clippy
 mise install
 cargo test --workspace --locked
 ```

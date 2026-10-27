@@ -1,6 +1,12 @@
 use std::path::Path;
 
-use beans_core::{classpath::Unrestricted, location::Location, query_scope::QueryScope};
+use beans_core::{
+    compilation_scope::{CompilationScope, CompilationScopes},
+    location::Location,
+    query_scope::QueryScope,
+    resolution::TypeDefinitionQuery,
+    resource_filter::ResourceFilter,
+};
 use beans_lang_java::{
     model::nodes::NodeKind,
     semantics::resolution::{
@@ -22,20 +28,55 @@ enum Occurrence {
 struct Fixture {
     java: Models,
     source: Location,
+    scopes: CompilationScopes,
 }
 
 impl Fixture {
     fn new(current: &str, other_files: &[(&str, &str)]) -> Self {
-        let mut java = Models::new();
-        let source = Location::file("/src/Use.java");
-        java.store(java.process(current), source.clone());
+        let mut fixture = Self::from_sources("/src/Use.java", &[("/src/Use.java", current)]);
         for (name, text) in other_files {
-            java.store(
-                java.process(text),
+            fixture.java.store(
+                fixture.java.process(text),
                 Location::file(format!("/src/{name}.java")),
             );
         }
-        Self { java, source }
+        fixture
+    }
+
+    fn from_sources(source: &str, sources: &[(&str, &str)]) -> Self {
+        let mut java = Models::new();
+        for (path, contents) in sources {
+            java.store(java.process(contents), Location::file(*path));
+        }
+        Self {
+            java,
+            source: Location::file(source),
+            scopes: CompilationScopes::unrestricted(),
+        }
+    }
+
+    fn competing_targets() -> Self {
+        let fixture = Self::from_sources(
+            "/consumer/Use.java",
+            &[
+                ("/consumer/Use.java", "class Use { Target field; }"),
+                ("/sourceset-a/Target.java", "class Target {}"),
+                ("/sourceset-b/Target.java", "class Target {}"),
+            ],
+        );
+        let locations: Vec<_> = fixture
+            .prospective_candidates("Target")
+            .into_iter()
+            .map(|candidate| candidate.location().clone())
+            .collect();
+        assert_eq!(
+            locations,
+            [
+                Location::file("/sourceset-a/Target.java"),
+                Location::file("/sourceset-b/Target.java"),
+            ]
+        );
+        fixture
     }
 
     fn resolve(&self) -> Result<TypeCandidate, ResolutionFailure> {
@@ -43,9 +84,8 @@ impl Fixture {
     }
 
     fn resolve_at(&self, occurrence: Occurrence) -> Result<TypeCandidate, ResolutionFailure> {
-        let java = self.java.query(QueryScope::new(&Unrestricted));
-        let definitions =
-            ResolutionQuery::new(&self.java.connection, QueryScope::new(&Unrestricted));
+        let java = self.java.query(QueryScope::unrestricted());
+        let definitions = ResolutionQuery::new(&self.java.connection, QueryScope::unrestricted());
         let file = java.file(&self.source).unwrap().unwrap();
         let (index, reference) = file
             .iter_nodes()
@@ -64,8 +104,9 @@ impl Fixture {
                 _ => None,
             })
             .unwrap();
-        let ctx =
-            Context::new(&self.source, &file, index, reference).with_definitions(&definitions);
+        let ctx = Context::new(&self.source, &file, index, reference)
+            .with_definitions(&definitions)
+            .with_scopes(&self.scopes);
         match occurrence {
             Occurrence::Field => resolve(&ctx),
             Occurrence::Supertype => resolve_supertype(&ctx),
@@ -83,8 +124,15 @@ impl Fixture {
         transaction.commit().unwrap();
     }
 
+    fn prospective_candidates(&self, name: &str) -> Vec<TypeCandidate> {
+        let definitions = ResolutionQuery::new(&self.java.connection, QueryScope::unrestricted());
+        definitions
+            .find_types(&name.split('.').map(str::to_owned).collect())
+            .unwrap()
+    }
+
     fn expected(&self, name: &str) -> TypeCandidate {
-        let query = self.java.query(QueryScope::new(&Unrestricted));
+        let query = self.java.query(QueryScope::unrestricted());
         let entry = query
             .find_type(&name.split('.').map(str::to_owned).collect())
             .unwrap()
@@ -93,6 +141,53 @@ impl Fixture {
             .expect("expected a stored Java type");
         TypeCandidate::Java(JavaTypeCandidate::Declaration(entry))
     }
+}
+
+#[test]
+fn dependency_on_sourceset_a_resolves_its_target() {
+    let mut fixture = Fixture::competing_targets();
+    fixture.scopes = CompilationScopes::new(vec![CompilationScope {
+        inputs: vec![ResourceFilter::file("/consumer")],
+        dependencies: Some(vec![ResourceFilter::file("/sourceset-a")]),
+    }]);
+
+    assert_eq!(
+        fixture.resolve().unwrap().location(),
+        &Location::file("/sourceset-a/Target.java")
+    );
+}
+
+#[test]
+fn dependency_on_sourceset_b_resolves_its_target() {
+    let mut fixture = Fixture::competing_targets();
+    fixture.scopes = CompilationScopes::new(vec![CompilationScope {
+        inputs: vec![ResourceFilter::file("/consumer")],
+        dependencies: Some(vec![ResourceFilter::file("/sourceset-b")]),
+    }]);
+
+    assert_eq!(
+        fixture.resolve().unwrap().location(),
+        &Location::file("/sourceset-b/Target.java")
+    );
+}
+
+#[test]
+fn dependencies_on_both_sourcesets_make_target_ambiguous() {
+    let mut fixture = Fixture::competing_targets();
+    fixture.scopes = CompilationScopes::new(vec![CompilationScope {
+        inputs: vec![ResourceFilter::file("/consumer")],
+        dependencies: Some(vec![
+            ResourceFilter::file("/sourceset-a"),
+            ResourceFilter::file("/sourceset-b"),
+        ]),
+    }]);
+
+    assert_eq!(
+        fixture.resolve(),
+        Err(ResolutionFailure::Ambiguous(
+            fixture.prospective_candidates("Target")
+        ))
+    );
 }
 
 #[test]

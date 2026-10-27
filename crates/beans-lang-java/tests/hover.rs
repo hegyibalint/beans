@@ -1,5 +1,4 @@
 use beans_core::{
-    classpath::Unrestricted,
     features::hover::{HoverProvider, HoverRequest, HoverResponse},
     location::{Location, LocationEntry},
     query_scope::QueryScope,
@@ -167,7 +166,7 @@ fn hover(
         .hover(
             &JavaFeatureContext {
                 connection: &models.connection,
-                scope: QueryScope::new(&Unrestricted),
+                scope: QueryScope::unrestricted(),
                 workspace_root: None,
             },
             &HoverRequest {
