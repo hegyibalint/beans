@@ -1,10 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use beans_core::location::{Location, LocationEntry};
 use beans_testing::TempDir;
-use beans_workspace::Workspace;
 use beans_workspace_toml::{DESCRIPTOR, LoadError, ParseError, load};
-use url::Url;
 
 const CONTENTS: &str = r#"
 jdk_home = "vendor/jdk"
@@ -38,14 +35,8 @@ fn an_override_wins_over_both_workspace_and_unit_jdks() {
 
     let workspace = load(files.root(), Some(home)).unwrap().unwrap();
 
-    for (id, unit) in &workspace.model().units {
+    for unit in workspace.model().units.values() {
         assert_eq!(unit.jdk_home.as_deref(), Some(home));
-        let document = Url::from_file_path(files.path(id).join("Use.java")).unwrap();
-        let classpath = workspace.classpath_for(document.as_str());
-        assert!(classpath.contains_class(&runtime(home)));
-        for declared in ["vendor/jdk", "vendor/legacy"] {
-            assert!(!classpath.contains_class(&runtime(&files.path(declared))));
-        }
     }
 }
 
@@ -95,10 +86,4 @@ fn an_override_does_not_hide_an_invalid_descriptor() {
             ..
         })
     ));
-}
-
-fn runtime(home: &Path) -> Location {
-    Location::file(home.join("lib/modules")).entry(LocationEntry::Container(
-        "java.base/java/lang/Object.class".into(),
-    ))
 }

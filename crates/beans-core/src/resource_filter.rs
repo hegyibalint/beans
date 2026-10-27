@@ -21,16 +21,9 @@ impl ResourceFilter {
         Self::File(FileResourceFilter::new(root))
     }
 
-    pub fn contains_source(&self, resource: &Location) -> bool {
+    pub fn contains(&self, resource: &Location) -> bool {
         match self {
-            Self::File(filter) => filter.contains_source(resource),
-            Self::Unrestricted => true,
-        }
-    }
-
-    pub fn contains_class(&self, resource: &Location) -> bool {
-        match self {
-            Self::File(filter) => filter.contains_class(resource),
+            Self::File(filter) => filter.contains(resource),
             Self::Unrestricted => true,
         }
     }
@@ -50,20 +43,22 @@ mod tests {
         let class = Location::file("/library.jar")
             .entry(LocationEntry::Container("p/Example.class".into()));
 
-        for resource in [file, virtual_resource, class] {
-            assert!(filter.contains_source(&resource));
-            assert!(filter.contains_class(&resource));
+        let nested = Location::file("/library.jar")
+            .entry(LocationEntry::Container("nested.jar".into()))
+            .entry(LocationEntry::Container("p/Example.class".into()));
+
+        for resource in [file, virtual_resource, class, nested] {
+            assert!(filter.contains(&resource));
         }
     }
 
     #[test]
-    fn file_variants_delegate_both_membership_checks() {
+    fn file_variants_delegate_membership() {
         let filter = ResourceFilter::file("/library.jar");
         let class = Location::file("/library.jar")
             .entry(LocationEntry::Container("p/Example.class".into()));
-        assert!(!filter.contains_source(&class));
-        assert!(filter.contains_class(&class));
-        assert!(!filter.contains_class(&Location::file("/other/Example.class")));
+        assert!(filter.contains(&class));
+        assert!(!filter.contains(&Location::file("/other/Example.class")));
     }
 
     #[test]

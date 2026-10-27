@@ -92,25 +92,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "beans-workspace"
-version = "0.0.1"
-dependencies = [
- "beans-core",
- "url",
-]
-
-[[package]]
 name = "beans-workspace-toml"
 version = "0.0.1"
 dependencies = [
  "beans-core",
  "beans-testing",
- "beans-workspace",
  "crossbeam-channel",
  "log",
  "serde",
  "toml",
- "url",
 ]
 
 [[package]]

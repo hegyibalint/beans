@@ -6,20 +6,16 @@ use beans_core::{
 use crate::{
     engine::JavaLanguage,
     model::{nodes::NodeKind, references::TypeRef},
-    query::JavaQuery,
+    query,
 };
 
 impl JavaLanguage {
     pub fn type_tokens(
         &self,
-        connection: &rusqlite::Connection,
         source: &Location,
+        connection: &rusqlite::Connection,
     ) -> Result<Vec<ByteRange>, String> {
-        let java = JavaQuery::new(
-            connection,
-            beans_core::query_scope::QueryScope::unrestricted(),
-        );
-        let Some(file) = java.file(source)? else {
+        let Some(file) = query::file(source, connection)? else {
             return Ok(Vec::new());
         };
         let mut ranges = Vec::new();

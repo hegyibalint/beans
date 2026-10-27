@@ -25,7 +25,7 @@ pub fn initialize(connection: &mut Connection) -> Result<(), String> {
     connection
         .busy_timeout(Duration::from_secs(5))
         .map_err(|error| error.to_string())?;
-    initialize_schema(connection, &schema())?;
+    initialize_schema(&schema(), connection)?;
     connection
         .pragma_update(None, "foreign_keys", true)
         .map_err(|error| error.to_string())?;
@@ -42,7 +42,7 @@ fn schema() -> String {
     .join("\n")
 }
 
-fn initialize_schema(connection: &mut Connection, schema: &str) -> Result<(), String> {
+fn initialize_schema(schema: &str, connection: &mut Connection) -> Result<(), String> {
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
@@ -106,7 +106,7 @@ mod tests {
                     .is_err()
             );
         }
-        assert_eq!(count(&connection, "models"), 0);
+        assert_eq!(count("models", &connection), 0);
     }
 
     #[test]
@@ -122,7 +122,7 @@ mod tests {
                     .is_err()
             );
         }
-        assert_eq!(count(&connection, "models"), 0);
+        assert_eq!(count("models", &connection), 0);
     }
 
     #[test]
@@ -141,7 +141,7 @@ mod tests {
                     .is_err()
             );
         }
-        assert_eq!(count(&connection, "compilation_scopes"), 0);
+        assert_eq!(count("compilation_scopes", &connection), 0);
     }
 
     #[test]
@@ -171,7 +171,7 @@ mod tests {
                 )
                 .is_err()
         );
-        assert_eq!(count(&connection, "compilation_scopes"), 0);
+        assert_eq!(count("compilation_scopes", &connection), 0);
     }
 
     #[test]
@@ -182,15 +182,15 @@ mod tests {
                 "CREATE TABLE sentinel (value INTEGER); INSERT INTO sentinel VALUES (42)",
             )
             .unwrap();
-        assert!(initialize_schema(&mut connection, "CREATE TABLE broken (").is_err());
+        assert!(initialize_schema("CREATE TABLE broken (", &mut connection).is_err());
         let version: i64 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
         assert_eq!(version, 0);
-        assert_eq!(count(&connection, "sentinel"), 1);
+        assert_eq!(count("sentinel", &connection), 1);
     }
 
-    fn count(connection: &Connection, table: &str) -> i64 {
+    fn count(table: &str, connection: &Connection) -> i64 {
         connection
             .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
                 row.get(0)

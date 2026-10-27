@@ -35,7 +35,7 @@ impl Engine {
             .storage
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
-        storage::store(&transaction, &model, &source, contents)?;
+        storage::store(&model, &source, contents, &transaction)?;
         transaction.commit().map_err(|error| error.to_string())?;
         Ok(true)
     }
@@ -45,7 +45,7 @@ impl Engine {
             .storage
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
-        let changed = storage::remove(&transaction, &source)?;
+        let changed = storage::remove(&source, &transaction)?;
         transaction.commit().map_err(|error| error.to_string())?;
         Ok(changed)
     }

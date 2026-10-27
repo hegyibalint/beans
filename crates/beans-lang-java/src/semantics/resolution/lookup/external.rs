@@ -1,7 +1,7 @@
 use crate::model::{imports::ImportType, references::TypeNameComponent};
 use beans_core::{names::Name, ranges::Spanned};
 
-use super::super::{Context, ResolutionFailure, TypeCandidate, result::classify_candidates};
+use super::super::{Context, ResolutionFailure, TypeCandidate, query, result::classify_candidates};
 
 /// Resolves names outside the current compilation unit through the visible definitions.
 /// The query searches Java and JVM definitions together; lookup decides JLS precedence.
@@ -9,7 +9,7 @@ pub(in crate::semantics::resolution) fn lookup_external(
     ctx: &Context<'_>,
     segments: &[Spanned<TypeNameComponent>],
 ) -> Result<Option<TypeCandidate>, ResolutionFailure> {
-    let Some(definitions) = ctx.definitions else {
+    let Some(connection) = ctx.connection else {
         return Ok(None);
     };
     let Some((first, suffix)) = segments.split_first() else {
@@ -56,20 +56,20 @@ pub(in crate::semantics::resolution) fn lookup_external(
     if segments.len() > 1 {
         let written = append(&[], segments);
         if let Some(candidate) = classify_candidates(
-            definitions
-                .find_types(&written)
+            query::find_types(&written, connection)
                 .map_err(ResolutionFailure::Query)?
-                .into_iter(),
+                .into_iter()
+                .filter(|candidate| ctx.scopes.visible(ctx.source, candidate.location())),
         )? {
             return Ok(Some(candidate));
         }
         for prefix_len in 1..segments.len() {
             let prefix = append(&[], &segments[..prefix_len]);
             if classify_candidates(
-                definitions
-                    .find_types(&prefix)
+                query::find_types(&prefix, connection)
                     .map_err(ResolutionFailure::Query)?
-                    .into_iter(),
+                    .into_iter()
+                    .filter(|candidate| ctx.scopes.visible(ctx.source, candidate.location())),
             )?
             .is_some()
             {
@@ -87,13 +87,12 @@ fn lookup_paths(
     paths: impl Iterator<Item = Name>,
     suffix: &[Spanned<TypeNameComponent>],
 ) -> Result<Option<TypeCandidate>, ResolutionFailure> {
-    let Some(definitions) = ctx.definitions else {
+    let Some(connection) = ctx.connection else {
         return Ok(None);
     };
     let mut owners = Vec::<(Name, TypeCandidate)>::new();
     for path in paths {
-        definitions
-            .find_types(&path)
+        query::find_types(&path, connection)
             .map_err(ResolutionFailure::Query)?
             .into_iter()
             .filter(|candidate| ctx.scopes.visible(ctx.source, candidate.location()))
@@ -119,10 +118,10 @@ fn lookup_paths(
         .expect("classified owner must have a path");
     let qualified = append(path.as_slice(), suffix);
     let member = classify_candidates(
-        definitions
-            .find_types(&qualified)
+        query::find_types(&qualified, connection)
             .map_err(ResolutionFailure::Query)?
-            .into_iter(),
+            .into_iter()
+            .filter(|candidate| ctx.scopes.visible(ctx.source, candidate.location())),
     )?
     .ok_or(ResolutionFailure::Partial)?;
     Ok(Some(member))

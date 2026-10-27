@@ -6,13 +6,11 @@ mod resolution;
 mod storage;
 
 use beans_core::location::Location;
-use beans_core::query_scope::QueryScope;
 use beans_lang_java::{
     lowering::lower_into,
     model::nodes::NodeKind,
-    semantics::resolution::{
-        Context, JavaTypeCandidate, TypeCandidate, query::ResolutionQuery, resolve,
-    },
+    query,
+    semantics::resolution::{Context, JavaTypeCandidate, TypeCandidate, resolve},
 };
 
 #[test]
@@ -23,9 +21,7 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
         lower_into("package app; class Target {} class Use { Target target; }"),
         source.clone(),
     );
-    let query = engine.query(QueryScope::unrestricted());
-    let file = query
-        .file(&source)
+    let file = query::file(&source, &engine.connection)
         .unwrap()
         .expect("expected the stored model");
     let (node_index, type_ref) = file
@@ -38,13 +34,12 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
         })
         .expect("expected target field");
 
-    let ctx = Context::new(&source, &file, node_index, type_ref.value());
+    let ctx = Context::new(&file, &source, node_index, type_ref.value());
     let TypeCandidate::Java(JavaTypeCandidate::Declaration(declaration)) = resolve(&ctx).unwrap()
     else {
         panic!("expected a Java declaration");
     };
-    let target = query
-        .declaration(&declaration)
+    let target = query::declaration(&declaration, &engine.connection)
         .unwrap()
         .expect("expected a readable declaration handle");
 
@@ -65,9 +60,9 @@ fn an_imported_type_resolves_to_another_stored_source_file() {
         lower_into("package q; public class Target {}"),
         target_source.clone(),
     );
-    let java = engine.query(QueryScope::unrestricted());
-    let definitions = ResolutionQuery::new(&engine.connection, QueryScope::unrestricted());
-    let file = java.file(&use_source).unwrap().unwrap();
+    let file = query::file(&use_source, &engine.connection)
+        .unwrap()
+        .unwrap();
     let field = file
         .iter_nodes()
         .find_map(|entry| match entry.node.kind() {
@@ -75,15 +70,18 @@ fn an_imported_type_resolves_to_another_stored_source_file() {
             _ => None,
         })
         .unwrap();
-    let ctx = Context::new(&use_source, &file, field.0, field.1.declared_type.value())
-        .with_definitions(&definitions);
+    let ctx = Context::new(&file, &use_source, field.0, field.1.declared_type.value())
+        .with_connection(&engine.connection);
 
     let TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) = resolve(&ctx).unwrap() else {
         panic!("expected a stored Java type");
     };
     assert_eq!(handle.source(), &target_source);
     assert_eq!(
-        java.declaration(&handle).unwrap().unwrap().name(),
+        query::declaration(&handle, &engine.connection)
+            .unwrap()
+            .unwrap()
+            .name(),
         Some("Target")
     );
 }

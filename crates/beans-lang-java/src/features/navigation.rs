@@ -1,18 +1,18 @@
 use beans_core::{
+    compilation_scope::CompilationScopes,
     features::navigation::{DefinitionProvider, DefinitionRequest, NavigationResult},
     location::Location,
     ranges::ByteRange,
-    resolution::TypeDefinitionQuery,
     source::SourceSpan,
 };
+use rusqlite::Connection;
 
 use crate::{
     engine::JavaLanguage,
     model::{File, nodes::NodeKind, references::TypeRef, type_references::find_in_reference},
-    query::JavaQuery,
+    query,
     semantics::resolution::{
-        Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, query::ResolutionQuery,
-        resolve,
+        Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, resolve,
     },
 };
 
@@ -30,9 +30,7 @@ impl<'request>
     ) -> Result<Option<NavigationResult>, String> {
         let source = request.source;
         let offset = request.offset;
-        let java = JavaQuery::new(context.connection, context.scope);
-        let definitions = ResolutionQuery::new(context.connection, context.scope);
-        let Some(file) = java.file(source)? else {
+        let Some(file) = query::file(source, context.connection)? else {
             return Ok(None);
         };
         if let Some(range) = type_parameter_declaration_at(&file, offset) {
@@ -42,7 +40,7 @@ impl<'request>
             }));
         }
         let Some((origin_range, candidate)) =
-            resolve_field_type_at(&file, source, offset, Some(&definitions))
+            resolve_field_type_at(&file, source, offset, context.scopes, context.connection)
         else {
             return Ok(None);
         };
@@ -53,7 +51,7 @@ impl<'request>
         };
         let target = match candidate {
             TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) => {
-                java.declaration(&handle)?.and_then(|declaration| {
+                query::declaration(&handle, context.connection)?.and_then(|declaration| {
                     declaration
                         .name
                         .map(|name| SourceSpan::new(handle.source().clone(), name.range()))
@@ -61,7 +59,7 @@ impl<'request>
             }
             TypeCandidate::Java(JavaTypeCandidate::TypeParameter(handle)) => {
                 let owner = handle.owner();
-                let file = java.file(owner.source())?;
+                let file = query::file(owner.source(), context.connection)?;
                 file.and_then(|file| {
                     handle.parameter(&file).map(|parameter| {
                         SourceSpan::new(owner.source().clone(), parameter.name.range())
@@ -91,7 +89,8 @@ pub(super) fn resolve_field_type_at(
     file: &File,
     source: &Location,
     offset: usize,
-    definitions: Option<&dyn TypeDefinitionQuery<TypeCandidate>>,
+    scopes: &CompilationScopes,
+    connection: &Connection,
 ) -> Option<(ByteRange, Result<TypeCandidate, ResolutionFailure>)> {
     // JLS §8.3: a field declares a type separately from its variable name.
     let (index, prefix, origin_range) = file.iter_nodes().find_map(|entry| {
@@ -138,9 +137,8 @@ pub(super) fn resolve_field_type_at(
         Some((entry.index, prefix, origin_range))
     })?;
 
-    let mut ctx = Context::new(source, file, index, &prefix);
-    if let Some(definitions) = definitions {
-        ctx = ctx.with_definitions(definitions);
-    }
+    let ctx = Context::new(file, source, index, &prefix)
+        .with_connection(connection)
+        .with_scopes(scopes);
     Some((origin_range, resolve(&ctx)))
 }

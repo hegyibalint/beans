@@ -3,11 +3,10 @@ use std::path::Path;
 use beans_core::{
     features::HoverRequest,
     location::{Location, LocationEntry},
-    query_scope::QueryScope,
     ranges::ByteRange,
 };
 use beans_engine::{Engine, storage};
-use beans_lang_java::{model::File, query::JavaQuery};
+use beans_lang_java::{model::File, query};
 use beans_testing::TempDir;
 use rusqlite::Connection;
 
@@ -32,7 +31,7 @@ fn processing_java_source_commits_its_model() {
     );
     let cache = storage::open(&files.path(".beans/models")).unwrap();
     assert_eq!(
-        file(&cache, &source).unwrap().package_name.as_slice(),
+        file(&source, &cache).unwrap().package_name.as_slice(),
         ["example"]
     );
 }
@@ -61,14 +60,14 @@ fn virtual_documents_keep_their_identity_through_replacement_and_removal() {
             .unwrap()
             .unwrap();
         assert_eq!(response.range(), ByteRange::new(16, end));
-        assert!(file(&cache, &Location::file("/Example.java")).is_none());
-        assert_eq!(count(&cache, "models"), 1);
+        assert!(file(&Location::file("/Example.java"), &cache).is_none());
+        assert_eq!(count("models", &cache), 1);
     }
     assert!(engine.close_document(source.clone()).unwrap());
-    assert!(file(&cache, &source).is_none());
+    assert!(file(&source, &cache).is_none());
     assert!(!engine.close_document(source).unwrap());
     for table in ["models", "java_types"] {
-        assert_eq!(count(&cache, table), 0);
+        assert_eq!(count(table, &cache), 0);
     }
 }
 
@@ -102,7 +101,7 @@ fn unsupported_inputs_report_no_change_and_write_nothing() {
             .unwrap()
     );
     let cache = storage::open(&files.path(".beans/models")).unwrap();
-    assert_eq!(count(&cache, "models"), 0);
+    assert_eq!(count("models", &cache), 0);
 }
 
 #[test]
@@ -112,7 +111,7 @@ fn failed_publication_restores_the_previous_model_and_indexes() {
     let source = Location::file("/Example.java");
     engine.process(source.clone(), "class Original {}").unwrap();
     let cache = storage::open(&files.path(".beans/models")).unwrap();
-    let original = serde_json::to_value(file(&cache, &source).unwrap()).unwrap();
+    let original = serde_json::to_value(file(&source, &cache).unwrap()).unwrap();
     cache.execute_batch("CREATE TRIGGER reject_type BEFORE INSERT ON java_types BEGIN SELECT RAISE(ABORT, 'type rejected'); END;").unwrap();
     assert!(
         engine
@@ -121,25 +120,22 @@ fn failed_publication_restores_the_previous_model_and_indexes() {
             .contains("type rejected")
     );
     assert_eq!(
-        serde_json::to_value(file(&cache, &source).unwrap()).unwrap(),
+        serde_json::to_value(file(&source, &cache).unwrap()).unwrap(),
         original
     );
-    let query = JavaQuery::new(&cache, QueryScope::unrestricted());
     assert_eq!(
-        query
-            .find_type(&["Original".to_owned()].into_iter().collect())
+        query::find_type(&["Original".to_owned()].into_iter().collect(), &cache)
             .unwrap()
             .len(),
         1
     );
     assert!(
-        query
-            .find_type(&["Replacement".to_owned()].into_iter().collect())
+        query::find_type(&["Replacement".to_owned()].into_iter().collect(), &cache)
             .unwrap()
             .is_empty()
     );
     for table in ["models", "java_types"] {
-        assert_eq!(count(&cache, table), 1);
+        assert_eq!(count(table, &cache), 1);
     }
 }
 
@@ -157,9 +153,9 @@ fn failed_deletion_preserves_the_model_and_its_dependents() {
             .unwrap_err()
             .contains("deletion rejected")
     );
-    assert!(file(&cache, &source).is_some());
+    assert!(file(&source, &cache).is_some());
     for table in ["models", "java_types"] {
-        assert_eq!(count(&cache, table), 1);
+        assert_eq!(count(table, &cache), 1);
     }
 }
 
@@ -173,34 +169,29 @@ fn reopening_reads_and_replaces_the_persisted_model() {
     }
     let mut engine = Engine::new(files.root()).unwrap();
     let cache = storage::open(&files.path(".beans/models")).unwrap();
-    assert!(file(&cache, &source).is_some());
+    assert!(file(&source, &cache).is_some());
     engine
         .process(source.clone(), "class Replacement {}")
         .unwrap();
-    let query = JavaQuery::new(&cache, QueryScope::unrestricted());
     assert!(
-        query
-            .find_type(&["Original".to_owned()].into_iter().collect())
+        query::find_type(&["Original".to_owned()].into_iter().collect(), &cache)
             .unwrap()
             .is_empty()
     );
     assert_eq!(
-        query
-            .find_type(&["Replacement".to_owned()].into_iter().collect())
+        query::find_type(&["Replacement".to_owned()].into_iter().collect(), &cache)
             .unwrap()
             .len(),
         1
     );
-    assert_eq!(count(&cache, "models"), 1);
+    assert_eq!(count("models", &cache), 1);
 }
 
-fn file(cache: &Connection, source: &Location) -> Option<File> {
-    JavaQuery::new(cache, QueryScope::unrestricted())
-        .file(source)
-        .unwrap()
+fn file(source: &Location, cache: &Connection) -> Option<File> {
+    query::file(source, cache).unwrap()
 }
 
-fn count(cache: &Connection, table: &str) -> i64 {
+fn count(table: &str, cache: &Connection) -> i64 {
     cache
         .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
             row.get(0)

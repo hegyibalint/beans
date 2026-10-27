@@ -3,15 +3,13 @@ use beans_core::{
     location::{Location, LocationEntry},
     presentation::RichText,
 };
-use beans_platform_jvm::query::JvmQuery;
+use beans_platform_jvm::query as jvm_query;
 
 use crate::{
     engine::JavaLanguage,
     model::type_references::type_reference_at,
-    query::JavaQuery,
-    semantics::resolution::{
-        JavaTypeCandidate, ResolutionFailure, TypeCandidate, query::ResolutionQuery,
-    },
+    query,
+    semantics::resolution::{JavaTypeCandidate, ResolutionFailure, TypeCandidate},
 };
 
 use super::{JavaFeatureContext, navigation::resolve_field_type_at};
@@ -24,8 +22,7 @@ impl<'request> HoverProvider<JavaFeatureContext<'_>, HoverRequest<'request>, Hov
         context: &JavaFeatureContext<'_>,
         request: &HoverRequest<'request>,
     ) -> Result<Option<HoverResponse>, String> {
-        let java = JavaQuery::new(context.connection, context.scope);
-        let Some(file) = java.file(request.source)? else {
+        let Some(file) = query::file(request.source, context.connection)? else {
             return Ok(None);
         };
         let Some(occurrence) = type_reference_at(&file, request.offset) else {
@@ -37,10 +34,13 @@ impl<'request> HoverProvider<JavaFeatureContext<'_>, HoverRequest<'request>, Hov
         else {
             return Ok(None);
         };
-        let definitions = ResolutionQuery::new(context.connection, context.scope);
-        if let Some((_, candidate)) =
-            resolve_field_type_at(&file, request.source, request.offset, Some(&definitions))
-        {
+        if let Some((_, candidate)) = resolve_field_type_at(
+            &file,
+            request.source,
+            request.offset,
+            context.scopes,
+            context.connection,
+        ) {
             match candidate {
                 Ok(candidate) => {
                     if let Some((name, location)) = resolved_type(context, candidate)? {
@@ -70,16 +70,11 @@ fn resolved_type(
     context: &JavaFeatureContext<'_>,
     candidate: TypeCandidate,
 ) -> Result<Option<(String, Location)>, String> {
-    let java = JavaQuery::new(context.connection, context.scope);
     match candidate {
-        TypeCandidate::Jvm(location) => {
-            let jvm = JvmQuery::new(context.connection, context.scope);
-            Ok(jvm
-                .class_name(&location)?
-                .map(|name| (name.replace('/', "."), location)))
-        }
+        TypeCandidate::Jvm(location) => Ok(jvm_query::class_name(&location, context.connection)?
+            .map(|name| (name.replace('/', "."), location))),
         TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) => {
-            let Some(file) = java.file(handle.source())? else {
+            let Some(file) = query::file(handle.source(), context.connection)? else {
                 return Ok(None);
             };
             let mut names: Vec<_> = file

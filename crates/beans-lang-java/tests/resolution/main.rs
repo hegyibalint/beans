@@ -41,7 +41,7 @@ fn resolve_field(file: &File, field_name: &str) -> Result<TypeCandidate, Resolut
         })
         .expect("expected field");
     let source = Location::file("/Test.java");
-    let ctx = Context::new(&source, file, index, field.declared_type.value());
+    let ctx = Context::new(file, &source, index, field.declared_type.value());
     resolve(&ctx)
 }
 

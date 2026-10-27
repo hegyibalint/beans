@@ -48,13 +48,13 @@ impl JvmPlatform {
     /// Replaces a resource; the caller must roll back the transaction on error.
     pub fn store(
         &self,
-        transaction: &Transaction<'_>,
         path: &Path,
         classes: Vec<(Location, Class)>,
+        transaction: &Transaction<'_>,
     ) -> Result<(), String> {
-        storage::remove(transaction, path)?;
+        storage::remove(path, transaction)?;
         for (location, class) in classes {
-            storage::store(transaction, &class, &location)?;
+            storage::store(&class, &location, transaction)?;
         }
         Ok(())
     }

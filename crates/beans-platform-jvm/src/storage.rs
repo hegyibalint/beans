@@ -7,9 +7,9 @@ use crate::Class;
 
 /// Inserts a model; the caller owns resource replacement and must roll back on error.
 pub fn store(
-    transaction: &Transaction<'_>,
     class: &Class,
     location: &Location,
+    transaction: &Transaction<'_>,
 ) -> Result<i64, String> {
     let location = serde_json::to_string(location).map_err(|error| error.to_string())?;
     let model = serde_json::to_string(class).map_err(|error| error.to_string())?;
@@ -23,7 +23,7 @@ pub fn store(
 }
 
 /// Removes JVM models whose first location entry is the supplied physical resource.
-pub fn remove(transaction: &Transaction<'_>, path: &Path) -> Result<bool, String> {
+pub fn remove(path: &Path, transaction: &Transaction<'_>) -> Result<bool, String> {
     let root = serde_json::to_string(&LocationEntry::File(path.into()))
         .map_err(|error| error.to_string())?;
     transaction

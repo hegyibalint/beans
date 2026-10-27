@@ -8,6 +8,6 @@ impl Engine {
             .storage
             .unchecked_transaction()
             .map_err(|error| error.to_string())?;
-        self.java.type_tokens(&transaction, source)
+        self.java.type_tokens(source, &transaction)
     }
 }

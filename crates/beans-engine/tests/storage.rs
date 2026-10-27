@@ -15,8 +15,8 @@ fn startup_initializes_and_configures_the_database() {
     assert!(path.is_file());
     assert!(version(&connection) > 0);
     assert_eq!(version(&connection), version(&database()));
-    assert_eq!(count(&connection, "models"), 0);
-    assert_eq!(count(&connection, "compilation_scopes"), 0);
+    assert_eq!(count("models", &connection), 0);
+    assert_eq!(count("compilation_scopes", &connection), 0);
     let obsolete_tables: i64 = connection
         .query_row(
             "SELECT COUNT(*) FROM sqlite_schema WHERE name IN ('entries', 'locations')",
@@ -100,7 +100,7 @@ fn compilation_scope_names_can_repeat_within_an_import() {
                     (1, '/repo/build-a', 'main', '[]', '[]');",
         )
         .unwrap();
-    assert_eq!(count(&connection, "compilation_scopes"), 2);
+    assert_eq!(count("compilation_scopes", &connection), 2);
 }
 
 #[test]
@@ -165,7 +165,7 @@ fn matching_version_preserves_cached_data() {
     };
     let connection = open(&path).unwrap();
     assert_eq!(version(&connection), expected_version);
-    assert_eq!(count(&connection, "models"), 1);
+    assert_eq!(count("models", &connection), 1);
     let scope: (i64, i64, String, String, String, String) = connection
         .query_row(
             "SELECT id, kind, root, name, inputs, dependencies FROM compilation_scopes",
@@ -229,7 +229,7 @@ fn blob_model_caches_are_reset_instead_of_migrated() {
     }
     let connection = open(&path).unwrap();
     assert_eq!(version(&connection), version(&database()));
-    assert_eq!(count(&connection, "models"), 0);
+    assert_eq!(count("models", &connection), 0);
     connection
         .execute("INSERT INTO models VALUES (1, '[]', 0, '{}', NULL)", [])
         .unwrap();
@@ -257,7 +257,7 @@ fn older_version_discards_the_previous_schema_and_data() {
     }
     let connection = open(&path).unwrap();
     assert_eq!(version(&connection), expected_version);
-    assert_eq!(count(&connection, "models"), 0);
+    assert_eq!(count("models", &connection), 0);
     let objects: i64 = connection
         .query_row(
             "SELECT COUNT(*) FROM sqlite_schema WHERE name LIKE 'old%'",
@@ -290,7 +290,7 @@ fn newer_version_is_rejected_without_changing_the_database() {
     );
     let connection = Connection::open(&path).unwrap();
     assert_eq!(version(&connection), future_version);
-    assert_eq!(count(&connection, "sentinel"), 1);
+    assert_eq!(count("sentinel", &connection), 1);
     assert_eq!(
         connection
             .pragma_query_value(None, "journal_mode", |row| row.get::<_, String>(0))
@@ -363,8 +363,8 @@ fn resetting_a_component_location_cache_discards_its_tables_and_data() {
             .pragma_update(None, "user_version", expected_version - 1)
             .unwrap();
         initialize(&mut connection).unwrap();
-        assert_eq!(count(&connection, "models"), 0);
-        assert_eq!(count(&connection, "java_types"), 0);
+        assert_eq!(count("models", &connection), 0);
+        assert_eq!(count("java_types", &connection), 0);
         let obsolete_tables: i64 = connection
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_schema WHERE name IN ('entries', 'locations')",
@@ -384,7 +384,7 @@ fn version(connection: &Connection) -> i64 {
         .unwrap()
 }
 
-fn count(connection: &Connection, table: &str) -> i64 {
+fn count(table: &str, connection: &Connection) -> i64 {
     connection
         .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
             row.get(0)

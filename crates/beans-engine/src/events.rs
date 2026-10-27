@@ -64,7 +64,7 @@ impl Engine {
                             data: path.clone(),
                         }),
                     );
-                    if let Err(error) = handle_command_process_resource(&mut storage, jvm, &path) {
+                    if let Err(error) = handle_command_process_resource(&path, jvm, &mut storage) {
                         log::warn!("{}: {error}", path.display());
                     }
                     publish_notification(
@@ -82,7 +82,7 @@ impl Engine {
                             data: home.clone(),
                         }),
                     );
-                    if let Err(error) = handle_command_process_jdk_home(&mut storage, jvm, &home) {
+                    if let Err(error) = handle_command_process_jdk_home(&home, jvm, &mut storage) {
                         log::warn!("{}: {error}", home.display());
                     }
                     publish_notification(
@@ -96,9 +96,9 @@ impl Engine {
 }
 
 fn handle_command_process_resource(
-    storage: &mut Connection,
-    jvm: &JvmPlatform,
     path: &Path,
+    jvm: &JvmPlatform,
+    storage: &mut Connection,
 ) -> Result<(), String> {
     let started = Instant::now();
     log::info!("Processing resource {}", path.display());
@@ -109,7 +109,7 @@ fn handle_command_process_resource(
     let transaction = storage
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
-    jvm.store(&transaction, path, processed.classes)?;
+    jvm.store(path, processed.classes, &transaction)?;
     log::debug!("Committing resource {}", path.display());
     transaction.commit().map_err(|error| error.to_string())?;
     log::info!(
@@ -121,9 +121,9 @@ fn handle_command_process_resource(
 }
 
 fn handle_command_process_jdk_home(
-    storage: &mut Connection,
-    jvm: &JvmPlatform,
     home: &Path,
+    jvm: &JvmPlatform,
+    storage: &mut Connection,
 ) -> Result<(), String> {
     let started = Instant::now();
     log::info!("Processing JDK home {}", home.display());
@@ -140,7 +140,7 @@ fn handle_command_process_jdk_home(
         .map_err(|error| error.to_string())?;
     log::debug!("Acquired write transaction for JDK home {}", home.display());
     for (path, classes) in resources {
-        jvm.store(&transaction, &path, classes)?;
+        jvm.store(&path, classes, &transaction)?;
     }
     log::debug!("Committing JDK home {}", home.display());
     transaction.commit().map_err(|error| error.to_string())?;

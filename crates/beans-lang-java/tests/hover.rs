@@ -1,7 +1,7 @@
 use beans_core::{
+    compilation_scope::CompilationScopes,
     features::hover::{HoverProvider, HoverRequest, HoverResponse},
     location::{Location, LocationEntry},
-    query_scope::QueryScope,
 };
 use beans_lang_java::{engine::JavaLanguage, features::JavaFeatureContext, lower_into};
 
@@ -18,11 +18,11 @@ fn jvm_type_hover_shows_its_name_and_container_location() {
         .entry(LocationEntry::Container("java/lang/String.class".into()));
     let transaction = models.connection.transaction().unwrap();
     beans_platform_jvm::storage::store(
-        &transaction,
         &beans_platform_jvm::Class {
             name: "java/lang/String".into(),
         },
         &location,
+        &transaction,
     )
     .unwrap();
     transaction.commit().unwrap();
@@ -166,7 +166,7 @@ fn hover(
         .hover(
             &JavaFeatureContext {
                 connection: &models.connection,
-                scope: QueryScope::unrestricted(),
+                scopes: &CompilationScopes::unrestricted(),
                 workspace_root: None,
             },
             &HoverRequest {

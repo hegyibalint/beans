@@ -3,10 +3,9 @@ use std::{fs, path::Path};
 use beans_core::{
     event::Command,
     location::{Location, LocationEntry},
-    query_scope::QueryScope,
 };
 use beans_engine::{Engine, storage};
-use beans_platform_jvm::{Class, query::JvmQuery, storage as jvm_storage};
+use beans_platform_jvm::{Class, query, storage as jvm_storage};
 use beans_testing::{
     TempDir,
     support::{class_bytes, jar_bytes},
@@ -19,15 +18,15 @@ fn a_resource_event_publishes_replacement_classes_before_drop_returns() {
     let path = files.write("resource", class_bytes("p/New"));
     let engine = Engine::start(files.root()).unwrap();
     let mut cache = storage::open(&files.path(".beans/models")).unwrap();
-    seed(&mut cache, "p/Old", &path);
-    assert_eq!(classes(&cache, "p/Old"), [Location::file(&path)]);
-    assert!(classes(&cache, "p/New").is_empty());
+    seed("p/Old", &path, &mut cache);
+    assert_eq!(classes("p/Old", &cache), [Location::file(&path)]);
+    assert!(classes("p/New", &cache).is_empty());
 
     enqueue(&engine, &path);
     drop(engine);
 
-    assert!(classes(&cache, "p/Old").is_empty());
-    assert_eq!(classes(&cache, "p/New"), [Location::file(&path)]);
+    assert!(classes("p/Old", &cache).is_empty());
+    assert_eq!(classes("p/New", &cache), [Location::file(&path)]);
 }
 
 #[test]
@@ -45,7 +44,7 @@ fn unsupported_resources_and_failures_preserve_old_classes_and_do_not_stop_later
         let good = files.write("good", class_bytes("p/Good"));
         let engine = Engine::start(files.root()).unwrap();
         let mut cache = storage::open(&files.path(".beans/models")).unwrap();
-        seed(&mut cache, "p/Old", &path);
+        seed("p/Old", &path, &mut cache);
         cache
             .execute_batch(
                 "CREATE TRIGGER reject_class BEFORE INSERT ON models
@@ -58,9 +57,9 @@ fn unsupported_resources_and_failures_preserve_old_classes_and_do_not_stop_later
 
         drop(engine);
 
-        assert_eq!(classes(&cache, "p/Old"), [Location::file(&path)]);
-        assert!(classes(&cache, "p/Rejected").is_empty());
-        assert_eq!(classes(&cache, "p/Good"), [Location::file(&good)]);
+        assert_eq!(classes("p/Old", &cache), [Location::file(&path)]);
+        assert!(classes("p/Rejected", &cache).is_empty());
+        assert_eq!(classes("p/Good", &cache), [Location::file(&good)]);
     }
 }
 
@@ -70,12 +69,12 @@ fn a_recognized_resource_with_no_valid_classes_removes_old_classes() {
     let path = files.write("resource", [0xca, 0xfe, 0xba, 0xbe]);
     let engine = Engine::start(files.root()).unwrap();
     let mut cache = storage::open(&files.path(".beans/models")).unwrap();
-    seed(&mut cache, "p/Old", &path);
+    seed("p/Old", &path, &mut cache);
     enqueue(&engine, &path);
 
     drop(engine);
 
-    assert!(classes(&cache, "p/Old").is_empty());
+    assert!(classes("p/Old", &cache).is_empty());
 }
 
 #[test]
@@ -99,11 +98,11 @@ fn a_java_home_event_publishes_runtime_and_tools_together() {
 
     let cache = storage::open(&files.path(".beans/models")).unwrap();
     assert_eq!(
-        classes(&cache, "p/Runtime"),
+        classes("p/Runtime", &cache),
         [Location::file(&runtime).entry(LocationEntry::Container("p/Runtime.class".into()))]
     );
     assert_eq!(
-        classes(&cache, "p/Tool"),
+        classes("p/Tool", &cache),
         [Location::file(&tools).entry(LocationEntry::Container("p/Tool.class".into()))]
     );
 }
@@ -119,8 +118,8 @@ fn a_java_home_failure_preserves_all_artifacts_and_processing_continues() {
     let good = files.write("good", class_bytes("p/Good"));
     let engine = Engine::start(files.root()).unwrap();
     let mut cache = storage::open(&files.path(".beans/models")).unwrap();
-    seed(&mut cache, "p/OldRuntime", &runtime);
-    seed(&mut cache, "p/OldTool", &tools);
+    seed("p/OldRuntime", &runtime, &mut cache);
+    seed("p/OldTool", &tools, &mut cache);
     engine
         .sender()
         .send(Command::ProcessJdkHome(files.path("jdk")))
@@ -129,10 +128,10 @@ fn a_java_home_failure_preserves_all_artifacts_and_processing_continues() {
 
     drop(engine);
 
-    assert_eq!(classes(&cache, "p/OldRuntime"), [Location::file(&runtime)]);
-    assert_eq!(classes(&cache, "p/OldTool"), [Location::file(&tools)]);
-    assert!(classes(&cache, "p/New").is_empty());
-    assert_eq!(classes(&cache, "p/Good"), [Location::file(&good)]);
+    assert_eq!(classes("p/OldRuntime", &cache), [Location::file(&runtime)]);
+    assert_eq!(classes("p/OldTool", &cache), [Location::file(&tools)]);
+    assert!(classes("p/New", &cache).is_empty());
+    assert_eq!(classes("p/Good", &cache), [Location::file(&good)]);
 }
 
 #[test]
@@ -150,19 +149,17 @@ fn enqueue(engine: &Engine, path: &Path) {
         .unwrap();
 }
 
-fn seed(cache: &mut Connection, name: &str, path: &Path) {
+fn seed(name: &str, path: &Path, cache: &mut Connection) {
     let transaction = cache.transaction().unwrap();
     jvm_storage::store(
-        &transaction,
         &Class { name: name.into() },
         &Location::file(path),
+        &transaction,
     )
     .unwrap();
     transaction.commit().unwrap();
 }
 
-fn classes(cache: &Connection, name: &str) -> Vec<Location> {
-    JvmQuery::new(cache, QueryScope::unrestricted())
-        .find_classes(name)
-        .unwrap()
+fn classes(name: &str, cache: &Connection) -> Vec<Location> {
+    query::find_classes(name, cache).unwrap()
 }

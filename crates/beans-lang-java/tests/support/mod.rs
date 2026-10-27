@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use beans_core::{location::Location, query_scope::QueryScope};
-use beans_lang_java::{engine::JavaLanguage, model::File, query::JavaQuery, storage};
+use beans_core::location::Location;
+use beans_lang_java::{engine::JavaLanguage, model::File, storage};
 use rusqlite::Connection;
 
 pub struct Models {
@@ -27,17 +27,13 @@ impl Models {
 
     pub fn store(&mut self, file: File, source: Location) {
         let transaction = self.connection.transaction().unwrap();
-        storage::store(&transaction, &file, &source, "").unwrap();
+        storage::store(&file, &source, "", &transaction).unwrap();
         transaction.commit().unwrap();
     }
 
     pub fn remove(&mut self, source: Location) {
         let transaction = self.connection.transaction().unwrap();
-        storage::remove(&transaction, &source).unwrap();
+        storage::remove(&source, &transaction).unwrap();
         transaction.commit().unwrap();
-    }
-
-    pub fn query<'a>(&'a self, scope: QueryScope<'a>) -> JavaQuery<'a> {
-        JavaQuery::new(&self.connection, scope)
     }
 }

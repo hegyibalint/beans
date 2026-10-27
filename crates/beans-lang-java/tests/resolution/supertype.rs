@@ -11,8 +11,8 @@ fn resolve_declared_superclass(file: &File, owner: NodeIndex) -> TypeCandidate {
     let declaration = file.node(owner).unwrap().kind().as_type().unwrap();
     let source = Location::file("/Test.java");
     let ctx = Context::new(
-        &source,
         file,
+        &source,
         owner,
         declaration.declared_superclass.as_ref().unwrap().value(),
     );

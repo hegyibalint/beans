@@ -10,13 +10,13 @@ pub const SCHEMA: &str = include_str!("storage/schema.sql");
 
 /// Replaces the current model; the caller must roll back the transaction on error.
 pub fn store(
-    transaction: &Transaction<'_>,
     file: &File,
     location: &Location,
     contents: &str,
+    transaction: &Transaction<'_>,
 ) -> Result<i64, String> {
     let model = serde_json::to_string(file).map_err(|error| error.to_string())?;
-    let id = if let Some(id) = model_id(transaction, location)? {
+    let id = if let Some(id) = model_id(location, transaction)? {
         transaction
             .execute(
                 "UPDATE models SET model = ?1, content = ?2 WHERE id = ?3",
@@ -56,8 +56,8 @@ pub fn store(
     Ok(id)
 }
 
-pub fn remove(transaction: &Transaction<'_>, location: &Location) -> Result<bool, String> {
-    let Some(id) = model_id(transaction, location)? else {
+pub fn remove(location: &Location, transaction: &Transaction<'_>) -> Result<bool, String> {
+    let Some(id) = model_id(location, transaction)? else {
         return Ok(false);
     };
     transaction
