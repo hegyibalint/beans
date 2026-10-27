@@ -31,7 +31,7 @@ for Java, [Metals](https://scalameta.org/metals/) for Scala, and
 [clojure-lsp](https://clojure-lsp.io/) for Clojure. There are also newer offerings,
 including JetBrains' [Kotlin Language Server](https://github.com/Kotlin/kotlin-lsp)
 and [Java and Kotlin by IntelliJ IDEA](https://marketplace.visualstudio.com/items?itemName=jetbrains.intellij-server),
-which requires an IntelliJ IDEA Ultimate or All Products Pack subscription.
+given you have an Ultimate subscription.
 What makes Beans different?
 
 JVM languages are built to work together. You can build a Kotlin core with a Java
