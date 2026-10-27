@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Docs",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "mise exec -- npm --prefix docs run dev",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

@@ -1,6 +1,11 @@
 /target
 .beans/
 
+# Documentation site
+/docs/node_modules/
+/docs/.astro/
+/docs/dist/
+
 # macOS
 .DS_Store
 

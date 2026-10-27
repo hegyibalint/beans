@@ -5,6 +5,8 @@
 #
 # `[tools]` replaces rather than merges, so this repeats what `mise.toml` pins.
 [tools]
+node = "24.22.1"
+rust = { version = "stable", components = ["rustfmt", "clippy"] }
 java = [
     "temurin-26.0.2",
     "temurin-25.0.4",

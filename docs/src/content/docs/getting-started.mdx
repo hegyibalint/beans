@@ -1,0 +1,76 @@
+---
+title: Getting Started
+description: Get Beans and try it in your editor.
+---
+
+import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Beans is in early development. Expect missing features and rough edges.
+
+## Get some Beans
+
+<Tabs>
+  <TabItem label="Binary">
+
+Prebuilt binaries are not published yet. They will be available through
+[GitHub Releases](https://github.com/hegyibalint/beans/releases).
+For now, build from source using the **Sources** tab.
+
+  </TabItem>
+  <TabItem label="Sources">
+
+<Steps>
+
+1. Clone the repository:
+
+   ```sh
+   git clone https://github.com/hegyibalint/beans.git
+   cd beans
+   ```
+
+2. Install [mise](https://mise.jdx.dev/getting-started.html).
+   We use mise to manage Rust, JDKs, and Node.js (including npm). See
+   [`mise.toml`](https://github.com/hegyibalint/beans/blob/main/mise.toml)
+   for the tools we install.
+
+   After installing it, fetch all required dependencies.
+
+   ```sh
+   mise install
+   ```
+
+3. Build the language server:
+
+   ```sh
+   cargo build --release --locked -p beans-lsp
+   ```
+
+   The language server is at `target/release/beans-lsp`
+   (`beans-lsp.exe` on Windows).
+
+</Steps>
+
+  </TabItem>
+</Tabs>
+
+## Editor setup
+
+### Visual Studio Code
+
+The VS Code extension currently runs from the source checkout. After installing
+the dependencies above, install VS Code's `code` command and run from the
+repository root:
+
+```sh
+mise install
+scripts/dev-vscode.sh
+```
+
+This builds Beans and opens the example Java project in a separate VS Code
+window with the development extension loaded.
+
+### Other editors
+
+Beans communicates over standard input/output using the Language Server
+Protocol. Point your editor's LSP client at the `beans-lsp` executable and
+configure it for Java files. Editor-specific instructions will follow.
