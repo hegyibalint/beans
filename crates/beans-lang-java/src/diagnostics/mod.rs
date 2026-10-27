@@ -1,10 +1,7 @@
-use beans_core::{location::Location, query_scope::QueryScope};
+use beans_core::{compilation_scope::CompilationScopes, location::Location};
 use rusqlite::Connection;
 
-use crate::{
-    engine::JavaLanguage, model::File, query::JavaQuery,
-    semantics::resolution::query::ResolutionQuery,
-};
+use crate::{engine::JavaLanguage, model::File, query};
 
 mod unresolved_types;
 
@@ -24,25 +21,23 @@ pub enum DiagnosticSeverity {
 impl JavaLanguage {
     pub fn diagnostics(
         &self,
-        connection: &Connection,
-        scope: QueryScope<'_>,
         source: &Location,
+        scopes: &CompilationScopes,
+        connection: &Connection,
     ) -> Result<Vec<Diagnostic>, String> {
-        let java = JavaQuery::new(connection, scope);
-        let Some(file) = java.file(source)? else {
+        let Some(file) = query::file(source, connection)? else {
             return Ok(Vec::new());
         };
-        self.diagnostics_for_file(connection, scope, source, &file)
+        self.diagnostics_for_file(&file, source, scopes, connection)
     }
 
     pub fn diagnostics_for_file(
         &self,
-        connection: &Connection,
-        scope: QueryScope<'_>,
-        source: &Location,
         file: &File,
+        source: &Location,
+        scopes: &CompilationScopes,
+        connection: &Connection,
     ) -> Result<Vec<Diagnostic>, String> {
-        let definitions = ResolutionQuery::new(connection, scope);
-        unresolved_types::collect(file, source, &definitions)
+        unresolved_types::collect(file, source, scopes, connection)
     }
 }

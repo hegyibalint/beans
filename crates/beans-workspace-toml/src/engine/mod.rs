@@ -1,4 +1,3 @@
-mod classpath;
 mod events;
 mod workspace;
 

@@ -1,9 +1,10 @@
 use std::{fs, io, path::Path};
 
+use beans_core::paths::normalize;
+
 use crate::{
     engine::TomlWorkspace,
     model::{Descriptor, Project, Unit},
-    paths::normalize,
 };
 
 use super::{LoadError, ParseError};

@@ -1,12 +1,10 @@
 use beans_core::{
     location::{Location, LocationEntry},
     names::Name,
-    query_scope::QueryScope,
 };
 use beans_engine::storage::open;
 use beans_lang_java::{
-    lower_into,
-    query::JavaQuery,
+    lower_into, query,
     storage::{remove, store},
 };
 use beans_testing::TempDir;
@@ -24,7 +22,7 @@ fn java_models_are_stored_as_queryable_json_without_consuming_the_model() {
     let id = {
         let mut connection = open(&path).unwrap();
         let transaction = connection.transaction().unwrap();
-        let id = store(&transaction, &file, &location, contents).unwrap();
+        let id = store(&file, &location, contents, &transaction).unwrap();
         transaction.commit().unwrap();
         id
     };
@@ -82,7 +80,7 @@ fn models_can_be_selected_by_the_first_location_component() {
         Location::new(LocationEntry::Virtual("/sources.jar".into())),
         Location { entries: vec![] },
     ] {
-        store(&transaction, &file, &source, "class Example {}").unwrap();
+        store(&file, &source, "class Example {}", &transaction).unwrap();
     }
     transaction.commit().unwrap();
     let mut statement = connection
@@ -109,7 +107,7 @@ fn replacing_a_model_reuses_its_row_and_preserves_the_verbatim_location() {
     let transaction = connection.transaction().unwrap();
     let mut ids = Vec::new();
     for contents in ["class First {}", "class Second {} // 😀"] {
-        let id = store(&transaction, &lower_into(contents), &location, contents).unwrap();
+        let id = store(&lower_into(contents), &location, contents, &transaction).unwrap();
         let stored: (Vec<u8>, String) = transaction
             .query_row(
                 "SELECT content, json_extract(location, '$[0].Virtual') FROM models WHERE id = ?1",
@@ -123,11 +121,19 @@ fn replacing_a_model_reuses_its_row_and_preserves_the_verbatim_location() {
     assert_eq!(ids[0], ids[1]);
     transaction.commit().unwrap();
     for table in ["models", "java_types"] {
-        assert_eq!(count(&connection, table), 1);
+        assert_eq!(count(table, &connection), 1);
     }
-    let query = JavaQuery::new(&connection, QueryScope::unrestricted());
-    assert!(query.find_type(&name_of("First")).unwrap().is_empty());
-    assert_eq!(query.find_type(&name_of("Second")).unwrap().len(), 1);
+    assert!(
+        query::find_type(&name_of("First"), &connection)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        query::find_type(&name_of("Second"), &connection)
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -137,18 +143,18 @@ fn the_caller_controls_commit_and_rollback() {
     {
         let transaction = connection.transaction().unwrap();
         store(
-            &transaction,
             &lower_into("class Example {}"),
             &Location::file("/Example.java"),
             "class Example {}",
+            &transaction,
         )
         .unwrap();
         for table in ["models", "java_types"] {
-            assert_eq!(count(&transaction, table), 1);
+            assert_eq!(count(table, &transaction), 1);
         }
     }
     for table in ["models", "java_types"] {
-        assert_eq!(count(&connection, table), 0);
+        assert_eq!(count(table, &connection), 0);
     }
 }
 
@@ -162,21 +168,21 @@ fn publication_errors_allow_the_caller_to_roll_back_the_whole_batch() {
         let contents = "class Example {}";
         let file = lower_into(contents);
         store(
-            &transaction,
             &file,
             &Location::file("/Healthy.java"),
             contents,
+            &transaction,
         )
         .unwrap();
         let location =
             Location::file("/sources.jar").entry(LocationEntry::Container("Example.java".into()));
-        let error = store(&transaction, &file, &location, contents).unwrap_err();
+        let error = store(&file, &location, contents, &transaction).unwrap_err();
         assert!(error.contains("rejected location"));
-        assert_eq!(count(&transaction, "models"), 1);
-        assert_eq!(count(&transaction, "java_types"), 1);
+        assert_eq!(count("models", &transaction), 1);
+        assert_eq!(count("java_types", &transaction), 1);
     }
-    assert_eq!(count(&connection, "models"), 0);
-    assert_eq!(count(&connection, "java_types"), 0);
+    assert_eq!(count("models", &connection), 0);
+    assert_eq!(count("java_types", &connection), 0);
 }
 
 #[cfg(unix)]
@@ -188,10 +194,10 @@ fn non_utf8_file_locations_are_rejected_instead_of_changed() {
     {
         let transaction = connection.transaction().unwrap();
         let path = PathBuf::from(OsString::from_vec(b"/Example\xff.java".to_vec()));
-        let error = store(&transaction, &lower_into(""), &Location::file(path), "").unwrap_err();
+        let error = store(&lower_into(""), &Location::file(path), "", &transaction).unwrap_err();
         assert!(error.contains("UTF-8"));
     }
-    assert_eq!(count(&connection, "models"), 0);
+    assert_eq!(count("models", &connection), 0);
 }
 
 #[test]
@@ -203,10 +209,10 @@ fn read_transactions_keep_old_models_and_indexes_after_replacement() {
     {
         let transaction = writer.transaction().unwrap();
         store(
-            &transaction,
             &lower_into("class Former {}"),
             &source,
             "class Former {}",
+            &transaction,
         )
         .unwrap();
         transaction.commit().unwrap();
@@ -214,26 +220,38 @@ fn read_transactions_keep_old_models_and_indexes_after_replacement() {
     let mut reader = open(&path).unwrap();
     {
         let transaction = reader.transaction().unwrap();
-        let query = JavaQuery::new(&transaction, QueryScope::unrestricted());
-        let handle = query.find_type(&name_of("Former")).unwrap().remove(0);
+        let handle = query::find_type(&name_of("Former"), &transaction)
+            .unwrap()
+            .remove(0);
         let publication = writer.transaction().unwrap();
         store(
-            &publication,
             &lower_into("class Latest {}"),
             &source,
             "class Latest {}",
+            &publication,
         )
         .unwrap();
         publication.commit().unwrap();
         assert_eq!(
-            query.declaration(&handle).unwrap().unwrap().name(),
+            query::declaration(&handle, &transaction)
+                .unwrap()
+                .unwrap()
+                .name(),
             Some("Former")
         );
-        assert_eq!(query.find_type(&name_of("Former")).unwrap().len(), 1);
-        assert!(query.find_type(&name_of("Latest")).unwrap().is_empty());
         assert_eq!(
-            query
-                .file(&source)
+            query::find_type(&name_of("Former"), &transaction)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            query::find_type(&name_of("Latest"), &transaction)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            query::file(&source, &transaction)
                 .unwrap()
                 .unwrap()
                 .find_type(&name_of("Former"))
@@ -241,10 +259,16 @@ fn read_transactions_keep_old_models_and_indexes_after_replacement() {
             1
         );
     }
-    let query = JavaQuery::new(&reader, QueryScope::unrestricted());
-    assert!(query.find_type(&name_of("Former")).unwrap().is_empty());
-    assert_eq!(query.find_type(&name_of("Latest")).unwrap().len(), 1);
-    assert_eq!(count(&writer, "models"), 1);
+    assert!(
+        query::find_type(&name_of("Former"), &reader)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        query::find_type(&name_of("Latest"), &reader).unwrap().len(),
+        1
+    );
+    assert_eq!(count("models", &writer), 1);
 }
 
 #[test]
@@ -256,10 +280,10 @@ fn deleting_a_model_keeps_existing_readers_consistent_and_removes_all_owned_rows
     {
         let transaction = writer.transaction().unwrap();
         store(
-            &transaction,
             &lower_into("class Example {}"),
             &source,
             "class Example {}",
+            &transaction,
         )
         .unwrap();
         transaction.commit().unwrap();
@@ -267,23 +291,30 @@ fn deleting_a_model_keeps_existing_readers_consistent_and_removes_all_owned_rows
     let mut reader = open(&path).unwrap();
     {
         let transaction = reader.transaction().unwrap();
-        let query = JavaQuery::new(&transaction, QueryScope::unrestricted());
-        let handle = query.find_type(&name_of("Example")).unwrap().remove(0);
+        let handle = query::find_type(&name_of("Example"), &transaction)
+            .unwrap()
+            .remove(0);
         let publication = writer.transaction().unwrap();
-        assert!(remove(&publication, &source).unwrap());
+        assert!(remove(&source, &publication).unwrap());
         publication.commit().unwrap();
         for table in ["models", "java_types"] {
-            assert_eq!(count(&writer, table), 0);
+            assert_eq!(count(table, &writer), 0);
         }
-        assert!(query.file(&source).unwrap().is_some());
+        assert!(query::file(&source, &transaction).unwrap().is_some());
         assert_eq!(
-            query.declaration(&handle).unwrap().unwrap().name(),
+            query::declaration(&handle, &transaction)
+                .unwrap()
+                .unwrap()
+                .name(),
             Some("Example")
         );
     }
-    let query = JavaQuery::new(&reader, QueryScope::unrestricted());
-    assert!(query.file(&source).unwrap().is_none());
-    assert!(query.find_type(&name_of("Example")).unwrap().is_empty());
+    assert!(query::file(&source, &reader).unwrap().is_none());
+    assert!(
+        query::find_type(&name_of("Example"), &reader)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -296,17 +327,17 @@ fn readers_never_observe_a_partially_published_batch() {
     {
         let transaction = writer.transaction().unwrap();
         store(
-            &transaction,
             &lower_into("class First {}"),
             &first,
             "class First {}",
+            &transaction,
         )
         .unwrap();
         store(
-            &transaction,
             &lower_into("class Second {}"),
             &second,
             "class Second {}",
+            &transaction,
         )
         .unwrap();
         transaction.commit().unwrap();
@@ -314,39 +345,87 @@ fn readers_never_observe_a_partially_published_batch() {
     let mut reader = open(&path).unwrap();
     let publication = writer.transaction().unwrap();
     store(
-        &publication,
         &lower_into("class NewFirst {}"),
         &first,
         "class NewFirst {}",
+        &publication,
     )
     .unwrap();
     {
         let transaction = reader.transaction().unwrap();
-        let query = JavaQuery::new(&transaction, QueryScope::unrestricted());
-        assert_eq!(query.find_type(&name_of("First")).unwrap().len(), 1);
-        assert_eq!(query.find_type(&name_of("Second")).unwrap().len(), 1);
-        assert!(query.find_type(&name_of("NewFirst")).unwrap().is_empty());
+        assert_eq!(
+            query::find_type(&name_of("First"), &transaction)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            query::find_type(&name_of("Second"), &transaction)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            query::find_type(&name_of("NewFirst"), &transaction)
+                .unwrap()
+                .is_empty()
+        );
         store(
-            &publication,
             &lower_into("class NewSecond {}"),
             &second,
             "class NewSecond {}",
+            &publication,
         )
         .unwrap();
         publication.commit().unwrap();
-        assert_eq!(query.find_type(&name_of("First")).unwrap().len(), 1);
-        assert_eq!(query.find_type(&name_of("Second")).unwrap().len(), 1);
-        assert!(query.find_type(&name_of("NewFirst")).unwrap().is_empty());
-        assert!(query.find_type(&name_of("NewSecond")).unwrap().is_empty());
+        assert_eq!(
+            query::find_type(&name_of("First"), &transaction)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            query::find_type(&name_of("Second"), &transaction)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            query::find_type(&name_of("NewFirst"), &transaction)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            query::find_type(&name_of("NewSecond"), &transaction)
+                .unwrap()
+                .is_empty()
+        );
     }
-    let query = JavaQuery::new(&reader, QueryScope::unrestricted());
-    assert!(query.find_type(&name_of("First")).unwrap().is_empty());
-    assert!(query.find_type(&name_of("Second")).unwrap().is_empty());
-    assert_eq!(query.find_type(&name_of("NewFirst")).unwrap().len(), 1);
-    assert_eq!(query.find_type(&name_of("NewSecond")).unwrap().len(), 1);
+    assert!(
+        query::find_type(&name_of("First"), &reader)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        query::find_type(&name_of("Second"), &reader)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        query::find_type(&name_of("NewFirst"), &reader)
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        query::find_type(&name_of("NewSecond"), &reader)
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
-fn count(connection: &Connection, table: &str) -> i64 {
+fn count(table: &str, connection: &Connection) -> i64 {
     connection
         .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
             row.get(0)

@@ -30,7 +30,7 @@ fn stores_each_container_format_in_the_supplied_transaction() {
         assert!(names(&connection).is_empty());
         let transaction = connection.transaction().unwrap();
         platform
-            .store(&transaction, &path, processed.classes)
+            .store(&path, processed.classes, &transaction)
             .unwrap();
         transaction.commit().unwrap();
 
@@ -61,7 +61,7 @@ fn replacement_skips_malformed_classes_and_removes_previous_models() {
     let platform = JvmPlatform::new();
     let classes = platform.process(&path).unwrap().classes;
     let transaction = connection.transaction().unwrap();
-    platform.store(&transaction, &path, classes).unwrap();
+    platform.store(&path, classes, &transaction).unwrap();
     transaction.commit().unwrap();
 
     files.write(
@@ -89,7 +89,7 @@ fn replacement_skips_malformed_classes_and_removes_previous_models() {
     assert!(!processed.failures[0].1.is_empty());
     let transaction = connection.transaction().unwrap();
     platform
-        .store(&transaction, &path, processed.classes)
+        .store(&path, processed.classes, &transaction)
         .unwrap();
     transaction.commit().unwrap();
 
@@ -102,14 +102,14 @@ fn empty_resources_can_replace_previous_models_without_failures() {
         let files = TempDir::new();
         let path = files.write("resource", bytes);
         let mut connection = database();
-        seed(&mut connection, &path);
+        seed(&path, &mut connection);
         let platform = JvmPlatform::new();
         let processed = platform.process(&path).unwrap();
         assert!(processed.classes.is_empty());
         assert!(processed.failures.is_empty());
         let transaction = connection.transaction().unwrap();
         platform
-            .store(&transaction, &path, processed.classes)
+            .store(&path, processed.classes, &transaction)
             .unwrap();
         transaction.commit().unwrap();
 
@@ -156,7 +156,7 @@ fn unsupported_formats_return_errors_without_changing_stored_models() {
     let files = TempDir::new();
     let path = files.write("resource", b"not a container");
     let mut connection = database();
-    seed(&mut connection, &path);
+    seed(&path, &mut connection);
 
     let error = JvmPlatform::new().process(&path).unwrap_err();
     assert!(error.contains("unsupported JVM resource format"));
@@ -176,7 +176,7 @@ fn invalid_containers_report_resource_failures_without_changing_stored_models() 
         let files = TempDir::new();
         let path = files.write("resource", bytes);
         let mut connection = database();
-        seed(&mut connection, &path);
+        seed(&path, &mut connection);
 
         let processed = JvmPlatform::new().process(&path).unwrap();
         assert!(processed.classes.is_empty());
@@ -205,7 +205,7 @@ fn entry_read_errors_do_not_discard_classes_or_prevent_reading_later_entries() {
     let files = TempDir::new();
     let path = files.write("resource", bytes);
     let mut connection = database();
-    seed(&mut connection, &path);
+    seed(&path, &mut connection);
 
     let processed = JvmPlatform::new().process(&path).unwrap();
     assert_eq!(
@@ -237,7 +237,7 @@ fn storage_errors_abort_publication_instead_of_being_skipped() {
         ]),
     );
     let mut connection = database();
-    seed(&mut connection, &path);
+    seed(&path, &mut connection);
     connection
         .execute_batch(
             "CREATE TRIGGER reject_class BEFORE INSERT ON models
@@ -249,7 +249,7 @@ fn storage_errors_abort_publication_instead_of_being_skipped() {
     let classes = platform.process(&path).unwrap().classes;
     let transaction = connection.transaction().unwrap();
 
-    let error = platform.store(&transaction, &path, classes).unwrap_err();
+    let error = platform.store(&path, classes, &transaction).unwrap_err();
     assert!(error.contains("rejected class"));
     assert_eq!(names(&transaction), ["First"]);
     transaction.rollback().unwrap();
@@ -262,7 +262,7 @@ fn missing_resources_return_errors_without_losing_previous_models() {
     let files = TempDir::new();
     let path = files.path("missing.jar");
     let mut connection = database();
-    seed(&mut connection, &path);
+    seed(&path, &mut connection);
 
     assert!(JvmPlatform::new().process(&path).is_err());
 
@@ -289,7 +289,7 @@ fn imports_each_jdk_runtime_layout() {
         assert!(processed.failures.is_empty());
         let transaction = connection.transaction().unwrap();
         platform
-            .store(&transaction, &path, processed.classes)
+            .store(&path, processed.classes, &transaction)
             .unwrap();
         transaction.commit().unwrap();
 
@@ -359,7 +359,7 @@ fn legacy_layouts_import_optional_tools() {
             let processed = platform.process(&path).unwrap();
             assert!(processed.failures.is_empty());
             platform
-                .store(&transaction, &path, processed.classes)
+                .store(&path, processed.classes, &transaction)
                 .unwrap();
         }
         transaction.commit().unwrap();
@@ -382,7 +382,7 @@ fn modern_layout_ignores_legacy_artifacts() {
     let mut connection = database();
     let transaction = connection.transaction().unwrap();
     platform
-        .store(&transaction, &runtime, processed.classes)
+        .store(&runtime, processed.classes, &transaction)
         .unwrap();
     transaction.commit().unwrap();
 
@@ -430,7 +430,7 @@ fn reported_artifact_failures_allow_the_caller_to_roll_back_publication() {
     let mut connection = database();
     let transaction = connection.transaction().unwrap();
     platform
-        .store(&transaction, &runtime, processed.classes)
+        .store(&runtime, processed.classes, &transaction)
         .unwrap();
 
     let invalid = platform.process(&tools).unwrap();
@@ -444,12 +444,12 @@ fn reported_artifact_failures_allow_the_caller_to_roll_back_publication() {
     assert!(names(&connection).is_empty());
 }
 
-fn seed(connection: &mut Connection, path: &Path) {
+fn seed(path: &Path, connection: &mut Connection) {
     let transaction = connection.transaction().unwrap();
     storage::store(
-        &transaction,
         &Class { name: "Old".into() },
         &Location::file(path),
+        &transaction,
     )
     .unwrap();
     transaction.commit().unwrap();

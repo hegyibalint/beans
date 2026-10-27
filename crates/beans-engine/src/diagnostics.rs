@@ -1,4 +1,4 @@
-use beans_core::{location::Location, query_scope::QueryScope};
+use beans_core::{compilation_scope::CompilationScopes, location::Location};
 
 pub use beans_lang_java::diagnostics::{Diagnostic, DiagnosticSeverity};
 
@@ -11,6 +11,6 @@ impl Engine {
             .unchecked_transaction()
             .map_err(|error| error.to_string())?;
         self.java
-            .diagnostics(&transaction, QueryScope::unrestricted(), source)
+            .diagnostics(source, &CompilationScopes::unrestricted(), &transaction)
     }
 }

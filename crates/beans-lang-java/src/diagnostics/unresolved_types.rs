@@ -1,12 +1,13 @@
 use beans_core::{
+    compilation_scope::CompilationScopes,
     location::Location,
     ranges::{ByteRange, Spanned},
-    resolution::TypeDefinitionQuery,
 };
+use rusqlite::Connection;
 
 use crate::{
     model::{File, nodes::NodeKind, references::TypeRef},
-    semantics::resolution::{Context, ResolutionFailure, TypeCandidate, resolve},
+    semantics::resolution::{Context, ResolutionFailure, resolve},
 };
 
 use super::{Diagnostic, DiagnosticSeverity};
@@ -14,7 +15,8 @@ use super::{Diagnostic, DiagnosticSeverity};
 pub(super) fn collect(
     file: &File,
     source: &Location,
-    definitions: &dyn TypeDefinitionQuery<TypeCandidate>,
+    scopes: &CompilationScopes,
+    connection: &Connection,
 ) -> Result<Vec<Diagnostic>, String> {
     let mut diagnostics = Vec::new();
     for entry in file.iter_nodes() {
@@ -24,8 +26,9 @@ pub(super) fn collect(
         let mut references = Vec::new();
         collect_named_references(&field.declared_type, &mut references);
         for reference in references {
-            let context = Context::new(source, file, entry.index, reference.value())
-                .with_definitions(definitions);
+            let context = Context::new(file, source, entry.index, reference.value())
+                .with_connection(connection)
+                .with_scopes(scopes);
             // Partial resolution can mean missing resolver support, not invalid Java.
             match resolve(&context) {
                 Err(ResolutionFailure::Query(error)) => return Err(error),

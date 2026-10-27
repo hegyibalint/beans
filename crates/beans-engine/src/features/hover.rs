@@ -1,6 +1,6 @@
 use beans_core::{
+    compilation_scope::CompilationScopes,
     features::{HoverProvider, HoverRequest, HoverResponse},
-    query_scope::QueryScope,
 };
 use beans_lang_java::features::JavaFeatureContext;
 
@@ -17,7 +17,7 @@ impl Engine {
             .map_err(|error| error.to_string())?;
         let context = JavaFeatureContext {
             connection: &transaction,
-            scope: QueryScope::unrestricted(),
+            scopes: &CompilationScopes::unrestricted(),
             workspace_root: Some(&self.workspace_root),
         };
         self.java.hover(&context, request)

@@ -67,10 +67,10 @@
 //! Top-level type scope is defined by JLS §6.3 and §7.6.
 //!
 //! Single-type imports, current-package types, type-on-demand imports, and as-written canonical
-//! names are wired through `ResolutionQuery`. Static and module imports, accessibility checks,
+//! names are wired through `query::find_types`. Static and module imports, accessibility checks,
 //! and inherited members from other files remain to be implemented. A caller must supply a
-//! combined query to look beyond the current file; without a configured classpath it searches all
-//! ingested Java sources. Package/type boundaries are not inferred from capitalization.
+//! database connection to look beyond the current file. Compilation scopes filter prospective Java and
+//! JVM candidates before binding. Package/type boundaries are not inferred from capitalization.
 //!
 //! ## 5. Resolve qualified suffixes downward
 //!
@@ -127,12 +127,12 @@ pub use self::{
     result::{JavaTypeCandidate, ResolutionFailure, TypeCandidate, TypeParameterHandle},
 };
 use crate::model::{File, nodes::NodeIndex, references::TypeRef};
-use beans_core::resolution::TypeDefinitionQuery;
 use beans_core::{compilation_scope::CompilationScopes, location::Location};
+use rusqlite::Connection;
 
 pub struct Context<'a> {
-    /// Borrowed query over visible Java and JVM types; `None` limits lookup to this file.
-    definitions: Option<&'a dyn TypeDefinitionQuery<TypeCandidate>>,
+    /// Without a connection, lookup is limited to this file.
+    connection: Option<&'a Connection>,
     scopes: &'a CompilationScopes,
     source: &'a Location,
     file: &'a File,
@@ -142,14 +142,14 @@ pub struct Context<'a> {
 
 impl<'a> Context<'a> {
     pub fn new(
-        source: &'a Location,
         file: &'a File,
+        source: &'a Location,
         node_index: NodeIndex,
         type_ref: &'a TypeRef,
     ) -> Self {
         static UNRESTRICTED: CompilationScopes = CompilationScopes::unrestricted();
         Self {
-            definitions: None,
+            connection: None,
             scopes: &UNRESTRICTED,
             source,
             file,
@@ -158,12 +158,8 @@ impl<'a> Context<'a> {
         }
     }
 
-    /// Supplies the visible Java and JVM definitions for compilation-unit lookup.
-    pub fn with_definitions(
-        mut self,
-        definitions: &'a dyn TypeDefinitionQuery<TypeCandidate>,
-    ) -> Self {
-        self.definitions = Some(definitions);
+    pub fn with_connection(mut self, connection: &'a Connection) -> Self {
+        self.connection = Some(connection);
         self
     }
 
@@ -174,7 +170,7 @@ impl<'a> Context<'a> {
 
     fn for_type_ref<'b>(&'b self, node_index: NodeIndex, type_ref: &'b TypeRef) -> Context<'b> {
         Context {
-            definitions: self.definitions,
+            connection: self.connection,
             scopes: self.scopes,
             source: self.source,
             file: self.file,

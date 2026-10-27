@@ -1,8 +1,7 @@
-use beans_core::{
-    location::Location, names::Name, query_scope::QueryScope, resolution::TypeDefinitionQuery,
-};
-use beans_lang_java::semantics::resolution::{
-    JavaTypeCandidate, TypeCandidate, query::ResolutionQuery,
+use beans_core::{location::Location, names::Name};
+use beans_lang_java::{
+    query as java_query,
+    semantics::resolution::{JavaTypeCandidate, TypeCandidate, query},
 };
 use beans_testing::database;
 
@@ -16,11 +15,11 @@ fn native_java_addresses_are_wrapped_as_candidates() {
         models.process("package example; class Example {}"),
         Location::file("/src/Example.java"),
     );
-    let java = models.query(QueryScope::unrestricted());
-    let address = java.find_types(&name).unwrap().remove(0);
-    let query = ResolutionQuery::new(&models.connection, QueryScope::unrestricted());
+    let address = java_query::find_type(&name, &models.connection)
+        .unwrap()
+        .remove(0);
     assert_eq!(
-        query.find_types(&name).unwrap(),
+        query::find_types(&name, &models.connection).unwrap(),
         [TypeCandidate::Java(JavaTypeCandidate::Declaration(address))]
     );
 }
@@ -29,22 +28,12 @@ fn native_java_addresses_are_wrapped_as_candidates() {
 fn jvm_storage_errors_are_not_missing_candidates() {
     let connection = database();
     connection.execute("DROP TABLE models", []).unwrap();
-    let query = ResolutionQuery::new(&connection, QueryScope::unrestricted());
-    assert!(
-        query
-            .find_types(&Name::new(vec!["Missing".into()]))
-            .is_err()
-    );
+    assert!(query::find_types(&Name::new(vec!["Missing".into()]), &connection).is_err());
 }
 
 #[test]
 fn java_storage_errors_are_not_missing_candidates() {
     let connection = database();
     connection.execute("DROP TABLE java_types", []).unwrap();
-    let query = ResolutionQuery::new(&connection, QueryScope::unrestricted());
-    assert!(
-        query
-            .find_types(&Name::new(vec!["Missing".into()]))
-            .is_err()
-    );
+    assert!(query::find_types(&Name::new(vec!["Missing".into()]), &connection).is_err());
 }

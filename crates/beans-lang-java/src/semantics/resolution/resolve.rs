@@ -168,7 +168,7 @@ mod tests {
         let file = File::new();
         let source = Location::file("/Test.java");
         for reference in [TypeRef::Primitive(PrimitiveType::Int), TypeRef::Void] {
-            let ctx = Context::new(&source, &file, File::ROOT_NODE_ID, &reference);
+            let ctx = Context::new(&file, &source, File::ROOT_NODE_ID, &reference);
             assert_eq!(resolve(&ctx), Err(ResolutionFailure::InvalidTypeRef));
             assert_eq!(
                 resolve_supertype(&ctx),
@@ -184,7 +184,7 @@ mod tests {
         let reference = TypeRef::Named {
             segments: Vec::new(),
         };
-        let ctx = Context::new(&source, &file, File::ROOT_NODE_ID, &reference);
+        let ctx = Context::new(&file, &source, File::ROOT_NODE_ID, &reference);
         assert_eq!(resolve(&ctx), Err(ResolutionFailure::InvalidTypeRef));
         assert_eq!(
             resolve_supertype(&ctx),

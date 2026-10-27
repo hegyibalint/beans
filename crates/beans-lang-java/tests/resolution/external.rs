@@ -3,14 +3,13 @@ use std::path::Path;
 use beans_core::{
     compilation_scope::{CompilationScope, CompilationScopes},
     location::Location,
-    query_scope::QueryScope,
-    resolution::TypeDefinitionQuery,
     resource_filter::ResourceFilter,
 };
 use beans_lang_java::{
     model::nodes::NodeKind,
+    query as java_query,
     semantics::resolution::{
-        Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, query::ResolutionQuery,
+        Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, query as resolution_query,
         resolve, resolve_supertype,
     },
 };
@@ -84,9 +83,9 @@ impl Fixture {
     }
 
     fn resolve_at(&self, occurrence: Occurrence) -> Result<TypeCandidate, ResolutionFailure> {
-        let java = self.java.query(QueryScope::unrestricted());
-        let definitions = ResolutionQuery::new(&self.java.connection, QueryScope::unrestricted());
-        let file = java.file(&self.source).unwrap().unwrap();
+        let file = java_query::file(&self.source, &self.java.connection)
+            .unwrap()
+            .unwrap();
         let (index, reference) = file
             .iter_nodes()
             .find_map(|entry| match (occurrence, entry.node.kind()) {
@@ -104,8 +103,8 @@ impl Fixture {
                 _ => None,
             })
             .unwrap();
-        let ctx = Context::new(&self.source, &file, index, reference)
-            .with_definitions(&definitions)
+        let ctx = Context::new(&file, &self.source, index, reference)
+            .with_connection(&self.java.connection)
             .with_scopes(&self.scopes);
         match occurrence {
             Occurrence::Field => resolve(&ctx),
@@ -119,26 +118,28 @@ impl Fixture {
         assert!(processed.failures.is_empty());
         assert!(!processed.classes.is_empty());
         for (location, class) in processed.classes {
-            beans_platform_jvm::storage::store(&transaction, &class, &location).unwrap();
+            beans_platform_jvm::storage::store(&class, &location, &transaction).unwrap();
         }
         transaction.commit().unwrap();
     }
 
     fn prospective_candidates(&self, name: &str) -> Vec<TypeCandidate> {
-        let definitions = ResolutionQuery::new(&self.java.connection, QueryScope::unrestricted());
-        definitions
-            .find_types(&name.split('.').map(str::to_owned).collect())
-            .unwrap()
+        resolution_query::find_types(
+            &name.split('.').map(str::to_owned).collect(),
+            &self.java.connection,
+        )
+        .unwrap()
     }
 
     fn expected(&self, name: &str) -> TypeCandidate {
-        let query = self.java.query(QueryScope::unrestricted());
-        let entry = query
-            .find_type(&name.split('.').map(str::to_owned).collect())
-            .unwrap()
-            .into_iter()
-            .next()
-            .expect("expected a stored Java type");
+        let entry = java_query::find_type(
+            &name.split('.').map(str::to_owned).collect(),
+            &self.java.connection,
+        )
+        .unwrap()
+        .into_iter()
+        .next()
+        .expect("expected a stored Java type");
         TypeCandidate::Java(JavaTypeCandidate::Declaration(entry))
     }
 }

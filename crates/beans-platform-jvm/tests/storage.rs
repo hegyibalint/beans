@@ -14,7 +14,7 @@ fn stores_borrowed_classes_and_locations_as_json() {
     let location =
         Location::file("/library.jar").entry(LocationEntry::Container("example/Foo.class".into()));
     let transaction = connection.transaction().unwrap();
-    let id = store(&transaction, &class, &location).unwrap();
+    let id = store(&class, &location, &transaction).unwrap();
     transaction.commit().unwrap();
 
     let (kind, model, source, content): (i64, String, String, Option<Vec<u8>>) = connection
@@ -38,8 +38,8 @@ fn storage_only_inserts_and_leaves_replacement_to_the_caller() {
     let mut connection = database();
     let location = Location::file("/Foo.class");
     let transaction = connection.transaction().unwrap();
-    store(&transaction, &class("example/Old"), &location).unwrap();
-    store(&transaction, &class("example/New"), &location).unwrap();
+    store(&class("example/Old"), &location, &transaction).unwrap();
+    store(&class("example/New"), &location, &transaction).unwrap();
     transaction.commit().unwrap();
 
     assert_eq!(names(&connection), ["example/New", "example/Old"]);
@@ -57,7 +57,7 @@ fn removal_is_scoped_to_the_physical_resource_and_jvm_models() {
             .entry(LocationEntry::Container("nested.jar".into()))
             .entry(LocationEntry::Container("B.class".into())),
     ] {
-        store(&transaction, &class("Removed"), &location).unwrap();
+        store(&class("Removed"), &location, &transaction).unwrap();
     }
     let survivors = [
         Location::file("/library.jar-other"),
@@ -67,7 +67,7 @@ fn removal_is_scoped_to_the_physical_resource_and_jvm_models() {
         Location { entries: vec![] },
     ];
     for (index, location) in survivors.iter().enumerate() {
-        store(&transaction, &class(&format!("Kept{index}")), location).unwrap();
+        store(&class(&format!("Kept{index}")), location, &transaction).unwrap();
     }
     transaction
         .execute(
@@ -76,8 +76,8 @@ fn removal_is_scoped_to_the_physical_resource_and_jvm_models() {
         )
         .unwrap();
 
-    assert!(remove(&transaction, root.as_ref()).unwrap());
-    assert!(!remove(&transaction, root.as_ref()).unwrap());
+    assert!(remove(root.as_ref(), &transaction).unwrap());
+    assert!(!remove(root.as_ref(), &transaction).unwrap());
     transaction.commit().unwrap();
 
     assert_eq!(
@@ -97,11 +97,11 @@ fn deletion_can_be_committed_without_reinserting_classes() {
     let mut connection = database();
     let source = Location::file("/library.jar").entry(LocationEntry::Container("A.class".into()));
     let transaction = connection.transaction().unwrap();
-    store(&transaction, &class("Old"), &source).unwrap();
+    store(&class("Old"), &source, &transaction).unwrap();
     transaction.commit().unwrap();
 
     let transaction = connection.transaction().unwrap();
-    assert!(remove(&transaction, "/library.jar".as_ref()).unwrap());
+    assert!(remove("/library.jar".as_ref(), &transaction).unwrap());
     transaction.commit().unwrap();
 
     assert!(names(&connection).is_empty());
@@ -112,14 +112,14 @@ fn dropping_a_replacement_restores_deleted_models() {
     let mut connection = database();
     let source = Location::file("/library.jar").entry(LocationEntry::Container("A.class".into()));
     let transaction = connection.transaction().unwrap();
-    store(&transaction, &class("Old"), &source).unwrap();
+    store(&class("Old"), &source, &transaction).unwrap();
     transaction.commit().unwrap();
 
     {
         let transaction = connection.transaction().unwrap();
-        assert!(remove(&transaction, "/library.jar".as_ref()).unwrap());
+        assert!(remove("/library.jar".as_ref(), &transaction).unwrap());
         assert!(names(&transaction).is_empty());
-        store(&transaction, &class("New"), &source).unwrap();
+        store(&class("New"), &source, &transaction).unwrap();
         assert_eq!(names(&transaction), ["New"]);
     }
     assert_eq!(names(&connection), ["Old"]);
@@ -130,7 +130,7 @@ fn a_storage_failure_allows_rolling_back_the_whole_replacement() {
     let mut connection = database();
     let source = Location::file("/library.jar").entry(LocationEntry::Container("A.class".into()));
     let transaction = connection.transaction().unwrap();
-    store(&transaction, &class("Old"), &source).unwrap();
+    store(&class("Old"), &source, &transaction).unwrap();
     transaction.commit().unwrap();
     connection
         .execute_batch(
@@ -142,11 +142,11 @@ fn a_storage_failure_allows_rolling_back_the_whole_replacement() {
 
     {
         let transaction = connection.transaction().unwrap();
-        remove(&transaction, "/library.jar".as_ref()).unwrap();
-        store(&transaction, &class("New"), &source).unwrap();
+        remove("/library.jar".as_ref(), &transaction).unwrap();
+        store(&class("New"), &source, &transaction).unwrap();
         let other =
             Location::file("/library.jar").entry(LocationEntry::Container("B.class".into()));
-        let error = store(&transaction, &class("Rejected"), &other).unwrap_err();
+        let error = store(&class("Rejected"), &other, &transaction).unwrap_err();
         assert!(error.contains("rejected class"));
     }
     assert_eq!(names(&connection), ["Old"]);
