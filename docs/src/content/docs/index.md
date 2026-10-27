@@ -30,19 +30,15 @@ The JVM ecosystem already has established language servers:
 for Java, [Metals](https://scalameta.org/metals/) for Scala, and
 [clojure-lsp](https://clojure-lsp.io/) for Clojure. There are also newer offerings,
 including JetBrains' [Kotlin Language Server](https://github.com/Kotlin/kotlin-lsp)
-and [Java and Kotlin by IntelliJ IDEA](https://marketplace.visualstudio.com/items?itemName=jetbrains.intellij-server),
-given you have an Ultimate subscription.
+and [Java and Kotlin by IntelliJ IDEA](https://marketplace.visualstudio.com/items?itemName=jetbrains.intellij-server) (given you have an Ultimate subscription).
 What makes Beans different?
 
-JVM languages are built to work together. You can build a Kotlin core with a Java
-public API, test its behavior in Groovy, and use Scala or Clojure where they fit.
-Your tooling should follow those connections: navigation, diagnostics, and
-refactoring should work across language boundaries, not stop at them.
+Languages in the JVM ecosystem can work together very well.
+You can build a Kotlin core with a Java public API, test its behavior in Groovy, and use Scala or Clojure where they fit.
+And you should expect the same from your tooling: navigation, diagnostics, and refactoring should work across languages just as well!
 
-Separate language servers can each understand their own language, but the LSP
-does not define how they should share semantic information. Beans explores moving
-up a level of abstraction: a shared language-processing and indexing engine that
-uses the JVM as a common denominator, with a unified language server on top.
+Separate language servers can each understand their own language (and often Java), but not their other siblings, because LSPs are not built to talk to each other.
+Beans is based on the realization that a potential solution is a single, universal LSP for the JVM ecosystem.
 
 ### That sounds like a lot of work.
 
@@ -73,5 +69,4 @@ Beans is not yet a replacement for your everyday language server.
 
 ## Cool. How do I try it out?
 
-Head to [Getting Started](/beans/getting-started/) to build Beans from source and
-try it in your editor. Prebuilt binaries are not available yet.
+To try out Beans as it stands today, see the project [README.md](https://github.com/hegyibalint/beans/blob/main/README.md#how-to-beans).
