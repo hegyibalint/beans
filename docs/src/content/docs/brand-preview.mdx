@@ -1,0 +1,155 @@
+---
+title: Brand preview
+description: A development reference for the Beans documentation theme.
+draft: true
+tableOfContents:
+  minHeadingLevel: 2
+  maxHeadingLevel: 2
+prev: false
+next: false
+---
+
+import { LinkButton, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## Admonitions
+
+:::note
+Beans brings language tooling to the JVM ecosystem. See [Editor Setup](/beans/lsp/editor-setup/) for connection details.
+:::
+
+:::tip
+Keep your editor’s language-server logs open while configuring Beans. They make connection issues easier to spot.
+:::
+
+:::caution
+Beans is in early development. Expect missing features and rough edges.
+:::
+
+:::danger
+Deleting a workspace removes its local files. Check the target directory and back up anything you need before continuing.
+:::
+
+## Shell and terminal blocks
+
+Check the warm terminal surface, darker title bar, syntax colors, and copy button. Use the theme selector to compare dark and light mode throughout this page.
+
+```sh title="Build Beans" frame="terminal"
+# Build the language server from source
+mise install
+cargo build --release --locked -p beans-lsp
+```
+
+An untitled terminal uses the same treatment:
+
+```sh
+export RUST_LOG=info
+./target/release/beans-lsp
+```
+
+Long commands should scroll inside the block rather than stretching the page:
+
+```sh title="Long command" frame="terminal"
+cargo test --workspace --locked --exclude beans-integration-tests -- --test-threads=1 --show-output
+```
+
+## Code and inline code
+
+Compare an editor frame with the terminal frames above. The editor syntax colors currently come from Starlight’s code theme.
+
+```rust title="hello.rs" {2}
+fn main() {
+    let project = "Beans";
+    println!("Hello from {project}!");
+}
+```
+
+Inline code such as `beans-lsp`, `RUST_LOG=info`, and `target/release/beans-lsp` should remain easy to read beside ordinary text and [documentation links](/beans/getting-started/).
+
+## Links and buttons
+
+A [local documentation link](/beans/getting-started/) and an [external project link](https://github.com/hegyibalint/beans) show the normal link treatment.
+
+<LinkButton href="/beans/getting-started/" icon="right-arrow">Getting Started</LinkButton>
+<LinkButton href="/beans/lsp/editor-setup/" variant="secondary">Editor Setup</LinkButton>
+<LinkButton href="https://github.com/hegyibalint/beans" variant="minimal" icon="external">GitHub</LinkButton>
+
+## Tabs and steps
+
+<Tabs>
+  <TabItem label="Shell">
+
+```sh title="Shell tab" frame="terminal"
+cargo build --release --locked -p beans-lsp
+```
+
+  </TabItem>
+  <TabItem label="Configuration">
+
+```json title="Example configuration"
+{
+  "command": "beans-lsp",
+  "args": [],
+  "env": { "RUST_LOG": "info" }
+}
+```
+
+  </TabItem>
+</Tabs>
+
+<Steps>
+
+1. **Build Beans.** Use the shell command above.
+2. **Connect your editor.** Follow [Editor Setup](/beans/lsp/editor-setup/).
+3. **Open a workspace.** Check the language-server logs if something looks wrong.
+
+</Steps>
+
+## Text and disclosure
+
+### A smaller heading
+
+Regular text, **bold emphasis**, *italic emphasis*, and `inline code` should feel at home on the same surface. The page header, sidebar, search field, and table of contents provide the surrounding context for these examples.
+
+> A shared ecosystem deserves tooling that can work across language boundaries.
+
+<details>
+  <summary>Expand to inspect the disclosure treatment</summary>
+
+This is ordinary text inside a disclosure, including a [link](/beans/getting-started/) and `inline code`.
+
+:::tip[An embedded tip]
+Admonitions should also work inside a disclosure without changing their colors.
+:::
+
+</details>
+
+## Brand colors
+
+These swatches use the actual CSS variables, so they follow changes to the brand reference.
+
+<div style="display:flex; flex-wrap:wrap; gap:1rem; margin-block:1.5rem;">
+  <span><span aria-hidden="true" style="display:block; width:6rem; height:3rem; background:var(--beans-color-primary-yellow); margin-bottom:0.5rem;"></span>Yellow</span>
+  <span><span aria-hidden="true" style="display:block; width:6rem; height:3rem; background:var(--beans-color-green); margin-bottom:0.5rem;"></span>Green</span>
+  <span><span aria-hidden="true" style="display:block; width:6rem; height:3rem; background:var(--beans-color-red); margin-bottom:0.5rem;"></span>Red</span>
+</div>
+
+### Heatwave bands
+
+<div aria-label="Seven Heatwave bands, from red to yellow" role="img" style="display:flex; height:4rem; margin-block:1.5rem;">
+  <span style="flex:1; background:var(--beans-color-band-1);"></span>
+  <span style="flex:1; background:var(--beans-color-band-2);"></span>
+  <span style="flex:1; background:var(--beans-color-band-3);"></span>
+  <span style="flex:1; background:var(--beans-color-band-4);"></span>
+  <span style="flex:1; background:var(--beans-color-band-5);"></span>
+  <span style="flex:1; background:var(--beans-color-band-6);"></span>
+  <span style="flex:1; background:var(--beans-color-band-7);"></span>
+</div>
+
+| Role | Color |
+| --- | --- |
+| Primary yellow | `#FEB626` |
+| Green | `#8FBC72` |
+| Red | `#E83D35` |
+| Dark content · Deep roast | `#0D0B0A` |
+| Dark navigation · Warm near-black | `#12100E` |
+| Light content | `#FFFFFF` |

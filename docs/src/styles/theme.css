@@ -1,0 +1,126 @@
+@import '@fontsource/rubik/latin-700.css';
+@import './brand.css';
+
+/* Starlight consumes the shared brand colors without owning their values. */
+:root[data-theme='dark'] {
+  --sl-color-accent: var(--beans-color-primary-yellow);
+  --sl-color-accent-high: var(--beans-color-primary-yellow);
+  --sl-color-accent-low: color-mix(in srgb, var(--beans-color-primary-yellow) 20%, var(--beans-color-background-dark));
+  --sl-color-bg: var(--beans-color-background-dark);
+  --sl-color-bg-nav: var(--beans-color-background-dark-secondary);
+  --sl-color-bg-sidebar: var(--beans-color-background-dark-secondary);
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent: var(--beans-color-primary-yellow);
+  --sl-color-accent-high: var(--beans-color-primary-yellow);
+  --sl-color-accent-low: color-mix(in srgb, var(--beans-color-primary-yellow) 20%, var(--beans-color-background-light));
+  --sl-color-text-accent: var(--sl-color-white);
+  --sl-color-text-invert: var(--beans-color-background-dark);
+  --sl-color-bg: var(--beans-color-background-light);
+}
+
+:root[data-theme='light'] .sl-link-button.primary {
+  background-color: var(--sl-color-bg-accent);
+  border-color: var(--sl-color-bg-accent);
+  color: var(--sl-color-text-invert);
+}
+
+:root[data-theme='light'] #starlight__sidebar [aria-current='page'] {
+  background-color: var(--sl-color-bg-accent);
+}
+
+:root[data-theme='light'] .sl-markdown-content a:not(:where(.not-content, .not-content *)) {
+  text-decoration-color: var(--beans-color-primary-yellow);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.2em;
+}
+
+.site-title {
+  gap: 0.75rem;
+  font-family: var(--beans-font-wordmark);
+  font-weight: var(--beans-font-weight-wordmark);
+}
+
+.site-title span {
+  letter-spacing: var(--beans-letter-spacing-wordmark);
+}
+
+.hero .beans-wordmark {
+  font-family: var(--beans-font-wordmark);
+  font-weight: var(--beans-font-weight-wordmark);
+}
+
+:root[data-theme='dark'] .expressive-code {
+  --ec-frm-trmBg: var(--beans-color-background-dark-secondary);
+  --ec-frm-trmTtbBg: var(--beans-color-background-dark);
+}
+
+/* The mobile navigation pane uses a separate Starlight background rule. */
+:root[data-theme='dark'] .sidebar-pane {
+  background-color: var(--sl-color-bg-sidebar);
+}
+
+/* Shared aside colors, with quieter surfaces than Starlight's defaults. */
+:root[data-theme='dark'] {
+  --beans-aside-note-text: var(--beans-color-note-text-dark);
+  --beans-aside-tip-text: var(--beans-color-tip-text-dark);
+  --beans-aside-caution-text: var(--beans-color-caution-text-dark);
+  --beans-aside-danger-text: var(--beans-color-danger-text-dark);
+}
+
+:root[data-theme='light'] {
+  --beans-aside-note-text: var(--beans-color-note-text-light);
+  --beans-aside-tip-text: var(--beans-color-tip-text-light);
+  --beans-aside-caution-text: var(--beans-color-caution-text-light);
+  --beans-aside-danger-text: var(--beans-color-danger-text-light);
+}
+
+.starlight-aside--note {
+  --sl-color-asides-border: var(--beans-color-note);
+  --sl-color-asides-text-accent: var(--beans-aside-note-text);
+}
+
+.starlight-aside--tip {
+  --sl-color-asides-border: var(--beans-color-tip);
+  --sl-color-asides-text-accent: var(--beans-aside-tip-text);
+}
+
+.starlight-aside--caution {
+  --sl-color-asides-border: var(--beans-color-caution);
+  --sl-color-asides-text-accent: var(--beans-aside-caution-text);
+  --beans-aside-tint: 10%;
+}
+
+.starlight-aside--danger {
+  --sl-color-asides-border: var(--beans-color-danger);
+  --sl-color-asides-text-accent: var(--beans-aside-danger-text);
+}
+
+.starlight-aside {
+  position: relative;
+  border-inline-start: 0;
+  padding-inline-start: 1.375rem;
+  background-color: color-mix(in srgb, var(--sl-color-asides-border) var(--beans-aside-tint, 7%), var(--sl-color-bg));
+}
+
+.starlight-aside::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 0.375rem;
+  background-color: var(--sl-color-asides-border);
+  pointer-events: none;
+}
+
+/* A static barberpole marks urgency without filling the whole box. */
+:is(.starlight-aside--caution, .starlight-aside--danger)::before {
+  background-color: color-mix(in srgb, var(--sl-color-asides-border) 20%, var(--sl-color-bg));
+  background-image: repeating-linear-gradient(45deg, var(--sl-color-asides-border) 0 6px, transparent 6px 12px);
+}
+
+.sl-markdown-content .starlight-aside .starlight-aside__content a {
+  color: var(--sl-color-asides-text-accent);
+  text-decoration-color: currentColor;
+}

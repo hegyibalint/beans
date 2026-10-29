@@ -1,11 +1,13 @@
 ---
 title: Getting Started
-description: Get Beans and try it in your editor.
+description: Get Beans and build it from source.
 ---
 
 import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 
+:::caution
 Beans is in early development. Expect missing features and rough edges.
+:::
 
 ## Get some Beans
 
@@ -53,24 +55,6 @@ For now, build from source using the **Sources** tab.
   </TabItem>
 </Tabs>
 
-## Editor setup
+## Next steps
 
-### Visual Studio Code
-
-The VS Code extension currently runs from the source checkout. After installing
-the dependencies above, install VS Code's `code` command and run from the
-repository root:
-
-```sh
-mise install
-scripts/dev-vscode.sh
-```
-
-This builds Beans and opens the example Java project in a separate VS Code
-window with the development extension loaded.
-
-### Other editors
-
-Beans communicates over standard input/output using the Language Server
-Protocol. Point your editor's LSP client at the `beans-lsp` executable and
-configure it for Java files. Editor-specific instructions will follow.
+Follow [Editor Setup](/beans/lsp/editor-setup/) to use Beans in your editor.

@@ -1,0 +1,23 @@
+#starlight__sidebar .top-level > li + li {
+  margin-top: 1.5rem;
+}
+
+#starlight__sidebar .top-level > li > details::details-content {
+  content-visibility: visible;
+}
+
+#starlight__sidebar .top-level > li > details > summary {
+  pointer-events: none;
+  cursor: default;
+  margin-bottom: 0.5rem;
+}
+
+#starlight__sidebar .top-level > li > details > summary > .caret {
+  display: none;
+}
+
+#starlight__sidebar .top-level > li > details > ul > li {
+  margin-inline-start: 0;
+  border-inline-start: 0;
+  padding-inline-start: 0;
+}

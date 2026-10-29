@@ -4,9 +4,10 @@ description: An LSP for the JVM ecosystem.
 template: doc
 tableOfContents: false
 hero:
+  title: '<span class="beans-wordmark">Beans</span>'
   tagline: An LSP for the JVM ecosystem.
   image:
-    file: ../../assets/logo.png
+    file: ../../assets/logo.svg
     alt: Beans logo
   actions:
     - text: Getting Started

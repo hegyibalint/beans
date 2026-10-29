@@ -10,6 +10,7 @@
   "dependencies": {
     "@astrojs/markdown-remark": "^7.3.4",
     "@astrojs/starlight": "^0.42.7",
+    "@fontsource/rubik": "^5.3.0",
     "astro": "^7.4.2"
   }
 }

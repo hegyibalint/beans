@@ -1,0 +1,50 @@
+/* Beans brand reference. */
+:root {
+  --beans-font-wordmark: 'Rubik', sans-serif;
+  --beans-font-weight-wordmark: 700;
+  --beans-letter-spacing-wordmark: -0.027em;
+
+  /* Primary yellow, also used for the logo's solid outline. */
+  --beans-color-primary-yellow: #FEB626;
+
+  /*
+   * Heatwave: seven colors forming the logo's flat, equal-width bands.
+   * Numbered in order from the red end to the yellow end.
+   * The final band color is distinct from the primary yellow above.
+   */
+  --beans-band-count: 7;
+  --beans-color-band-1: #C82B3C;
+  --beans-color-band-2: #E83D35;
+  --beans-color-band-3: #F6532B;
+  --beans-color-band-4: #FA7929;
+  --beans-color-band-5: #FFA931;
+  --beans-color-band-6: #FFCC39;
+  --beans-color-band-7: #FFE353;
+
+  /* Supporting brand colors, also used by admonitions. */
+  --beans-color-green: #8FBC72;
+  --beans-color-red: var(--beans-color-band-2);
+
+  /* Page backgrounds: plain white for light mode, Deep roast for dark mode. */
+  --beans-color-background-light: #FFFFFF;
+  --beans-color-background-dark: #0D0B0A;
+
+  /* Warm near-black navigation surfaces, close to the Deep roast content. */
+  --beans-color-background-dark-secondary: #12100E;
+
+  /* Admonitions: brand amber, leafy green, and the Heatwave red. */
+  --beans-color-note: var(--beans-color-primary-yellow);
+  --beans-color-tip: var(--beans-color-green);
+  --beans-color-caution: var(--beans-color-primary-yellow);
+  --beans-color-danger: var(--beans-color-red);
+
+  /* Title/link colors tuned for each surface; borders retain their identity. */
+  --beans-color-note-text-dark: var(--beans-color-primary-yellow);
+  --beans-color-tip-text-dark: #B2D997;
+  --beans-color-caution-text-dark: var(--beans-color-primary-yellow);
+  --beans-color-danger-text-dark: #F08372;
+  --beans-color-note-text-light: #765000;
+  --beans-color-tip-text-light: #39652D;
+  --beans-color-caution-text-light: #765000;
+  --beans-color-danger-text-light: #AB2D27;
+}
