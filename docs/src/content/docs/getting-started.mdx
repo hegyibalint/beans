@@ -1,22 +1,38 @@
 ---
 title: Getting Started
-description: Get Beans and build it from source.
+description: Get Beans and try it in your editor.
 ---
 
 import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 
-:::caution
 Beans is in early development. Expect missing features and rough edges.
-:::
 
 ## Get some Beans
 
 <Tabs>
   <TabItem label="Binary">
 
-Prebuilt binaries are not published yet. They will be available through
-[GitHub Releases](https://github.com/hegyibalint/beans/releases).
-For now, build from source using the **Sources** tab.
+Download the [latest release](https://github.com/hegyibalint/beans/releases/latest).
+For now, releases are nightly development snapshots, not numbered versions.
+Each published release is immutable; the latest links move forward as new
+releases are published.
+
+The initial binary is for **Linux x86-64**, built on Ubuntu 24.04. Compatibility
+with older Linux distributions is not yet established. For other platforms,
+use the **Sources** tab.
+
+```sh
+curl -fLO https://github.com/hegyibalint/beans/releases/latest/download/beans-lsp-linux-x86_64
+curl -fL https://github.com/hegyibalint/beans/releases/latest/download/SHA256SUMS | sha256sum --check --ignore-missing -
+chmod +x beans-lsp-linux-x86_64
+```
+
+Move `beans-lsp-linux-x86_64` to a directory on your `PATH`, renaming it to
+`beans-lsp`, or configure your editor with its absolute path.
+
+To pin a build, use its release-specific download link instead of `latest`.
+Keep the release tag when reporting a bug. The release notes identify the exact
+source commit and build workflow.
 
   </TabItem>
   <TabItem label="Sources">
@@ -55,6 +71,24 @@ For now, build from source using the **Sources** tab.
   </TabItem>
 </Tabs>
 
-## Next steps
+## Editor setup
 
-Follow [Editor Setup](/beans/lsp/editor-setup/) to use Beans in your editor.
+### Visual Studio Code
+
+The VS Code extension currently runs from the source checkout. After installing
+the dependencies above, install VS Code's `code` command and run from the
+repository root:
+
+```sh
+mise install
+scripts/dev-vscode.sh
+```
+
+This builds Beans and opens the example Java project in a separate VS Code
+window with the development extension loaded.
+
+### Other editors
+
+Beans communicates over standard input/output using the Language Server
+Protocol. Point your editor's LSP client at the `beans-lsp` executable and
+configure it for Java files. Editor-specific instructions will follow.

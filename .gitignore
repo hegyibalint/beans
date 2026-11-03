@@ -13,6 +13,7 @@
 /docs/lang-specs/jls/
 /docs/lang-specs/jvms/
 /docs/lang-specs/lsp/
+/docs/lang-specs/jsonrpc/
 
 __pycache__/
 /.claude/*

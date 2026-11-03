@@ -11,14 +11,15 @@ import update
 
 
 class SpecificationTests(unittest.TestCase):
-    def test_update_runs_the_lsp_fetcher_after_the_java_fetchers(self):
+    def test_update_runs_all_pinned_specification_fetchers(self):
         calls = []
         with patch.object(update.jls, "main", side_effect=lambda: calls.append("jls")), \
              patch.object(update.jvms, "main", side_effect=lambda: calls.append("jvms")), \
-             patch.object(update.lsp, "main", side_effect=lambda: calls.append("lsp")):
+             patch.object(update.lsp, "main", side_effect=lambda: calls.append("lsp")), \
+             patch.object(update.jsonrpc, "main", side_effect=lambda: calls.append("jsonrpc")):
             update.main()
 
-        self.assertEqual(calls, ["jls", "jvms", "lsp"])
+        self.assertEqual(calls, ["jls", "jvms", "lsp", "jsonrpc"])
 
     def test_only_the_rendered_specification_is_converted(self):
         page = """<nav>Site navigation</nav>

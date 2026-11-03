@@ -2,13 +2,14 @@
 
 The JLS and JVMS entry scripts pin their editions and chapter tables;
 this module owns their download -> pandoc (html -> gfm) -> cleanup pipeline.
-The LSP entry script reuses fetching and conversion for its single rendered page.
+Single-page specifications reuse fetching, body extraction, and conversion.
 """
 
 import re
 import subprocess
 import time
 import urllib.request
+from html.parser import HTMLParser
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
@@ -56,6 +57,54 @@ def fetch(url):
     request = urllib.request.Request(url, headers={"User-Agent": "curl/8"})
     with urllib.request.urlopen(request) as response:
         return response.read().decode("utf-8")
+
+
+class SpecificationBody(HTMLParser):
+    """Locate a specification's div, excluding site navigation and footer."""
+
+    def __init__(self, attribute):
+        super().__init__()
+        self.attribute = attribute
+        self.start = None
+        self.end = None
+        self.depth = 0
+
+    def handle_starttag(self, tag, attrs):
+        if self.start is None:
+            if tag == "div" and self.attribute in attrs:
+                self.start = self.getpos()
+                self.depth = 1
+        elif self.end is None and tag == "div":
+            self.depth += 1
+
+    def handle_endtag(self, tag):
+        if tag == "div" and self.start is not None and self.end is None:
+            self.depth -= 1
+            if self.depth == 0:
+                self.end = self.getpos()
+
+
+def extract_specification(page, attribute, name):
+    parser = SpecificationBody(attribute)
+    parser.feed(page)
+    if parser.start is None or parser.end is None:
+        raise ValueError(f"could not locate the rendered {name} specification")
+
+    lines = page.splitlines(keepends=True)
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line))
+
+    def index(position):
+        line, column = position
+        return offsets[line - 1] + column
+
+    start = page.index(">", index(parser.start)) + 1
+    html = page[start:index(parser.end)]
+    if not html.strip():
+        raise ValueError(f"rendered {name} specification is empty")
+    # Remove layout and syntax-highlighting wrappers without losing their contents.
+    return re.sub(r"</?(?:div|span)\b[^>]*>", "", html)
 
 
 def to_markdown(html):

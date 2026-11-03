@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Download and convert the pinned Java and LSP specifications to Markdown."""
+"""Download and convert the pinned Java, LSP, and JSON-RPC specifications to Markdown."""
 
 import jls
 import jvms
 import lsp
+import jsonrpc
 
 
 def main():
-    for spec in (jls, jvms, lsp):
+    for spec in (jls, jvms, lsp, jsonrpc):
         spec.main()
 
 
