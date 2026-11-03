@@ -2,7 +2,7 @@ use beans_core::{
     location::{Location, LocationEntry},
     names::Name,
 };
-use beans_engine::storage::open;
+use beans_engine::storage::{open, open_or_create};
 use beans_lang_java::{
     lower_into, query,
     storage::{remove, store},
@@ -20,7 +20,7 @@ fn java_models_are_stored_as_queryable_json_without_consuming_the_model() {
         .entry(LocationEntry::Container("lib/sources.jar".into()))
         .entry(LocationEntry::Container("p/q/Box.java".into()));
     let id = {
-        let mut connection = open(&path).unwrap();
+        let mut connection = open_or_create(&path).unwrap();
         let transaction = connection.transaction().unwrap();
         let id = store(&file, &location, contents, &transaction).unwrap();
         transaction.commit().unwrap();
@@ -70,7 +70,7 @@ fn java_models_are_stored_as_queryable_json_without_consuming_the_model() {
 #[test]
 fn models_can_be_selected_by_the_first_location_component() {
     let root = TempDir::new();
-    let mut connection = open(&root.path("models.sqlite")).unwrap();
+    let mut connection = open_or_create(&root.path("models.sqlite")).unwrap();
     let transaction = connection.transaction().unwrap();
     let file = lower_into("class Example {}");
     for source in [
@@ -101,7 +101,7 @@ fn models_can_be_selected_by_the_first_location_component() {
 #[test]
 fn replacing_a_model_reuses_its_row_and_preserves_the_verbatim_location() {
     let root = TempDir::new();
-    let mut connection = open(&root.path("models.sqlite")).unwrap();
+    let mut connection = open_or_create(&root.path("models.sqlite")).unwrap();
     let uri = "UNTITLED:My%20Type.java";
     let location = Location::new(LocationEntry::Virtual(uri.into()));
     let transaction = connection.transaction().unwrap();
@@ -139,7 +139,7 @@ fn replacing_a_model_reuses_its_row_and_preserves_the_verbatim_location() {
 #[test]
 fn the_caller_controls_commit_and_rollback() {
     let root = TempDir::new();
-    let mut connection = open(&root.path("models.sqlite")).unwrap();
+    let mut connection = open_or_create(&root.path("models.sqlite")).unwrap();
     {
         let transaction = connection.transaction().unwrap();
         store(
@@ -161,7 +161,7 @@ fn the_caller_controls_commit_and_rollback() {
 #[test]
 fn publication_errors_allow_the_caller_to_roll_back_the_whole_batch() {
     let root = TempDir::new();
-    let mut connection = open(&root.path("models.sqlite")).unwrap();
+    let mut connection = open_or_create(&root.path("models.sqlite")).unwrap();
     connection.execute_batch("CREATE TRIGGER reject_location BEFORE INSERT ON models WHEN json_array_length(NEW.location) > 1 BEGIN SELECT RAISE(ABORT, 'rejected location'); END;").unwrap();
     {
         let transaction = connection.transaction().unwrap();
@@ -190,7 +190,7 @@ fn publication_errors_allow_the_caller_to_roll_back_the_whole_batch() {
 fn non_utf8_file_locations_are_rejected_instead_of_changed() {
     use std::{ffi::OsString, os::unix::ffi::OsStringExt, path::PathBuf};
     let root = TempDir::new();
-    let mut connection = open(&root.path("models.sqlite")).unwrap();
+    let mut connection = open_or_create(&root.path("models.sqlite")).unwrap();
     {
         let transaction = connection.transaction().unwrap();
         let path = PathBuf::from(OsString::from_vec(b"/Example\xff.java".to_vec()));
@@ -205,7 +205,7 @@ fn read_transactions_keep_old_models_and_indexes_after_replacement() {
     let root = TempDir::new();
     let path = root.path("models.sqlite");
     let source = Location::file("/Example.java");
-    let mut writer = open(&path).unwrap();
+    let mut writer = open_or_create(&path).unwrap();
     {
         let transaction = writer.transaction().unwrap();
         store(
@@ -276,7 +276,7 @@ fn deleting_a_model_keeps_existing_readers_consistent_and_removes_all_owned_rows
     let root = TempDir::new();
     let path = root.path("models.sqlite");
     let source = Location::file("/Example.java");
-    let mut writer = open(&path).unwrap();
+    let mut writer = open_or_create(&path).unwrap();
     {
         let transaction = writer.transaction().unwrap();
         store(
@@ -323,7 +323,7 @@ fn readers_never_observe_a_partially_published_batch() {
     let path = root.path("models.sqlite");
     let first = Location::file("/First.java");
     let second = Location::file("/Second.java");
-    let mut writer = open(&path).unwrap();
+    let mut writer = open_or_create(&path).unwrap();
     {
         let transaction = writer.transaction().unwrap();
         store(

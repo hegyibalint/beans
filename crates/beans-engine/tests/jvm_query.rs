@@ -1,5 +1,5 @@
 use beans_core::{location::Location, names::Name};
-use beans_engine::storage::open;
+use beans_engine::storage::{open, open_or_create};
 use beans_lang_java::{
     lower_into,
     semantics::resolution::{TypeCandidate, query},
@@ -13,7 +13,7 @@ use rusqlite::Connection;
 fn java_and_jvm_queries_share_a_snapshot_across_replacement_and_deletion() {
     let root = TempDir::new();
     let path = root.path("models.sqlite");
-    let mut writer = open(&path).unwrap();
+    let mut writer = open_or_create(&path).unwrap();
     publish("Old", &mut writer);
     let mut reader = open(&path).unwrap();
     let old = Name::new(vec!["p".into(), "Old".into()]);

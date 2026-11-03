@@ -53,7 +53,7 @@ impl Engine {
         let work_dir = workspace_root.join(beans_dir);
         fs::create_dir_all(&work_dir)
             .map_err(|error| format!("{}: {error}", work_dir.display()))?;
-        let storage = storage::open(&work_dir.join("models"))?;
+        let storage = storage::open_or_create(&work_dir.join("models"))?;
         let (sender, commands) = unbounded();
         let java = JavaLanguage::new();
 

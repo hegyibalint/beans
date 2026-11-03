@@ -2,15 +2,15 @@ use beans_core::{
     location::{Location, LocationEntry},
     resource_filter::ResourceFilter,
 };
-use beans_engine::storage::{initialize, open};
+use beans_engine::storage::{initialize, open, open_or_create};
 use beans_testing::{TempDir, database};
-use rusqlite::Connection;
+use rusqlite::{Connection, TransactionBehavior};
 
 #[test]
 fn startup_initializes_and_configures_the_database() {
     let files = TempDir::new();
     let path = files.path("models.sqlite");
-    let connection = open(&path).unwrap();
+    let connection = open_or_create(&path).unwrap();
 
     assert!(path.is_file());
     assert!(version(&connection) > 0);
@@ -54,9 +54,97 @@ fn startup_initializes_and_configures_the_database() {
 }
 
 #[test]
+fn runtime_open_requires_an_existing_database() {
+    let files = TempDir::new();
+    let path = files.path("models.sqlite");
+
+    let error = open(&path).unwrap_err();
+
+    assert!(error.contains(&path.display().to_string()));
+    assert!(!path.exists());
+}
+
+#[test]
+fn runtime_open_configures_the_connection_and_preserves_data() {
+    let files = TempDir::new();
+    let path = files.path("models.sqlite");
+    {
+        let connection = open_or_create(&path).unwrap();
+        connection
+            .execute("INSERT INTO models VALUES (1, '[]', 0, '{}', NULL)", [])
+            .unwrap();
+    }
+
+    let connection = open(&path).unwrap();
+
+    assert_eq!(count("models", &connection), 1);
+    assert_eq!(version(&connection), version(&database()));
+    assert_eq!(
+        connection
+            .pragma_query_value(None, "journal_mode", |row| row.get::<_, String>(0))
+            .unwrap(),
+        "wal"
+    );
+    for (pragma, expected) in [
+        ("busy_timeout", 5000),
+        ("synchronous", 2),
+        ("foreign_keys", 1),
+    ] {
+        assert_eq!(
+            connection
+                .pragma_query_value(None, pragma, |row| row.get::<_, i64>(0))
+                .unwrap(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn runtime_open_does_not_initialize_an_existing_database() {
+    let files = TempDir::new();
+    let path = files.path("models.sqlite");
+    {
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE sentinel (value INTEGER); INSERT INTO sentinel VALUES (42)",
+            )
+            .unwrap();
+    }
+
+    let connection = open(&path).unwrap();
+
+    assert_eq!(version(&connection), 0);
+    assert_eq!(count("sentinel", &connection), 1);
+    assert!(connection.prepare("SELECT * FROM models").is_err());
+}
+
+#[test]
+fn runtime_open_can_read_while_another_connection_holds_a_write_transaction() {
+    let files = TempDir::new();
+    let path = files.path("models.sqlite");
+    let mut writer = open_or_create(&path).unwrap();
+    writer
+        .execute("INSERT INTO models VALUES (1, '[]', 0, '{}', NULL)", [])
+        .unwrap();
+    let transaction = writer
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .unwrap();
+    transaction
+        .execute("INSERT INTO models VALUES (2, '[]', 0, '{}', NULL)", [])
+        .unwrap();
+
+    let reader = open(&path).unwrap();
+
+    assert_eq!(count("models", &reader), 1);
+    transaction.commit().unwrap();
+    assert_eq!(count("models", &reader), 2);
+}
+
+#[test]
 fn jvm_class_lookup_uses_the_name_index() {
     let files = TempDir::new();
-    let connection = open(&files.path("models.sqlite")).unwrap();
+    let connection = open_or_create(&files.path("models.sqlite")).unwrap();
     let plan: String = connection
         .query_row(
             "EXPLAIN QUERY PLAN
@@ -74,7 +162,7 @@ fn jvm_class_lookup_uses_the_name_index() {
 #[test]
 fn jvm_resource_removal_uses_the_root_index() {
     let files = TempDir::new();
-    let connection = open(&files.path("models.sqlite")).unwrap();
+    let connection = open_or_create(&files.path("models.sqlite")).unwrap();
     let location = serde_json::to_string(&LocationEntry::File("/library.jar".into())).unwrap();
     let plan: String = connection
         .query_row(
@@ -150,7 +238,7 @@ fn matching_version_preserves_cached_data() {
     let inputs = serde_json::to_string(&[ResourceFilter::file("/project/src")]).unwrap();
     let dependencies = serde_json::to_string(&[ResourceFilter::file("/library.jar")]).unwrap();
     let expected_version = {
-        let connection = open(&path).unwrap();
+        let connection = open_or_create(&path).unwrap();
         connection
             .execute("INSERT INTO models VALUES (1, '[]', 0, '{}', NULL)", [])
             .unwrap();
@@ -163,7 +251,7 @@ fn matching_version_preserves_cached_data() {
             .unwrap();
         version(&connection)
     };
-    let connection = open(&path).unwrap();
+    let connection = open_or_create(&path).unwrap();
     assert_eq!(version(&connection), expected_version);
     assert_eq!(count("models", &connection), 1);
     let scope: (i64, i64, String, String, String, String) = connection
@@ -193,7 +281,7 @@ fn null_and_empty_dependency_filters_remain_distinct_after_reopening() {
     let files = TempDir::new();
     let path = files.path("models.sqlite");
     {
-        let connection = open(&path).unwrap();
+        let connection = open_or_create(&path).unwrap();
         connection
             .execute_batch(
                 "INSERT INTO compilation_scopes (kind, root, name, inputs, dependencies)
@@ -227,7 +315,7 @@ fn blob_model_caches_are_reset_instead_of_migrated() {
             )
             .unwrap();
     }
-    let connection = open(&path).unwrap();
+    let connection = open_or_create(&path).unwrap();
     assert_eq!(version(&connection), version(&database()));
     assert_eq!(count("models", &connection), 0);
     connection
@@ -255,7 +343,7 @@ fn older_version_discards_the_previous_schema_and_data() {
             )
             .unwrap();
     }
-    let connection = open(&path).unwrap();
+    let connection = open_or_create(&path).unwrap();
     assert_eq!(version(&connection), expected_version);
     assert_eq!(count("models", &connection), 0);
     let objects: i64 = connection
@@ -285,7 +373,7 @@ fn newer_version_is_rejected_without_changing_the_database() {
             .unwrap();
     }
     assert_eq!(
-        open(&path).unwrap_err(),
+        open_or_create(&path).unwrap_err(),
         format!("unsupported SQLite schema version: {future_version}")
     );
     let connection = Connection::open(&path).unwrap();
@@ -303,7 +391,7 @@ fn newer_version_is_rejected_without_changing_the_database() {
 fn opening_does_not_create_parent_directories() {
     let files = TempDir::new();
     let path = files.path("missing/models.sqlite");
-    assert!(open(&path).is_err());
+    assert!(open_or_create(&path).is_err());
     assert!(!path.parent().unwrap().exists());
 }
 
@@ -312,7 +400,7 @@ fn locations_preserve_order_kinds_and_values_after_reopening() {
     let files = TempDir::new();
     let path = files.path("models.sqlite");
     {
-        let connection = open(&path).unwrap();
+        let connection = open_or_create(&path).unwrap();
         connection.execute_batch(
             r#"INSERT INTO models VALUES (1, '[{"File":"/project/app.zip"},{"Container":"lib/a.jar"},{"Container":"p/C.class"}]', 0, '{}', NULL);
                INSERT INTO models VALUES (2, '[{"Virtual":"UNTITLED:My%20Type.java"}]', 1, '{}', X'03');"#,
@@ -375,7 +463,7 @@ fn resetting_a_component_location_cache_discards_its_tables_and_data() {
         assert_eq!(obsolete_tables, 0);
         assert_eq!(version(&connection), expected_version);
     }
-    assert_eq!(version(&open(&path).unwrap()), expected_version);
+    assert_eq!(version(&open_or_create(&path).unwrap()), expected_version);
 }
 
 fn version(connection: &Connection) -> i64 {

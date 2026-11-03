@@ -1,11 +1,21 @@
 use std::{path::Path, time::Duration};
 
-use rusqlite::{Connection, TransactionBehavior};
+use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 
 const SCHEMA_VERSION: i64 = 16;
 
-/// Opens a file-backed cache. The caller chooses its location and creates its parent directory.
+/// Opens and configures an existing cache without initializing or resetting its schema.
 pub fn open(path: &Path) -> Result<Connection, String> {
+    let flags = OpenFlags::default() & !OpenFlags::SQLITE_OPEN_CREATE;
+    let connection = Connection::open_with_flags(path, flags)
+        .map_err(|error| format!("{}: {error}", path.display()))?;
+    configure(&connection)?;
+    Ok(connection)
+}
+
+/// Opens or creates a file-backed cache and initializes or validates its schema.
+/// Older caches are reset. The caller creates the parent directory.
+pub fn open_or_create(path: &Path) -> Result<Connection, String> {
     let mut connection =
         Connection::open(path).map_err(|error| format!("{}: {error}", path.display()))?;
     initialize(&mut connection)?;
@@ -22,10 +32,14 @@ pub fn open(path: &Path) -> Result<Connection, String> {
 /// Older caches are reset; newer schema versions are rejected.
 /// The journal mode is left unchanged so in-memory connections are supported.
 pub fn initialize(connection: &mut Connection) -> Result<(), String> {
+    configure(connection)?;
+    initialize_schema(&schema(), connection)
+}
+
+fn configure(connection: &Connection) -> Result<(), String> {
     connection
         .busy_timeout(Duration::from_secs(5))
         .map_err(|error| error.to_string())?;
-    initialize_schema(&schema(), connection)?;
     connection
         .pragma_update(None, "foreign_keys", true)
         .map_err(|error| error.to_string())?;
