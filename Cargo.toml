@@ -6,6 +6,7 @@ members = [
     "crates/beans-lang-java",
     "crates/beans-lsp",
     "crates/beans-platform-jvm",
+    "crates/beans-sidecar",
     "crates/beans-testing",
     "crates/beans-workspace-toml",
 ]
@@ -21,6 +22,7 @@ beans-core = { path = "crates/beans-core" }
 beans-engine = { path = "crates/beans-engine" }
 beans-lang-java = { path = "crates/beans-lang-java" }
 beans-platform-jvm = { path = "crates/beans-platform-jvm" }
+beans-sidecar = { path = "crates/beans-sidecar" }
 beans-testing = { path = "crates/beans-testing" }
 beans-workspace-toml = { path = "crates/beans-workspace-toml" }
 cafebabe = { version = "0.9", default-features = false }

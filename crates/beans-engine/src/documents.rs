@@ -11,7 +11,7 @@ impl Engine {
         self.java.accept(path)
     }
 
-    pub fn process(&mut self, source: Location, contents: &str) -> Result<bool, String> {
+    pub fn process(&self, source: Location, contents: &str) -> Result<bool, String> {
         let [LocationEntry::File(path)] = source.entries.as_slice() else {
             return Ok(false);
         };
@@ -22,7 +22,7 @@ impl Engine {
     }
 
     pub fn process_document(
-        &mut self,
+        &self,
         source: Location,
         language_id: &str,
         contents: &str,
@@ -31,8 +31,8 @@ impl Engine {
             return Ok(false);
         }
         let model = self.java.process(contents);
-        let transaction = self
-            .storage
+        let mut connection = self.open_connection()?;
+        let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
         storage::store(&model, &source, contents, &transaction)?;
@@ -40,9 +40,9 @@ impl Engine {
         Ok(true)
     }
 
-    pub fn close_document(&mut self, source: Location) -> Result<bool, String> {
-        let transaction = self
-            .storage
+    pub fn close_document(&self, source: Location) -> Result<bool, String> {
+        let mut connection = self.open_connection()?;
+        let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
         let changed = storage::remove(&source, &transaction)?;

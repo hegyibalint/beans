@@ -19,11 +19,12 @@ mod events;
 mod features;
 pub mod logging;
 pub mod storage;
+mod workspaces;
 
 pub struct Engine {
     workspace_root: PathBuf,
     work_dir: PathBuf,
-    storage: Connection,
+    database_path: PathBuf,
 
     // Language verticals
     java: JavaLanguage,
@@ -53,14 +54,15 @@ impl Engine {
         let work_dir = workspace_root.join(beans_dir);
         fs::create_dir_all(&work_dir)
             .map_err(|error| format!("{}: {error}", work_dir.display()))?;
-        let storage = storage::open_or_create(&work_dir.join("models"))?;
+        let database_path = work_dir.join("models");
+        drop(storage::open_or_create(&database_path)?);
         let (sender, commands) = unbounded();
         let java = JavaLanguage::new();
 
         Ok(Self {
             workspace_root: workspace_root.to_path_buf(),
             work_dir,
-            storage,
+            database_path,
             java,
             jvm: Arc::new(JvmPlatform::new()),
             command_sender: sender,
@@ -79,6 +81,10 @@ impl Engine {
         let (sender, receiver) = unbounded();
         self.subscribers.lock().unwrap().push(sender);
         receiver
+    }
+
+    fn open_connection(&self) -> Result<Connection, String> {
+        storage::open(&self.database_path)
     }
 }
 

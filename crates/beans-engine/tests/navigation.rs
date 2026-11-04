@@ -19,7 +19,7 @@ fn imported_type_navigation_is_unrestricted_for_file_and_virtual_documents() {
         Location::new(LocationEntry::Virtual("untitled:Use.java".into())),
     ] {
         let root = TempDir::new();
-        let mut engine = Engine::new(root.root()).unwrap();
+        let engine = Engine::new(root.root()).unwrap();
         engine
             .process_document(source.clone(), "java", use_text)
             .unwrap();

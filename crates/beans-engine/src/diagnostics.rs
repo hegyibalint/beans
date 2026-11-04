@@ -6,9 +6,9 @@ use crate::Engine;
 
 impl Engine {
     pub fn diagnostics(&self, source: &Location) -> Result<Vec<Diagnostic>, String> {
-        let transaction = self
-            .storage
-            .unchecked_transaction()
+        let mut connection = self.open_connection()?;
+        let transaction = connection
+            .transaction()
             .map_err(|error| error.to_string())?;
         self.java
             .diagnostics(source, &CompilationScopes::unrestricted(), &transaction)

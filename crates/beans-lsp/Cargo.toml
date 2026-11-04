@@ -9,9 +9,13 @@ license.workspace = true
 name = "beans-lsp"
 path = "src/main.rs"
 
+[features]
+sidecar = ["dep:beans-sidecar"]
+
 [dependencies]
 beans-core.workspace = true
 beans-engine.workspace = true
+beans-sidecar = { workspace = true, optional = true }
 beans-workspace-toml.workspace = true
 crossbeam-channel.workspace = true
 env_logger.workspace = true

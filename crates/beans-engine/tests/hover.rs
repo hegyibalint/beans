@@ -8,7 +8,7 @@ use beans_testing::TempDir;
 #[test]
 fn java_hover_reaches_the_shared_feature_contract() {
     let files = TempDir::new();
-    let mut engine = Engine::new(files.root()).unwrap();
+    let engine = Engine::new(files.root()).unwrap();
     let source = Location::new(LocationEntry::Virtual("untitled:Example.java".into()));
     let contents = "class C extends Target {}";
     engine
@@ -42,7 +42,7 @@ fn java_hover_reaches_the_shared_feature_contract() {
 #[test]
 fn hover_only_requires_a_request() {
     let files = TempDir::new();
-    let mut engine = Engine::new(files.root()).unwrap();
+    let engine = Engine::new(files.root()).unwrap();
     let source = Location::file("/src/Example.java");
     let contents = "class C extends Target {}";
     engine.process(source.clone(), contents).unwrap();
@@ -64,7 +64,7 @@ fn hover_only_requires_a_request() {
 #[test]
 fn resolved_hover_relativizes_workspace_sources() {
     let files = TempDir::new();
-    let mut engine = Engine::new(files.root()).unwrap();
+    let engine = Engine::new(files.root()).unwrap();
     let contents = "package demo; class C { C value; }";
     let source = Location::file(files.path("src/demo/C.java"));
     engine.process(source.clone(), contents).unwrap();
@@ -91,7 +91,7 @@ fn resolved_hover_relativizes_workspace_sources() {
 #[test]
 fn hover_uses_the_current_model() {
     let files = TempDir::new();
-    let mut engine = Engine::new(files.root()).unwrap();
+    let engine = Engine::new(files.root()).unwrap();
     let source = Location::file("/src/Example.java");
     for (contents, expected) in [
         ("class C extends Former {}", "Former"),

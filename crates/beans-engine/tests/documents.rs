@@ -22,7 +22,7 @@ fn accepts_only_supported_source_files() {
 #[test]
 fn processing_java_source_commits_its_model() {
     let files = TempDir::new();
-    let mut engine = Engine::new(files.root()).unwrap();
+    let engine = Engine::new(files.root()).unwrap();
     let source = Location::file("/src/example/Example.java");
     assert!(
         engine
@@ -39,7 +39,7 @@ fn processing_java_source_commits_its_model() {
 #[test]
 fn virtual_documents_keep_their_identity_through_replacement_and_removal() {
     let files = TempDir::new();
-    let mut engine = Engine::new(files.root()).unwrap();
+    let engine = Engine::new(files.root()).unwrap();
     let cache = storage::open(&files.path(".beans/models")).unwrap();
     let source = Location::new(LocationEntry::Virtual("untitled:Example.java".into()));
     for (contents, end) in [
@@ -74,7 +74,7 @@ fn virtual_documents_keep_their_identity_through_replacement_and_removal() {
 #[test]
 fn unsupported_inputs_report_no_change_and_write_nothing() {
     let files = TempDir::new();
-    let mut engine = Engine::new(files.root()).unwrap();
+    let engine = Engine::new(files.root()).unwrap();
     let virtual_source = Location::new(LocationEntry::Virtual("untitled:Example.java".into()));
     assert!(
         !engine
@@ -107,7 +107,7 @@ fn unsupported_inputs_report_no_change_and_write_nothing() {
 #[test]
 fn failed_publication_restores_the_previous_model_and_indexes() {
     let files = TempDir::new();
-    let mut engine = Engine::new(files.root()).unwrap();
+    let engine = Engine::new(files.root()).unwrap();
     let source = Location::file("/Example.java");
     engine.process(source.clone(), "class Original {}").unwrap();
     let cache = storage::open(&files.path(".beans/models")).unwrap();
@@ -142,7 +142,7 @@ fn failed_publication_restores_the_previous_model_and_indexes() {
 #[test]
 fn failed_deletion_preserves_the_model_and_its_dependents() {
     let files = TempDir::new();
-    let mut engine = Engine::new(files.root()).unwrap();
+    let engine = Engine::new(files.root()).unwrap();
     let source = Location::file("/Example.java");
     engine.process(source.clone(), "class Example {}").unwrap();
     let cache = storage::open(&files.path(".beans/models")).unwrap();
@@ -164,10 +164,10 @@ fn reopening_reads_and_replaces_the_persisted_model() {
     let files = TempDir::new();
     let source = Location::file("/Example.java");
     {
-        let mut engine = Engine::new(files.root()).unwrap();
+        let engine = Engine::new(files.root()).unwrap();
         engine.process(source.clone(), "class Original {}").unwrap();
     }
-    let mut engine = Engine::new(files.root()).unwrap();
+    let engine = Engine::new(files.root()).unwrap();
     let cache = storage::open(&files.path(".beans/models")).unwrap();
     assert!(file(&source, &cache).is_some());
     engine

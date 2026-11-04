@@ -13,14 +13,13 @@ use rusqlite::{Connection, TransactionBehavior};
 use crate::{
     Engine,
     logging::{self, Logger},
-    storage,
 };
 
 impl Engine {
     pub(super) fn start_command_loop(&mut self) -> Result<(), String> {
         let commands = self.command_receiver.clone();
         let subscribers = Arc::clone(&self.subscribers);
-        let storage = storage::open(&self.work_dir.join("models"))?;
+        let storage = self.open_connection()?;
         let logger = logging::open(&self.work_dir);
         let jvm = Arc::clone(&self.jvm);
         self.command_loop = Some(

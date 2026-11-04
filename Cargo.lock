@@ -53,6 +53,7 @@ version = "0.0.1"
 dependencies = [
  "beans-core",
  "beans-engine",
+ "beans-sidecar",
  "beans-testing",
  "beans-workspace-toml",
  "crossbeam-channel",
@@ -77,6 +78,14 @@ dependencies = [
  "serde",
  "serde_json",
  "zip",
+]
+
+[[package]]
+name = "beans-sidecar"
+version = "0.0.1"
+dependencies = [
+ "beans-engine",
+ "beans-testing",
 ]
 
 [[package]]

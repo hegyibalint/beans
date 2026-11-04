@@ -1,0 +1,12 @@
+[package]
+name = "beans-sidecar"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+beans-engine.workspace = true
+
+[dev-dependencies]
+beans-testing.workspace = true

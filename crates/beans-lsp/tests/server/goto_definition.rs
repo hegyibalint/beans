@@ -92,7 +92,7 @@ fn definition_location_reads_unopened_external_file_text_from_disk() {
     let sources = project.join("src");
     let target = Template::parse("package library;\n/* 😀 */ public class <span>Widget</span> {}");
     let target_path = root.write("library/Widget.java", &target.content);
-    let mut engine = beans_engine::Engine::new(&project).unwrap();
+    let engine = beans_engine::Engine::new(&project).unwrap();
     engine
         .process(Location::file(&target_path), &target.content)
         .unwrap();

@@ -2,6 +2,7 @@ use std::{
     collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use beans_core::location::Location;
@@ -17,7 +18,7 @@ impl Features {
         let jdk_override = std::env::var_os("BEANS_WORKSPACE_TOML_JAVA_HOME").map(PathBuf::from);
         let backend = beans_workspace_toml::load(&root, jdk_override.as_deref())
             .map_err(|error| error.to_string())?;
-        let engine = Engine::start(&root)?;
+        let engine = Arc::new(Engine::start(&root)?);
         let engine_notifications = if params
             .capabilities
             .window
@@ -30,6 +31,8 @@ impl Features {
         };
         let mut features = Self {
             engine,
+            #[cfg(feature = "sidecar")]
+            sidecar: beans_sidecar::Sidecar::default(),
             engine_notifications,
             client_capabilities: params.capabilities.clone(),
             open_documents: Default::default(),

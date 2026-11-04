@@ -11,9 +11,9 @@ impl Engine {
         &self,
         request: &DefinitionRequest<'_>,
     ) -> Result<Option<NavigationResult>, String> {
-        let transaction = self
-            .storage
-            .unchecked_transaction()
+        let mut connection = self.open_connection()?;
+        let transaction = connection
+            .transaction()
             .map_err(|error| error.to_string())?;
         let context = JavaFeatureContext {
             connection: &transaction,
