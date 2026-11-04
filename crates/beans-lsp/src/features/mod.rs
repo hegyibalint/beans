@@ -46,7 +46,7 @@ mod tests {
 
     use super::Features;
 
-    #[cfg(feature = "sidecar")]
+    #[cfg(all(feature = "sidecar", unix))]
     #[test]
     fn lsp_owns_the_sidecar_and_its_shared_engine_handle() {
         let files = TempDir::new();
@@ -60,9 +60,11 @@ mod tests {
         .unwrap();
         let mut features = Features::initialize(&params).unwrap();
 
+        let mut command = std::process::Command::new("sh");
+        command.args(["-c", "read ignored; printf x"]);
         features
             .sidecar
-            .start(Arc::downgrade(&features.engine))
+            .start(Arc::downgrade(&features.engine), command)
             .unwrap();
 
         assert_eq!(

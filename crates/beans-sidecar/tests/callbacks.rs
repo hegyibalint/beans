@@ -1,4 +1,6 @@
-use std::sync::Arc;
+#![cfg(unix)]
+
+use std::{process::Command, sync::Arc};
 
 use beans_engine::Engine;
 use beans_sidecar::Sidecar;
@@ -10,7 +12,9 @@ fn reader_dispatches_registration_to_the_shared_engine() {
     let engine = Arc::new(Engine::new(files.root()).unwrap());
     let mut sidecar = Sidecar::default();
 
-    sidecar.start(Arc::downgrade(&engine)).unwrap();
+    let mut command = Command::new("sh");
+    command.args(["-c", "read ignored; printf x"]);
+    sidecar.start(Arc::downgrade(&engine), command).unwrap();
 
     assert_eq!(
         sidecar.stop().unwrap_err(),
@@ -21,15 +25,17 @@ fn reader_dispatches_registration_to_the_shared_engine() {
 }
 
 #[test]
-fn reader_does_not_keep_a_dropped_engine_alive() {
+fn a_reader_waiting_for_input_does_not_keep_the_engine_alive() {
     let files = TempDir::new();
     let engine = Arc::new(Engine::new(files.root()).unwrap());
     let handle = Arc::downgrade(&engine);
-    drop(engine);
     let mut sidecar = Sidecar::default();
+    let mut command = Command::new("sh");
+    command.args(["-c", "read ignored; printf x"]);
+    sidecar.start(handle.clone(), command).unwrap();
 
-    sidecar.start(handle.clone()).unwrap();
+    drop(engine);
+    assert!(handle.upgrade().is_none());
 
     assert_eq!(sidecar.stop().unwrap_err(), "engine is no longer available");
-    assert!(handle.upgrade().is_none());
 }
