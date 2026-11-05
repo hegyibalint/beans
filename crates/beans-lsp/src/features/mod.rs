@@ -46,34 +46,6 @@ mod tests {
 
     use super::Features;
 
-    #[cfg(all(feature = "sidecar", unix))]
-    #[test]
-    fn lsp_owns_the_sidecar_and_its_shared_engine_handle() {
-        let files = TempDir::new();
-        let params = serde_json::from_value(json!({
-            "capabilities": {},
-            "workspaceFolders": [{
-                "uri": Url::from_directory_path(files.root()).unwrap().as_str(),
-                "name": "project"
-            }]
-        }))
-        .unwrap();
-        let mut features = Features::initialize(&params).unwrap();
-
-        let mut command = std::process::Command::new("sh");
-        command.args(["-c", "read ignored; printf x"]);
-        features
-            .sidecar
-            .start(Arc::downgrade(&features.engine), command)
-            .unwrap();
-
-        assert_eq!(
-            features.sidecar.stop().unwrap_err(),
-            "workspace registration is not implemented"
-        );
-        assert_eq!(Arc::strong_count(&features.engine), 1);
-    }
-
     #[test]
     fn lsp_queries_see_publications_from_another_engine_owner() {
         let files = TempDir::new();

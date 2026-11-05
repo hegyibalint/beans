@@ -6,7 +6,5 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-beans-engine.workspace = true
-
-[dev-dependencies]
-beans-testing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
