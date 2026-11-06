@@ -1,11 +1,12 @@
 rootProject.name = "sidecar"
 
-include("core", "adapter-gradle", "app")
+include(":core", ":gradle", ":stdout-screamer")
 
-rootProject.children.forEach { it.projectDir = file("subprojects/${it.name}") }
+project(":gradle").projectDir = file("modules/gradle")
+project(":stdout-screamer").projectDir = file("fixtures/stdout-screamer")
 
 dependencyResolutionManagement {
-    // :app assembles the fat jar, so it resolves the adapters' transitive
+    // The root assembles the fat jar, so it resolves the adapters' transitive
     // dependencies too. Declaring repositories per project would leave it
     // looking for the Tooling API somewhere that does not publish it.
     repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS

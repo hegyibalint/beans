@@ -84,6 +84,7 @@ dependencies = [
 name = "beans-sidecar"
 version = "0.0.1"
 dependencies = [
+ "beans-testing",
  "serde",
  "serde_json",
 ]

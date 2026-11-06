@@ -35,6 +35,26 @@ This has some effects on API design:
 When writing a new module, struct, or function, think of it's integration test not only testing behavior, but "neatness": well design code is most often elegant to test.
 When testing is difficult, examine why before adding workarounds. Propose reshaping APIs and dependency boundaries so behavior is easier to exercise and its effects are easier to observe.
 
+## Sidecar JVM integration
+
+With an installed Java 17 toolchain available to Gradle, build the sidecar JARs:
+
+```sh
+(cd sidecar && ./gradlew assemble)
+```
+
+The Rust JVM integration test is opt-in and discovers an installed Temurin 17 JDK
+through mise. It composes thin JARs and their `build/runtime-classpath.txt` files;
+it does not use the production fat JAR or install a toolchain.
+
+```sh
+cargo test -p beans-sidecar --test jvm -- --ignored
+```
+
+Run the Java protocol and Gradle adapter tests with `./gradlew integrationTest`
+from `sidecar/`. The adapter tests call the adapter directly; RPC imports are not
+wired yet.
+
 ## Shared test utilities
 
 Before adding test setup, look for existing utilities in `beans-testing` and similar setup elsewhere. Reuse what fits.
