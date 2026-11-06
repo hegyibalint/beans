@@ -11,6 +11,6 @@ impl Engine {
             .transaction()
             .map_err(|error| error.to_string())?;
         self.java
-            .diagnostics(source, &CompilationScopes::unrestricted(), &transaction)
+            .diagnostics(source, &CompilationScopes::default(), &transaction)
     }
 }

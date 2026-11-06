@@ -13,7 +13,6 @@ use crate::location::Location;
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ResourceFilter {
     File(FileResourceFilter),
-    Unrestricted,
 }
 
 impl ResourceFilter {
@@ -24,7 +23,6 @@ impl ResourceFilter {
     pub fn contains(&self, resource: &Location) -> bool {
         match self {
             Self::File(filter) => filter.contains(resource),
-            Self::Unrestricted => true,
         }
     }
 }
@@ -35,21 +33,10 @@ mod tests {
     use crate::location::LocationEntry;
 
     #[test]
-    fn unrestricted_includes_files_virtual_resources_and_nested_entries() {
-        let filter = ResourceFilter::Unrestricted;
-        let file = Location::file("/src/Example.java");
-        let virtual_resource =
-            Location::new(LocationEntry::Virtual("untitled:Example.java".into()));
-        let class = Location::file("/library.jar")
-            .entry(LocationEntry::Container("p/Example.class".into()));
-
-        let nested = Location::file("/library.jar")
-            .entry(LocationEntry::Container("nested.jar".into()))
-            .entry(LocationEntry::Container("p/Example.class".into()));
-
-        for resource in [file, virtual_resource, class, nested] {
-            assert!(filter.contains(&resource));
-        }
+    fn unrestricted_is_not_a_filter_entry() {
+        assert!(
+            serde_json::from_value::<ResourceFilter>(serde_json::json!("Unrestricted")).is_err()
+        );
     }
 
     #[test]
@@ -62,10 +49,9 @@ mod tests {
     }
 
     #[test]
-    fn serde_preserves_variants_normalized_roots_and_entry_order() {
+    fn serde_preserves_normalized_roots_and_entry_order() {
         let filters = vec![
             ResourceFilter::file("/libs/old/../b.jar"),
-            ResourceFilter::Unrestricted,
             ResourceFilter::file("/libs/a.jar"),
         ];
         let json = serde_json::to_value(&filters).unwrap();
@@ -73,7 +59,6 @@ mod tests {
             json,
             serde_json::json!([
                 {"File": {"root": "/libs/b.jar"}},
-                "Unrestricted",
                 {"File": {"root": "/libs/a.jar"}},
             ])
         );

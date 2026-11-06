@@ -50,7 +50,7 @@ impl Fixture {
         Self {
             java,
             source: Location::file(source),
-            scopes: CompilationScopes::unrestricted(),
+            scopes: CompilationScopes::default(),
         }
     }
 
@@ -142,6 +142,49 @@ impl Fixture {
         .expect("expected a stored Java type");
         TypeCandidate::Java(JavaTypeCandidate::Declaration(entry))
     }
+}
+
+#[test]
+fn unmatched_sources_resolve_without_scope_restrictions() {
+    let mut fixture = Fixture::competing_targets();
+    fixture.scopes = CompilationScopes::new(vec![CompilationScope {
+        inputs: vec![ResourceFilter::file("/other")],
+        dependencies: Some(vec![]),
+    }]);
+
+    assert_eq!(
+        fixture.resolve(),
+        Err(ResolutionFailure::Ambiguous(
+            fixture.prospective_candidates("Target")
+        ))
+    );
+}
+
+#[test]
+fn matching_empty_dependencies_hide_external_targets() {
+    let mut fixture = Fixture::competing_targets();
+    fixture.scopes = CompilationScopes::new(vec![CompilationScope {
+        inputs: vec![ResourceFilter::file("/consumer")],
+        dependencies: Some(vec![]),
+    }]);
+
+    assert_eq!(fixture.resolve(), Err(ResolutionFailure::NotFound));
+}
+
+#[test]
+fn matching_unrestricted_dependencies_admit_external_targets() {
+    let mut fixture = Fixture::competing_targets();
+    fixture.scopes = CompilationScopes::new(vec![CompilationScope {
+        inputs: vec![ResourceFilter::file("/consumer")],
+        dependencies: None,
+    }]);
+
+    assert_eq!(
+        fixture.resolve(),
+        Err(ResolutionFailure::Ambiguous(
+            fixture.prospective_candidates("Target")
+        ))
+    );
 }
 
 #[test]

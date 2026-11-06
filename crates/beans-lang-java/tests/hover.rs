@@ -166,7 +166,7 @@ fn hover(
         .hover(
             &JavaFeatureContext {
                 connection: &models.connection,
-                scopes: &CompilationScopes::unrestricted(),
+                scopes: &CompilationScopes::default(),
                 workspace_root: None,
             },
             &HoverRequest {

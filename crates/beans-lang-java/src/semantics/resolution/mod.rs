@@ -147,10 +147,10 @@ impl<'a> Context<'a> {
         node_index: NodeIndex,
         type_ref: &'a TypeRef,
     ) -> Self {
-        static UNRESTRICTED: CompilationScopes = CompilationScopes::unrestricted();
+        static EMPTY_SCOPES: CompilationScopes = CompilationScopes::new(Vec::new());
         Self {
             connection: None,
-            scopes: &UNRESTRICTED,
+            scopes: &EMPTY_SCOPES,
             source,
             file,
             node_index,

@@ -17,7 +17,7 @@ impl Engine {
             .map_err(|error| error.to_string())?;
         let context = JavaFeatureContext {
             connection: &transaction,
-            scopes: &CompilationScopes::unrestricted(),
+            scopes: &CompilationScopes::default(),
             workspace_root: Some(&self.workspace_root),
         };
         self.java.hover(&context, request)
