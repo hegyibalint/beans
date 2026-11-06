@@ -28,7 +28,10 @@ public final class Handler {
     }
 
     public <P, R> void register(
-            String name, Class<P> type, Function<P, ? extends CompletionStage<R>> method) {
+        String name,
+        Class<P> type,
+        Function<P, ? extends CompletionStage<R>> method
+    ) {
         var previous = methods.putIfAbsent(name, request -> invoke(request, type, method));
         if (previous != null) {
             throw new IllegalArgumentException("Method already registered: " + name);
@@ -38,6 +41,7 @@ public final class Handler {
     public void run() throws IOException {
         var pending = new ArrayList<CompletableFuture<Void>>();
         while (true) {
+            // First, send out all responses finished since
             for (var iterator = pending.iterator(); iterator.hasNext();) {
                 var reply = iterator.next();
                 if (reply.isDone()) {
@@ -45,6 +49,8 @@ public final class Handler {
                     iterator.remove();
                 }
             }
+
+            // Read and deserialize an incoming JSON line
             JsonNode message;
             try {
                 message = rpc.receive();
@@ -55,6 +61,8 @@ public final class Handler {
             if (message == null) {
                 break;
             }
+
+            // Bind the JSON line into a proper Request
             Request request;
             try {
                 request = bindRequest(message);
@@ -62,6 +70,8 @@ public final class Handler {
                 rpc.send(Response.failure(null, -32600, error.getMessage()));
                 continue;
             }
+
+            // Match who is going to handle the message, kick off the computation, or send back an error
             var method = methods.get(request.method());
             CompletionStage<Response> response = method == null
                     ? CompletableFuture.completedFuture(
