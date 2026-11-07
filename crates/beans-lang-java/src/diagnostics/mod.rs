@@ -1,4 +1,4 @@
-use beans_core::{compilation_scope::CompilationScopes, location::Location};
+use beans_core::{compilation_scope::CompilationScope, location::Location};
 use rusqlite::Connection;
 
 use crate::{engine::JavaLanguage, model::File, query};
@@ -22,7 +22,7 @@ impl JavaLanguage {
     pub fn diagnostics(
         &self,
         source: &Location,
-        scopes: &CompilationScopes,
+        scopes: &[CompilationScope],
         connection: &Connection,
     ) -> Result<Vec<Diagnostic>, String> {
         let Some(file) = query::file(source, connection)? else {
@@ -35,7 +35,7 @@ impl JavaLanguage {
         &self,
         file: &File,
         source: &Location,
-        scopes: &CompilationScopes,
+        scopes: &[CompilationScope],
         connection: &Connection,
     ) -> Result<Vec<Diagnostic>, String> {
         unresolved_types::collect(file, source, scopes, connection)

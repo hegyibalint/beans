@@ -1,5 +1,5 @@
 use beans_core::{
-    compilation_scope::CompilationScopes,
+    compilation_scope::CompilationScope,
     features::navigation::{DefinitionProvider, DefinitionRequest, NavigationResult},
     location::Location,
     ranges::ByteRange,
@@ -89,7 +89,7 @@ pub(super) fn resolve_field_type_at(
     file: &File,
     source: &Location,
     offset: usize,
-    scopes: &CompilationScopes,
+    scopes: &[CompilationScope],
     connection: &Connection,
 ) -> Option<(ByteRange, Result<TypeCandidate, ResolutionFailure>)> {
     // JLS §8.3: a field declares a type separately from its variable name.

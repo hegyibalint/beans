@@ -127,13 +127,13 @@ pub use self::{
     result::{JavaTypeCandidate, ResolutionFailure, TypeCandidate, TypeParameterHandle},
 };
 use crate::model::{File, nodes::NodeIndex, references::TypeRef};
-use beans_core::{compilation_scope::CompilationScopes, location::Location};
+use beans_core::{compilation_scope::CompilationScope, location::Location};
 use rusqlite::Connection;
 
 pub struct Context<'a> {
     /// Without a connection, lookup is limited to this file.
     connection: Option<&'a Connection>,
-    scopes: &'a CompilationScopes,
+    scopes: &'a [CompilationScope],
     source: &'a Location,
     file: &'a File,
     node_index: NodeIndex,
@@ -147,10 +147,9 @@ impl<'a> Context<'a> {
         node_index: NodeIndex,
         type_ref: &'a TypeRef,
     ) -> Self {
-        static EMPTY_SCOPES: CompilationScopes = CompilationScopes::new(Vec::new());
         Self {
             connection: None,
-            scopes: &EMPTY_SCOPES,
+            scopes: &[],
             source,
             file,
             node_index,
@@ -163,7 +162,7 @@ impl<'a> Context<'a> {
         self
     }
 
-    pub fn with_scopes(mut self, scopes: &'a CompilationScopes) -> Self {
+    pub fn with_scopes(mut self, scopes: &'a [CompilationScope]) -> Self {
         self.scopes = scopes;
         self
     }

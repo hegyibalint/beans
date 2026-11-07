@@ -1,5 +1,4 @@
 use beans_core::{
-    compilation_scope::CompilationScopes,
     features::navigation::{DefinitionProvider, DefinitionRequest},
     location::{Location, LocationEntry},
     ranges::ByteRange,
@@ -86,7 +85,7 @@ fn generic_components_and_their_arguments_navigate_independently() {
             .goto_definition(
                 &JavaFeatureContext {
                     connection: &java.connection,
-                    scopes: &CompilationScopes::default(),
+                    scopes: &[],
                     workspace_root: None,
                 },
                 &DefinitionRequest {
@@ -241,7 +240,7 @@ fn definition_at(java: &Models, source: &Location, offset: usize) -> Option<Sour
         .goto_definition(
             &JavaFeatureContext {
                 connection: &java.connection,
-                scopes: &CompilationScopes::default(),
+                scopes: &[],
                 workspace_root: None,
             },
             &DefinitionRequest { source, offset },

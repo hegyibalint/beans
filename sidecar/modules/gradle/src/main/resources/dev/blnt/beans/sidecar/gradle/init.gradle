@@ -1,0 +1,9 @@
+initscript {
+    dependencies {
+        classpath files(System.getProperty("beans.gradle.model.jar"))
+    }
+}
+
+gradle.lifecycle.beforeProject { project ->
+    project.pluginManager.apply(dev.blnt.beans.gradle.model.ModelPlugin)
+}

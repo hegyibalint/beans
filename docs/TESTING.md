@@ -48,12 +48,20 @@ through mise. It composes thin JARs and their `build/runtime-classpath.txt` file
 it does not use the production fat JAR or install a toolchain.
 
 ```sh
-cargo test -p beans-sidecar --test jvm -- --ignored
+# Ping/stdout isolation only:
+cargo test -p beans-sidecar --test jvm pings_a_persistent -- --ignored
+
+# Include Gradle import → Engine registration (use an installed Gradle 8.8+):
+GRADLE_HOME=/path/to/gradle cargo test -p beans-sidecar --test jvm -- --ignored
 ```
 
 Run the Java protocol and Gradle adapter tests with `./gradlew integrationTest`
-from `sidecar/`. The adapter tests call the adapter directly; RPC imports are not
-wired yet.
+from `sidecar/`. The adapter/model tests call the adapter directly, including
+mixed Java/Kotlin/Groovy production and test sources. The Kotlin fixture resolves
+its Gradle plugin on the first run; no compiler or generation tasks are requested.
+See `sidecar/modules/gradle/README.md` for the model's boundaries. The opt-in Rust
+JVM tests cover ping/EOF and Gradle RPC registration, including a failed import
+preserving the previous snapshot and a successful empty import clearing it.
 
 ## Shared test utilities
 

@@ -1,9 +1,9 @@
 package dev.blnt.beans.sidecar;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.blnt.beans.sidecar.gradle.GradleAdapter;
 import dev.blnt.beans.sidecar.gradle.ImportParams;
+import dev.blnt.beans.sidecar.model.CompilationScope;
+import dev.blnt.beans.sidecar.model.ResourceFilter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -11,9 +11,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+import java.util.jar.JarOutputStream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -21,99 +20,131 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class GradleImportTest {
 
     @Test
-    void a_source_set_becomes_a_unit_holding_the_directory_it_selects(@TempDir Path projectDir)
+    void configured_source_directories_select_distinct_main_and_test_scopes(@TempDir Path root)
             throws Exception {
-        JsonNode workspace = importFixture(projectDir);
+        root = root.toRealPath();
+        writeFixture(root);
+        var scopes = importFixture(root);
+        var main = scope(scopes, root.resolve("mainSrc"));
+        var test = scope(scopes, root.resolve("testSrc"));
 
-        assertEquals("gradle", workspace.get("tool").asText());
-
-        JsonNode main = unit(workspace, ":main");
-        assertEquals(1, main.get("sources").size());
-
-        JsonNode selector = main.get("sources").get(0);
-        assertEquals("tree", selector.get("kind").asText());
-        assertFalse(selector.get("generated").asBoolean());
-        assertTrue(
-                selector.get("base").asText().endsWith("mainSrc"),
-                "configured directory must be reported, got: " + selector.get("base").asText());
-
-        assertEquals(0, main.get("classpath").size(), "the fixture declares no dependencies");
+        assertFalse(main.inputs().contains(file(root.resolve("testSrc/com/example/AppTest.java"))));
+        assertTrue(test.dependencies().contains(file(root.resolve("mainSrc/com/example/App.java"))));
+        assertFalse(main.dependencies().contains(file(root.resolve("testSrc/com/example/AppTest.java"))));
     }
 
     @Test
-    void main_and_test_are_separate_units_and_test_depends_on_main(@TempDir Path projectDir)
-            throws Exception {
-        JsonNode workspace = importFixture(projectDir);
+    void a_scope_includes_its_jdk_runtime_artifact(@TempDir Path root) throws Exception {
+        root = root.toRealPath();
+        writeFixture(root);
+        var main = scope(importFixture(root), root.resolve("mainSrc"));
 
-        JsonNode test = unit(workspace, ":test");
-        assertTrue(
-                test.get("sources").get(0).get("base").asText().endsWith("testSrc"),
-                "the test unit must select the test directory");
-
-        List<String> dependsOn = new ArrayList<>();
-        test.get("dependsOn").forEach(d -> dependsOn.add(d.asText()));
-        assertTrue(dependsOn.contains(":main"), "expected a dependency on :main, got: " + dependsOn);
+        assertTrue(main.dependencies().stream().anyMatch(filter ->
+                filter instanceof ResourceFilter.File file
+                        && Path.of(file.root()).getFileName().toString().equals("modules")
+                        && Files.isRegularFile(Path.of(file.root()))));
     }
 
     @Test
-    void an_import_narrates_its_progress(@TempDir Path projectDir) throws Exception {
-        writeFixture(projectDir);
+    void project_and_library_dependencies_become_concrete_compile_filters(@TempDir Path root)
+            throws Exception {
+        root = root.toRealPath();
+        // Describe a multi-project build with compile, test, and runtime-only dependencies.
+        Files.writeString(root.resolve("settings.gradle.kts"), """
+                rootProject.name = "multi"
+                include("app", "lib")
+                """);
+        Files.writeString(root.resolve("build.gradle.kts"), """
+                // The library plugin exposes class-directory variants for source linking.
+                subprojects { apply(plugin = "java-library") }
+                """);
+        Files.createDirectories(root.resolve("app/src/main/java"));
+        Files.createDirectories(root.resolve("app/src/test/java"));
+        Files.createDirectories(root.resolve("lib/src/main/java"));
+        Files.writeString(root.resolve("app/src/main/java/Use.java"), "class Use {}");
+        Files.writeString(root.resolve("app/src/test/java/UseTest.java"), "class UseTest {}");
+        Files.writeString(root.resolve("lib/src/main/java/Target.java"), "class Target {}");
+        Files.writeString(root.resolve("app/build.gradle.kts"), """
+                dependencies {
+                    implementation(project(":lib"))
+                    implementation(files("compile.jar"))
+                    runtimeOnly(files("runtime.jar"))
+                    testImplementation(files("test.jar"))
+                }
+                """);
+        for (String name : List.of("compile.jar", "runtime.jar", "test.jar")) {
+            try (var jar = new JarOutputStream(Files.newOutputStream(root.resolve("app/" + name)))) {
+            }
+        }
+
+        // Inspect the imported scopes rather than Gradle-specific unit identities.
+        var scopes = importFixture(root);
+        var main = scope(scopes, root.resolve("app/src/main/java"));
+        var test = scope(scopes, root.resolve("app/src/test/java"));
+        var library = scope(scopes, root.resolve("lib/src/main/java"));
+        assertTrue(main.dependencies().contains(file(root.resolve("lib/src/main/java/Target.java"))));
+        assertTrue(main.dependencies().contains(file(root.resolve("app/compile.jar"))));
+        assertFalse(main.dependencies().contains(file(root.resolve("app/test.jar"))));
+        assertFalse(main.dependencies().contains(file(root.resolve("app/runtime.jar"))));
+        assertTrue(test.dependencies().contains(file(root.resolve("app/src/main/java/Use.java"))));
+        assertTrue(test.dependencies().contains(file(root.resolve("lib/src/main/java/Target.java"))));
+        assertTrue(test.dependencies().contains(file(root.resolve("app/test.jar"))));
+        assertFalse(test.dependencies().contains(file(root.resolve("app/runtime.jar"))));
+        assertFalse(library.dependencies().contains(file(root.resolve("app/src/main/java/Use.java"))));
+
+        // Preserve packaged project dependencies without guessing which sources a JAR contains.
+        Files.writeString(root.resolve("build.gradle.kts"), "subprojects { apply(plugin = \"java\") }\n");
+        var packaged = scope(importFixture(root), root.resolve("app/src/main/java"));
+        assertTrue(packaged.dependencies().contains(file(root.resolve("lib/build/libs/lib.jar"))));
+        assertFalse(packaged.dependencies().contains(file(root.resolve("lib/src/main/java/Target.java"))));
+    }
+
+    @Test
+    void an_import_narrates_its_progress(@TempDir Path root) throws Exception {
+        root = root.toRealPath();
+        writeFixture(root);
         List<String> progress = new ArrayList<>();
-        new GradleAdapter().importWorkspace(
-                new ImportParams(projectDir.toString(), gradleHome()), progress::add);
-
-        assertFalse(progress.isEmpty(), "an import should report progress");
+        new GradleAdapter().importWorkspace(params(root), progress::add);
+        assertFalse(progress.isEmpty());
     }
 
-    /**
-     * Two source sets in non-default, non-overlapping directories: the layout is
-     * configured rather than conventional, so a passing assertion cannot come
-     * from us having guessed Gradle's defaults. No dependencies, so it is
-     * offline-safe.
-     */
-    private static void writeFixture(Path projectDir) throws Exception {
-        Files.writeString(
-                projectDir.resolve("settings.gradle.kts"), "rootProject.name = \"it-fixture\"\n");
-        Files.writeString(
-                projectDir.resolve("build.gradle.kts"),
-                """
+    private static void writeFixture(Path root) throws Exception {
+        Files.writeString(root.resolve("settings.gradle.kts"), "rootProject.name = \"it-fixture\"\n");
+        Files.writeString(root.resolve("build.gradle.kts"), """
                 plugins { java }
                 sourceSets {
                     main { java.setSrcDirs(listOf("mainSrc")) }
                     test { java.setSrcDirs(listOf("testSrc")) }
                 }
                 """);
-        Path main = projectDir.resolve("mainSrc/com/example");
-        Files.createDirectories(main);
-        Files.writeString(main.resolve("App.java"), "package com.example;\npublic class App {}\n");
-        Path test = projectDir.resolve("testSrc/com/example");
-        Files.createDirectories(test);
-        Files.writeString(
-                test.resolve("AppTest.java"), "package com.example;\npublic class AppTest {}\n");
+        Files.createDirectories(root.resolve("mainSrc/com/example"));
+        Files.writeString(root.resolve("mainSrc/com/example/App.java"),
+                "package com.example; public class App {}\n");
+        Files.createDirectories(root.resolve("testSrc/com/example"));
+        Files.writeString(root.resolve("testSrc/com/example/AppTest.java"),
+                "package com.example; public class AppTest {}\n");
     }
 
-    private static JsonNode importFixture(Path projectDir) throws Exception {
-        writeFixture(projectDir);
-        var workspace = new GradleAdapter().importWorkspace(
-                new ImportParams(projectDir.toString(), gradleHome()), progress -> {});
-        return new ObjectMapper().valueToTree(workspace);
+    private static List<CompilationScope> importFixture(Path root) {
+        return new GradleAdapter().importWorkspace(params(root), progress -> {});
     }
 
-    /** The fixture has no wrapper, so it borrows the Gradle running this build. */
-    private static Map<String, String> gradleHome() {
+    private static ImportParams params(Path root) {
         String home = System.getProperty("test.gradleHome");
         assertNotNull(home, "test.gradleHome must be set by the build");
-        return Map.of("gradleHome", home);
+        return new ImportParams(root.toString(), home);
     }
 
-    private static JsonNode unit(JsonNode workspace, String id) {
-        List<String> seen = new ArrayList<>();
-        for (JsonNode unit : workspace.get("units")) {
-            if (id.equals(unit.get("id").asText())) {
-                return unit;
-            }
-            seen.add(unit.get("id").asText());
-        }
-        throw new AssertionError("no unit " + id + "; found: " + seen);
+    private static CompilationScope scope(List<CompilationScope> scopes, Path input) {
+        return scopes.stream()
+                .filter(scope -> scope.inputs().stream().anyMatch(filter ->
+                        filter instanceof ResourceFilter.File file
+                                && Path.of(file.root()).startsWith(input)))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No scope for " + input));
+    }
+
+    private static ResourceFilter file(Path path) {
+        return new ResourceFilter.File(path.toAbsolutePath().normalize().toString());
     }
 }

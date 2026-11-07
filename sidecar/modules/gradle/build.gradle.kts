@@ -2,7 +2,14 @@ plugins {
     `java-library`
 }
 
+val modelProvider by configurations.creating {
+    isCanBeConsumed = false
+    isTransitive = false
+}
+
 dependencies {
+    api(project(":gradle-model"))
+    modelProvider(project(":gradle-model"))
     implementation(project(":core"))
     implementation(libs.gradle.tooling.api)
     runtimeOnly(libs.slf4j.simple)
@@ -11,6 +18,13 @@ dependencies {
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+tasks.processResources {
+    from(modelProvider) {
+        into("dev/blnt/beans/sidecar/gradle")
+        rename { "model.jar" }
     }
 }
 

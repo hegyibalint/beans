@@ -1,22 +1,21 @@
 package dev.blnt.beans.sidecar.gradle;
 
-import dev.blnt.beans.sidecar.model.Selector;
-import dev.blnt.beans.sidecar.model.Unit;
-import dev.blnt.beans.sidecar.model.Workspace;
+import dev.blnt.beans.gradle.model.CollectModels;
+import dev.blnt.beans.gradle.model.SourceSetModel;
+import dev.blnt.beans.gradle.model.ProjectModel;
+import dev.blnt.beans.sidecar.Handler;
+import dev.blnt.beans.sidecar.Module;
+import dev.blnt.beans.sidecar.model.CompilationScope;
+import dev.blnt.beans.sidecar.model.ResourceFilter;
 import org.gradle.tooling.GradleConnector;
 import org.gradle.tooling.ProjectConnection;
 import org.gradle.tooling.events.OperationType;
 import org.gradle.tooling.events.StartEvent;
-import org.gradle.tooling.model.idea.IdeaContentRoot;
-import org.gradle.tooling.model.idea.IdeaDependency;
-import org.gradle.tooling.model.idea.IdeaDependencyScope;
-import org.gradle.tooling.model.idea.IdeaModule;
-import org.gradle.tooling.model.idea.IdeaModuleDependency;
-import org.gradle.tooling.model.idea.IdeaProject;
-import org.gradle.tooling.model.idea.IdeaSingleEntryLibraryDependency;
-import org.gradle.tooling.model.idea.IdeaSourceDirectory;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -24,144 +23,121 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
-/**
- * Reads a Gradle build through the Tooling API's stock {@code IdeaProject}
- * model, without injecting anything into the user's build.
- */
-public final class GradleAdapter {
+public final class GradleAdapter implements Module {
+    private final Executor imports = Executors.newSingleThreadExecutor(GradleAdapter::importThread);
 
-    public Workspace importWorkspace(ImportParams params, Consumer<String> progress) {
+    @Override
+    public void register(Handler handler) {
+        handler.register("gradle/import", ImportParams.class, this::importWorkspace);
+    }
+
+    private CompletionStage<List<CompilationScope>> importWorkspace(ImportParams params) {
+        return CompletableFuture.supplyAsync(() -> importWorkspace(params, System.err::println), imports);
+    }
+
+    public List<CompilationScope> importWorkspace(ImportParams params, Consumer<String> progress) {
+        return toScopes(importModel(params, progress));
+    }
+
+    public List<ProjectModel> importModel(ImportParams params, Consumer<String> progress) {
         File projectDir = new File(params.workspaceRoot());
         GradleConnector connector = GradleConnector.newConnector().forProjectDirectory(projectDir);
-        String gradleHome = params.option("gradleHome");
-        if (gradleHome != null) {
-            connector.useInstallation(new File(gradleHome));
+        if (params.gradleHome() != null) {
+            connector.useInstallation(new File(params.gradleHome()));
         }
 
+        // Register a project-local model provider without changing build files or running build tasks.
         progress.accept("Connecting to Gradle build at " + projectDir);
-        try (ProjectConnection connection = connector.connect()) {
-            IdeaProject idea = connection
-                    .model(IdeaProject.class)
-                    .withArguments("--quiet")
-                    // Phase-level operations only. The unfiltered listener fires
-                    // for every dependency download and inner operation.
-                    .addProgressListener(
-                            event -> {
-                                if (event instanceof StartEvent) {
-                                    progress.accept(event.getDescriptor().getDisplayName());
-                                }
-                            },
-                            EnumSet.of(OperationType.PROJECT_CONFIGURATION, OperationType.BUILD_PHASE))
-                    .get();
-            return toWorkspace(idea);
+        try (var files = new ModelFiles(); ProjectConnection connection = connector.connect()) {
+            return connection.action(new CollectModels())
+                    .withArguments("--quiet", "--init-script", files.script().toString(),
+                            "-Dbeans.gradle.model.jar=" + files.jar(),
+                            "-Dorg.gradle.java.installations.auto-download=false")
+                    .setStandardOutput(System.err)
+                    .setStandardError(System.err)
+                    .addProgressListener(event -> {
+                        if (event instanceof StartEvent) {
+                            progress.accept(event.getDescriptor().getDisplayName());
+                        }
+                    }, EnumSet.of(OperationType.PROJECT_CONFIGURATION, OperationType.BUILD_PHASE))
+                    .run();
+        } catch (IOException error) {
+            throw new UncheckedIOException(error);
         }
     }
 
-    private static Workspace toWorkspace(IdeaProject idea) {
-        // Module dependencies name their target by IDEA module name; unit ids
-        // are built from project paths, so we need the mapping between them.
-        Map<String, String> pathsByModuleName = new HashMap<>();
-        for (IdeaModule module : idea.getModules()) {
-            pathsByModuleName.put(module.getName(), module.getGradleProject().getPath());
-        }
-
-        List<Unit> units = new ArrayList<>();
-        for (IdeaModule module : idea.getModules()) {
-            String path = module.getGradleProject().getPath();
-            String jdkHome = jdkHome(idea, module);
-
-            List<Selector> mainSources = new ArrayList<>();
-            List<Selector> testSources = new ArrayList<>();
-            for (IdeaContentRoot root : module.getContentRoots()) {
-                for (IdeaSourceDirectory dir : root.getSourceDirectories()) {
-                    mainSources.add(tree(dir));
-                }
-                for (IdeaSourceDirectory dir : root.getTestDirectories()) {
-                    testSources.add(tree(dir));
+    private static List<CompilationScope> toScopes(List<ProjectModel> projects) {
+        // Relate known class directories to their source sets without assuming a language or "main".
+        Map<String, Set<ResourceFilter>> outputs = new HashMap<>();
+        for (ProjectModel project : projects) {
+            for (SourceSetModel sourceSet : project.getSourceSets()) {
+                for (String directory : sourceSet.getClassesDirectories()) {
+                    outputs.computeIfAbsent(directory, ignored -> new LinkedHashSet<>())
+                            .addAll(sourceInputs(sourceSet));
                 }
             }
+        }
 
-            // Sets, because a module carrying several test-ish source sets
-            // reports the same dependency once per source set.
-            Set<String> mainClasspath = new LinkedHashSet<>();
-            Set<String> testClasspath = new LinkedHashSet<>();
-            Set<String> mainDependsOn = new LinkedHashSet<>();
-            Set<String> testDependsOn = new LinkedHashSet<>();
-            for (IdeaDependency dependency : module.getDependencies()) {
-                boolean testOnly = isTestScope(dependency);
-                if (dependency instanceof IdeaSingleEntryLibraryDependency library) {
-                    String entry = library.getFile().getAbsolutePath();
-                    if (!testOnly) {
-                        mainClasspath.add(entry);
+        // Preserve file selection rather than approximating Gradle's arbitrary file predicates.
+        List<CompilationScope> scopes = new ArrayList<>();
+        for (ProjectModel project : projects) {
+            for (SourceSetModel sourceSet : project.getSourceSets()) {
+                Set<ResourceFilter> dependencies = new LinkedHashSet<>(jdkInputs(project.getJavaHome()));
+                for (String entry : sourceSet.getCompileClasspath()) {
+                    dependencies.add(file(entry));
+                    var sources = outputs.get(entry);
+                    if (sources != null) {
+                        dependencies.addAll(sources);
                     }
-                    testClasspath.add(entry);
-                } else if (dependency instanceof IdeaModuleDependency moduleDependency) {
-                    String targetPath = pathsByModuleName.get(moduleDependency.getTargetModuleName());
-                    if (targetPath == null) {
-                        continue;
-                    }
-                    String targetId = unitId(targetPath, "main");
-                    if (!testOnly) {
-                        mainDependsOn.add(targetId);
-                    }
-                    testDependsOn.add(targetId);
                 }
-            }
-
-            String mainId = unitId(path, "main");
-            if (!mainSources.isEmpty()) {
-                units.add(new Unit(
-                        mainId,
-                        mainSources,
-                        List.copyOf(mainDependsOn),
-                        List.copyOf(mainClasspath),
-                        jdkHome));
-            }
-            if (!testSources.isEmpty()) {
-                testDependsOn.add(mainId);
-                units.add(new Unit(
-                        unitId(path, "test"),
-                        testSources,
-                        List.copyOf(testDependsOn),
-                        List.copyOf(testClasspath),
-                        jdkHome));
+                scopes.add(new CompilationScope(sourceInputs(sourceSet), List.copyOf(dependencies)));
             }
         }
-        return new Workspace("gradle", units);
+        return scopes;
     }
 
-    /**
-     * The stock model reports directories, not the source set's own filters, so
-     * the pattern is the widest one that is still true. Which files matter is
-     * the engine's call anyway: it hands each one to whichever language claims it.
-     */
-    private static Selector tree(IdeaSourceDirectory directory) {
-        return new Selector.Tree(
-                directory.getDirectory().getAbsolutePath(),
-                List.of("**/*"),
-                List.of(),
-                directory.isGenerated());
-    }
-
-    private static boolean isTestScope(IdeaDependency dependency) {
-        IdeaDependencyScope scope = dependency.getScope();
-        return scope != null && "TEST".equalsIgnoreCase(scope.getScope());
-    }
-
-    private static String unitId(String projectPath, String kind) {
-        return ":".equals(projectPath) ? ":" + kind : projectPath + ":" + kind;
-    }
-
-    private static String jdkHome(IdeaProject idea, IdeaModule module) {
-        if (module.getJavaLanguageSettings() != null
-                && module.getJavaLanguageSettings().getJdk() != null) {
-            return module.getJavaLanguageSettings().getJdk().getJavaHome().getAbsolutePath();
+    private static List<ResourceFilter> sourceInputs(SourceSetModel sourceSet) {
+        List<ResourceFilter> inputs = new ArrayList<>();
+        for (String source : sourceSet.getSourceFiles()) {
+            inputs.add(file(source));
         }
-        if (idea.getJavaLanguageSettings() != null && idea.getJavaLanguageSettings().getJdk() != null) {
-            return idea.getJavaLanguageSettings().getJdk().getJavaHome().getAbsolutePath();
+        return inputs;
+    }
+
+    private static List<ResourceFilter> jdkInputs(String home) {
+        if (home == null) {
+            throw new IllegalStateException("No default JVM toolchain reported by the project");
         }
-        return null;
+        for (String runtime : List.of("lib/modules", "jre/lib/rt.jar", "lib/rt.jar")) {
+            File artifact = new File(home, runtime);
+            if (!artifact.isFile()) {
+                continue;
+            }
+            List<ResourceFilter> inputs = new ArrayList<>();
+            inputs.add(file(artifact.toString()));
+            File tools = new File(home, "lib/tools.jar");
+            if (!runtime.equals("lib/modules") && tools.isFile()) {
+                inputs.add(file(tools.toString()));
+            }
+            return inputs;
+        }
+        throw new IllegalStateException("No supported JDK runtime found in " + home);
+    }
+
+    private static ResourceFilter file(String path) {
+        return new ResourceFilter.File(Path.of(path).toAbsolutePath().normalize().toString());
+    }
+
+    private static Thread importThread(Runnable task) {
+        var thread = new Thread(task, "beans-gradle-import");
+        // Handler drains the returned stages at EOF; idle workers must not keep the JVM alive.
+        thread.setDaemon(true);
+        return thread;
     }
 }

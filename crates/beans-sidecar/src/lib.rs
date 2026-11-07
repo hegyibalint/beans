@@ -4,6 +4,7 @@ use std::process::Command;
 
 use session::Session;
 
+mod gradle;
 mod rpc;
 mod session;
 

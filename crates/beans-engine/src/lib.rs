@@ -18,8 +18,10 @@ mod documents;
 mod events;
 mod features;
 pub mod logging;
+mod scopes;
 pub mod storage;
-mod workspaces;
+
+pub use scopes::ImportKind;
 
 pub struct Engine {
     workspace_root: PathBuf,

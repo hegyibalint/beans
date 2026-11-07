@@ -1,5 +1,5 @@
 use crate::model::{imports::ImportType, references::TypeNameComponent};
-use beans_core::{names::Name, ranges::Spanned};
+use beans_core::{compilation_scope, names::Name, ranges::Spanned};
 
 use super::super::{Context, ResolutionFailure, TypeCandidate, query, result::classify_candidates};
 
@@ -59,7 +59,9 @@ pub(in crate::semantics::resolution) fn lookup_external(
             query::find_types(&written, connection)
                 .map_err(ResolutionFailure::Query)?
                 .into_iter()
-                .filter(|candidate| ctx.scopes.visible(ctx.source, candidate.location())),
+                .filter(|candidate| {
+                    compilation_scope::visible(ctx.scopes, ctx.source, candidate.location())
+                }),
         )? {
             return Ok(Some(candidate));
         }
@@ -69,7 +71,9 @@ pub(in crate::semantics::resolution) fn lookup_external(
                 query::find_types(&prefix, connection)
                     .map_err(ResolutionFailure::Query)?
                     .into_iter()
-                    .filter(|candidate| ctx.scopes.visible(ctx.source, candidate.location())),
+                    .filter(|candidate| {
+                        compilation_scope::visible(ctx.scopes, ctx.source, candidate.location())
+                    }),
             )?
             .is_some()
             {
@@ -95,7 +99,9 @@ fn lookup_paths(
         query::find_types(&path, connection)
             .map_err(ResolutionFailure::Query)?
             .into_iter()
-            .filter(|candidate| ctx.scopes.visible(ctx.source, candidate.location()))
+            .filter(|candidate| {
+                compilation_scope::visible(ctx.scopes, ctx.source, candidate.location())
+            })
             .for_each(|candidate| {
                 if !owners.iter().any(|(_, known)| known == &candidate) {
                     owners.push((path.clone(), candidate));
@@ -121,7 +127,9 @@ fn lookup_paths(
         query::find_types(&qualified, connection)
             .map_err(ResolutionFailure::Query)?
             .into_iter()
-            .filter(|candidate| ctx.scopes.visible(ctx.source, candidate.location())),
+            .filter(|candidate| {
+                compilation_scope::visible(ctx.scopes, ctx.source, candidate.location())
+            }),
     )?
     .ok_or(ResolutionFailure::Partial)?;
     Ok(Some(member))

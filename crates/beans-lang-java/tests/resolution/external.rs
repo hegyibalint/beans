@@ -1,9 +1,7 @@
 use std::path::Path;
 
 use beans_core::{
-    compilation_scope::{CompilationScope, CompilationScopes},
-    location::Location,
-    resource_filter::ResourceFilter,
+    compilation_scope::CompilationScope, location::Location, resource_filter::ResourceFilter,
 };
 use beans_lang_java::{
     model::nodes::NodeKind,
@@ -27,7 +25,7 @@ enum Occurrence {
 struct Fixture {
     java: Models,
     source: Location,
-    scopes: CompilationScopes,
+    scopes: Vec<CompilationScope>,
 }
 
 impl Fixture {
@@ -50,7 +48,7 @@ impl Fixture {
         Self {
             java,
             source: Location::file(source),
-            scopes: CompilationScopes::default(),
+            scopes: Vec::new(),
         }
     }
 
@@ -147,10 +145,10 @@ impl Fixture {
 #[test]
 fn unmatched_sources_resolve_without_scope_restrictions() {
     let mut fixture = Fixture::competing_targets();
-    fixture.scopes = CompilationScopes::new(vec![CompilationScope {
+    fixture.scopes = vec![CompilationScope {
         inputs: vec![ResourceFilter::file("/other")],
         dependencies: Some(vec![]),
-    }]);
+    }];
 
     assert_eq!(
         fixture.resolve(),
@@ -163,10 +161,10 @@ fn unmatched_sources_resolve_without_scope_restrictions() {
 #[test]
 fn matching_empty_dependencies_hide_external_targets() {
     let mut fixture = Fixture::competing_targets();
-    fixture.scopes = CompilationScopes::new(vec![CompilationScope {
+    fixture.scopes = vec![CompilationScope {
         inputs: vec![ResourceFilter::file("/consumer")],
         dependencies: Some(vec![]),
-    }]);
+    }];
 
     assert_eq!(fixture.resolve(), Err(ResolutionFailure::NotFound));
 }
@@ -174,10 +172,10 @@ fn matching_empty_dependencies_hide_external_targets() {
 #[test]
 fn matching_unrestricted_dependencies_admit_external_targets() {
     let mut fixture = Fixture::competing_targets();
-    fixture.scopes = CompilationScopes::new(vec![CompilationScope {
+    fixture.scopes = vec![CompilationScope {
         inputs: vec![ResourceFilter::file("/consumer")],
         dependencies: None,
-    }]);
+    }];
 
     assert_eq!(
         fixture.resolve(),
@@ -190,10 +188,10 @@ fn matching_unrestricted_dependencies_admit_external_targets() {
 #[test]
 fn dependency_on_sourceset_a_resolves_its_target() {
     let mut fixture = Fixture::competing_targets();
-    fixture.scopes = CompilationScopes::new(vec![CompilationScope {
+    fixture.scopes = vec![CompilationScope {
         inputs: vec![ResourceFilter::file("/consumer")],
         dependencies: Some(vec![ResourceFilter::file("/sourceset-a")]),
-    }]);
+    }];
 
     assert_eq!(
         fixture.resolve().unwrap().location(),
@@ -204,10 +202,10 @@ fn dependency_on_sourceset_a_resolves_its_target() {
 #[test]
 fn dependency_on_sourceset_b_resolves_its_target() {
     let mut fixture = Fixture::competing_targets();
-    fixture.scopes = CompilationScopes::new(vec![CompilationScope {
+    fixture.scopes = vec![CompilationScope {
         inputs: vec![ResourceFilter::file("/consumer")],
         dependencies: Some(vec![ResourceFilter::file("/sourceset-b")]),
-    }]);
+    }];
 
     assert_eq!(
         fixture.resolve().unwrap().location(),
@@ -218,13 +216,13 @@ fn dependency_on_sourceset_b_resolves_its_target() {
 #[test]
 fn dependencies_on_both_sourcesets_make_target_ambiguous() {
     let mut fixture = Fixture::competing_targets();
-    fixture.scopes = CompilationScopes::new(vec![CompilationScope {
+    fixture.scopes = vec![CompilationScope {
         inputs: vec![ResourceFilter::file("/consumer")],
         dependencies: Some(vec![
             ResourceFilter::file("/sourceset-a"),
             ResourceFilter::file("/sourceset-b"),
         ]),
-    }]);
+    }];
 
     assert_eq!(
         fixture.resolve(),

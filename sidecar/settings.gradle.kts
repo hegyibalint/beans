@@ -1,8 +1,9 @@
 rootProject.name = "sidecar"
 
-include(":core", ":gradle", ":stdout-screamer")
+include(":core", ":gradle", ":gradle-model", ":stdout-screamer")
 
 project(":gradle").projectDir = file("modules/gradle")
+project(":gradle-model").projectDir = file("modules/gradle/model")
 project(":stdout-screamer").projectDir = file("fixtures/stdout-screamer")
 
 dependencyResolutionManagement {

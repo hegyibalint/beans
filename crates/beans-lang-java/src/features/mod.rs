@@ -1,6 +1,6 @@
 //! Java implementations of protocol-neutral editor features.
 
-use beans_core::compilation_scope::CompilationScopes;
+use beans_core::compilation_scope::CompilationScope;
 use rusqlite::Connection;
 
 mod hover;
@@ -11,6 +11,6 @@ mod semantic_tokens;
 #[derive(Clone, Copy)]
 pub struct JavaFeatureContext<'a> {
     pub connection: &'a Connection,
-    pub scopes: &'a CompilationScopes,
+    pub scopes: &'a [CompilationScope],
     pub workspace_root: Option<&'a std::path::Path>,
 }
