@@ -34,6 +34,13 @@ impl Server {
                             request.id,
                             InitializeResult {
                                 capabilities: ServerCapabilities {
+                                    #[cfg(feature = "sidecar")]
+                                    execute_command_provider: Some(
+                                        lsp_types::ExecuteCommandOptions {
+                                            commands: vec![super::commands::IMPORT_GRADLE.into()],
+                                            ..Default::default()
+                                        },
+                                    ),
                                     definition_provider: Some(OneOf::Left(true)),
                                     hover_provider: Some(true.into()),
                                     semantic_tokens_provider: Some(

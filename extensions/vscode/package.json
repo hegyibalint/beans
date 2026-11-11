@@ -12,10 +12,34 @@
     "Programming Languages"
   ],
   "activationEvents": [
-    "onLanguage:java"
+    "onLanguage:java",
+    "workspaceContains:**/*.java",
+    "workspaceContains:**/beans.toml"
   ],
   "main": "./out/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Gradle import executes the workspace's build scripts."
+    }
+  },
   "contributes": {
+    "commands": [
+      {
+        "command": "beans.import.gradle",
+        "title": "Beans: Import Gradle project"
+      }
+    ],
+    "configuration": {
+      "title": "Beans",
+      "properties": {
+        "beans.javaHome": {
+          "type": "string",
+          "default": "",
+          "description": "JDK home for the Beans sidecar and Gradle daemon. Defaults to JAVA_HOME. Restart Beans after changing this."
+        }
+      }
+    },
     "languages": [
       {
         "id": "java",
@@ -26,7 +50,8 @@
     ]
   },
   "scripts": {
-    "compile": "tsc -p ."
+    "compile": "tsc -p .",
+    "test": "npm run compile && node --test test/*.test.cjs"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"

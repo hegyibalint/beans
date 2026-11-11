@@ -19,6 +19,10 @@ pub(crate) struct Features {
     engine: Arc<Engine>,
     #[cfg(feature = "sidecar")]
     sidecar: beans_sidecar::Sidecar,
+    #[cfg(feature = "sidecar")]
+    workspace_root: std::path::PathBuf,
+    #[cfg(feature = "sidecar")]
+    sidecar_jar: Option<std::path::PathBuf>,
     pub(crate) engine_notifications: Option<Receiver<Notification>>,
     client_capabilities: ClientCapabilities,
     open_documents: HashMap<String, OpenDocument>,

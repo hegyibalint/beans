@@ -1,5 +1,5 @@
 import * as path from "path";
-import { ExtensionContext } from "vscode";
+import { ExtensionContext, workspace } from "vscode";
 import {
   LanguageClient,
   LanguageClientOptions,
@@ -9,18 +9,27 @@ import {
 
 let client: LanguageClient;
 
-export function activate(context: ExtensionContext) {
+export function activate(context: ExtensionContext): Promise<void> {
   const command = context.asAbsolutePath(
     path.join("..", "..", "target", "debug", "beans-lsp"),
   );
 
+  const javaHome = workspace.getConfiguration("beans").get<string>("javaHome");
   const serverOptions: ServerOptions = {
     command,
     transport: TransportKind.stdio,
+    options: {
+      env: { ...process.env, ...(javaHome ? { JAVA_HOME: javaHome } : {}) },
+    },
   };
 
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: "file", language: "java" }],
+    initializationOptions: {
+      sidecarJar: context.asAbsolutePath(
+        path.join("..", "..", "sidecar", "build", "libs", "beans-sidecar.jar"),
+      ),
+    },
   };
 
   client = new LanguageClient(
@@ -30,7 +39,7 @@ export function activate(context: ExtensionContext) {
     clientOptions,
   );
 
-  client.start();
+  return client.start();
 }
 
 export function deactivate(): Thenable<void> | undefined {

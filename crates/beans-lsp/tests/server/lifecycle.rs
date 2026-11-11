@@ -16,14 +16,15 @@ fn initialization_advertises_supported_capabilities_and_creates_the_cache() {
     );
     assert!(response.error.is_none());
     let result = response.result.unwrap();
-    assert_eq!(
-        result["capabilities"],
-        json!({
-            "definitionProvider": true, "hoverProvider": true,
-            "semanticTokensProvider": {"legend": {"tokenTypes": ["type"], "tokenModifiers": []}, "full": true},
-            "textDocumentSync": {"openClose": true, "change": 1}
-        })
-    );
+    let mut capabilities = json!({
+        "definitionProvider": true, "hoverProvider": true,
+        "semanticTokensProvider": {"legend": {"tokenTypes": ["type"], "tokenModifiers": []}, "full": true},
+        "textDocumentSync": {"openClose": true, "change": 1}
+    });
+    if cfg!(feature = "sidecar") {
+        capabilities["executeCommandProvider"] = json!({"commands": ["beans.import.gradle"]});
+    }
+    assert_eq!(result["capabilities"], capabilities);
     assert_eq!(result["serverInfo"]["name"], "beans");
     assert!(root.path(".beans/models").is_file());
 }

@@ -49,11 +49,15 @@ impl Client {
     }
 
     pub fn receive(&self) -> Message {
+        self.receive_timeout(Duration::from_secs(5))
+    }
+
+    pub fn receive_timeout(&self, timeout: Duration) -> Message {
         self.connection
             .as_ref()
             .unwrap()
             .receiver
-            .recv_timeout(Duration::from_secs(5))
+            .recv_timeout(timeout)
             .expect("server did not respond")
     }
 

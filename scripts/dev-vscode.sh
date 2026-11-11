@@ -13,7 +13,9 @@ esac
 BEANS_WORKSPACE_TOML_JAVA_HOME="${BEANS_WORKSPACE_TOML_JAVA_HOME-$(mise where java)}"
 export BEANS_WORKSPACE_TOML_JAVA_HOME
 
-cargo build -p beans-lsp
+cargo build -p beans-lsp --features sidecar
+# Gradle imports start the production sidecar on demand.
+(cd sidecar && ./gradlew assemble)
 # Crate diagnostics go to stderr, displayed in VS Code's Output -> Beans.
 export RUST_LOG="${RUST_LOG:-beans=debug}"
 # target/ is ignored by git; the server log contains full document contents.

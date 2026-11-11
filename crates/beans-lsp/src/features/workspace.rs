@@ -33,6 +33,15 @@ impl Features {
             engine,
             #[cfg(feature = "sidecar")]
             sidecar: beans_sidecar::Sidecar::default(),
+            #[cfg(feature = "sidecar")]
+            workspace_root: root.clone(),
+            #[cfg(feature = "sidecar")]
+            sidecar_jar: params
+                .initialization_options
+                .as_ref()
+                .and_then(|options| options.get("sidecarJar"))
+                .and_then(|jar| jar.as_str())
+                .map(PathBuf::from),
             engine_notifications,
             client_capabilities: params.capabilities.clone(),
             open_documents: Default::default(),
@@ -66,6 +75,31 @@ impl Features {
         }
         features.ingest_files(files)?;
         Ok(features)
+    }
+
+    #[cfg(feature = "sidecar")]
+    pub(crate) fn import_gradle(
+        &mut self,
+    ) -> Result<std::thread::JoinHandle<Result<(), String>>, String> {
+        let jar = self.sidecar_jar.as_ref()
+            .filter(|jar| jar.is_absolute() && jar.is_file())
+            .ok_or("set initializationOptions.sidecarJar to the built beans-sidecar.jar (run ./gradlew assemble in sidecar/)")?;
+        let java = std::env::var_os("JAVA_HOME")
+            .filter(|home| !home.is_empty())
+            .map(|home| {
+                PathBuf::from(home)
+                    .join("bin")
+                    .join(format!("java{}", std::env::consts::EXE_SUFFIX))
+            })
+            .unwrap_or_else(|| PathBuf::from("java"));
+        let mut command = std::process::Command::new(java);
+        command
+            .arg("-jar")
+            .arg(jar)
+            .current_dir(&self.workspace_root);
+        self.sidecar.start(command)?;
+        self.sidecar
+            .import_gradle(&self.workspace_root, None, Arc::downgrade(&self.engine))
     }
 
     fn ingest_files(&mut self, files: BTreeSet<PathBuf>) -> Result<(), String> {

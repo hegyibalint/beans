@@ -63,6 +63,14 @@ See `sidecar/modules/gradle/README.md` for the model's boundaries. The opt-in Ru
 JVM tests cover ping/EOF and Gradle RPC registration, including a failed import
 preserving the previous snapshot and a successful empty import clearing it.
 
+The opt-in LSP command test requires `JAVA_HOME` pointing to an installed JDK
+compatible with the fixture's Gradle wrapper. It verifies that hover remains
+responsive during import and that success is reported after scope registration:
+
+```sh
+JAVA_HOME=/path/to/jdk cargo test -p beans-lsp --features sidecar --test gradle_import -- --ignored
+```
+
 ## Shared test utilities
 
 Before adding test setup, look for existing utilities in `beans-testing` and similar setup elsewhere. Reuse what fits.

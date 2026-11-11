@@ -5,6 +5,7 @@ use lsp_server::ErrorCode;
 use serde_json::Value;
 use support::{Client, assert_error, initialize_params, position, request, server};
 
+mod commands;
 mod diagnostics;
 mod document_synchronization;
 mod goto_definition;
