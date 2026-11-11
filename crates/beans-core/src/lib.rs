@@ -1,10 +1,13 @@
 //! Shared vocabulary and contracts, independent of storage and editor protocols.
 
+pub mod artifact_sources;
+pub mod classpath;
 pub mod compilation_scope;
 pub mod event;
 pub mod features;
 pub mod input;
 pub mod location;
+pub mod module;
 pub mod names;
 pub mod paths;
 pub mod presentation;
