@@ -2,7 +2,9 @@ package dev.blnt.beans.sidecar;
 
 import dev.blnt.beans.sidecar.gradle.GradleAdapter;
 import dev.blnt.beans.sidecar.gradle.ImportParams;
-import dev.blnt.beans.sidecar.model.CompilationScope;
+import dev.blnt.beans.sidecar.model.Classpath;
+import dev.blnt.beans.sidecar.model.Location;
+import dev.blnt.beans.sidecar.model.Module;
 import dev.blnt.beans.sidecar.model.ResourceFilter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -13,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.jar.JarOutputStream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -20,33 +23,34 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class GradleImportTest {
 
     @Test
-    void configured_source_directories_select_distinct_main_and_test_scopes(@TempDir Path root)
+    void configured_source_directories_select_distinct_main_and_test_classpaths(@TempDir Path root)
             throws Exception {
         root = root.toRealPath();
         writeFixture(root);
-        var scopes = importFixture(root);
-        var main = scope(scopes, root.resolve("mainSrc"));
-        var test = scope(scopes, root.resolve("testSrc"));
+        var modules = importFixture(root);
+        var main = classpath(modules, root.resolve("mainSrc"));
+        var test = classpath(modules, root.resolve("testSrc"));
 
         assertFalse(main.inputs().contains(file(root.resolve("testSrc/com/example/AppTest.java"))));
-        assertTrue(test.dependencies().contains(file(root.resolve("mainSrc/com/example/App.java"))));
-        assertFalse(main.dependencies().contains(file(root.resolve("testSrc/com/example/AppTest.java"))));
+        assertTrue(test.entries().contains(file(root.resolve("build/classes/java/main"))));
+        assertFalse(test.entries().contains(file(root.resolve("mainSrc/com/example/App.java"))));
+        assertFalse(main.entries().contains(file(root.resolve("testSrc/com/example/AppTest.java"))));
     }
 
     @Test
-    void a_scope_includes_its_jdk_runtime_artifact(@TempDir Path root) throws Exception {
+    void a_classpath_includes_its_jdk_runtime_artifact(@TempDir Path root) throws Exception {
         root = root.toRealPath();
         writeFixture(root);
-        var main = scope(importFixture(root), root.resolve("mainSrc"));
+        var main = classpath(importFixture(root), root.resolve("mainSrc"));
 
-        assertTrue(main.dependencies().stream().anyMatch(filter ->
+        assertTrue(main.entries().stream().anyMatch(filter ->
                 filter instanceof ResourceFilter.File file
                         && Path.of(file.root()).getFileName().toString().equals("modules")
                         && Files.isRegularFile(Path.of(file.root()))));
     }
 
     @Test
-    void project_and_library_dependencies_become_concrete_compile_filters(@TempDir Path root)
+    void project_dependencies_preserve_compile_artifacts_and_source_associations(@TempDir Path root)
             throws Exception {
         root = root.toRealPath();
         // Describe a multi-project build with compile, test, and runtime-only dependencies.
@@ -55,7 +59,7 @@ class GradleImportTest {
                 include("app", "lib")
                 """);
         Files.writeString(root.resolve("build.gradle.kts"), """
-                // The library plugin exposes class-directory variants for source linking.
+                // The library plugin exposes class-directory variants for compilation.
                 subprojects { apply(plugin = "java-library") }
                 """);
         Files.createDirectories(root.resolve("app/src/main/java"));
@@ -77,26 +81,43 @@ class GradleImportTest {
             }
         }
 
-        // Inspect the imported scopes rather than Gradle-specific unit identities.
-        var scopes = importFixture(root);
-        var main = scope(scopes, root.resolve("app/src/main/java"));
-        var test = scope(scopes, root.resolve("app/src/test/java"));
-        var library = scope(scopes, root.resolve("lib/src/main/java"));
-        assertTrue(main.dependencies().contains(file(root.resolve("lib/src/main/java/Target.java"))));
-        assertTrue(main.dependencies().contains(file(root.resolve("app/compile.jar"))));
-        assertFalse(main.dependencies().contains(file(root.resolve("app/test.jar"))));
-        assertFalse(main.dependencies().contains(file(root.resolve("app/runtime.jar"))));
-        assertTrue(test.dependencies().contains(file(root.resolve("app/src/main/java/Use.java"))));
-        assertTrue(test.dependencies().contains(file(root.resolve("lib/src/main/java/Target.java"))));
-        assertTrue(test.dependencies().contains(file(root.resolve("app/test.jar"))));
-        assertFalse(test.dependencies().contains(file(root.resolve("app/runtime.jar"))));
-        assertFalse(library.dependencies().contains(file(root.resolve("app/src/main/java/Use.java"))));
+        // Inspect the shared module data rather than Gradle-specific unit identities.
+        var modules = importFixture(root);
+        assertEquals(2, modules.size());
+        var main = classpath(modules, root.resolve("app/src/main/java"));
+        var test = classpath(modules, root.resolve("app/src/test/java"));
+        var library = classpath(modules, root.resolve("lib/src/main/java"));
+        var target = file(root.resolve("lib/src/main/java/Target.java"));
+        var classes = root.resolve("lib/build/classes/java/main");
+        assertTrue(main.entries().contains(file(classes)));
+        assertFalse(main.entries().contains(target));
+        assertTrue(main.entries().contains(file(root.resolve("app/compile.jar"))));
+        assertFalse(main.entries().contains(file(root.resolve("app/test.jar"))));
+        assertFalse(main.entries().contains(file(root.resolve("app/runtime.jar"))));
+        assertTrue(test.entries().contains(file(root.resolve("app/build/classes/java/main"))));
+        assertFalse(test.entries().contains(file(root.resolve("app/src/main/java/Use.java"))));
+        assertTrue(test.entries().contains(file(classes)));
+        assertFalse(test.entries().contains(target));
+        assertTrue(test.entries().contains(file(root.resolve("app/test.jar"))));
+        assertFalse(test.entries().contains(file(root.resolve("app/runtime.jar"))));
+        assertFalse(library.entries().contains(file(root.resolve("app/build/classes/java/main"))));
+        var directorySources = modules.stream().flatMap(module -> module.artifactSources().stream())
+                .filter(sources -> sources.sources().contains(target)).findFirst().orElseThrow();
+        assertTrue(directorySources.artifacts().contains(Location.file(classes.toString())));
 
-        // Preserve packaged project dependencies without guessing which sources a JAR contains.
+        // Packaged project dependencies retain the separate JAR-to-source association.
         Files.writeString(root.resolve("build.gradle.kts"), "subprojects { apply(plugin = \"java\") }\n");
-        var packaged = scope(importFixture(root), root.resolve("app/src/main/java"));
-        assertTrue(packaged.dependencies().contains(file(root.resolve("lib/build/libs/lib.jar"))));
-        assertFalse(packaged.dependencies().contains(file(root.resolve("lib/src/main/java/Target.java"))));
+        var packagedModules = importFixture(root);
+        var packaged = classpath(packagedModules, root.resolve("app/src/main/java"));
+        Path jar = root.resolve("lib/build/libs/lib.jar");
+        assertTrue(packaged.entries().contains(file(jar)));
+        assertFalse(packaged.entries().contains(target));
+        var association = packagedModules.stream().flatMap(module -> module.artifactSources().stream())
+                .filter(sources -> sources.sources().contains(target)).findFirst().orElseThrow();
+        assertTrue(association.artifacts().contains(Location.file(jar.toString())));
+        assertTrue(association.artifacts().contains(Location.file(
+                root.resolve("lib/build/classes/java/main").toString())));
+        assertFalse(Files.exists(jar));
     }
 
     @Test
@@ -125,7 +146,7 @@ class GradleImportTest {
                 "package com.example; public class AppTest {}\n");
     }
 
-    private static List<CompilationScope> importFixture(Path root) {
+    private static List<Module> importFixture(Path root) {
         return new GradleAdapter().importWorkspace(params(root), progress -> {});
     }
 
@@ -135,13 +156,13 @@ class GradleImportTest {
         return new ImportParams(root.toString(), home);
     }
 
-    private static CompilationScope scope(List<CompilationScope> scopes, Path input) {
-        return scopes.stream()
-                .filter(scope -> scope.inputs().stream().anyMatch(filter ->
+    private static Classpath classpath(List<Module> modules, Path input) {
+        return modules.stream().flatMap(module -> module.classpaths().stream())
+                .filter(classpath -> classpath.inputs().stream().anyMatch(filter ->
                         filter instanceof ResourceFilter.File file
                                 && Path.of(file.root()).startsWith(input)))
                 .findFirst()
-                .orElseThrow(() -> new AssertionError("No scope for " + input));
+                .orElseThrow(() -> new AssertionError("No classpath for " + input));
     }
 
     private static ResourceFilter file(Path path) {

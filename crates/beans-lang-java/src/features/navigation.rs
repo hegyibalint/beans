@@ -1,7 +1,7 @@
 use beans_core::{
-    compilation_scope::CompilationScope,
     features::navigation::{DefinitionProvider, DefinitionRequest, NavigationResult},
     location::Location,
+    location_match::LocationMatcher,
     ranges::ByteRange,
     source::SourceSpan,
 };
@@ -11,9 +11,7 @@ use crate::{
     engine::JavaLanguage,
     model::{File, nodes::NodeKind, references::TypeRef, type_references::find_in_reference},
     query,
-    semantics::resolution::{
-        Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, resolve,
-    },
+    semantics::resolution::{Context, ResolutionFailure, TypeCandidate, TypeLocator, resolve},
 };
 
 use super::JavaFeatureContext;
@@ -39,9 +37,13 @@ impl<'request>
                 target: SourceSpan::new(source.clone(), range),
             }));
         }
-        let Some((origin_range, candidate)) =
-            resolve_field_type_at(&file, source, offset, context.scopes, context.connection)
-        else {
+        let Some((origin_range, candidate)) = resolve_field_type_at(
+            &file,
+            source,
+            offset,
+            context.match_locations,
+            context.connection,
+        ) else {
             return Ok(None);
         };
         let candidate = match candidate {
@@ -49,24 +51,11 @@ impl<'request>
             Err(ResolutionFailure::Query(error)) => return Err(error),
             Err(_) => return Ok(None),
         };
-        let target = match candidate {
-            TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) => {
-                query::declaration(&handle, context.connection)?.and_then(|declaration| {
-                    declaration
-                        .name
-                        .map(|name| SourceSpan::new(handle.source().clone(), name.range()))
-                })
+        let target = match candidate.locator {
+            TypeLocator::Declaration(_) | TypeLocator::TypeParameter(_) => {
+                Some(candidate.provenance.origin)
             }
-            TypeCandidate::Java(JavaTypeCandidate::TypeParameter(handle)) => {
-                let owner = handle.owner();
-                let file = query::file(owner.source(), context.connection)?;
-                file.and_then(|file| {
-                    handle.parameter(&file).map(|parameter| {
-                        SourceSpan::new(owner.source().clone(), parameter.name.range())
-                    })
-                })
-            }
-            TypeCandidate::Jvm(_) => None,
+            TypeLocator::Jvm(_) => None,
         };
         Ok(target.map(|target| NavigationResult {
             origin_range,
@@ -89,7 +78,7 @@ pub(super) fn resolve_field_type_at(
     file: &File,
     source: &Location,
     offset: usize,
-    scopes: &[CompilationScope],
+    match_locations: Option<&LocationMatcher<'_>>,
     connection: &Connection,
 ) -> Option<(ByteRange, Result<TypeCandidate, ResolutionFailure>)> {
     // JLS §8.3: a field declares a type separately from its variable name.
@@ -139,6 +128,6 @@ pub(super) fn resolve_field_type_at(
 
     let ctx = Context::new(file, source, index, &prefix)
         .with_connection(connection)
-        .with_scopes(scopes);
+        .with_location_matcher(match_locations);
     Some((origin_range, resolve(&ctx)))
 }

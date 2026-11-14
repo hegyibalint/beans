@@ -2,7 +2,7 @@ use beans_core::location::Location;
 
 pub use beans_lang_java::diagnostics::{Diagnostic, DiagnosticSeverity};
 
-use crate::{Engine, scopes::load_scopes};
+use crate::{Engine, location_matches::matcher, modules::load_modules};
 
 impl Engine {
     pub fn diagnostics(&self, source: &Location) -> Result<Vec<Diagnostic>, String> {
@@ -10,7 +10,9 @@ impl Engine {
         let transaction = connection
             .transaction()
             .map_err(|error| error.to_string())?;
-        let scopes = load_scopes(&transaction)?;
-        self.java.diagnostics(source, &scopes, &transaction)
+        let modules = load_modules(&transaction)?;
+        let match_locations = matcher(&modules);
+        self.java
+            .diagnostics(source, Some(&match_locations), &transaction)
     }
 }

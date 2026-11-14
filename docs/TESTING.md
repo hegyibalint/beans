@@ -60,12 +60,15 @@ from `sidecar/`. The adapter/model tests call the adapter directly, including
 mixed Java/Kotlin/Groovy production and test sources. The Kotlin fixture resolves
 its Gradle plugin on the first run; no compiler or generation tasks are requested.
 See `sidecar/modules/gradle/README.md` for the model's boundaries. The opt-in Rust
-JVM tests cover ping/EOF and Gradle RPC registration, including a failed import
-preserving the previous snapshot and a successful empty import clearing it.
+JVM tests cover ping/EOF and Gradle RPC registration of complete modules, including
+artifact/source associations with missing outputs, a failed import preserving the
+previous snapshot, and a successful empty import clearing it.
 
 The opt-in LSP command test requires `JAVA_HOME` pointing to an installed JDK
 compatible with the fixture's Gradle wrapper. It verifies that hover remains
-responsive during import and that success is reported after scope registration:
+responsive during import, that success follows module registration, and that a
+class-directory project dependency supports definition and hover with artifact
+provenance without compiling either project:
 
 ```sh
 JAVA_HOME=/path/to/jdk cargo test -p beans-lsp --features sidecar --test gradle_import -- --ignored

@@ -1,7 +1,7 @@
 use beans_core::features::{DefinitionProvider, DefinitionRequest, NavigationResult};
 use beans_lang_java::features::JavaFeatureContext;
 
-use crate::{Engine, scopes::load_scopes};
+use crate::{Engine, location_matches::matcher, modules::load_modules};
 
 impl Engine {
     pub fn feature_goto_definition(
@@ -12,10 +12,11 @@ impl Engine {
         let transaction = connection
             .transaction()
             .map_err(|error| error.to_string())?;
-        let scopes = load_scopes(&transaction)?;
+        let modules = load_modules(&transaction)?;
+        let match_locations = matcher(&modules);
         let context = JavaFeatureContext {
             connection: &transaction,
-            scopes: &scopes,
+            match_locations: Some(&match_locations),
             workspace_root: Some(&self.workspace_root),
         };
         self.java.goto_definition(&context, request)

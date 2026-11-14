@@ -8,4 +8,5 @@ public interface ProjectModel {
     /** The project's default JVM toolchain; compiler tasks may override it. */
     String getJavaHome();
     List<SourceSetModel> getSourceSets();
+    List<JvmFeatureModel> getFeatures();
 }

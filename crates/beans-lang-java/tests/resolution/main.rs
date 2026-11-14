@@ -4,9 +4,7 @@ use beans_lang_java::{
         File,
         nodes::{NodeIndex, NodeKind},
     },
-    semantics::resolution::{
-        Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, resolve,
-    },
+    semantics::resolution::{Context, ResolutionFailure, TypeCandidate, TypeLocator, resolve},
 };
 
 #[path = "../support/mod.rs"]
@@ -46,7 +44,7 @@ fn resolve_field(file: &File, field_name: &str) -> Result<TypeCandidate, Resolut
 }
 
 fn resolved_java_index(result: TypeCandidate) -> NodeIndex {
-    let TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) = result else {
+    let TypeLocator::Declaration(handle) = result.locator else {
         panic!("expected one Java declaration");
     };
     handle.node_index()

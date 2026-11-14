@@ -1,5 +1,5 @@
 use crate::model::{imports::ImportType, references::TypeNameComponent};
-use beans_core::{compilation_scope, names::Name, ranges::Spanned};
+use beans_core::{names::Name, ranges::Spanned};
 
 use super::super::{Context, ResolutionFailure, TypeCandidate, query, result::classify_candidates};
 
@@ -9,9 +9,6 @@ pub(in crate::semantics::resolution) fn lookup_external(
     ctx: &Context<'_>,
     segments: &[Spanned<TypeNameComponent>],
 ) -> Result<Option<TypeCandidate>, ResolutionFailure> {
-    let Some(connection) = ctx.connection else {
-        return Ok(None);
-    };
     let Some((first, suffix)) = segments.split_first() else {
         return Err(ResolutionFailure::InvalidTypeRef);
     };
@@ -55,28 +52,12 @@ pub(in crate::semantics::resolution) fn lookup_external(
     // (JLS §6.5.5.2). Only the complete canonical type name can be queried here.
     if segments.len() > 1 {
         let written = append(&[], segments);
-        if let Some(candidate) = classify_candidates(
-            query::find_types(&written, connection)
-                .map_err(ResolutionFailure::Query)?
-                .into_iter()
-                .filter(|candidate| {
-                    compilation_scope::visible(ctx.scopes, ctx.source, candidate.location())
-                }),
-        )? {
+        if let Some(candidate) = classify_candidates(find_candidates(ctx, &written)?.into_iter())? {
             return Ok(Some(candidate));
         }
         for prefix_len in 1..segments.len() {
             let prefix = append(&[], &segments[..prefix_len]);
-            if classify_candidates(
-                query::find_types(&prefix, connection)
-                    .map_err(ResolutionFailure::Query)?
-                    .into_iter()
-                    .filter(|candidate| {
-                        compilation_scope::visible(ctx.scopes, ctx.source, candidate.location())
-                    }),
-            )?
-            .is_some()
-            {
+            if classify_candidates(find_candidates(ctx, &prefix)?.into_iter())?.is_some() {
                 return Err(ResolutionFailure::Partial);
             }
         }
@@ -91,22 +72,11 @@ fn lookup_paths(
     paths: impl Iterator<Item = Name>,
     suffix: &[Spanned<TypeNameComponent>],
 ) -> Result<Option<TypeCandidate>, ResolutionFailure> {
-    let Some(connection) = ctx.connection else {
-        return Ok(None);
-    };
     let mut owners = Vec::<(Name, TypeCandidate)>::new();
     for path in paths {
-        query::find_types(&path, connection)
-            .map_err(ResolutionFailure::Query)?
-            .into_iter()
-            .filter(|candidate| {
-                compilation_scope::visible(ctx.scopes, ctx.source, candidate.location())
-            })
-            .for_each(|candidate| {
-                if !owners.iter().any(|(_, known)| known == &candidate) {
-                    owners.push((path.clone(), candidate));
-                }
-            });
+        for candidate in find_candidates(ctx, &path)? {
+            owners.push((path.clone(), candidate));
+        }
     }
 
     // JLS §6.5.5.1 requires a unique first type. A suffix cannot choose between
@@ -123,16 +93,38 @@ fn lookup_paths(
         .find(|(_, candidate)| candidate == &owner)
         .expect("classified owner must have a path");
     let qualified = append(path.as_slice(), suffix);
-    let member = classify_candidates(
-        query::find_types(&qualified, connection)
-            .map_err(ResolutionFailure::Query)?
-            .into_iter()
-            .filter(|candidate| {
-                compilation_scope::visible(ctx.scopes, ctx.source, candidate.location())
-            }),
-    )?
-    .ok_or(ResolutionFailure::Partial)?;
+    let member = classify_candidates(find_candidates(ctx, &qualified)?.into_iter())?
+        .ok_or(ResolutionFailure::Partial)?;
     Ok(Some(member))
+}
+
+fn find_candidates(
+    ctx: &Context<'_>,
+    name: &Name,
+) -> Result<Vec<TypeCandidate>, ResolutionFailure> {
+    let Some(connection) = ctx.connection else {
+        return Ok(Vec::new());
+    };
+    let candidates = query::find_types(name, connection).map_err(ResolutionFailure::Query)?;
+    let Some(matcher) = ctx.match_locations else {
+        return Ok(candidates);
+    };
+
+    let mut matched = Vec::new();
+    for candidate in candidates {
+        let provenance = matcher(
+            ctx.source,
+            std::slice::from_ref(&candidate.provenance.origin),
+        )
+        .map_err(ResolutionFailure::Query)?;
+        for provenance in provenance {
+            matched.push(TypeCandidate {
+                locator: candidate.locator.clone(),
+                provenance,
+            });
+        }
+    }
+    Ok(matched)
 }
 
 fn append(prefix: &[String], segments: &[Spanned<TypeNameComponent>]) -> Name {

@@ -3,7 +3,7 @@ use crate::model::nodes::{
     types::{Kind, Modifier},
 };
 
-use super::{Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, TypeParameterHandle};
+use super::{Context, ResolutionFailure, TypeCandidate, TypeLocator, TypeParameterHandle};
 
 pub(super) fn validate_resolution(
     ctx: &Context<'_>,
@@ -24,7 +24,7 @@ fn validate_type_parameter_usage(
     ctx: &Context<'_>,
     resolution: &TypeCandidate,
 ) -> Result<(), ResolutionFailure> {
-    let TypeCandidate::Java(JavaTypeCandidate::TypeParameter(parameter)) = resolution else {
+    let TypeLocator::TypeParameter(parameter) = &resolution.locator else {
         return Ok(());
     };
 

@@ -1,6 +1,6 @@
 use beans_lang_java::{
     lower_into,
-    semantics::resolution::{JavaTypeCandidate, ResolutionFailure, TypeCandidate},
+    semantics::resolution::{ResolutionFailure, TypeLocator},
 };
 
 use super::{resolve_field, type_index};
@@ -27,7 +27,7 @@ fn an_inner_class_can_use_a_type_parameter_of_its_static_enclosing_class() {
 
     let result = resolve_field(&file, "target").unwrap();
 
-    let TypeCandidate::Java(JavaTypeCandidate::TypeParameter(parameter)) = result else {
+    let TypeLocator::TypeParameter(parameter) = result.locator else {
         panic!("expected one Java type parameter");
     };
     assert_eq!(parameter.owner().node_index(), nested);
@@ -56,7 +56,7 @@ fn a_static_boundary_does_not_block_lexical_member_type_lookup() {
 
     let result = resolve_field(&file, "target").unwrap();
 
-    let TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) = result else {
+    let TypeLocator::Declaration(handle) = result.locator else {
         panic!("expected one Java declaration");
     };
     assert_eq!(handle.node_index(), member);

@@ -2,7 +2,7 @@ use beans_core::{location::Location, names::Name};
 use beans_engine::storage::{open, open_or_create};
 use beans_lang_java::{
     lower_into,
-    semantics::resolution::{TypeCandidate, query},
+    semantics::resolution::{TypeCandidate, TypeLocator, query},
     storage as java_storage,
 };
 use beans_platform_jvm::{Class, storage as jvm_storage};
@@ -24,7 +24,16 @@ fn java_and_jvm_queries_share_a_snapshot_across_replacement_and_deletion() {
         let candidates = query::find_types(&old, &transaction).unwrap();
         assert!(matches!(
             candidates.as_slice(),
-            [TypeCandidate::Java(_), TypeCandidate::Jvm(_)]
+            [
+                TypeCandidate {
+                    locator: TypeLocator::Declaration(_),
+                    ..
+                },
+                TypeCandidate {
+                    locator: TypeLocator::Jvm(_),
+                    ..
+                }
+            ]
         ));
 
         publish("New", &mut writer);
@@ -38,7 +47,16 @@ fn java_and_jvm_queries_share_a_snapshot_across_replacement_and_deletion() {
         let candidates = query::find_types(&new, &transaction).unwrap();
         assert!(matches!(
             candidates.as_slice(),
-            [TypeCandidate::Java(_), TypeCandidate::Jvm(_)]
+            [
+                TypeCandidate {
+                    locator: TypeLocator::Declaration(_),
+                    ..
+                },
+                TypeCandidate {
+                    locator: TypeLocator::Jvm(_),
+                    ..
+                }
+            ]
         ));
 
         let publication = writer.transaction().unwrap();

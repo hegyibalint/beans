@@ -15,6 +15,7 @@ tree-sitter.workspace = true
 tree-sitter-java.workspace = true
 
 [dev-dependencies]
+beans-engine.workspace = true
 beans-testing.workspace = true
 
 [[example]]

@@ -5,7 +5,7 @@ use crate::model::{
 use beans_core::ranges::Spanned;
 
 use super::{
-    Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, TypeParameterHandle,
+    Context, ResolutionFailure, TypeCandidate, TypeLocator, TypeParameterHandle,
     iterators::local_declaration_handle,
     lookup::{lookup_downward, lookup_external, lookup_upward, lookup_upward_from_type_header},
     result::{classify_candidates, push_unique_candidate},
@@ -87,7 +87,7 @@ fn resolve_remaining_segments(
         return Ok(candidate_segment);
     }
 
-    if let TypeCandidate::Java(JavaTypeCandidate::TypeParameter(parameter)) = &candidate_segment {
+    if let TypeLocator::TypeParameter(parameter) = &candidate_segment.locator {
         validate_candidate_use(ctx, &candidate_segment)?;
         return resolve_through_type_parameter(ctx, parameter, remaining_segments, state);
     }

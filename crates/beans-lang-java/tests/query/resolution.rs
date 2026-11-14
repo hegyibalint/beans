@@ -1,7 +1,7 @@
-use beans_core::{location::Location, names::Name};
+use beans_core::{location::Location, names::Name, ranges::ByteRange};
 use beans_lang_java::{
     query as java_query,
-    semantics::resolution::{JavaTypeCandidate, TypeCandidate, query},
+    semantics::resolution::{TypeCandidate, TypeLocator, query},
 };
 use beans_testing::database;
 
@@ -20,7 +20,10 @@ fn native_java_addresses_are_wrapped_as_candidates() {
         .remove(0);
     assert_eq!(
         query::find_types(&name, &models.connection).unwrap(),
-        [TypeCandidate::Java(JavaTypeCandidate::Declaration(address))]
+        [TypeCandidate::new(
+            TypeLocator::Declaration(address),
+            ByteRange::new(23, 30)
+        )]
     );
 }
 

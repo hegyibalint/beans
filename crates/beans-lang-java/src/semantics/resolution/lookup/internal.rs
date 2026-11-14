@@ -5,7 +5,7 @@ use crate::model::{
 use beans_core::ranges::Spanned;
 
 use super::super::{
-    Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate,
+    Context, ResolutionFailure, TypeCandidate, TypeLocator,
     iterators::{
         iter_declared_member_types, iter_direct_supertype_refs, iter_enclosing_types,
         iter_type_parameters, iter_types_below, local_declaration_handle, local_type_candidate,
@@ -149,15 +149,15 @@ fn lookup_inherited_member_types(
     ctx: &Context<'_>,
     owner: &TypeCandidate,
     segment: &TypeNameComponent,
-    visiting: &mut Vec<TypeCandidate>,
+    visiting: &mut Vec<TypeLocator>,
     state: &mut State,
 ) -> Result<Vec<TypeCandidate>, ResolutionFailure> {
-    if visiting.contains(owner) {
+    if visiting.contains(&owner.locator) {
         // Circular inheritance is invalid (JLS §8.1.5, §9.1.3). Until lookup can
         // retain branch diagnostics beside candidates, this branch contributes none.
         return Ok(Vec::new());
     }
-    visiting.push(owner.clone());
+    visiting.push(owner.locator.clone());
 
     let mut candidates = Vec::new();
     let Some(owner_index) = local_declaration_handle(ctx, owner).map(|handle| handle.node_index())
@@ -195,7 +195,7 @@ fn lookup_inherited_member_types(
 }
 
 fn is_inherited_member_type(ctx: &Context<'_>, candidate: &TypeCandidate) -> bool {
-    let TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) = candidate else {
+    let TypeLocator::Declaration(handle) = &candidate.locator else {
         return false;
     };
     if handle.source() != ctx.source {
@@ -209,24 +209,17 @@ fn is_inherited_member_type(ctx: &Context<'_>, candidate: &TypeCandidate) -> boo
 }
 
 fn candidate_name<'a>(ctx: &'a Context<'_>, candidate: &TypeCandidate) -> Option<&'a str> {
-    let TypeCandidate::Java(candidate) = candidate else {
-        return None;
-    };
-
-    let owner = match candidate {
-        JavaTypeCandidate::Declaration(handle) => handle,
-        JavaTypeCandidate::TypeParameter(handle) => handle.owner(),
-    };
-    if owner.source() != ctx.source {
+    if candidate.location() != ctx.source {
         return None;
     }
 
-    match candidate {
-        JavaTypeCandidate::Declaration(handle) => {
+    match &candidate.locator {
+        TypeLocator::Declaration(handle) => {
             ctx.file.node(handle.node_index())?.kind().as_type()?.name()
         }
-        JavaTypeCandidate::TypeParameter(handle) => handle
+        TypeLocator::TypeParameter(handle) => handle
             .parameter(ctx.file)
             .map(|parameter| parameter.name.value().as_str()),
+        TypeLocator::Jvm(_) => None,
     }
 }

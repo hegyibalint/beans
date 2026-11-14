@@ -1,11 +1,52 @@
 use crate::model::{File, nodes::types::TypeParameter};
 use crate::semantics::DeclarationHandle;
-use beans_core::location::Location;
+use beans_core::{
+    location::Location, location_match::LocationMatch, ranges::ByteRange, source::SourceSpan,
+};
+
+/// An indexed entity paired with one query-specific reachability path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeCandidate {
+    pub locator: TypeLocator,
+    pub provenance: LocationMatch,
+}
+
+impl TypeCandidate {
+    pub fn new(locator: TypeLocator, range: ByteRange) -> Self {
+        let origin = SourceSpan::new(locator.location().clone(), range);
+        Self {
+            locator,
+            provenance: LocationMatch { origin, via: None },
+        }
+    }
+
+    /// The indexed entity's location, independent of its query-specific provenance.
+    pub fn location(&self) -> &Location {
+        self.locator.location()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TypeLocator {
+    Declaration(DeclarationHandle),
+    TypeParameter(TypeParameterHandle),
+    Jvm(Location),
+}
+
+impl TypeLocator {
+    pub fn location(&self) -> &Location {
+        match self {
+            Self::Declaration(handle) => handle.source(),
+            Self::TypeParameter(handle) => handle.owner().source(),
+            Self::Jvm(location) => location,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeParameterHandle {
     owner: DeclarationHandle,
-    /// An index pointing into which type parameter we talk about in the type
+    /// Index into the owner's type parameters.
     index: usize,
 }
 
@@ -38,44 +79,18 @@ pub enum ResolutionFailure {
     CircularTypeParameterBound(TypeParameterHandle),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TypeCandidate {
-    Java(JavaTypeCandidate),
-    Jvm(Location),
-}
-
-impl TypeCandidate {
-    pub fn location(&self) -> &Location {
-        match self {
-            Self::Java(JavaTypeCandidate::Declaration(handle)) => handle.source(),
-            Self::Java(JavaTypeCandidate::TypeParameter(handle)) => handle.owner().source(),
-            Self::Jvm(location) => location,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum JavaTypeCandidate {
-    Declaration(DeclarationHandle),
-    TypeParameter(TypeParameterHandle),
-}
-
 pub(crate) fn classify_candidates(
-    mut candidates: impl Iterator<Item = TypeCandidate>,
+    candidates: impl Iterator<Item = TypeCandidate>,
 ) -> Result<Option<TypeCandidate>, ResolutionFailure> {
-    let Some(first) = candidates.next() else {
-        return Ok(None);
-    };
-    let Some(second) = candidates.next() else {
-        return Ok(Some(first));
-    };
-
-    Err(ResolutionFailure::Ambiguous(
-        std::iter::once(first)
-            .chain(std::iter::once(second))
-            .chain(candidates)
-            .collect(),
-    ))
+    let mut distinct = Vec::new();
+    for candidate in candidates {
+        push_unique_candidate(&mut distinct, candidate);
+    }
+    match distinct.len() {
+        0 => Ok(None),
+        1 => Ok(distinct.pop()),
+        _ => Err(ResolutionFailure::Ambiguous(distinct)),
+    }
 }
 
 pub(crate) fn push_unique_candidate(candidates: &mut Vec<TypeCandidate>, candidate: TypeCandidate) {
@@ -91,19 +106,29 @@ mod tests {
     use beans_core::location::LocationEntry;
 
     #[test]
-    fn candidates_expose_the_location_of_their_declaration_or_class() {
-        let source = Location::file("/src/Example.java");
+    fn locators_expose_the_location_of_their_declaration_or_class() {
+        let source = Location::file("/source");
         let handle = DeclarationHandle::new(source.clone(), NodeIndex::new(1));
-        let declaration = TypeCandidate::Java(JavaTypeCandidate::Declaration(handle.clone()));
-        let parameter = TypeCandidate::Java(JavaTypeCandidate::TypeParameter(
-            TypeParameterHandle::new(handle, 0),
-        ));
-        let binary = Location::file("/library.jar")
-            .entry(LocationEntry::Container("p/Example.class".into()));
-        let class = TypeCandidate::Jvm(binary.clone());
+        let declaration = TypeLocator::Declaration(handle.clone());
+        let parameter = TypeLocator::TypeParameter(TypeParameterHandle::new(handle, 0));
+        let binary =
+            Location::file("/artifact").entry(LocationEntry::Container("p/Example.class".into()));
+        let class = TypeLocator::Jvm(binary.clone());
 
         assert_eq!(declaration.location(), &source);
         assert_eq!(parameter.location(), &source);
         assert_eq!(class.location(), &binary);
+    }
+
+    #[test]
+    fn identical_pairs_do_not_manufacture_ambiguity() {
+        let candidate = TypeCandidate::new(
+            TypeLocator::Jvm(Location::file("/artifact")),
+            ByteRange::new(0, 0),
+        );
+        assert_eq!(
+            classify_candidates([candidate.clone(), candidate.clone()].into_iter()),
+            Ok(Some(candidate)),
+        );
     }
 }

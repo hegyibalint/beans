@@ -1,6 +1,6 @@
 use beans_core::{
-    compilation_scope::CompilationScope,
     location::Location,
+    location_match::LocationMatcher,
     ranges::{ByteRange, Spanned},
 };
 use rusqlite::Connection;
@@ -15,7 +15,7 @@ use super::{Diagnostic, DiagnosticSeverity};
 pub(super) fn collect(
     file: &File,
     source: &Location,
-    scopes: &[CompilationScope],
+    match_locations: Option<&LocationMatcher<'_>>,
     connection: &Connection,
 ) -> Result<Vec<Diagnostic>, String> {
     let mut diagnostics = Vec::new();
@@ -28,7 +28,7 @@ pub(super) fn collect(
         for reference in references {
             let context = Context::new(file, source, entry.index, reference.value())
                 .with_connection(connection)
-                .with_scopes(scopes);
+                .with_location_matcher(match_locations);
             // Partial resolution can mean missing resolver support, not invalid Java.
             match resolve(&context) {
                 Err(ResolutionFailure::Query(error)) => return Err(error),

@@ -1,18 +1,29 @@
 use std::path::Path;
 
 use beans_core::{
-    compilation_scope::CompilationScope, location::Location, resource_filter::ResourceFilter,
+    artifact_sources::ArtifactSources,
+    classpath::Classpath,
+    location::{Location, LocationEntry},
+    location_match::{LocationMatch, LocationMatcher},
+    module::Module,
+    ranges::ByteRange,
+    resource_filter::ResourceFilter,
+    source::SourceSpan,
 };
+use beans_engine::{Engine, ImportKind};
 use beans_lang_java::{
     model::nodes::NodeKind,
     query as java_query,
     semantics::resolution::{
-        Context, JavaTypeCandidate, ResolutionFailure, TypeCandidate, query as resolution_query,
-        resolve, resolve_supertype,
+        Context, ResolutionFailure, TypeCandidate, TypeLocator, query as resolution_query, resolve,
+        resolve_supertype,
     },
 };
 use beans_platform_jvm::JvmPlatform;
-use beans_testing::{TempDir, support::class_bytes};
+use beans_testing::{
+    TempDir,
+    support::{class_bytes, jar_bytes},
+};
 
 use super::support::Models;
 
@@ -25,7 +36,8 @@ enum Occurrence {
 struct Fixture {
     java: Models,
     source: Location,
-    scopes: Vec<CompilationScope>,
+    engine: Engine,
+    files: TempDir,
 }
 
 impl Fixture {
@@ -45,10 +57,13 @@ impl Fixture {
         for (path, contents) in sources {
             java.store(java.process(contents), Location::file(*path));
         }
+        let files = TempDir::new();
+        let engine = Engine::new(files.root()).unwrap();
         Self {
             java,
             source: Location::file(source),
-            scopes: Vec::new(),
+            engine,
+            files,
         }
     }
 
@@ -81,6 +96,17 @@ impl Fixture {
     }
 
     fn resolve_at(&self, occurrence: Occurrence) -> Result<TypeCandidate, ResolutionFailure> {
+        let matcher = |request: &Location, candidates: &[SourceSpan]| {
+            self.engine.match_locations(request, candidates)
+        };
+        self.resolve_with_matcher(occurrence, &matcher)
+    }
+
+    fn resolve_with_matcher(
+        &self,
+        occurrence: Occurrence,
+        matcher: &LocationMatcher<'_>,
+    ) -> Result<TypeCandidate, ResolutionFailure> {
         let file = java_query::file(&self.source, &self.java.connection)
             .unwrap()
             .unwrap();
@@ -103,11 +129,17 @@ impl Fixture {
             .unwrap();
         let ctx = Context::new(&file, &self.source, index, reference)
             .with_connection(&self.java.connection)
-            .with_scopes(&self.scopes);
+            .with_location_matcher(Some(matcher));
         match occurrence {
             Occurrence::Field => resolve(&ctx),
             Occurrence::Supertype => resolve_supertype(&ctx),
         }
+    }
+
+    fn set_modules(&self, modules: Vec<Module>) {
+        self.engine
+            .register_modules(modules, ImportKind::Toml, self.files.root())
+            .unwrap();
     }
 
     fn store_jvm_resource(&mut self, path: &Path) {
@@ -138,17 +170,20 @@ impl Fixture {
         .into_iter()
         .next()
         .expect("expected a stored Java type");
-        TypeCandidate::Java(JavaTypeCandidate::Declaration(entry))
+        let declaration = java_query::declaration(&entry, &self.java.connection)
+            .unwrap()
+            .unwrap();
+        TypeCandidate::new(
+            TypeLocator::Declaration(entry),
+            declaration.name.unwrap().range(),
+        )
     }
 }
 
 #[test]
-fn unmatched_sources_resolve_without_scope_restrictions() {
-    let mut fixture = Fixture::competing_targets();
-    fixture.scopes = vec![CompilationScope {
-        inputs: vec![ResourceFilter::file("/other")],
-        dependencies: Some(vec![]),
-    }];
+fn unmatched_sources_resolve_without_classpath_restrictions() {
+    let fixture = Fixture::competing_targets();
+    fixture.set_modules(vec![module(&["/other"], Some(&[]))]);
 
     assert_eq!(
         fixture.resolve(),
@@ -159,23 +194,17 @@ fn unmatched_sources_resolve_without_scope_restrictions() {
 }
 
 #[test]
-fn matching_empty_dependencies_hide_external_targets() {
-    let mut fixture = Fixture::competing_targets();
-    fixture.scopes = vec![CompilationScope {
-        inputs: vec![ResourceFilter::file("/consumer")],
-        dependencies: Some(vec![]),
-    }];
+fn matching_empty_classpaths_hide_external_targets() {
+    let fixture = Fixture::competing_targets();
+    fixture.set_modules(vec![module(&["/consumer"], Some(&[]))]);
 
     assert_eq!(fixture.resolve(), Err(ResolutionFailure::NotFound));
 }
 
 #[test]
-fn matching_unrestricted_dependencies_admit_external_targets() {
-    let mut fixture = Fixture::competing_targets();
-    fixture.scopes = vec![CompilationScope {
-        inputs: vec![ResourceFilter::file("/consumer")],
-        dependencies: None,
-    }];
+fn matching_unrestricted_classpaths_admit_external_targets() {
+    let fixture = Fixture::competing_targets();
+    fixture.set_modules(vec![module(&["/consumer"], None)]);
 
     assert_eq!(
         fixture.resolve(),
@@ -187,11 +216,8 @@ fn matching_unrestricted_dependencies_admit_external_targets() {
 
 #[test]
 fn dependency_on_sourceset_a_resolves_its_target() {
-    let mut fixture = Fixture::competing_targets();
-    fixture.scopes = vec![CompilationScope {
-        inputs: vec![ResourceFilter::file("/consumer")],
-        dependencies: Some(vec![ResourceFilter::file("/sourceset-a")]),
-    }];
+    let fixture = Fixture::competing_targets();
+    fixture.set_modules(vec![module(&["/consumer"], Some(&["/sourceset-a"]))]);
 
     assert_eq!(
         fixture.resolve().unwrap().location(),
@@ -201,11 +227,8 @@ fn dependency_on_sourceset_a_resolves_its_target() {
 
 #[test]
 fn dependency_on_sourceset_b_resolves_its_target() {
-    let mut fixture = Fixture::competing_targets();
-    fixture.scopes = vec![CompilationScope {
-        inputs: vec![ResourceFilter::file("/consumer")],
-        dependencies: Some(vec![ResourceFilter::file("/sourceset-b")]),
-    }];
+    let fixture = Fixture::competing_targets();
+    fixture.set_modules(vec![module(&["/consumer"], Some(&["/sourceset-b"]))]);
 
     assert_eq!(
         fixture.resolve().unwrap().location(),
@@ -215,14 +238,11 @@ fn dependency_on_sourceset_b_resolves_its_target() {
 
 #[test]
 fn dependencies_on_both_sourcesets_make_target_ambiguous() {
-    let mut fixture = Fixture::competing_targets();
-    fixture.scopes = vec![CompilationScope {
-        inputs: vec![ResourceFilter::file("/consumer")],
-        dependencies: Some(vec![
-            ResourceFilter::file("/sourceset-a"),
-            ResourceFilter::file("/sourceset-b"),
-        ]),
-    }];
+    let fixture = Fixture::competing_targets();
+    fixture.set_modules(vec![module(
+        &["/consumer"],
+        Some(&["/sourceset-a", "/sourceset-b"]),
+    )]);
 
     assert_eq!(
         fixture.resolve(),
@@ -230,6 +250,237 @@ fn dependencies_on_both_sourcesets_make_target_ambiguous() {
             fixture.prospective_candidates("Target")
         ))
     );
+}
+
+#[test]
+fn empty_entries_still_admit_other_files_in_the_owning_inputs() {
+    let fixture = Fixture::from_sources(
+        "/consumer/Use.java",
+        &[
+            ("/consumer/Use.java", "class Use { Target field; }"),
+            ("/consumer/Target.java", "class Target {}"),
+            ("/other/Target.java", "class Target {}"),
+        ],
+    );
+    fixture.set_modules(vec![module(&["/consumer"], Some(&[]))]);
+
+    assert_eq!(
+        fixture.resolve().unwrap().location(),
+        &Location::file("/consumer/Target.java")
+    );
+}
+
+#[test]
+fn classpath_entries_do_not_select_owning_classpaths() {
+    let fixture = Fixture::competing_targets();
+    fixture.set_modules(vec![
+        module(&["/consumer"], Some(&[])),
+        module(&["/sourceset-a"], Some(&["/consumer", "/sourceset-b"])),
+    ]);
+
+    assert_eq!(fixture.resolve(), Err(ResolutionFailure::NotFound));
+}
+
+#[test]
+fn unrelated_unrestricted_classpaths_do_not_bypass_matching_restrictions() {
+    let fixture = Fixture::competing_targets();
+    fixture.set_modules(vec![
+        module(&["/consumer"], Some(&[])),
+        module(&["/other"], None),
+    ]);
+
+    assert_eq!(fixture.resolve(), Err(ResolutionFailure::NotFound));
+}
+
+#[test]
+fn overlapping_classpaths_union_visibility_within_and_across_modules() {
+    let fixture = Fixture::competing_targets();
+    fixture.set_modules(vec![
+        module(&["/consumer"], Some(&["/sourceset-a"])),
+        module(&["/consumer"], Some(&["/sourceset-b"])),
+    ]);
+    let expected = Err(ResolutionFailure::Ambiguous(
+        fixture.prospective_candidates("Target"),
+    ));
+    assert_eq!(fixture.resolve(), expected);
+
+    let mut modules = fixture.engine.modules().unwrap();
+    let second = modules.pop().unwrap();
+    modules[0].classpaths.extend(second.classpaths);
+    fixture.set_modules(modules);
+    assert_eq!(fixture.resolve(), expected);
+}
+
+#[test]
+fn a_matching_unrestricted_classpath_overrides_matching_restrictions() {
+    let fixture = Fixture::competing_targets();
+    fixture.set_modules(vec![
+        module(&["/consumer"], Some(&[])),
+        module(&["/consumer"], None),
+    ]);
+
+    assert_eq!(
+        fixture.resolve(),
+        Err(ResolutionFailure::Ambiguous(
+            fixture.prospective_candidates("Target")
+        ))
+    );
+}
+
+#[test]
+fn missing_artifacts_connect_to_selected_sources_independently_of_module_order() {
+    let files = TempDir::new();
+    let jar = files.path("api.jar");
+    let classes = files.path("classes");
+    let artifacts = [jar.to_str().unwrap(), classes.to_str().unwrap()];
+    for artifact in artifacts {
+        let mut fixture = Fixture::competing_targets();
+        fixture.java.store(
+            fixture.java.process("class Target {}"),
+            Location::file("/sourceset-a/Excluded.java"),
+        );
+        fixture.set_modules(vec![
+            module(&["/consumer"], Some(&[artifact])),
+            Module {
+                classpaths: vec![],
+                artifact_sources: vec![
+                    artifact_sources(&artifacts, &["/sourceset-a/Target.java"]),
+                    artifact_sources(&["/other.jar"], &["/sourceset-b/Target.java"]),
+                ],
+            },
+        ]);
+
+        assert!(!Path::new(artifact).exists());
+        for _ in 0..2 {
+            assert_eq!(
+                fixture.resolve().unwrap().location(),
+                &Location::file("/sourceset-a/Target.java")
+            );
+            let mut modules = fixture.engine.modules().unwrap();
+            modules.reverse();
+            fixture.set_modules(modules);
+        }
+    }
+}
+
+#[test]
+fn producing_sources_do_not_export_their_own_compilation_dependencies() {
+    let fixture = Fixture::competing_targets();
+    let mut producer = module(&["/sourceset-a"], Some(&["/sourceset-b"]));
+    producer.artifact_sources = vec![artifact_sources(
+        &["/api.jar"],
+        &["/sourceset-a/Target.java"],
+    )];
+    fixture.set_modules(vec![module(&["/consumer"], Some(&["/api.jar"])), producer]);
+
+    assert_eq!(
+        fixture.resolve().unwrap().location(),
+        &Location::file("/sourceset-a/Target.java")
+    );
+}
+
+#[test]
+fn consuming_two_artifacts_preserves_genuine_ambiguity() {
+    let fixture = Fixture::competing_targets();
+    fixture.set_modules(vec![
+        module(&["/consumer"], Some(&["/a.jar", "/b.jar"])),
+        Module {
+            classpaths: vec![],
+            artifact_sources: vec![
+                artifact_sources(&["/a.jar"], &["/sourceset-a/Target.java"]),
+                artifact_sources(&["/b.jar"], &["/sourceset-b/Target.java"]),
+            ],
+        },
+    ]);
+
+    let mut expected = fixture.prospective_candidates("Target");
+    expected[0].provenance.via = Some(Location::file("/a.jar"));
+    expected[1].provenance.via = Some(Location::file("/b.jar"));
+    assert_eq!(
+        fixture.resolve(),
+        Err(ResolutionFailure::Ambiguous(expected))
+    );
+}
+
+#[test]
+fn source_archive_associations_preserve_the_outer_archive_identity() {
+    let mut fixture = Fixture::new("class Use { Target field; }", &[]);
+    let target =
+        Location::file("/api-sources.jar").entry(LocationEntry::Container("Target.java".into()));
+    for archive in ["/api-sources.jar", "/other-sources.jar"] {
+        fixture.java.store(
+            fixture.java.process("class Target {}"),
+            Location::file(archive).entry(LocationEntry::Container("Target.java".into())),
+        );
+    }
+    let mut module = module(&["/src/Use.java"], Some(&["/api.jar"]));
+    module.artifact_sources = vec![artifact_sources(&["/api.jar"], &["/api-sources.jar"])];
+    fixture.set_modules(vec![module]);
+
+    assert_eq!(fixture.resolve().unwrap().location(), &target);
+}
+
+#[test]
+fn artifact_sources_apply_at_every_external_lookup_tier() {
+    for (current, package) in [
+        (
+            "package p; import q.Target; class Use { Target field; }",
+            "q",
+        ),
+        ("package q; class Use { Target field; }", "q"),
+        ("package p; import q.*; class Use { Target field; }", "q"),
+        ("package p; class Use { Target field; }", "java.lang"),
+        ("package p; class Use { q.Target field; }", "q"),
+    ] {
+        let declaration = format!("package {package}; public class Target {{}}");
+        let fixture = Fixture::new(current, &[("Target", &declaration)]);
+        let mut module = module(&["/src/Use.java"], Some(&["/api.jar"]));
+        module.artifact_sources = vec![artifact_sources(&["/api.jar"], &["/src/Target.java"])];
+        fixture.set_modules(vec![module]);
+
+        let mut expected = fixture.expected(&format!("{package}.Target"));
+        expected.provenance.via = Some(Location::file("/api.jar"));
+        assert_eq!(fixture.resolve(), Ok(expected), "{current}");
+    }
+}
+
+#[test]
+fn artifact_sources_apply_to_imported_members_and_qualified_prefixes() {
+    for (current, expected_name) in [
+        (
+            "package p; import q.Outer; class Use { Outer.Inner field; }",
+            Some("q.Outer.Inner"),
+        ),
+        (
+            "package p; class Use { q.Outer.Inner field; }",
+            Some("q.Outer.Inner"),
+        ),
+        (
+            "package p; import q.Outer; class Use { Outer.Missing field; }",
+            None,
+        ),
+        ("package p; class Use { q.Outer.Missing field; }", None),
+    ] {
+        let fixture = Fixture::new(
+            current,
+            &[(
+                "Outer",
+                "package q; public class Outer { public class Inner {} }",
+            )],
+        );
+        let mut module = module(&["/src/Use.java"], Some(&["/api.jar"]));
+        module.artifact_sources = vec![artifact_sources(&["/api.jar"], &["/src/Outer.java"])];
+        fixture.set_modules(vec![module]);
+
+        let expected = expected_name
+            .map(|name| {
+                let mut candidate = fixture.expected(name);
+                candidate.provenance.via = Some(Location::file("/api.jar"));
+                candidate
+            })
+            .ok_or(ResolutionFailure::Partial);
+        assert_eq!(fixture.resolve(), expected, "{current}");
+    }
 }
 
 #[test]
@@ -348,10 +599,12 @@ fn imported_superclass_uses_the_same_external_query() {
         "package p; import q.Base; class Use extends Base {}",
         &[("Base", "package q; public class Base {}")],
     );
-    assert_eq!(
-        fixture.resolve_at(Occurrence::Supertype),
-        Ok(fixture.expected("q.Base"))
-    );
+    let mut module = module(&["/src/Use.java"], Some(&["/api.jar"]));
+    module.artifact_sources = vec![artifact_sources(&["/api.jar"], &["/src/Base.java"])];
+    fixture.set_modules(vec![module]);
+    let mut expected = fixture.expected("q.Base");
+    expected.provenance.via = Some(Location::file("/api.jar"));
+    assert_eq!(fixture.resolve_at(Occurrence::Supertype), Ok(expected));
 }
 
 #[test]
@@ -360,9 +613,30 @@ fn stored_jvm_classes_are_resolved() {
     let path = files.write("Foo.class", class_bytes("q/Foo"));
     let mut fixture = Fixture::new("package p; import q.Foo; class Use { Foo field; }", &[]);
     fixture.store_jvm_resource(&path);
+    assert_eq!(fixture.resolve(), Ok(jvm_candidate(Location::file(path))));
+}
+
+#[test]
+fn binary_classpath_entries_still_admit_jar_contents_without_source_associations() {
+    let files = TempDir::new();
+    let jar = files.write(
+        "api.jar",
+        jar_bytes(&[("q/Foo.class", &class_bytes("q/Foo"))]),
+    );
+    let mut fixture = Fixture::new("package p; import q.Foo; class Use { Foo field; }", &[]);
+    fixture.store_jvm_resource(&jar);
+    fixture.set_modules(vec![module(&["/src/Use.java"], Some(&[]))]);
+    assert_eq!(fixture.resolve(), Err(ResolutionFailure::NotFound));
+
+    fixture.set_modules(vec![module(
+        &["/src/Use.java"],
+        Some(&[jar.to_str().unwrap()]),
+    )]);
     assert_eq!(
         fixture.resolve(),
-        Ok(TypeCandidate::Jvm(Location::file(path)))
+        Ok(jvm_candidate(
+            Location::file(jar).entry(LocationEntry::Container("q/Foo.class".into()))
+        ))
     );
 }
 
@@ -375,10 +649,7 @@ fn a_jvm_single_import_shadows_a_java_type_in_the_current_package() {
         &[("Foo", "package p; class Foo {}")],
     );
     fixture.store_jvm_resource(&path);
-    assert_eq!(
-        fixture.resolve(),
-        Ok(TypeCandidate::Jvm(Location::file(path)))
-    );
+    assert_eq!(fixture.resolve(), Ok(jvm_candidate(Location::file(path))));
 }
 
 #[test]
@@ -394,7 +665,7 @@ fn java_and_jvm_candidates_with_the_same_name_are_ambiguous() {
         fixture.resolve(),
         Err(ResolutionFailure::Ambiguous(vec![
             fixture.expected("q.Foo"),
-            TypeCandidate::Jvm(Location::file(path)),
+            jvm_candidate(Location::file(path)),
         ]))
     );
 }
@@ -403,4 +674,121 @@ fn java_and_jvm_candidates_with_the_same_name_are_ambiguous() {
 fn an_unmatched_name_is_not_found() {
     let fixture = Fixture::new("package p; class Use { Missing field; }", &[]);
     assert_eq!(fixture.resolve(), Err(ResolutionFailure::NotFound));
+}
+
+#[test]
+fn two_artifact_paths_to_one_declaration_are_ambiguous() {
+    let fixture = Fixture::new(
+        "import q.Target; class Use { Target field; }",
+        &[("Target", "package q; public class Target {}")],
+    );
+    fixture.set_modules(vec![
+        module(
+            &["/src/Use.java"],
+            Some(&["/producer/artifact-a", "/producer/artifact-b"]),
+        ),
+        Module {
+            classpaths: vec![],
+            artifact_sources: vec![
+                artifact_sources(&["/producer/artifact-a"], &["/src/Target.java"]),
+                artifact_sources(&["/producer/artifact-b"], &["/src/Target.java"]),
+            ],
+        },
+    ]);
+    let mut first = fixture.expected("q.Target");
+    let mut second = first.clone();
+    first.provenance.via = Some(Location::file("/producer/artifact-a"));
+    second.provenance.via = Some(Location::file("/producer/artifact-b"));
+
+    assert_eq!(
+        fixture.resolve(),
+        Err(ResolutionFailure::Ambiguous(vec![first, second]))
+    );
+}
+
+#[test]
+fn repeated_imports_and_associations_do_not_duplicate_candidate_pairs() {
+    let fixture = Fixture::new(
+        "import q.Target; import q.Target; class Use { Target field; }",
+        &[("Target", "package q; public class Target {}")],
+    );
+    fixture.set_modules(vec![
+        module(&["/src/Use.java"], Some(&["/producer/artifact"])),
+        Module {
+            classpaths: vec![],
+            artifact_sources: vec![
+                artifact_sources(&["/producer/artifact"], &["/src/Target.java"]),
+                artifact_sources(&["/producer/artifact"], &["/src/Target.java"]),
+            ],
+        },
+    ]);
+    let mut expected = fixture.expected("q.Target");
+    expected.provenance.via = Some(Location::file("/producer/artifact"));
+
+    assert_eq!(fixture.resolve(), Ok(expected));
+}
+
+#[test]
+fn location_matcher_failures_are_query_failures() {
+    let fixture = Fixture::new(
+        "import q.Target; class Use { Target field; }",
+        &[("Target", "package q; public class Target {}")],
+    );
+    let matcher = |_: &Location, _: &[SourceSpan]| Err("intentional matcher failure".into());
+
+    assert_eq!(
+        fixture.resolve_with_matcher(Occurrence::Field, &matcher),
+        Err(ResolutionFailure::Query(
+            "intentional matcher failure".into()
+        )),
+    );
+}
+
+#[test]
+fn location_matcher_can_replace_source_spans_without_replacing_locators() {
+    let fixture = Fixture::new(
+        "import q.Target; class Use { Target field; }",
+        &[("Target", "package q; public class Target {}")],
+    );
+    let mut expected = fixture.expected("q.Target");
+    let original = expected.provenance.origin.clone();
+    expected.provenance = LocationMatch {
+        origin: SourceSpan::new(Location::file("/external/source"), ByteRange::new(30, 40)),
+        via: Some(Location::file("/producer/artifact")),
+    };
+    let matcher = |request: &Location, candidates: &[SourceSpan]| {
+        assert_eq!(request, &fixture.source);
+        assert_eq!(candidates, std::slice::from_ref(&original));
+        Ok(vec![expected.provenance.clone()])
+    };
+
+    assert_eq!(
+        fixture.resolve_with_matcher(Occurrence::Field, &matcher),
+        Ok(expected.clone())
+    );
+}
+
+fn jvm_candidate(location: Location) -> TypeCandidate {
+    TypeCandidate::new(TypeLocator::Jvm(location), ByteRange::new(0, 0))
+}
+
+fn module(inputs: &[&str], entries: Option<&[&str]>) -> Module {
+    Module {
+        classpaths: vec![Classpath {
+            inputs: filters(inputs),
+            entries: entries.map(filters),
+        }],
+        artifact_sources: vec![],
+    }
+}
+
+fn artifact_sources(artifacts: &[&str], sources: &[&str]) -> ArtifactSources {
+    ArtifactSources {
+        artifacts: artifacts.iter().map(|path| Location::file(*path)).collect(),
+        sources: filters(sources),
+    }
+}
+
+fn filters(paths: &[&str]) -> Vec<ResourceFilter> {
+    paths.iter().map(ResourceFilter::file).collect()
 }

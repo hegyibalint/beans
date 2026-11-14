@@ -1,21 +1,11 @@
-CREATE TABLE compilation_scopes (
+CREATE TABLE modules (
     id INTEGER PRIMARY KEY,
-    -- What workspace system this scope belongs to?
-    -- 0 = TOML, 1 = Gradle, 2 = Maven
+    -- The import owner: 0 = TOML, 1 = Gradle, 2 = Maven.
     kind INTEGER NOT NULL CHECK (kind IN (0, 1, 2)),
-    -- Which project root this scope belongs to?
-    -- We might have multiple, independent projects in a workspace
+    -- The normalized import root, not a visibility boundary.
     root TEXT NOT NULL,
-    -- An informative name to the scope often like "main" or "test"
-    name TEXT NOT NULL,
-    -- Which resources belong to this scope?
-    -- See `beans_core::resource_filter::ResourceFilter`
-    inputs TEXT NOT NULL CHECK (json_valid(inputs)),
-    -- Which resources this scope sees?
-    --  * NULL:     filter cannot be applied, i.e. we match on everything.
-    --  * Not NULL: the filter can be applied. Empty list means we match on nothing.
-    -- See `beans_core::resource_filter::ResourceFilter`
-    dependencies TEXT CHECK (dependencies IS NULL OR json_valid(dependencies))
+    -- See `beans_core::module::Module`.
+    model TEXT NOT NULL CHECK (json_valid(model))
 ) STRICT;
 
 CREATE TABLE models (

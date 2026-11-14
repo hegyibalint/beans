@@ -4,13 +4,15 @@ use std::{
     thread::{self, JoinHandle},
 };
 
-use beans_core::{compilation_scope::CompilationScope, paths::normalize};
+use beans_core::{module::Module, paths::normalize};
 use beans_engine::{Engine, ImportKind};
 use serde::Serialize;
 
 use crate::{Sidecar, rpc::Reply};
 
 impl Sidecar {
+    /// Imports a Gradle snapshot asynchronously; join the worker to observe publication or failure.
+    /// Waiting for the response does not keep the engine alive.
     pub fn import_gradle(
         &mut self,
         root: &Path,
@@ -51,44 +53,52 @@ fn import_thread(
     let result = response
         .recv()
         .map_err(|_| "sidecar reader stopped without an import response")??;
-    let scopes: Vec<CompilationScope> = serde_json::from_value(result)
+    let modules: Vec<Module> = serde_json::from_value(result)
         .map_err(|error| format!("invalid Gradle import result: {error}"))?;
 
     // Keep the engine alive only while registering the completed import.
     let engine = engine
         .upgrade()
         .ok_or("engine dropped before Gradle import completed")?;
-    engine.register_scopes(scopes, ImportKind::Gradle, &root)
+    engine.register_modules(modules, ImportKind::Gradle, &root)
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
-    use beans_core::{location::Location, resource_filter::ResourceFilter};
+    use beans_core::{
+        artifact_sources::ArtifactSources, classpath::Classpath, location::Location,
+        resource_filter::ResourceFilter,
+    };
     use beans_testing::TempDir;
 
     use super::*;
 
     #[test]
-    fn completed_imports_register_logical_scopes() {
+    fn completed_imports_register_complete_logical_modules() {
         let files = TempDir::new();
         let engine = Arc::new(Engine::new(files.root()).unwrap());
-        let source = files.path("missing-sources/Use.java");
-        let scopes = vec![CompilationScope {
-            inputs: vec![ResourceFilter::file(files.path("missing-sources"))],
-            dependencies: Some(vec![]),
+        let modules = vec![Module {
+            classpaths: vec![Classpath {
+                inputs: vec![ResourceFilter::file(files.path("missing-sources"))],
+                entries: Some(vec![]),
+            }],
+            artifact_sources: vec![ArtifactSources {
+                artifacts: vec![Location::file(files.path("missing.jar"))],
+                sources: vec![ResourceFilter::file(files.path("missing-sources/Use.java"))],
+            }],
         }];
+        let expected = serde_json::to_value(modules).unwrap();
         let (sender, receiver) = mpsc::channel();
-        sender
-            .send(Ok(serde_json::to_value(scopes).unwrap()))
-            .unwrap();
+        sender.send(Ok(expected.clone())).unwrap();
 
         import_thread(receiver, Arc::downgrade(&engine), files.root().into()).unwrap();
 
-        let registered = engine.scopes_for(&Location::file(source)).unwrap();
-        assert_eq!(registered.len(), 1);
-        assert_eq!(registered[0].dependencies, Some(vec![]));
+        assert_eq!(
+            serde_json::to_value(engine.modules().unwrap()).unwrap(),
+            expected
+        );
     }
 
     #[test]
@@ -106,20 +116,35 @@ mod tests {
     }
 
     #[test]
-    fn malformed_results_do_not_register_scopes() {
+    fn malformed_results_preserve_registered_modules() {
         let files = TempDir::new();
         let engine = Arc::new(Engine::new(files.root()).unwrap());
-        let (sender, receiver) = mpsc::channel();
-        sender.send(Ok(serde_json::Value::Null)).unwrap();
+        engine
+            .register_modules(
+                vec![Module {
+                    classpaths: vec![],
+                    artifact_sources: vec![],
+                }],
+                ImportKind::Gradle,
+                files.root(),
+            )
+            .unwrap();
+        let expected = serde_json::to_value(engine.modules().unwrap()).unwrap();
+        for result in [
+            serde_json::Value::Null,
+            serde_json::json!([{"inputs": [], "dependencies": []}]),
+            serde_json::json!([{"classpaths": [], "artifact_sources": null}]),
+        ] {
+            let (sender, receiver) = mpsc::channel();
+            sender.send(Ok(result)).unwrap();
 
-        let error =
-            import_thread(receiver, Arc::downgrade(&engine), files.root().into()).unwrap_err();
-        assert!(error.starts_with("invalid Gradle import result:"));
-        assert!(
-            engine
-                .scopes_for(&Location::file(files.path("Use.java")))
-                .unwrap()
-                .is_empty()
-        );
+            let error =
+                import_thread(receiver, Arc::downgrade(&engine), files.root().into()).unwrap_err();
+            assert!(error.starts_with("invalid Gradle import result:"));
+            assert_eq!(
+                serde_json::to_value(engine.modules().unwrap()).unwrap(),
+                expected
+            );
+        }
     }
 }

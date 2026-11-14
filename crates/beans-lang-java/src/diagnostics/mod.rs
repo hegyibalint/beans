@@ -1,4 +1,4 @@
-use beans_core::{compilation_scope::CompilationScope, location::Location};
+use beans_core::{location::Location, location_match::LocationMatcher};
 use rusqlite::Connection;
 
 use crate::{engine::JavaLanguage, model::File, query};
@@ -22,22 +22,22 @@ impl JavaLanguage {
     pub fn diagnostics(
         &self,
         source: &Location,
-        scopes: &[CompilationScope],
+        match_locations: Option<&LocationMatcher<'_>>,
         connection: &Connection,
     ) -> Result<Vec<Diagnostic>, String> {
         let Some(file) = query::file(source, connection)? else {
             return Ok(Vec::new());
         };
-        self.diagnostics_for_file(&file, source, scopes, connection)
+        self.diagnostics_for_file(&file, source, match_locations, connection)
     }
 
     pub fn diagnostics_for_file(
         &self,
         file: &File,
         source: &Location,
-        scopes: &[CompilationScope],
+        match_locations: Option<&LocationMatcher<'_>>,
         connection: &Connection,
     ) -> Result<Vec<Diagnostic>, String> {
-        unresolved_types::collect(file, source, scopes, connection)
+        unresolved_types::collect(file, source, match_locations, connection)
     }
 }

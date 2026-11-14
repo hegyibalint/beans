@@ -2,7 +2,7 @@ use std::{path::Path, time::Duration};
 
 use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 
-const SCHEMA_VERSION: i64 = 16;
+const SCHEMA_VERSION: i64 = 17;
 
 /// Opens and configures an existing cache without initializing or resetting its schema.
 pub fn open(path: &Path) -> Result<Connection, String> {
@@ -140,52 +140,40 @@ mod tests {
     }
 
     #[test]
-    fn scope_kinds_must_be_known_numbers() {
+    fn module_kinds_must_be_known_numbers() {
         let connection = database();
         for kind in ["-1", "3", "'toml'", "NULL"] {
             assert!(
                 connection
                     .execute(
                         &format!(
-                            "INSERT INTO compilation_scopes (kind, root, name, inputs, dependencies)
-                             VALUES ({kind}, '/project', 'main', '[]', '[]')"
+                            "INSERT INTO modules (kind, root, model)
+                             VALUES ({kind}, '/project', '{{}}')"
                         ),
                         [],
                     )
                     .is_err()
             );
         }
-        assert_eq!(count("compilation_scopes", &connection), 0);
+        assert_eq!(count("modules", &connection), 0);
     }
 
     #[test]
-    fn scope_filters_must_be_valid_json_text_when_present() {
+    fn module_payloads_must_be_valid_json_text() {
         let connection = database();
-        for value in ["'not JSON'", "'{broken}'", "X'5B5D'"] {
-            for (inputs, dependencies) in [(value, "'[]'"), ("'[]'", value)] {
-                assert!(
-                    connection
-                        .execute(
-                            &format!(
-                                "INSERT INTO compilation_scopes (kind, root, name, inputs, dependencies)
-                                 VALUES (0, '/project', 'main', {inputs}, {dependencies})"
-                            ),
-                            [],
-                        )
-                        .is_err()
-                );
-            }
+        for value in ["'not JSON'", "'{broken}'", "X'7B7D'", "NULL"] {
+            assert!(
+                connection
+                    .execute(
+                        &format!(
+                            "INSERT INTO modules (kind, root, model) VALUES (0, '/project', {value})"
+                        ),
+                        [],
+                    )
+                    .is_err()
+            );
         }
-        assert!(
-            connection
-                .execute(
-                    "INSERT INTO compilation_scopes (kind, root, name, inputs, dependencies)
-                     VALUES (0, '/project', 'main', NULL, '[]')",
-                    [],
-                )
-                .is_err()
-        );
-        assert_eq!(count("compilation_scopes", &connection), 0);
+        assert_eq!(count("modules", &connection), 0);
     }
 
     #[test]

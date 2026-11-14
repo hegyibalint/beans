@@ -9,7 +9,7 @@ use crate::{
     engine::JavaLanguage,
     model::type_references::type_reference_at,
     query,
-    semantics::resolution::{JavaTypeCandidate, ResolutionFailure, TypeCandidate},
+    semantics::resolution::{ResolutionFailure, TypeLocator},
 };
 
 use super::{JavaFeatureContext, navigation::resolve_field_type_at};
@@ -38,20 +38,28 @@ impl<'request> HoverProvider<JavaFeatureContext<'_>, HoverRequest<'request>, Hov
             &file,
             request.source,
             request.offset,
-            context.scopes,
+            context.match_locations,
             context.connection,
         ) {
             match candidate {
                 Ok(candidate) => {
-                    if let Some((name, location)) = resolved_type(context, candidate)? {
-                        let location = display_location(&location, context.workspace_root);
-                        let contents =
-                            RichText::new(format!("Type: {name}\nLocated in: {location}"))
-                                .with_markdown(format!(
-                                    "**Type:** {}\n\n**Located in:** {}",
-                                    markdown_code(&name),
-                                    markdown_code(&location),
-                                ));
+                    if let Some(name) = resolved_type_name(context, candidate.locator)? {
+                        let location = display_location(
+                            &candidate.provenance.origin.resource,
+                            context.workspace_root,
+                        );
+                        let mut plaintext = format!("Type: {name}\nLocated in: {location}");
+                        let mut markdown = format!(
+                            "**Type:** {}\n\n**Located in:** {}",
+                            markdown_code(&name),
+                            markdown_code(&location),
+                        );
+                        if let Some(via) = candidate.provenance.via {
+                            let via = display_location(&via, context.workspace_root);
+                            plaintext.push_str(&format!("\nVia: {via}"));
+                            markdown.push_str(&format!("\n\n**Via:** {}", markdown_code(&via)));
+                        }
+                        let contents = RichText::new(plaintext).with_markdown(markdown);
                         return Ok(Some(HoverResponse::new(contents, occurrence.range)));
                     }
                 }
@@ -66,14 +74,14 @@ impl<'request> HoverProvider<JavaFeatureContext<'_>, HoverRequest<'request>, Hov
     }
 }
 
-fn resolved_type(
+fn resolved_type_name(
     context: &JavaFeatureContext<'_>,
-    candidate: TypeCandidate,
-) -> Result<Option<(String, Location)>, String> {
-    match candidate {
-        TypeCandidate::Jvm(location) => Ok(jvm_query::class_name(&location, context.connection)?
-            .map(|name| (name.replace('/', "."), location))),
-        TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) => {
+    locator: TypeLocator,
+) -> Result<Option<String>, String> {
+    match locator {
+        TypeLocator::Jvm(location) => Ok(jvm_query::class_name(&location, context.connection)?
+            .map(|name| name.replace('/', "."))),
+        TypeLocator::Declaration(handle) => {
             let Some(file) = query::file(handle.source(), context.connection)? else {
                 return Ok(None);
             };
@@ -90,9 +98,9 @@ fn resolved_type(
                 .chain(names)
                 .collect::<Vec<_>>()
                 .join(".");
-            Ok(Some((name, handle.source().clone())))
+            Ok(Some(name))
         }
-        TypeCandidate::Java(JavaTypeCandidate::TypeParameter(_)) => Ok(None),
+        TypeLocator::TypeParameter(_) => Ok(None),
     }
 }
 

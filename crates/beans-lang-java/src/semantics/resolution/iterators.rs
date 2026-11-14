@@ -2,7 +2,8 @@ use crate::model::{nodes::NodeIndex, references::TypeRef};
 use crate::semantics::DeclarationHandle;
 
 use super::TypeParameterHandle;
-use super::{Context, JavaTypeCandidate, TypeCandidate};
+use super::{Context, TypeCandidate, TypeLocator};
+use beans_core::ranges::ByteRange;
 
 pub(super) fn iter_enclosing_types<'ctx>(
     ctx: &'ctx Context<'_>,
@@ -48,11 +49,11 @@ pub(super) fn iter_type_parameters(
         .type_parameters
         .iter()
         .enumerate()
-        .map(|(index, _)| {
-            TypeCandidate::Java(JavaTypeCandidate::TypeParameter(TypeParameterHandle::new(
-                owner.clone(),
-                index,
-            )))
+        .map(|(index, parameter)| {
+            TypeCandidate::new(
+                TypeLocator::TypeParameter(TypeParameterHandle::new(owner.clone(), index)),
+                parameter.name.range(),
+            )
         })
         .collect::<Vec<_>>()
         .into_iter()
@@ -81,15 +82,22 @@ pub(super) fn local_declaration_handle<'a>(
     ctx: &Context<'_>,
     candidate: &'a TypeCandidate,
 ) -> Option<&'a DeclarationHandle> {
-    let TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) = candidate else {
+    let TypeLocator::Declaration(handle) = &candidate.locator else {
         return None;
     };
     (handle.source() == ctx.source).then_some(handle)
 }
 
 pub(super) fn local_type_candidate(ctx: &Context<'_>, index: NodeIndex) -> Option<TypeCandidate> {
-    ctx.file.node(index)?.kind().as_type()?;
-    Some(TypeCandidate::Java(JavaTypeCandidate::Declaration(
-        DeclarationHandle::new(ctx.source.clone(), index),
-    )))
+    let declaration = ctx.file.node(index)?.kind().as_type()?;
+    // Unnamed types can own lexical scopes but cannot be selected by a type name.
+    let range = declaration
+        .name
+        .as_ref()
+        .map(|name| name.range())
+        .unwrap_or(ByteRange::new(0, 0));
+    Some(TypeCandidate::new(
+        TypeLocator::Declaration(DeclarationHandle::new(ctx.source.clone(), index)),
+        range,
+    ))
 }

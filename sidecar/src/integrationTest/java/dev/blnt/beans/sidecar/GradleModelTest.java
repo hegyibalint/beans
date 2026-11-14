@@ -62,11 +62,14 @@ class GradleModelTest {
         }
         assertFalse(Files.exists(root.resolve("generator-ran")));
 
-        var scopes = new GradleAdapter().importWorkspace(params(root), progress -> {});
+        var modules = new GradleAdapter().importWorkspace(params(root), progress -> {});
+        var classpaths = modules.stream().flatMap(module -> module.classpaths().stream()).toList();
         var input = new ResourceFilter.File(custom.getSourceFiles().get(0));
-        assertTrue(scopes.stream().anyMatch(scope -> scope.inputs().contains(input)));
+        assertTrue(classpaths.stream().anyMatch(classpath -> classpath.inputs().contains(input)));
         var excluded = new ResourceFilter.File(root.resolve("integrationSrc/Excluded.java").toString());
-        assertFalse(scopes.stream().anyMatch(scope -> scope.inputs().contains(excluded)));
+        assertFalse(classpaths.stream().anyMatch(classpath -> classpath.inputs().contains(excluded)));
+        assertFalse(modules.stream().flatMap(module -> module.artifactSources().stream())
+                .anyMatch(association -> association.sources().contains(excluded)));
     }
 
     @Test
@@ -110,12 +113,14 @@ class GradleModelTest {
             assertFalse(sources.getCompileClasspath().contains(root.resolve("runtime-only.jar").toString()));
         }
 
-        var scopes = adapter.importWorkspace(params(root), progress -> {});
-        assertEquals(3, scopes.size());
+        var modules = adapter.importWorkspace(params(root), progress -> {});
+        assertEquals(1, modules.size());
+        var classpaths = modules.get(0).classpaths();
+        assertEquals(3, classpaths.size());
         for (var sources : sourceSets) {
             var inputs = sources.getSourceFiles().stream()
                     .map(ResourceFilter.File::new).toList();
-            assertTrue(scopes.stream().anyMatch(scope -> scope.inputs().equals(inputs)));
+            assertTrue(classpaths.stream().anyMatch(classpath -> classpath.inputs().equals(inputs)));
         }
         var main = sourceSet(sourceSets, "main");
         var test = sourceSet(sourceSets, "test");

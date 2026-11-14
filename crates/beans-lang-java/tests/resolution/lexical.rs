@@ -1,6 +1,6 @@
 use beans_lang_java::{
     lower_into,
-    semantics::resolution::{JavaTypeCandidate, ResolutionFailure, TypeCandidate},
+    semantics::resolution::{ResolutionFailure, TypeLocator},
 };
 
 use super::{resolve_field, resolved_java_index, type_index};
@@ -33,7 +33,7 @@ fn class_type_parameter_is_a_java_candidate() {
 
     let resolved = resolve_field(&file, "value").unwrap();
 
-    let TypeCandidate::Java(JavaTypeCandidate::TypeParameter(handle)) = resolved else {
+    let TypeLocator::TypeParameter(handle) = resolved.locator else {
         panic!("expected one Java type parameter");
     };
     assert_eq!(handle.owner().node_index(), outer);
@@ -57,7 +57,7 @@ fn nearer_type_parameter_wins_over_an_outer_member() {
 
     let resolved = resolve_field(&file, "value").unwrap();
 
-    let TypeCandidate::Java(JavaTypeCandidate::TypeParameter(handle)) = resolved else {
+    let TypeLocator::TypeParameter(handle) = resolved.locator else {
         panic!("expected one Java type parameter");
     };
     assert_eq!(handle.owner().node_index(), inner);
@@ -73,10 +73,11 @@ fn duplicate_type_parameters_are_ambiguous() {
         panic!("expected ambiguity, got {result:?}");
     };
     assert_eq!(candidates.len(), 2);
-    assert!(candidates.iter().all(|candidate| matches!(
-        candidate,
-        TypeCandidate::Java(JavaTypeCandidate::TypeParameter(_))
-    )));
+    assert!(
+        candidates
+            .iter()
+            .all(|candidate| matches!(candidate.locator, TypeLocator::TypeParameter(_)))
+    );
 }
 
 #[test]
@@ -112,7 +113,7 @@ fn duplicate_members_are_ambiguous() {
     assert!(
         candidates
             .iter()
-            .all(|candidate| matches!(candidate, TypeCandidate::Java(_)))
+            .all(|candidate| matches!(candidate.locator, TypeLocator::Declaration(_)))
     );
 }
 

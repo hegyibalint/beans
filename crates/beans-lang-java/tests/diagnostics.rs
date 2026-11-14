@@ -14,7 +14,7 @@ fn diagnostics(text: &str) -> Vec<Diagnostic> {
     let source = Location::file("/Example.java");
     java.store(lower_into(text), source.clone());
     JavaLanguage::new()
-        .diagnostics(&source, &[], &java.connection)
+        .diagnostics(&source, None, &java.connection)
         .unwrap()
 }
 
@@ -83,7 +83,7 @@ fn diagnostics_follow_cross_file_replacement_and_deletion() {
     );
     let count = |java: &Models| {
         JavaLanguage::new()
-            .diagnostics(&source, &[], &java.connection)
+            .diagnostics(&source, None, &java.connection)
             .unwrap()
             .len()
     };

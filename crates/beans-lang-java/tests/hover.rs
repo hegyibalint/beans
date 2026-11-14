@@ -1,6 +1,8 @@
 use beans_core::{
     features::hover::{HoverProvider, HoverRequest, HoverResponse},
     location::{Location, LocationEntry},
+    location_match::LocationMatch,
+    source::SourceSpan,
 };
 use beans_lang_java::{engine::JavaLanguage, features::JavaFeatureContext, lower_into};
 
@@ -59,6 +61,51 @@ fn java_type_hover_shows_its_qualified_name_and_source() {
             format!("Type: {name}\nLocated in: /src/demo/C.java")
         );
     }
+}
+
+#[test]
+fn hover_displays_the_matched_origin_without_replacing_the_indexed_locator() {
+    let contents = "import q.Target; class C { Target value; }";
+    let source = source_id();
+    let indexed = Location::file("/index/Target.java");
+    let mut models = Models::new();
+    models.store(lower_into(contents), source.clone());
+    models.store(
+        lower_into("package q; public class Target {}"),
+        indexed.clone(),
+    );
+    let matcher = |_: &Location, candidates: &[SourceSpan]| {
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].resource, indexed);
+        Ok(vec![LocationMatch {
+            origin: SourceSpan::new(
+                Location::file("/workspace/src/q/Target.java"),
+                candidates[0].range,
+            ),
+            via: Some(Location::file("/workspace/lib/api.jar")),
+        }])
+    };
+
+    let response = JavaLanguage::new()
+        .hover(
+            &JavaFeatureContext {
+                connection: &models.connection,
+                match_locations: Some(&matcher),
+                workspace_root: Some(std::path::Path::new("/workspace")),
+            },
+            &HoverRequest {
+                source: &source,
+                contents,
+                offset: contents.rfind("Target").unwrap(),
+            },
+        )
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        response.contents().plaintext(),
+        "Type: q.Target\nLocated in: src/q/Target.java\nVia: lib/api.jar"
+    );
 }
 
 #[test]
@@ -165,7 +212,7 @@ fn hover(
         .hover(
             &JavaFeatureContext {
                 connection: &models.connection,
-                scopes: &[],
+                match_locations: None,
                 workspace_root: None,
             },
             &HoverRequest {

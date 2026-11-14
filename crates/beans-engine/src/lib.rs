@@ -17,11 +17,12 @@ pub mod diagnostics;
 mod documents;
 mod events;
 mod features;
+mod location_matches;
 pub mod logging;
-mod scopes;
+mod modules;
 pub mod storage;
 
-pub use scopes::ImportKind;
+pub use modules::ImportKind;
 
 pub struct Engine {
     workspace_root: PathBuf,

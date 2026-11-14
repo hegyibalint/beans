@@ -38,6 +38,7 @@ name = "beans-lang-java"
 version = "0.0.1"
 dependencies = [
  "beans-core",
+ "beans-engine",
  "beans-platform-jvm",
  "beans-testing",
  "rusqlite",

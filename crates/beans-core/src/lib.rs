@@ -2,11 +2,11 @@
 
 pub mod artifact_sources;
 pub mod classpath;
-pub mod compilation_scope;
 pub mod event;
 pub mod features;
 pub mod input;
 pub mod location;
+pub mod location_match;
 pub mod module;
 pub mod names;
 pub mod paths;

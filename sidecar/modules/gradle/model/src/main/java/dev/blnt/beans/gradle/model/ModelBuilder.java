@@ -22,18 +22,19 @@ final class ModelBuilder implements ToolingModelBuilder {
     public Object buildAll(String name, Project project) {
         List<SourceSetModel> sources = new ArrayList<>();
         SourceSetContainer sourceSets = project.getExtensions().findByType(SourceSetContainer.class);
-        if (sourceSets == null) {
-            return new Snapshots.Project(path(project.getProjectDir()), null, sources);
+        // Read the common JVM source-set contract without inspecting language-specific tasks.
+        if (sourceSets != null) {
+            for (SourceSet sourceSet : sourceSets) {
+                sources.add(new Snapshots.SourceSet(sourceSet.getName(),
+                        paths(sourceSet.getAllSource().getSrcDirs(), true),
+                        paths(sourceSet.getAllSource().getFiles(), true),
+                        paths(sourceSet.getCompileClasspath().getFiles(), false),
+                        paths(sourceSet.getOutput().getClassesDirs().getFiles(), true)));
+            }
         }
 
-        // Read the common JVM source-set contract without inspecting language-specific tasks.
-        for (SourceSet sourceSet : sourceSets) {
-            sources.add(new Snapshots.SourceSet(sourceSet.getName(),
-                    paths(sourceSet.getAllSource().getSrcDirs(), true),
-                    paths(sourceSet.getAllSource().getFiles(), true),
-                    paths(sourceSet.getCompileClasspath().getFiles(), false),
-                    paths(sourceSet.getOutput().getClassesDirs().getFiles(), true)));
-        }
+        // Preserve the feature's explicit source-set link and outgoing artifact declarations.
+        List<JvmFeatureModel> features = JvmFeatures.snapshot(project);
 
         // Report the project's default toolchain, not an inferred compiler-task selection.
         String javaHome = null;
@@ -43,7 +44,7 @@ final class ModelBuilder implements ToolingModelBuilder {
             javaHome = path(toolchains.launcherFor(java.getToolchain()).get()
                     .getMetadata().getInstallationPath().getAsFile());
         }
-        return new Snapshots.Project(path(project.getProjectDir()), javaHome, sources);
+        return new Snapshots.Project(path(project.getProjectDir()), javaHome, sources, features);
     }
 
     private static List<String> paths(Collection<File> files, boolean sort) {

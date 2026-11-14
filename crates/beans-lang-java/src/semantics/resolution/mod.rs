@@ -69,8 +69,9 @@
 //! Single-type imports, current-package types, type-on-demand imports, and as-written canonical
 //! names are wired through `query::find_types`. Static and module imports, accessibility checks,
 //! and inherited members from other files remain to be implemented. A caller must supply a
-//! database connection to look beyond the current file. Compilation scopes filter prospective Java and
-//! JVM candidates before binding. Package/type boundaries are not inferred from capitalization.
+//! database connection to look beyond the current file. An optional location matcher filters and
+//! enriches prospective candidates before binding; workspace metadata remains outside Java.
+//! Package/type boundaries are not inferred from capitalization.
 //!
 //! ## 5. Resolve qualified suffixes downward
 //!
@@ -96,13 +97,14 @@
 //! The inheritance and ambiguity rules are specified by JLS §8.5 and §9.5.
 //!
 //! Results preserve first-discovery order. The same declaration reached through multiple paths is
-//! included once by `TypeCandidate` identity; distinct declarations remain distinct and therefore
-//! ambiguous. Traversal must also detect cyclic inheritance independently of result deduplication.
+//! included once per locator–provenance pair; different artifact routes remain distinct and
+//! therefore ambiguous. Traversal must also detect cyclic inheritance independently of result
+//! deduplication.
 //!
 //! ## 7. Classify the result
 //!
 //! No candidates means lookup continues to the next permitted stage or reports `NotFound`. One
-//! distinct candidate produces a `TypeCandidate`; multiple distinct candidates produce
+//! distinct locator–provenance pair produces a `TypeCandidate`; multiple distinct pairs produce
 //! `ResolutionFailure::Ambiguous` in deterministic discovery order. Accessibility can invalidate
 //! a candidate but must not cause lookup to fall back to a scope shadowed by the selected
 //! declaration.
@@ -124,16 +126,16 @@ mod validation;
 
 pub use self::{
     resolve::{resolve, resolve_supertype},
-    result::{JavaTypeCandidate, ResolutionFailure, TypeCandidate, TypeParameterHandle},
+    result::{ResolutionFailure, TypeCandidate, TypeLocator, TypeParameterHandle},
 };
 use crate::model::{File, nodes::NodeIndex, references::TypeRef};
-use beans_core::{compilation_scope::CompilationScope, location::Location};
+use beans_core::{location::Location, location_match::LocationMatcher};
 use rusqlite::Connection;
 
 pub struct Context<'a> {
     /// Without a connection, lookup is limited to this file.
     connection: Option<&'a Connection>,
-    scopes: &'a [CompilationScope],
+    match_locations: Option<&'a LocationMatcher<'a>>,
     source: &'a Location,
     file: &'a File,
     node_index: NodeIndex,
@@ -149,7 +151,7 @@ impl<'a> Context<'a> {
     ) -> Self {
         Self {
             connection: None,
-            scopes: &[],
+            match_locations: None,
             source,
             file,
             node_index,
@@ -162,15 +164,16 @@ impl<'a> Context<'a> {
         self
     }
 
-    pub fn with_scopes(mut self, scopes: &'a [CompilationScope]) -> Self {
-        self.scopes = scopes;
+    /// Without a matcher, external candidates remain unrestricted.
+    pub fn with_location_matcher(mut self, matcher: Option<&'a LocationMatcher<'a>>) -> Self {
+        self.match_locations = matcher;
         self
     }
 
     fn for_type_ref<'b>(&'b self, node_index: NodeIndex, type_ref: &'b TypeRef) -> Context<'b> {
         Context {
             connection: self.connection,
-            scopes: self.scopes,
+            match_locations: self.match_locations,
             source: self.source,
             file: self.file,
             node_index,

@@ -10,7 +10,7 @@ use beans_lang_java::{
     lowering::lower_into,
     model::nodes::NodeKind,
     query,
-    semantics::resolution::{Context, JavaTypeCandidate, TypeCandidate, resolve},
+    semantics::resolution::{Context, TypeLocator, resolve},
 };
 
 #[test]
@@ -35,8 +35,7 @@ fn stored_models_can_be_resolved_using_the_engines_query() {
         .expect("expected target field");
 
     let ctx = Context::new(&file, &source, node_index, type_ref.value());
-    let TypeCandidate::Java(JavaTypeCandidate::Declaration(declaration)) = resolve(&ctx).unwrap()
-    else {
+    let TypeLocator::Declaration(declaration) = resolve(&ctx).unwrap().locator else {
         panic!("expected a Java declaration");
     };
     let target = query::declaration(&declaration, &engine.connection)
@@ -73,7 +72,7 @@ fn an_imported_type_resolves_to_another_stored_source_file() {
     let ctx = Context::new(&file, &use_source, field.0, field.1.declared_type.value())
         .with_connection(&engine.connection);
 
-    let TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) = resolve(&ctx).unwrap() else {
+    let TypeLocator::Declaration(handle) = resolve(&ctx).unwrap().locator else {
         panic!("expected a stored Java type");
     };
     assert_eq!(handle.source(), &target_source);

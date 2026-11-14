@@ -55,7 +55,7 @@ fn pings_a_persistent_jvm_without_module_stdout_corrupting_the_protocol() {
 
 #[test]
 #[ignore = "requires a mise Temurin 17 JDK, GRADLE_HOME and prebuilt sidecar JARs"]
-fn gradle_import_registers_scopes_and_preserves_them_on_failure() {
+fn gradle_import_registers_modules_and_preserves_them_on_failure() {
     let java_home = jdks::list("temurin-17")
         .unwrap()
         .into_iter()
@@ -99,7 +99,7 @@ fn gradle_import_registers_scopes_and_preserves_them_on_failure() {
     let mut sidecar = Sidecar::default();
     sidecar.start(command).unwrap();
 
-    // Complete a real RPC import, then retrieve both JVM languages through Engine.
+    // Complete a real RPC import, preserving classpaths and artifact-to-source associations.
     sidecar
         .import_gradle(&project, Some(&gradle_home), Arc::downgrade(&engine))
         .unwrap()
@@ -107,16 +107,39 @@ fn gradle_import_registers_scopes_and_preserves_them_on_failure() {
         .unwrap()
         .unwrap();
     let source = Location::file(project.join("src/main/java/Use.java"));
-    let scopes = engine.scopes_for(&source).unwrap();
-    assert_eq!(scopes.len(), 1);
-    assert!(scopes[0].inputs.contains(&ResourceFilter::file(
+    let modules = engine.modules().unwrap();
+    assert_eq!(modules.len(), 1);
+    assert_eq!(modules[0].classpaths.len(), 2);
+    let java = ResourceFilter::file(project.join("src/main/java/Use.java"));
+    let association = modules[0]
+        .artifact_sources
+        .iter()
+        .find(|association| association.sources.contains(&java))
+        .unwrap();
+    assert!(
+        association
+            .artifacts
+            .contains(&Location::file(project.join("build/libs/import-test.jar")))
+    );
+    assert!(association.sources.contains(&ResourceFilter::file(
         project.join("src/main/groovy/GroovyUse.groovy")
     )));
+    let expected = serde_json::to_value(&modules).unwrap();
+    let classpaths = &modules[0].classpaths;
+    let main: Vec<_> = classpaths
+        .iter()
+        .filter(|classpath| classpath.inputs.iter().any(|input| input.contains(&source)))
+        .collect();
+    assert_eq!(main.len(), 1);
+    assert!(main[0].inputs.contains(&ResourceFilter::file(
+        project.join("src/main/groovy/GroovyUse.groovy")
+    )));
+    let test = ResourceFilter::file(project.join("src/test/java/UseTest.java"));
     assert_eq!(
-        engine
-            .scopes_for(&Location::file(project.join("src/test/java/UseTest.java")))
-            .unwrap()
-            .len(),
+        classpaths
+            .iter()
+            .filter(|classpath| classpath.inputs.contains(&test))
+            .count(),
         1
     );
     assert!(!project.join("build/classes").exists());
@@ -135,7 +158,10 @@ fn gradle_import_registers_scopes_and_preserves_them_on_failure() {
             .unwrap()
             .is_err()
     );
-    assert_eq!(engine.scopes_for(&source).unwrap().len(), 1);
+    assert_eq!(
+        serde_json::to_value(engine.modules().unwrap()).unwrap(),
+        expected
+    );
     sidecar.ping().unwrap();
 
     // A later successful empty import clears this build's snapshot.
@@ -146,7 +172,7 @@ fn gradle_import_registers_scopes_and_preserves_them_on_failure() {
         .join()
         .unwrap()
         .unwrap();
-    assert!(engine.scopes_for(&source).unwrap().is_empty());
+    assert!(engine.modules().unwrap().is_empty());
     sidecar.stop().unwrap();
 }
 

@@ -2,7 +2,7 @@ use beans_core::location::Location;
 use beans_lang_java::{
     lower_into,
     model::{File, nodes::NodeIndex},
-    semantics::resolution::{Context, JavaTypeCandidate, TypeCandidate, resolve_supertype},
+    semantics::resolution::{Context, TypeCandidate, TypeLocator, resolve_supertype},
 };
 
 use super::type_index;
@@ -28,7 +28,7 @@ fn members_declared_in_the_owners_body_are_not_in_supertype_scope() {
 
     let result = resolve_declared_superclass(&file, child);
 
-    let TypeCandidate::Java(JavaTypeCandidate::Declaration(handle)) = result else {
+    let TypeLocator::Declaration(handle) = result.locator else {
         panic!("expected one Java declaration, got {result:?}");
     };
     assert_eq!(handle.node_index(), type_index(&file, &["Outer", "Base"]));
@@ -41,7 +41,7 @@ fn owner_type_parameters_are_in_supertype_scope() {
 
     let result = resolve_declared_superclass(&file, child);
 
-    let TypeCandidate::Java(JavaTypeCandidate::TypeParameter(handle)) = result else {
+    let TypeLocator::TypeParameter(handle) = result.locator else {
         panic!("expected one Java type parameter, got {result:?}");
     };
     assert_eq!(handle.owner().node_index(), child);

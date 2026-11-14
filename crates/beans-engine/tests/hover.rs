@@ -1,8 +1,12 @@
 use beans_core::{
+    artifact_sources::ArtifactSources,
+    classpath::Classpath,
     features::HoverRequest,
     location::{Location, LocationEntry},
+    module::Module,
+    resource_filter::ResourceFilter,
 };
-use beans_engine::Engine;
+use beans_engine::{Engine, ImportKind};
 use beans_testing::TempDir;
 
 #[test]
@@ -86,6 +90,71 @@ fn resolved_hover_relativizes_workspace_sources() {
         response.contents().markdown(),
         Some("**Type:** ` demo.C `\n\n**Located in:** ` src/demo/C.java `")
     );
+}
+
+#[test]
+fn hover_shows_the_artifact_admitted_by_the_requesters_classpath() {
+    let files = TempDir::new();
+    let engine = Engine::new(files.root()).unwrap();
+    let contents = "import q.Target; class Use { Target field; }";
+    let target = files.path("lib/Target.java");
+    engine
+        .process(Location::file(&target), "package q; public class Target {}")
+        .unwrap();
+
+    // Reach the same declaration through a different artifact for each requester.
+    let mut classpaths = Vec::new();
+    let mut artifacts = Vec::new();
+    for name in ["first", "second"] {
+        let source = files.path(format!("{name}/Use.java"));
+        let artifact = files.path(format!("lib/{name}.jar"));
+        engine.process(Location::file(&source), contents).unwrap();
+        classpaths.push(Classpath {
+            inputs: vec![ResourceFilter::file(source)],
+            entries: Some(vec![ResourceFilter::file(&artifact)]),
+        });
+        artifacts.push(Location::file(artifact));
+    }
+    engine
+        .register_modules(
+            vec![Module {
+                classpaths,
+                artifact_sources: vec![ArtifactSources {
+                    artifacts,
+                    sources: vec![ResourceFilter::file(target)],
+                }],
+            }],
+            ImportKind::Gradle,
+            files.root(),
+        )
+        .unwrap();
+
+    // Provenance belongs to the request, not the indexed declaration.
+    for name in ["first", "second"] {
+        let source = Location::file(files.path(format!("{name}/Use.java")));
+        let response = engine
+            .feature_hover(&HoverRequest {
+                source: &source,
+                contents,
+                offset: contents.rfind("Target").unwrap(),
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            response.contents().plaintext(),
+            format!("Type: q.Target\nLocated in: lib/Target.java\nVia: lib/{name}.jar")
+        );
+        assert_eq!(
+            response.contents().markdown(),
+            Some(
+                format!(
+                    "**Type:** ` q.Target `\n\n**Located in:** ` lib/Target.java `\n\n**Via:** ` lib/{name}.jar `"
+                )
+                .as_str()
+            )
+        );
+        assert!(!files.path(format!("lib/{name}.jar")).exists());
+    }
 }
 
 #[test]
