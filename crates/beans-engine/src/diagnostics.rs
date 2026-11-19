@@ -1,8 +1,8 @@
-use beans_core::location::Location;
+use beans_core::{location::Location, location_match::LocationMatcher};
 
 pub use beans_lang_java::diagnostics::{Diagnostic, DiagnosticSeverity};
 
-use crate::{Engine, location_matches::matcher, modules::load_modules};
+use crate::{Engine, modules::load_modules};
 
 impl Engine {
     pub fn diagnostics(&self, source: &Location) -> Result<Vec<Diagnostic>, String> {
@@ -11,8 +11,8 @@ impl Engine {
             .transaction()
             .map_err(|error| error.to_string())?;
         let modules = load_modules(&transaction)?;
-        let match_locations = matcher(&modules);
+        let location_matcher = LocationMatcher::new(&modules);
         self.java
-            .diagnostics(source, Some(&match_locations), &transaction)
+            .diagnostics(source, Some(&location_matcher), &transaction)
     }
 }

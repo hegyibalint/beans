@@ -22,22 +22,22 @@ impl JavaLanguage {
     pub fn diagnostics(
         &self,
         source: &Location,
-        match_locations: Option<&LocationMatcher<'_>>,
+        location_matcher: Option<&LocationMatcher<'_>>,
         connection: &Connection,
     ) -> Result<Vec<Diagnostic>, String> {
         let Some(file) = query::file(source, connection)? else {
             return Ok(Vec::new());
         };
-        self.diagnostics_for_file(&file, source, match_locations, connection)
+        self.diagnostics_for_file(&file, source, location_matcher, connection)
     }
 
     pub fn diagnostics_for_file(
         &self,
         file: &File,
         source: &Location,
-        match_locations: Option<&LocationMatcher<'_>>,
+        location_matcher: Option<&LocationMatcher<'_>>,
         connection: &Connection,
     ) -> Result<Vec<Diagnostic>, String> {
-        unresolved_types::collect(file, source, match_locations, connection)
+        unresolved_types::collect(file, source, location_matcher, connection)
     }
 }

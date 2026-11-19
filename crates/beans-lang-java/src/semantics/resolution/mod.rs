@@ -135,7 +135,7 @@ use rusqlite::Connection;
 pub struct Context<'a> {
     /// Without a connection, lookup is limited to this file.
     connection: Option<&'a Connection>,
-    match_locations: Option<&'a LocationMatcher<'a>>,
+    location_matcher: Option<&'a LocationMatcher<'a>>,
     source: &'a Location,
     file: &'a File,
     node_index: NodeIndex,
@@ -151,7 +151,7 @@ impl<'a> Context<'a> {
     ) -> Self {
         Self {
             connection: None,
-            match_locations: None,
+            location_matcher: None,
             source,
             file,
             node_index,
@@ -166,14 +166,14 @@ impl<'a> Context<'a> {
 
     /// Without a matcher, external candidates remain unrestricted.
     pub fn with_location_matcher(mut self, matcher: Option<&'a LocationMatcher<'a>>) -> Self {
-        self.match_locations = matcher;
+        self.location_matcher = matcher;
         self
     }
 
     fn for_type_ref<'b>(&'b self, node_index: NodeIndex, type_ref: &'b TypeRef) -> Context<'b> {
         Context {
             connection: self.connection,
-            match_locations: self.match_locations,
+            location_matcher: self.location_matcher,
             source: self.source,
             file: self.file,
             node_index,

@@ -106,17 +106,16 @@ fn find_candidates(
         return Ok(Vec::new());
     };
     let candidates = query::find_types(name, connection).map_err(ResolutionFailure::Query)?;
-    let Some(matcher) = ctx.match_locations else {
+    let Some(matcher) = ctx.location_matcher else {
         return Ok(candidates);
     };
 
     let mut matched = Vec::new();
     for candidate in candidates {
-        let provenance = matcher(
+        let provenance = matcher.match_locations(
             ctx.source,
             std::slice::from_ref(&candidate.provenance.origin),
-        )
-        .map_err(ResolutionFailure::Query)?;
+        );
         for provenance in provenance {
             matched.push(TypeCandidate {
                 locator: candidate.locator.clone(),

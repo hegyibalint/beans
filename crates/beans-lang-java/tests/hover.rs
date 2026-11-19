@@ -1,8 +1,11 @@
 use beans_core::{
+    artifact_sources::ArtifactSources,
+    classpath::Classpath,
     features::hover::{HoverProvider, HoverRequest, HoverResponse},
     location::{Location, LocationEntry},
-    location_match::LocationMatch,
-    source::SourceSpan,
+    location_match::LocationMatcher,
+    module::Module,
+    resource_filter::ResourceFilter,
 };
 use beans_lang_java::{engine::JavaLanguage, features::JavaFeatureContext, lower_into};
 
@@ -64,33 +67,33 @@ fn java_type_hover_shows_its_qualified_name_and_source() {
 }
 
 #[test]
-fn hover_displays_the_matched_origin_without_replacing_the_indexed_locator() {
+fn hover_displays_the_source_and_admitting_artifact() {
     let contents = "import q.Target; class C { Target value; }";
-    let source = source_id();
-    let indexed = Location::file("/index/Target.java");
+    let source = Location::file("/workspace/C.java");
+    let indexed = Location::file("/workspace/src/q/Target.java");
     let mut models = Models::new();
     models.store(lower_into(contents), source.clone());
     models.store(
         lower_into("package q; public class Target {}"),
         indexed.clone(),
     );
-    let matcher = |_: &Location, candidates: &[SourceSpan]| {
-        assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].resource, indexed);
-        Ok(vec![LocationMatch {
-            origin: SourceSpan::new(
-                Location::file("/workspace/src/q/Target.java"),
-                candidates[0].range,
-            ),
-            via: Some(Location::file("/workspace/lib/api.jar")),
-        }])
-    };
+    let modules = [Module {
+        classpaths: vec![Classpath {
+            inputs: vec![ResourceFilter::file("/workspace/C.java")],
+            entries: Some(vec![ResourceFilter::file("/workspace/lib/api.jar")]),
+        }],
+        artifact_sources: vec![ArtifactSources {
+            artifacts: vec![Location::file("/workspace/lib/api.jar")],
+            sources: vec![ResourceFilter::file("/workspace/src")],
+        }],
+    }];
+    let matcher = LocationMatcher::new(&modules);
 
     let response = JavaLanguage::new()
         .hover(
             &JavaFeatureContext {
                 connection: &models.connection,
-                match_locations: Some(&matcher),
+                location_matcher: Some(&matcher),
                 workspace_root: Some(std::path::Path::new("/workspace")),
             },
             &HoverRequest {
@@ -212,7 +215,7 @@ fn hover(
         .hover(
             &JavaFeatureContext {
                 connection: &models.connection,
-                match_locations: None,
+                location_matcher: None,
                 workspace_root: None,
             },
             &HoverRequest {

@@ -38,7 +38,7 @@ impl<'request> HoverProvider<JavaFeatureContext<'_>, HoverRequest<'request>, Hov
             &file,
             request.source,
             request.offset,
-            context.match_locations,
+            context.location_matcher,
             context.connection,
         ) {
             match candidate {

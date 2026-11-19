@@ -17,7 +17,6 @@ pub mod diagnostics;
 mod documents;
 mod events;
 mod features;
-mod location_matches;
 pub mod logging;
 mod modules;
 pub mod storage;

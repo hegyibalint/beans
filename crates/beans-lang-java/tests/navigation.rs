@@ -85,7 +85,7 @@ fn generic_components_and_their_arguments_navigate_independently() {
             .goto_definition(
                 &JavaFeatureContext {
                     connection: &java.connection,
-                    match_locations: None,
+                    location_matcher: None,
                     workspace_root: None,
                 },
                 &DefinitionRequest {
@@ -240,7 +240,7 @@ fn definition_at(java: &Models, source: &Location, offset: usize) -> Option<Sour
         .goto_definition(
             &JavaFeatureContext {
                 connection: &java.connection,
-                match_locations: None,
+                location_matcher: None,
                 workspace_root: None,
             },
             &DefinitionRequest { source, offset },

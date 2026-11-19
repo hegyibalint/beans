@@ -4,11 +4,10 @@ use beans_core::{
     artifact_sources::ArtifactSources,
     classpath::Classpath,
     location::{Location, LocationEntry},
-    location_match::{LocationMatch, LocationMatcher},
+    location_match::LocationMatcher,
     module::Module,
     ranges::ByteRange,
     resource_filter::ResourceFilter,
-    source::SourceSpan,
 };
 use beans_engine::{Engine, ImportKind};
 use beans_lang_java::{
@@ -96,17 +95,8 @@ impl Fixture {
     }
 
     fn resolve_at(&self, occurrence: Occurrence) -> Result<TypeCandidate, ResolutionFailure> {
-        let matcher = |request: &Location, candidates: &[SourceSpan]| {
-            self.engine.match_locations(request, candidates)
-        };
-        self.resolve_with_matcher(occurrence, &matcher)
-    }
-
-    fn resolve_with_matcher(
-        &self,
-        occurrence: Occurrence,
-        matcher: &LocationMatcher<'_>,
-    ) -> Result<TypeCandidate, ResolutionFailure> {
+        let modules = self.engine.modules().unwrap();
+        let matcher = LocationMatcher::new(&modules);
         let file = java_query::file(&self.source, &self.java.connection)
             .unwrap()
             .unwrap();
@@ -129,7 +119,7 @@ impl Fixture {
             .unwrap();
         let ctx = Context::new(&file, &self.source, index, reference)
             .with_connection(&self.java.connection)
-            .with_location_matcher(Some(matcher));
+            .with_location_matcher(Some(&matcher));
         match occurrence {
             Occurrence::Field => resolve(&ctx),
             Occurrence::Supertype => resolve_supertype(&ctx),
@@ -726,46 +716,6 @@ fn repeated_imports_and_associations_do_not_duplicate_candidate_pairs() {
     expected.provenance.via = Some(Location::file("/producer/artifact"));
 
     assert_eq!(fixture.resolve(), Ok(expected));
-}
-
-#[test]
-fn location_matcher_failures_are_query_failures() {
-    let fixture = Fixture::new(
-        "import q.Target; class Use { Target field; }",
-        &[("Target", "package q; public class Target {}")],
-    );
-    let matcher = |_: &Location, _: &[SourceSpan]| Err("intentional matcher failure".into());
-
-    assert_eq!(
-        fixture.resolve_with_matcher(Occurrence::Field, &matcher),
-        Err(ResolutionFailure::Query(
-            "intentional matcher failure".into()
-        )),
-    );
-}
-
-#[test]
-fn location_matcher_can_replace_source_spans_without_replacing_locators() {
-    let fixture = Fixture::new(
-        "import q.Target; class Use { Target field; }",
-        &[("Target", "package q; public class Target {}")],
-    );
-    let mut expected = fixture.expected("q.Target");
-    let original = expected.provenance.origin.clone();
-    expected.provenance = LocationMatch {
-        origin: SourceSpan::new(Location::file("/external/source"), ByteRange::new(30, 40)),
-        via: Some(Location::file("/producer/artifact")),
-    };
-    let matcher = |request: &Location, candidates: &[SourceSpan]| {
-        assert_eq!(request, &fixture.source);
-        assert_eq!(candidates, std::slice::from_ref(&original));
-        Ok(vec![expected.provenance.clone()])
-    };
-
-    assert_eq!(
-        fixture.resolve_with_matcher(Occurrence::Field, &matcher),
-        Ok(expected.clone())
-    );
 }
 
 fn jvm_candidate(location: Location) -> TypeCandidate {

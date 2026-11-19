@@ -11,6 +11,6 @@ mod semantic_tokens;
 #[derive(Clone, Copy)]
 pub struct JavaFeatureContext<'a> {
     pub connection: &'a Connection,
-    pub match_locations: Option<&'a LocationMatcher<'a>>,
+    pub location_matcher: Option<&'a LocationMatcher<'a>>,
     pub workspace_root: Option<&'a std::path::Path>,
 }

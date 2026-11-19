@@ -41,7 +41,7 @@ impl<'request>
             &file,
             source,
             offset,
-            context.match_locations,
+            context.location_matcher,
             context.connection,
         ) else {
             return Ok(None);
@@ -78,7 +78,7 @@ pub(super) fn resolve_field_type_at(
     file: &File,
     source: &Location,
     offset: usize,
-    match_locations: Option<&LocationMatcher<'_>>,
+    location_matcher: Option<&LocationMatcher<'_>>,
     connection: &Connection,
 ) -> Option<(ByteRange, Result<TypeCandidate, ResolutionFailure>)> {
     // JLS §8.3: a field declares a type separately from its variable name.
@@ -128,6 +128,6 @@ pub(super) fn resolve_field_type_at(
 
     let ctx = Context::new(file, source, index, &prefix)
         .with_connection(connection)
-        .with_location_matcher(match_locations);
+        .with_location_matcher(location_matcher);
     Some((origin_range, resolve(&ctx)))
 }

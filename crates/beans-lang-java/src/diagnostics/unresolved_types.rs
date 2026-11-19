@@ -15,7 +15,7 @@ use super::{Diagnostic, DiagnosticSeverity};
 pub(super) fn collect(
     file: &File,
     source: &Location,
-    match_locations: Option<&LocationMatcher<'_>>,
+    location_matcher: Option<&LocationMatcher<'_>>,
     connection: &Connection,
 ) -> Result<Vec<Diagnostic>, String> {
     let mut diagnostics = Vec::new();
@@ -28,7 +28,7 @@ pub(super) fn collect(
         for reference in references {
             let context = Context::new(file, source, entry.index, reference.value())
                 .with_connection(connection)
-                .with_location_matcher(match_locations);
+                .with_location_matcher(location_matcher);
             // Partial resolution can mean missing resolver support, not invalid Java.
             match resolve(&context) {
                 Err(ResolutionFailure::Query(error)) => return Err(error),
