@@ -3,6 +3,7 @@ mod model;
 mod parser;
 pub mod query;
 pub mod storage;
+pub mod virtual_file;
 
 use std::{
     io,
@@ -12,7 +13,13 @@ use std::{
 use beans_core::location::Location;
 use rusqlite::Transaction;
 
-pub use crate::model::class::Class;
+pub use crate::model::{
+    class::Class,
+    field::Field,
+    field_type::{ElementType, FieldType},
+    method::Method,
+};
+pub use cafebabe::{ClassAccessFlags, FieldAccessFlags, MethodAccessFlags};
 
 #[derive(Default)]
 pub struct JvmPlatform;

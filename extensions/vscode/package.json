@@ -12,6 +12,7 @@
     "Programming Languages"
   ],
   "activationEvents": [
+    "onFileSystem:beans+jvm",
     "onLanguage:java",
     "workspaceContains:**/*.java",
     "workspaceContains:**/beans.toml"
@@ -28,6 +29,10 @@
       {
         "command": "beans.import.gradle",
         "title": "Beans: Import Gradle project"
+      },
+      {
+        "command": "beans.preview.jvmString",
+        "title": "Beans: Preview java.lang.String"
       }
     ],
     "configuration": {

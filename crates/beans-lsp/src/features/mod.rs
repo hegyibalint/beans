@@ -29,6 +29,12 @@ pub(crate) struct Features {
     workspace_documents: HashMap<String, OpenDocument>,
 }
 
+impl Features {
+    pub(crate) fn preview_jvm_class(&self, name: &str) -> Result<String, String> {
+        self.engine.preview_jvm_class(name)
+    }
+}
+
 #[cfg(feature = "sidecar")]
 impl Drop for Features {
     fn drop(&mut self) {

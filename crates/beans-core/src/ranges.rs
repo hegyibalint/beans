@@ -23,6 +23,14 @@ impl ByteRange {
         self.end
     }
 
+    pub const fn len(self) -> usize {
+        self.end - self.start
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.start == self.end
+    }
+
     pub const fn contains(self, offset: usize) -> bool {
         self.start <= offset && offset < self.end
     }
@@ -84,12 +92,16 @@ mod tests {
         assert!(!range.contains(7));
         assert_eq!(range.start(), 3);
         assert_eq!(range.end(), 7);
+        assert_eq!(range.len(), 4);
+        assert!(!range.is_empty());
     }
 
     #[test]
     fn empty_ranges_contain_no_offsets() {
         let range = ByteRange::new(5, 5);
 
+        assert_eq!(range.len(), 0);
+        assert!(range.is_empty());
         assert!(!range.contains(4));
         assert!(!range.contains(5));
         assert!(!range.contains(6));

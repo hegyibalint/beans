@@ -2,6 +2,7 @@
 
 use beans_core::location::Location;
 use beans_lang_java::{engine::JavaLanguage, model::File, storage};
+use beans_platform_jvm::{Class, storage as jvm_storage};
 use rusqlite::Connection;
 
 pub struct Models {
@@ -28,6 +29,12 @@ impl Models {
     pub fn store(&mut self, file: File, source: Location) {
         let transaction = self.connection.transaction().unwrap();
         storage::store(&file, &source, "", &transaction).unwrap();
+        transaction.commit().unwrap();
+    }
+
+    pub fn store_jvm(&mut self, class: &Class, location: &Location) {
+        let transaction = self.connection.transaction().unwrap();
+        jvm_storage::store(class, location, &transaction).unwrap();
         transaction.commit().unwrap();
     }
 

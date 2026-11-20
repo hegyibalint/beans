@@ -8,6 +8,7 @@ use beans_core::{
     resource_filter::ResourceFilter,
 };
 use beans_lang_java::{engine::JavaLanguage, features::JavaFeatureContext, lower_into};
+use beans_testing::support::class_model;
 
 mod support;
 use support::Models;
@@ -20,16 +21,7 @@ fn jvm_type_hover_shows_its_name_and_container_location() {
     models.store(lower_into(contents), source.clone());
     let location = Location::file("/jdk/lib/modules")
         .entry(LocationEntry::Container("java/lang/String.class".into()));
-    let transaction = models.connection.transaction().unwrap();
-    beans_platform_jvm::storage::store(
-        &beans_platform_jvm::Class {
-            name: "java/lang/String".into(),
-        },
-        &location,
-        &transaction,
-    )
-    .unwrap();
-    transaction.commit().unwrap();
+    models.store_jvm(&class_model("java/lang/String"), &location);
 
     let response = hover(&models, &source, contents, contents.find("String").unwrap()).unwrap();
 

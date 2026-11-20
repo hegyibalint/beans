@@ -1,5 +1,5 @@
 import * as path from "path";
-import { ExtensionContext, workspace } from "vscode";
+import { commands, ExtensionContext, Uri, window, workspace } from "vscode";
 import {
   LanguageClient,
   LanguageClientOptions,
@@ -7,9 +7,11 @@ import {
   TransportKind,
 } from "vscode-languageclient/node";
 
+const JVM_SCHEME = "beans+jvm";
+
 let client: LanguageClient;
 
-export function activate(context: ExtensionContext): Promise<void> {
+export async function activate(context: ExtensionContext): Promise<void> {
   const command = context.asAbsolutePath(
     path.join("..", "..", "target", "debug", "beans-lsp"),
   );
@@ -39,7 +41,24 @@ export function activate(context: ExtensionContext): Promise<void> {
     clientOptions,
   );
 
-  return client.start();
+  await client.start();
+
+  context.subscriptions.push(
+    // vscode-languageclient 9 does not register LSP 3.18 content providers.
+    workspace.registerTextDocumentContentProvider(JVM_SCHEME, {
+      async provideTextDocumentContent(uri, token) {
+        const { text } = await client.sendRequest<{ text: string }>(
+          "workspace/textDocumentContent", { uri: uri.toString() }, token,
+        );
+        return text;
+      },
+    }),
+    commands.registerCommand("beans.preview.jvmString", async () => {
+      const uri = Uri.from({ scheme: JVM_SCHEME, path: "/java/lang/String.class" });
+      const document = await workspace.openTextDocument(uri);
+      await window.showTextDocument(document);
+    }),
+  );
 }
 
 export function deactivate(): Thenable<void> | undefined {

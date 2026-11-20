@@ -5,8 +5,8 @@ use beans_lang_java::{
     semantics::resolution::{TypeCandidate, TypeLocator, query},
     storage as java_storage,
 };
-use beans_platform_jvm::{Class, storage as jvm_storage};
-use beans_testing::TempDir;
+use beans_platform_jvm::storage as jvm_storage;
+use beans_testing::{TempDir, support::class_model};
 use rusqlite::Connection;
 
 #[test]
@@ -82,9 +82,7 @@ fn publish(name: &str, connection: &mut Connection) {
     .unwrap();
     jvm_storage::remove("/Example.class".as_ref(), &transaction).unwrap();
     jvm_storage::store(
-        &Class {
-            name: format!("p/{name}"),
-        },
+        &class_model(&format!("p/{name}")),
         &Location::file("/Example.class"),
         &transaction,
     )

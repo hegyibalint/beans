@@ -1,8 +1,8 @@
 use beans_core::location::{Location, LocationEntry};
-use beans_testing::database;
+use beans_testing::{database, support::class_model};
 use rusqlite::Connection;
 
-use beans_platform_jvm::{Class, query, storage};
+use beans_platform_jvm::{query, storage};
 
 #[test]
 fn finds_all_jvm_locations_by_exact_internal_name() {
@@ -28,6 +28,10 @@ fn finds_all_jvm_locations_by_exact_internal_name() {
         query::find_classes("p/Foo", &connection).unwrap(),
         [first, second]
     );
+    assert_eq!(
+        query::unique_class_by_name("p/Foo", &connection).unwrap_err(),
+        "More than one indexed JVM class matches p/Foo",
+    );
     for name in ["Missing", "p.Foo", "p/foo", "p/F"] {
         assert!(query::find_classes(name, &connection).unwrap().is_empty());
     }
@@ -38,6 +42,30 @@ fn database_errors_are_not_missing_classes() {
     let connection = database();
     connection.execute("DROP TABLE models", []).unwrap();
     assert!(query::find_classes("p/Foo", &connection).is_err());
+    assert!(query::unique_class_by_name("p/Foo", &connection).is_err());
+}
+
+#[test]
+fn loading_a_missing_class_returns_none_and_invalid_models_return_errors() {
+    let mut connection = database();
+    let location = Location::file("/Foo.class");
+    assert!(
+        query::unique_class_by_name("p/Foo", &connection)
+            .unwrap()
+            .is_none()
+    );
+    store("p/Foo", &location, &mut connection);
+    assert_eq!(
+        query::unique_class_by_name("p/Foo", &connection)
+            .unwrap()
+            .unwrap(),
+        class_model("p/Foo")
+    );
+
+    connection
+        .execute(r#"UPDATE models SET model = '{"name":"p/Foo"}'"#, [])
+        .unwrap();
+    assert!(query::unique_class_by_name("p/Foo", &connection).is_err());
 }
 
 #[test]
@@ -72,14 +100,7 @@ fn queries_borrow_the_callers_transaction_and_follow_index_replacement_and_delet
     {
         let transaction = connection.transaction().unwrap();
         storage::remove("/Foo.class".as_ref(), &transaction).unwrap();
-        storage::store(
-            &Class {
-                name: "p/New".into(),
-            },
-            &location,
-            &transaction,
-        )
-        .unwrap();
+        storage::store(&class_model("p/New"), &location, &transaction).unwrap();
         assert!(
             query::find_classes("p/Old", &transaction)
                 .unwrap()
@@ -102,14 +123,7 @@ fn queries_borrow_the_callers_transaction_and_follow_index_replacement_and_delet
 
     let transaction = connection.transaction().unwrap();
     storage::remove("/Foo.class".as_ref(), &transaction).unwrap();
-    storage::store(
-        &Class {
-            name: "p/New".into(),
-        },
-        &location,
-        &transaction,
-    )
-    .unwrap();
+    storage::store(&class_model("p/New"), &location, &transaction).unwrap();
     transaction.commit().unwrap();
     assert!(
         query::find_classes("p/Old", &connection)
@@ -133,6 +147,6 @@ fn queries_borrow_the_callers_transaction_and_follow_index_replacement_and_delet
 
 fn store(name: &str, location: &Location, connection: &mut Connection) {
     let transaction = connection.transaction().unwrap();
-    storage::store(&Class { name: name.into() }, location, &transaction).unwrap();
+    storage::store(&class_model(name), location, &transaction).unwrap();
     transaction.commit().unwrap();
 }

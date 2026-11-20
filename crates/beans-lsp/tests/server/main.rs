@@ -10,6 +10,7 @@ mod diagnostics;
 mod document_synchronization;
 mod goto_definition;
 mod hover;
+mod jvm_preview;
 mod lifecycle;
 mod semantic_tokens;
 mod source_locations;

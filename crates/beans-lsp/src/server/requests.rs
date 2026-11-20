@@ -8,7 +8,7 @@ use lsp_types::{
     request::{GotoDefinition, HoverRequest, Request as _},
 };
 
-use super::{Lifecycle, Server};
+use super::{Lifecycle, Server, document_content};
 use crate::features::Features;
 
 impl Server {
@@ -30,46 +30,46 @@ impl Server {
                         };
                         self.features = Some(features);
                         self.lifecycle = Lifecycle::Running;
-                        return Response::new_ok(
-                            request.id,
-                            InitializeResult {
-                                capabilities: ServerCapabilities {
-                                    #[cfg(feature = "sidecar")]
-                                    execute_command_provider: Some(
-                                        lsp_types::ExecuteCommandOptions {
-                                            commands: vec![super::commands::IMPORT_GRADLE.into()],
-                                            ..Default::default()
-                                        },
-                                    ),
-                                    definition_provider: Some(OneOf::Left(true)),
-                                    hover_provider: Some(true.into()),
-                                    semantic_tokens_provider: Some(
-                                        SemanticTokensOptions {
-                                            legend: SemanticTokensLegend {
-                                                token_types: vec![SemanticTokenType::TYPE],
-                                                token_modifiers: Vec::new(),
-                                            },
-                                            full: Some(SemanticTokensFullOptions::Bool(true)),
-                                            ..SemanticTokensOptions::default()
-                                        }
-                                        .into(),
-                                    ),
-                                    text_document_sync: Some(
-                                        TextDocumentSyncOptions {
-                                            open_close: Some(true),
-                                            change: Some(TextDocumentSyncKind::FULL),
-                                            ..TextDocumentSyncOptions::default()
-                                        }
-                                        .into(),
-                                    ),
-                                    ..ServerCapabilities::default()
-                                },
-                                server_info: Some(ServerInfo {
-                                    name: "beans".into(),
-                                    version: Some(env!("CARGO_PKG_VERSION").into()),
+                        let result = InitializeResult {
+                            capabilities: ServerCapabilities {
+                                #[cfg(feature = "sidecar")]
+                                execute_command_provider: Some(lsp_types::ExecuteCommandOptions {
+                                    commands: vec![super::commands::IMPORT_GRADLE.into()],
+                                    ..Default::default()
                                 }),
+                                definition_provider: Some(OneOf::Left(true)),
+                                hover_provider: Some(true.into()),
+                                semantic_tokens_provider: Some(
+                                    SemanticTokensOptions {
+                                        legend: SemanticTokensLegend {
+                                            token_types: vec![SemanticTokenType::TYPE],
+                                            token_modifiers: Vec::new(),
+                                        },
+                                        full: Some(SemanticTokensFullOptions::Bool(true)),
+                                        ..SemanticTokensOptions::default()
+                                    }
+                                    .into(),
+                                ),
+                                text_document_sync: Some(
+                                    TextDocumentSyncOptions {
+                                        open_close: Some(true),
+                                        change: Some(TextDocumentSyncKind::FULL),
+                                        ..TextDocumentSyncOptions::default()
+                                    }
+                                    .into(),
+                                ),
+                                ..ServerCapabilities::default()
                             },
-                        );
+                            server_info: Some(ServerInfo {
+                                name: "beans".into(),
+                                version: Some(env!("CARGO_PKG_VERSION").into()),
+                            }),
+                        };
+                        // lsp-types 0.97 does not model the LSP 3.18 capability.
+                        let mut result = serde_json::json!(result);
+                        result["capabilities"]["workspace"]["textDocumentContent"] =
+                            serde_json::json!({ "schemes": [document_content::JVM_SCHEME] });
+                        return Response::new_ok(request.id, result);
                     }
                     Err(error) => {
                         return Response::new_err(
@@ -141,6 +141,9 @@ impl Server {
                         error.to_string(),
                     ),
                 };
+            }
+            (Lifecycle::Running, document_content::METHOD) => {
+                return self.text_document_content(request);
             }
             (Lifecycle::Running, _) => (ErrorCode::MethodNotFound, "unsupported method"),
         };

@@ -5,10 +5,10 @@ use beans_core::{
     location::{Location, LocationEntry},
 };
 use beans_engine::{Engine, storage};
-use beans_platform_jvm::{Class, query, storage as jvm_storage};
+use beans_platform_jvm::{query, storage as jvm_storage};
 use beans_testing::{
     TempDir,
-    support::{class_bytes, jar_bytes},
+    support::{class_bytes, class_model, jar_bytes},
 };
 use rusqlite::Connection;
 
@@ -151,12 +151,7 @@ fn enqueue(engine: &Engine, path: &Path) {
 
 fn seed(name: &str, path: &Path, cache: &mut Connection) {
     let transaction = cache.transaction().unwrap();
-    jvm_storage::store(
-        &Class { name: name.into() },
-        &Location::file(path),
-        &transaction,
-    )
-    .unwrap();
+    jvm_storage::store(&class_model(name), &Location::file(path), &transaction).unwrap();
     transaction.commit().unwrap();
 }
 

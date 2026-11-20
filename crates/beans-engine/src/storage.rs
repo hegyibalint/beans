@@ -2,7 +2,7 @@ use std::{path::Path, time::Duration};
 
 use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 
-const SCHEMA_VERSION: i64 = 17;
+const SCHEMA_VERSION: i64 = 18;
 
 /// Opens and configures an existing cache without initializing or resetting its schema.
 pub fn open(path: &Path) -> Result<Connection, String> {

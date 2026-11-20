@@ -3,11 +3,11 @@ use std::{fs, path::Path};
 use beans_core::location::{Location, LocationEntry};
 use beans_testing::{
     TempDir, database,
-    support::{class_bytes, jar_bytes},
+    support::{class_bytes, class_model, jar_bytes},
 };
 use rusqlite::Connection;
 
-use beans_platform_jvm::{Class, JvmPlatform, jdk_artifacts, storage};
+use beans_platform_jvm::{JvmPlatform, jdk_artifacts, storage};
 
 #[test]
 fn stores_each_container_format_in_the_supplied_transaction() {
@@ -446,12 +446,7 @@ fn reported_artifact_failures_allow_the_caller_to_roll_back_publication() {
 
 fn seed(path: &Path, connection: &mut Connection) {
     let transaction = connection.transaction().unwrap();
-    storage::store(
-        &Class { name: "Old".into() },
-        &Location::file(path),
-        &transaction,
-    )
-    .unwrap();
+    storage::store(&class_model("Old"), &Location::file(path), &transaction).unwrap();
     transaction.commit().unwrap();
 }
 

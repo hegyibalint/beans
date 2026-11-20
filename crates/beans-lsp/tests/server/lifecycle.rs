@@ -19,7 +19,8 @@ fn initialization_advertises_supported_capabilities_and_creates_the_cache() {
     let mut capabilities = json!({
         "definitionProvider": true, "hoverProvider": true,
         "semanticTokensProvider": {"legend": {"tokenTypes": ["type"], "tokenModifiers": []}, "full": true},
-        "textDocumentSync": {"openClose": true, "change": 1}
+        "textDocumentSync": {"openClose": true, "change": 1},
+        "workspace": {"textDocumentContent": {"schemes": ["beans+jvm"]}}
     });
     if cfg!(feature = "sidecar") {
         capabilities["executeCommandProvider"] = json!({"commands": ["beans.import.gradle"]});

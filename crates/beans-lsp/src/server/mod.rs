@@ -6,6 +6,7 @@ use lsp_server::{Connection, Message, Response};
 use crate::features::Features;
 
 mod commands;
+mod document_content;
 mod engine_notifications;
 mod notifications;
 mod request_log;

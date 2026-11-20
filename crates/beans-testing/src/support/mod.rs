@@ -2,7 +2,21 @@ pub mod jdks;
 
 use std::io::{Cursor, Write};
 
+use beans_platform_jvm::{Class, ClassAccessFlags};
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
+
+/// A minimal public class model with a dummy fingerprint and no backing artifact.
+pub fn class_model(name: &str) -> Class {
+    Class {
+        name: name.into(),
+        fingerprint: [0; 32],
+        access_flags: ClassAccessFlags::PUBLIC | ClassAccessFlags::SUPER,
+        superclass: (name != "java/lang/Object").then(|| "java/lang/Object".into()),
+        interfaces: Vec::new(),
+        fields: Vec::new(),
+        methods: Vec::new(),
+    }
+}
 
 pub fn class_bytes(name: &str) -> Vec<u8> {
     let mut bytes = vec![0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 52, 0, 5];

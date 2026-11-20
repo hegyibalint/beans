@@ -1,5 +1,5 @@
 use beans_core::location::{Location, LocationEntry};
-use beans_testing::database;
+use beans_testing::{database, support::class_model as class};
 use rusqlite::Connection;
 
 use beans_platform_jvm::{
@@ -150,10 +150,6 @@ fn a_storage_failure_allows_rolling_back_the_whole_replacement() {
         assert!(error.contains("rejected class"));
     }
     assert_eq!(names(&connection), ["Old"]);
-}
-
-fn class(name: &str) -> Class {
-    Class { name: name.into() }
 }
 
 fn names(connection: &Connection) -> Vec<String> {

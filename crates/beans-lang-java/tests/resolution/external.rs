@@ -18,11 +18,7 @@ use beans_lang_java::{
         resolve_supertype,
     },
 };
-use beans_platform_jvm::JvmPlatform;
-use beans_testing::{
-    TempDir,
-    support::{class_bytes, jar_bytes},
-};
+use beans_testing::{TempDir, support::class_model};
 
 use super::support::Models;
 
@@ -130,17 +126,6 @@ impl Fixture {
         self.engine
             .register_modules(modules, ImportKind::Toml, self.files.root())
             .unwrap();
-    }
-
-    fn store_jvm_resource(&mut self, path: &Path) {
-        let transaction = self.java.connection.transaction().unwrap();
-        let processed = JvmPlatform::new().process(path).unwrap();
-        assert!(processed.failures.is_empty());
-        assert!(!processed.classes.is_empty());
-        for (location, class) in processed.classes {
-            beans_platform_jvm::storage::store(&class, &location, &transaction).unwrap();
-        }
-        transaction.commit().unwrap();
     }
 
     fn prospective_candidates(&self, name: &str) -> Vec<TypeCandidate> {
@@ -599,63 +584,49 @@ fn imported_superclass_uses_the_same_external_query() {
 
 #[test]
 fn stored_jvm_classes_are_resolved() {
-    let files = TempDir::new();
-    let path = files.write("Foo.class", class_bytes("q/Foo"));
+    let location = Location::file("/Foo.class");
     let mut fixture = Fixture::new("package p; import q.Foo; class Use { Foo field; }", &[]);
-    fixture.store_jvm_resource(&path);
-    assert_eq!(fixture.resolve(), Ok(jvm_candidate(Location::file(path))));
+    fixture.java.store_jvm(&class_model("q/Foo"), &location);
+    assert_eq!(fixture.resolve(), Ok(jvm_candidate(location)));
 }
 
 #[test]
 fn binary_classpath_entries_still_admit_jar_contents_without_source_associations() {
-    let files = TempDir::new();
-    let jar = files.write(
-        "api.jar",
-        jar_bytes(&[("q/Foo.class", &class_bytes("q/Foo"))]),
-    );
+    let jar = "/api.jar";
+    let location = Location::file(jar).entry(LocationEntry::Container("q/Foo.class".into()));
     let mut fixture = Fixture::new("package p; import q.Foo; class Use { Foo field; }", &[]);
-    fixture.store_jvm_resource(&jar);
+    fixture.java.store_jvm(&class_model("q/Foo"), &location);
     fixture.set_modules(vec![module(&["/src/Use.java"], Some(&[]))]);
     assert_eq!(fixture.resolve(), Err(ResolutionFailure::NotFound));
 
-    fixture.set_modules(vec![module(
-        &["/src/Use.java"],
-        Some(&[jar.to_str().unwrap()]),
-    )]);
-    assert_eq!(
-        fixture.resolve(),
-        Ok(jvm_candidate(
-            Location::file(jar).entry(LocationEntry::Container("q/Foo.class".into()))
-        ))
-    );
+    fixture.set_modules(vec![module(&["/src/Use.java"], Some(&[jar]))]);
+    assert_eq!(fixture.resolve(), Ok(jvm_candidate(location)));
 }
 
 #[test]
 fn a_jvm_single_import_shadows_a_java_type_in_the_current_package() {
-    let files = TempDir::new();
-    let path = files.write("Foo.class", class_bytes("q/Foo"));
+    let location = Location::file("/Foo.class");
     let mut fixture = Fixture::new(
         "package p; import q.Foo; class Use { Foo field; }",
         &[("Foo", "package p; class Foo {}")],
     );
-    fixture.store_jvm_resource(&path);
-    assert_eq!(fixture.resolve(), Ok(jvm_candidate(Location::file(path))));
+    fixture.java.store_jvm(&class_model("q/Foo"), &location);
+    assert_eq!(fixture.resolve(), Ok(jvm_candidate(location)));
 }
 
 #[test]
 fn java_and_jvm_candidates_with_the_same_name_are_ambiguous() {
-    let files = TempDir::new();
-    let path = files.write("Foo.class", class_bytes("q/Foo"));
+    let location = Location::file("/Foo.class");
     let mut fixture = Fixture::new(
         "package p; import q.Foo; class Use { Foo field; }",
         &[("Foo", "package q; public class Foo {}")],
     );
-    fixture.store_jvm_resource(&path);
+    fixture.java.store_jvm(&class_model("q/Foo"), &location);
     assert_eq!(
         fixture.resolve(),
         Err(ResolutionFailure::Ambiguous(vec![
             fixture.expected("q.Foo"),
-            jvm_candidate(Location::file(path)),
+            jvm_candidate(location),
         ]))
     );
 }
