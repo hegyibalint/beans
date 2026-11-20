@@ -2,14 +2,8 @@
 node = "24.22.1"
 rust = { version = "stable", components = ["rustfmt", "clippy"] }
 
-# JDKs the test suite reads.
-#
-# Beans reads runtime images (`<jdk>/lib/modules`) rather than running Java, so
-# these are test inputs, not a toolchain. The first entry is the one on PATH.
-#
-# Enough to write every kind of fixture: 26 is the current writer and supplies
-# both compression modes, 21 writes big-endian, which `jlink` refuses from 24
-# on. The full writer sweep is in `mise.ci.toml`.
-#
-# Pinned to the patch version and bumped deliberately.
-java = ["temurin-26.0.2", "temurin-21.0.12"]
+# JDK 26 is on PATH and supplies both compression modes for jimage fixtures.
+# JDK 21 writes big-endian images, which `jlink` refuses from 24 on.
+# JDK 17 is the sidecar toolchain (mise names Temurin 17.0.21.1+2 as below).
+# The full writer sweep is in `mise.ci.toml`.
+java = ["temurin-26.0.2", "temurin-21.0.12", "temurin-17.0.21+100000002"]

@@ -37,10 +37,12 @@ When testing is difficult, examine why before adding workarounds. Propose reshap
 
 ## Sidecar JVM integration
 
-With an installed Java 17 toolchain available to Gradle, build the sidecar JARs:
+After `mise install`, pass the Java 17 toolchain to Gradle when building the
+sidecar JARs:
 
 ```sh
-(cd sidecar && ./gradlew assemble)
+sidecar_jdk=$(mise where java@temurin-17)
+(cd sidecar && ./gradlew "-Porg.gradle.java.installations.paths=$sidecar_jdk" assemble)
 ```
 
 The Rust JVM integration test is opt-in and discovers an installed Temurin 17 JDK
@@ -51,27 +53,28 @@ it does not use the production fat JAR or install a toolchain.
 # Ping/stdout isolation only:
 cargo test -p beans-sidecar --test jvm pings_a_persistent -- --ignored
 
-# Include Gradle import → Engine registration (use an installed Gradle 8.8+):
+# Include Gradle import → Engine registration (use Gradle 9.6.1, for example):
 GRADLE_HOME=/path/to/gradle cargo test -p beans-sidecar --test jvm -- --ignored
 ```
 
-Run the Java protocol and Gradle adapter tests with `./gradlew integrationTest`
-from `sidecar/`. The adapter/model tests call the adapter directly, including
-mixed Java/Kotlin/Groovy production and test sources. The Kotlin fixture resolves
-its Gradle plugin on the first run; no compiler or generation tasks are requested.
+To run the Java protocol and Gradle adapter tests, replace `assemble` with
+`integrationTest` in the Gradle command above. The adapter/model tests call the
+adapter directly, including mixed Java/Kotlin/Groovy production and test sources.
+The Kotlin fixture resolves its Gradle plugin on the first run; no compiler or
+generation tasks are requested.
 See `sidecar/modules/gradle/README.md` for the model's boundaries. The opt-in Rust
 JVM tests cover ping/EOF and Gradle RPC registration of complete modules, including
 artifact/source associations with missing outputs, a failed import preserving the
 previous snapshot, and a successful empty import clearing it.
 
-The opt-in LSP command test requires `JAVA_HOME` pointing to an installed JDK
-compatible with the fixture's Gradle wrapper. It verifies that hover remains
+The opt-in LSP command test requires `JAVA_HOME` pointing to JDK 17 or newer
+and supported by the fixture's Gradle wrapper. It verifies that hover remains
 responsive during import, that success follows module registration, and that a
 class-directory project dependency supports definition and hover with artifact
 provenance without compiling either project:
 
 ```sh
-JAVA_HOME=/path/to/jdk cargo test -p beans-lsp --features sidecar --test gradle_import -- --ignored
+JAVA_HOME="$sidecar_jdk" cargo test -p beans-lsp --features sidecar --test gradle_import -- --ignored
 ```
 
 ## Shared test utilities

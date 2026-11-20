@@ -1,4 +1,5 @@
 [versions]
+java = "17"
 jackson = "2.18.2"
 slf4j = "2.0.16"
 toolingApi = "9.6.1"

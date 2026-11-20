@@ -13,9 +13,14 @@ esac
 BEANS_WORKSPACE_TOML_JAVA_HOME="${BEANS_WORKSPACE_TOML_JAVA_HOME-$(mise where java)}"
 export BEANS_WORKSPACE_TOML_JAVA_HOME
 
+# Make mise's JDK 17 visible to Gradle without changing the playground JDK.
+if ! sidecar_jdk=$(mise where java@temurin-17); then
+  printf '%s\n' 'The sidecar needs Temurin 17. Run mise install and retry.' >&2
+  exit 1
+fi
+
 cargo build -p beans-lsp --features sidecar
-# Gradle imports start the production sidecar on demand.
-(cd sidecar && ./gradlew assemble)
+(cd sidecar && ./gradlew "-Porg.gradle.java.installations.paths=$sidecar_jdk" assemble)
 # Crate diagnostics go to stderr, displayed in VS Code's Output -> Beans.
 export RUST_LOG="${RUST_LOG:-beans=debug}"
 # target/ is ignored by git; the server log contains full document contents.

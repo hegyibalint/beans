@@ -15,9 +15,10 @@ Re-run it after source-set changes or adding new files. Errors are logged in
 **Output → Beans**. The editor remains responsive while the import runs.
 
 The extension requires workspace trust because Gradle executes build scripts.
-Set `beans.javaHome` to an installed JDK compatible with the build, or inherit
-`JAVA_HOME`. Automatic JDK installation is disabled. Restart the extension host
-after changing the JDK.
+The sidecar needs Java 17 or newer. Set `beans.javaHome` to an installed JDK or
+inherit `JAVA_HOME`. If the project's Gradle version cannot run on that JDK,
+configure a compatible daemon JVM in the project. Automatic JDK installation is
+disabled. Restart the extension host after changing the JDK.
 
 ## Development
 

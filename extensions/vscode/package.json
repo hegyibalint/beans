@@ -36,7 +36,7 @@
         "beans.javaHome": {
           "type": "string",
           "default": "",
-          "description": "JDK home for the Beans sidecar and Gradle daemon. Defaults to JAVA_HOME. Restart Beans after changing this."
+          "description": "JDK home (Java 17+) for the Beans sidecar. Gradle also uses it by default unless the project selects a daemon JVM. Defaults to JAVA_HOME. Restart Beans after changing this."
         }
       }
     },

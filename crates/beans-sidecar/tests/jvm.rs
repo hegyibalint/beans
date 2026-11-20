@@ -14,11 +14,7 @@ use beans_testing::{TempDir, support::jdks};
 #[test]
 #[ignore = "requires a mise Temurin 17 JDK and prebuilt sidecar JARs (gradlew assemble)"]
 fn pings_a_persistent_jvm_without_module_stdout_corrupting_the_protocol() {
-    let java_home = jdks::list("temurin-17")
-        .unwrap()
-        .into_iter()
-        .next()
-        .expect("install a Temurin 17 JDK with mise before running this test");
+    let java_home = sidecar_jdk();
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
@@ -56,11 +52,7 @@ fn pings_a_persistent_jvm_without_module_stdout_corrupting_the_protocol() {
 #[test]
 #[ignore = "requires a mise Temurin 17 JDK, GRADLE_HOME and prebuilt sidecar JARs"]
 fn gradle_import_registers_modules_and_preserves_them_on_failure() {
-    let java_home = jdks::list("temurin-17")
-        .unwrap()
-        .into_iter()
-        .next()
-        .expect("install a Temurin 17 JDK with mise before running this test");
+    let java_home = sidecar_jdk();
     let gradle_home = PathBuf::from(env::var_os("GRADLE_HOME").expect("set GRADLE_HOME"));
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -174,6 +166,14 @@ fn gradle_import_registers_modules_and_preserves_them_on_failure() {
         .unwrap();
     assert!(engine.modules().unwrap().is_empty());
     sidecar.stop().unwrap();
+}
+
+fn sidecar_jdk() -> PathBuf {
+    jdks::list("temurin-17")
+        .unwrap()
+        .into_iter()
+        .next()
+        .expect("install a Temurin 17 JDK with mise before running this test")
 }
 
 fn classpath(root: &Path, gradle: bool) -> Vec<PathBuf> {
