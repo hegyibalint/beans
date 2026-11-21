@@ -46,11 +46,11 @@ Run **Beans: Preview java.lang.String** in the Command Palette to open
 also open `beans+jvm:/<internal-name>.class` directly through VS Code's
 `workspace.openTextDocument` API. These are editor URIs, not browser links.
 
-The provider forwards the URI using LSP 3.18's `workspace/textDocumentContent`.
-The server looks up the internal name in the index. It won't pick between
-multiple copies, and open listings don't refresh during reindexing. If
-`String` isn't indexed yet, retry after JDK indexing finishes. Go-to-definition
-doesn't emit these URIs yet.
+The language client registers the scheme advertised by Beans and fetches the
+listing with LSP 3.18's `workspace/textDocumentContent`. The server looks up the
+internal name in the index. It won't pick between multiple copies, and open
+listings don't refresh during reindexing. If `String` isn't indexed yet, retry
+after JDK indexing finishes. Go-to-definition doesn't emit these URIs yet.
 
 Run `npm --prefix extensions/vscode test` from the repository root for client
 command and virtual document regression checks.

@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "publisher": "beans",
   "engines": {
-    "vscode": "^1.90.0"
+    "vscode": "^1.91.0"
   },
   "categories": [
     "Programming Languages"
@@ -59,11 +59,11 @@
     "test": "npm run compile && node --test test/*.test.cjs"
   },
   "dependencies": {
-    "vscode-languageclient": "^9.0.1"
+    "vscode-languageclient": "^11.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",
-    "@types/vscode": "^1.90.0",
+    "@types/vscode": "^1.91.0",
     "typescript": "^5.4.0"
   }
 }
